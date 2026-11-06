@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# The Clock app (NEOCLOCK.EXE): a separate Symbian process that draws into a surface the UI server gives it.
+[package]
+name = "neoclock"
+description = "neoui's live Clock app: its own process, drawing into a shared surface (NeoSymbian R6)"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+publish = false
+
+[lib]
+crate-type = ["staticlib"]
+test = false
+
+[dependencies]
+e32.workspace = true
+neoui-proto.workspace = true
+slint.workspace = true
+
+[build-dependencies]
+slint-build.workspace = true

@@ -828,7 +828,7 @@ dependencies = [
 [[package]]
 name = "e32"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/e32-rs?rev=5dae8bd11b21d84ed59b6c42760df3fd66473749#5dae8bd11b21d84ed59b6c42760df3fd66473749"
+source = "git+https://github.com/NeoSymbian/e32-rs?rev=4659c035ea6a46a2e1c07b1144013275642fa1d6#4659c035ea6a46a2e1c07b1144013275642fa1d6"
 dependencies = [
  "critical-section",
  "e32-sys",
@@ -838,7 +838,7 @@ dependencies = [
 [[package]]
 name = "e32-sys"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/e32-rs?rev=5dae8bd11b21d84ed59b6c42760df3fd66473749#5dae8bd11b21d84ed59b6c42760df3fd66473749"
+source = "git+https://github.com/NeoSymbian/e32-rs?rev=4659c035ea6a46a2e1c07b1144013275642fa1d6#4659c035ea6a46a2e1c07b1144013275642fa1d6"
 
 [[package]]
 name = "either"
@@ -2574,6 +2574,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ee6cda3051665f1fb8d9e08fc35c96d5a244fb1be711a03b71118828afc9a873"
 dependencies = [
  "jni-sys 0.3.1",
+]
+
+[[package]]
+name = "neoclock"
+version = "0.1.0"
+dependencies = [
+ "e32",
+ "neoui-proto",
+ "slint",
+ "slint-build",
 ]
 
 [[package]]

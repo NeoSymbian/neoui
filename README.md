@@ -25,6 +25,7 @@ Mac the buffer is just shown in a window.
 | `ui/fonts/` | Inter (OFL-1.1), bundled so the glyphs baked into the binary do not depend on the build host's fonts |
 | `crates/neoui-host` | Mac/Linux desktop host: winit + softbuffer, mouse as touch |
 | `snapshots/` | PNGs written by the snapshot tests |
+| `crates/neoui-proto` `ipc` | The app ↔ UI server protocol: `GEOMETRY`, `SURFACE`, `DAMAGE`, `NEXT_EVENT`, 16-byte events |
 | `symbian/` | The launcher as a Symbian EXE (`SYSSTART.EXE`, GPL-3.0): its own workspace, built for `armv5te-none-eabi` with [e32-rs](https://github.com/NeoSymbian/e32-rs) |
 
 The renderer takes its time from a caller-supplied millisecond clock and owns
@@ -72,7 +73,15 @@ cd symbian && cargo arm        # target/armv5te-none-eabi/release/libneoui_symbi
 ./build.sh && MONITOR="mouse_move 3243 27904;mouse_button 1;mouse_button 0" ./boot.sh   # out/fb.png, out/serial.log
 ```
 
-The `syborg` CI job does exactly that and checks the serial log and the screen. It publishes the screenshot and the
+**Apps are separate processes (R6).** The UI server is also the `NeoUi` IPC server (protocol in
+`neoui-proto::ipc`). When the shell navigates to an app that exists as an EXE (so far `clock` → `NEOCLOCK.EXE`,
+`symbian/apps/clock`), the server starts it through the Symbian loader. The app connects, receives its drawing
+surface (a global chunk shared by handle, mapped at the same address in both processes), renders its own Slint UI
+into it and reports damage. The server shows the surface in the shell's body, between the live status bar and
+toolbar. Touches in the body go to the app; Back makes the server send `Quit`, and the app exits.
+
+The `syborg` CI job does exactly that and checks the serial log and the screen: it opens the Apps menu, scrolls,
+opens Clock, taps it and goes back (`symbian/taps.sh` builds the QEMU monitor script). It publishes the screenshot and the
 log, never the ROM (see the licence note below).
 
 ## Licence

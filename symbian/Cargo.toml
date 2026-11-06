@@ -17,10 +17,17 @@ test = false
 [dependencies]
 neoui-render = { path = "../crates/neoui-render" }
 neoui-proto = { path = "../crates/neoui-proto" }
-# NeoSymbian/e32-rs: the Symbian user-side runtime (exec calls, heap, display, raw input). Bump the rev to update.
-e32 = { git = "https://github.com/NeoSymbian/e32-rs", rev = "5dae8bd11b21d84ed59b6c42760df3fd66473749", features = ["critical-section"] }
+e32 = { workspace = true }
 
 [workspace]
+members = ["apps/clock"]
+
+[workspace.dependencies]
+# NeoSymbian/e32-rs: the Symbian user-side runtime (exec calls, heap, display, raw input, IPC, processes).
+e32 = { git = "https://github.com/NeoSymbian/e32-rs", rev = "4659c035ea6a46a2e1c07b1144013275642fa1d6", features = ["critical-section"] }
+neoui-proto = { path = "../crates/neoui-proto" }
+slint = { version = "=1.18.1", default-features = false, features = ["compat-1-2", "unsafe-single-threaded", "libm", "renderer-software"] }
+slint-build = { version = "=1.18.1", features = ["sdf-fonts"] }
 
 [profile.release]
 panic = "abort"

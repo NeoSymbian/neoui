@@ -2,6 +2,8 @@
 //! Types shared by the neoui server, its renderer and its clients.
 #![no_std]
 
+pub mod ipc;
+
 /// An axis-aligned rectangle in physical pixels. Empty when `w == 0 || h == 0`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Rect {

@@ -2,8 +2,8 @@
 name: syborg
 
 # The launcher on the 2010 Symbian user side: build symbian/ (SYSSTART.EXE) for armv5te, put it in the Syborg ROM
-# with NeoSymbian/symbian-2010 (estart then runs it instead of the window server), boot on QEMU, tap the Phone tile
-# through the QEMU monitor and check the serial log and the screen. Only the screenshot and logs are published,
+# with NeoSymbian/symbian-2010 (estart then runs it instead of the window server) plus the Clock app, boot on QEMU,
+# drive it through the QEMU monitor (open Clock, tap it, go back) and check the serial log and the screen. Only the screenshot and logs are published,
 # never the ROM (it links Slint under GPL-3.0 with EPL-1.0 Symbian code).
 on:
   push:
@@ -28,24 +28,33 @@ jobs:
         working-directory: neoui/symbian
         run: |
           rustup toolchain install   # reads rust-toolchain.toml
-          cargo fmt --check
-          cargo clippy --release --target armv5te-none-eabi -Zbuild-std=core,alloc,compiler_builtins -- -D warnings
-          cargo arm
+          cargo fmt --all --check
+          cargo clippy --workspace --release --target armv5te-none-eabi -Zbuild-std=core,alloc,compiler_builtins -- -D warnings
+          cargo arm --workspace
           mkdir -p ../../symbian-2010/rust
-          cp target/armv5te-none-eabi/release/libneoui_symbian.a exes.txt ../../symbian-2010/rust/
+          cp target/armv5te-none-eabi/release/{libneoui_symbian,libneoclock}.a exes.txt ../../symbian-2010/rust/
 
       - name: Fetch the Symbian sources
         working-directory: symbian-2010
         run: ./fetch.sh
 
-      - name: Build the ROM (SYSSTART.EXE = the launcher, no window server)
+      - name: Build the ROM (SYSSTART.EXE = the UI server, no window server; NEOCLOCK.EXE = an app)
         working-directory: symbian-2010
         run: ./build.sh
 
-      # The Phone tile sits at (76, 545) on the 768x640 screen: QEMU's absolute pointer is 0..0x7FFF per axis.
-      - name: Boot and tap the Phone tile
+      # The path is the design's contract: Apps in the dock (383,580); drag the menu up (x 380, y 450 -> 150); Clock
+      # (96,378); a tap inside the Clock app (380,300); Back in the toolbar (103,585). Screen pixels; QEMU's absolute
+      # pointer is 0..0x7FFF per axis. Commands go 0.3 s apart (a drag needs that), `info status` fills waits.
+      - name: Boot; open the Clock app (its own process) from the Apps menu, tap it, go back
         working-directory: symbian-2010
-        run: MONITOR="mouse_move 3243 27904;mouse_button 1;mouse_button 0" SECS=120 ./boot.sh
+        run: |
+          . ../neoui/symbian/taps.sh
+          tap 383 580; wait_s 3
+          drag 380 450 150; wait_s 3
+          tap 96 378; wait_s 8
+          tap 380 300; wait_s 3
+          tap 103 585; wait_s 5
+          MON_GAP=0.3 MONITOR="$M" SECS=150 ./boot.sh
 
       - name: Check the output
         working-directory: symbian-2010
@@ -55,10 +64,20 @@ jobs:
           ! grep -aq '\[proc\] create EWSRV.EXE' $s
           grep -a 'neoui: display 768x640' $s
           grep -a 'neoui: launcher shown' $s
-          grep -a 'neoui: tap 7[0-9],54[0-9]' $s
-          # the tap opened the Phone screen: most of the screen was redrawn
+          # R5: the first tap (Apps) redrew most of the screen
           px=$(grep -ao 'neoui: tap from .* redrew [0-9]*' $s | grep -o '[0-9]*$' | head -1)
           echo "redrew $px px"; [ "${px:-0}" -gt 100000 ]
+          # R6: an app as its own process, in a shared surface, getting input, leaving on Back
+          grep -a 'neoui: screen menu' $s
+          grep -a 'neoui: screen clock' $s
+          grep -a 'neoui: app clock started' $s
+          grep -a 'neoui: app clock surface 768x' $s
+          grep -a 'clock: surface 768x[0-9]* mapped' $s
+          ticks=$(grep -ao 'clock: tick [0-9:]*' $s | sort -u | wc -l)
+          echo "$ticks distinct ticks"; [ "$ticks" -ge 2 ]
+          grep -a 'clock: touch ' $s
+          grep -a 'clock: quit' $s
+          grep -a 'neoui: app clock exited (type 0, reason 0)' $s
           ! grep -aq 'K::Fault\|Kern::Fault\|\[EKERN\] panic\|rust panic' $s
           python3 - <<'PY'
           d = open("out/fb.ppm", "rb").read()

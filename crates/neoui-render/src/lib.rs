@@ -89,6 +89,22 @@ impl Renderer {
         self.ui.set_shade_open(false);
     }
 
+    /// The current screen key: "home", "menu" or an app key such as "clock".
+    pub fn screen(&self) -> alloc::string::String {
+        self.ui.get_screen().as_str().into()
+    }
+
+    /// Where an app's content goes: the full-width band between the status bar and the toolbar (physical pixels).
+    pub fn body(&self) -> Rect {
+        let size = self.window.size();
+        Rect::new(
+            0,
+            self.ui.get_body_y() as i32,
+            size.width,
+            self.ui.get_body_h() as u32,
+        )
+    }
+
     pub fn render(&mut self, buf: &mut [u32], stride_px: usize) -> Damage {
         slint::platform::update_timers_and_animations();
         // SAFETY: Xrgb8888 is repr(transparent) over u32, same size/alignment.

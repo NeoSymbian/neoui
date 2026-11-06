@@ -62,8 +62,9 @@ export component Shell inherits Window {
     }
 
     property <bool> has-toolbar: screen != "home";
-    property <length> body-y: Theme.status-h;
-    property <length> body-h: self.height - Theme.status-h - (has-toolbar ? Theme.toolbar-h : 0);
+    // out: the Symbian UI server places app processes' surfaces in this body rectangle (NeoSymbian R6)
+    out property <length> body-y: Theme.status-h;
+    out property <length> body-h: self.height - Theme.status-h - (has-toolbar ? Theme.toolbar-h : 0);
 
     public function open(app: string) {
         root.origin = root.screen == "menu" ? "menu" : "home";

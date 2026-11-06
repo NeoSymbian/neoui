@@ -1,0 +1,58 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// The Clock app (NEOCLOCK.EXE): live time from Symbian's clock, drawn by its own process into the surface the UI
+// server shows in the shell's body. Reuses the design's tokens and digits so it looks like the rest of the shell.
+import "../../../../ui/fonts/Inter-VariableFont.ttf";
+import { Theme } from "../../../../ui/theme.slint";
+import { BigClock } from "../../../../ui/components/controls.slint";
+
+export { Theme }
+
+export component ClockApp inherits Window {
+    in property <int> hours;
+    in property <int> minutes;
+    in property <int> seconds;
+    in property <string> date;
+    in-out property <int> taps;
+    default-font-family: "Inter";
+    background: Theme.bg;
+
+    VerticalLayout {
+        alignment: center;
+        spacing: 14 * Theme.dp;
+        HorizontalLayout {
+            alignment: center;
+            BigClock {
+                hours: root.hours;
+                minutes: root.minutes;
+                digit-h: 88 * Theme.dp;
+            }
+        }
+
+        Text {
+            text: (root.seconds < 10 ? ":0" : ":") + root.seconds;
+            color: Theme.text-dim;
+            font-size: 26 * Theme.dp;
+            horizontal-alignment: center;
+        }
+
+        Text {
+            text: root.date;
+            color: Theme.text;
+            font-size: 18 * Theme.dp;
+            horizontal-alignment: center;
+        }
+
+        Text {
+            text: root.taps == 0 ? "NEOCLOCK.EXE · its own process" : "tapped " + root.taps + "×";
+            color: Theme.text-dim;
+            font-size: 12 * Theme.dp;
+            horizontal-alignment: center;
+        }
+    }
+
+    TouchArea {
+        clicked => {
+            root.taps += 1;
+        }
+    }
+}
