@@ -19,7 +19,7 @@ use neoui_proto::ipc::{self as proto, AppEvent};
 
 /// Screen keys that are separate processes, and their EXEs.
 // shortcut: a fixed table; a registry of installed apps comes with app installation.
-pub const APPS: &[(&str, &str)] = &[("clock", "neoclock")];
+pub const APPS: &[(&str, &str)] = &[("clock", "neoclock"), ("terminal", "neoterm")];
 
 pub struct App {
     pub key: &'static str,

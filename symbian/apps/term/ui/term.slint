@@ -1,0 +1,77 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// The Terminal app (NEOTERM.EXE): a Symbian text console window -- ESHELL and the 2010 text programs -- in the look
+// of the design's prototype Terminal screen (ui/screens/terminal.slint): dark ground, Ubuntu Mono, a green cursor and
+// an extra-keys bar. Rows and the cursor come from the console server (Rust); bar keys go back as key codes.
+import "../../../../ui/fonts/UbuntuMono-Regular.ttf";
+import { Theme } from "../../../../ui/theme.slint";
+
+export { Theme }
+
+export component TermApp inherits Window {
+    in property <[string]> rows;
+    in property <int> cursor-x;
+    in property <int> cursor-y;
+    in property <bool> cursor-on: true;
+    in property <length> cell-w;
+    in property <length> cell-h;
+    in property <length> font-px;
+    in property <length> pad;
+    in property <length> bar-h;
+    // a Symbian TKeyCode (Unicode, 13 Enter, 27 Escape, 0xF807-0xF80A arrows)
+    callback key(int);
+    background: #07090c;
+
+    for row[i] in root.rows: Text {
+        x: root.pad;
+        y: root.pad + i * root.cell-h;
+        height: root.cell-h;
+        text: row;
+        color: #d7dde5;
+        font-family: "Ubuntu Mono";
+        font-size: root.font-px;
+        vertical-alignment: center;
+    }
+
+    if root.cursor-on: Rectangle {
+        x: root.pad + root.cursor-x * root.cell-w;
+        y: root.pad + root.cursor-y * root.cell-h;
+        width: root.cell-w;
+        height: root.cell-h;
+        background: #7ee787;
+        opacity: 0.55;
+    }
+
+    Rectangle {
+        y: root.height - root.bar-h;
+        height: root.bar-h;
+        background: #111418;
+        HorizontalLayout {
+            padding: 7 * Theme.dp;
+            spacing: 6 * Theme.dp;
+            for k in [
+                { label: "Esc", code: 27 },
+                { label: "Tab", code: 9 },
+                { label: "←", code: 63495 },
+                { label: "↑", code: 63497 },
+                { label: "↓", code: 63498 },
+                { label: "→", code: 63496 },
+                { label: "Enter", code: 13 },
+            ]: Rectangle {
+                border-radius: 7 * Theme.dp;
+                background: t.pressed ? Theme.pressed : #1d2025;
+                Text {
+                    text: k.label;
+                    color: Theme.text-secondary;
+                    font-family: "Ubuntu Mono";
+                    font-size: 13 * Theme.dp;
+                }
+
+                t := TouchArea {
+                    clicked => {
+                        root.key(k.code);
+                    }
+                }
+            }
+        }
+    }
+}

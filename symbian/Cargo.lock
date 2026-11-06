@@ -2577,11 +2577,33 @@ dependencies = [
 ]
 
 [[package]]
-name = "neoclock"
+name = "neoapp"
 version = "0.1.0"
 dependencies = [
  "e32",
  "neoui-proto",
+ "slint",
+]
+
+[[package]]
+name = "neoclock"
+version = "0.1.0"
+dependencies = [
+ "e32",
+ "neoapp",
+ "neoui-proto",
+ "slint",
+ "slint-build",
+]
+
+[[package]]
+name = "neoterm"
+version = "0.1.0"
+dependencies = [
+ "e32",
+ "neoapp",
+ "neoui-proto",
+ "neoui-term",
  "slint",
  "slint-build",
 ]
@@ -2607,6 +2629,10 @@ dependencies = [
  "neoui-proto",
  "neoui-render",
 ]
+
+[[package]]
+name = "neoui-term"
+version = "0.1.0"
 
 [[package]]
 name = "nix"

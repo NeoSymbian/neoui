@@ -25,6 +25,7 @@ Mac the buffer is just shown in a window.
 | `ui/fonts/` | Inter (OFL-1.1), bundled so the glyphs baked into the binary do not depend on the build host's fonts |
 | `crates/neoui-host` | Mac/Linux desktop host: winit + softbuffer, mouse as touch |
 | `snapshots/` | PNGs written by the snapshot tests |
+| `crates/neoui-term` | `#![no_std]` text console model: the grid, cursor and control characters of a Symbian console window |
 | `crates/neoui-proto` `ipc` | The app ↔ UI server protocol: `GEOMETRY`, `SURFACE`, `DAMAGE`, `NEXT_EVENT`, 16-byte events |
 | `symbian/` | The launcher as a Symbian EXE (`SYSSTART.EXE`, GPL-3.0): its own workspace, built for `armv5te-none-eabi` with [e32-rs](https://github.com/NeoSymbian/e32-rs) |
 
@@ -79,6 +80,13 @@ cd symbian && cargo arm        # target/armv5te-none-eabi/release/libneoui_symbi
 surface (a global chunk shared by handle, mapped at the same address in both processes), renders its own Slint UI
 into it and reports damage. The server shows the surface in the shell's body, between the live status bar and
 toolbar. Touches in the body go to the app; Back makes the server send `Quit`, and the app exits.
+
+**A Terminal app (R6b): ESHELL and the 2010 text programs inside the Rust UI.** `NEOTERM.EXE`
+(`symbian/apps/term`) is the Symbian text console server `!E32WindowServer`; the UI ROM ships the stock
+`econs.dll` (a client of that server) as `ECONS.DLL`, so `Console::NewL` in ESHELL and in any text program lands in
+our terminal. The grid (`crates/neoui-term`, host-tested) follows the stock console's rules: newline mode, wrap,
+destructive backspace, tabs, scrolling. Keys come from the keyboard and from the extra-keys bar. `dir` and
+`neotest` run in it on Syborg. Apps share their plumbing (connect, surface, Slint platform) in `symbian/neoapp`.
 
 The UI adapts to whatever the device reports: the display size comes from the HAL, touches are raw screen pixels
 (Syborg's pointer driver was fixed in the NeoSymbian adaptation fork to report exact pixels), and the layout follows

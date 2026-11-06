@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "neoui-term"
+description = "neoui's text console model: the grid, cursor and control characters of a Symbian text console window"
+version.workspace = true
+edition.workspace = true
+license.workspace = true

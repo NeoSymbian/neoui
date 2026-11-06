@@ -259,11 +259,24 @@ fn to_input(ev: &TRawEvent) -> Option<InputEvent> {
 // shortcut: no modifiers, no layouts; a real keymap comes with text input (R6).
 fn key_char(scan: i32) -> Option<char> {
     match scan {
-        1 => Some('\u{8}'),  // EStdKeyBackspace
-        2 => Some('\t'),     // EStdKeyTab
-        3 => Some('\n'),     // EStdKeyEnter
-        4 => Some('\u{1b}'), // EStdKeyEscape
-        5 => Some(' '),      // EStdKeySpace
+        1 => Some('\u{8}'),     // EStdKeyBackspace
+        2 => Some('\t'),        // EStdKeyTab
+        3 => Some('\r'),        // EStdKeyEnter: EKeyEnter is 13
+        4 => Some('\u{1b}'),    // EStdKeyEscape
+        5 => Some(' '),         // EStdKeySpace
+        0x0D => Some('\u{7f}'), // EStdKeyDelete
+        // EStdKeyLeft/Right/Up/DownArrow -> EKeyLeftArrow.. (0xF807..0xF80A, Unicode private use)
+        0x0E => Some('\u{F807}'),
+        0x0F => Some('\u{F808}'),
+        0x10 => Some('\u{F809}'),
+        0x11 => Some('\u{F80A}'),
+        0x79 => Some(','),
+        0x7A => Some('.'),
+        0x7B => Some('/'),
+        0x7C => Some('\\'),
+        0x7D => Some(';'),
+        0x82 => Some('-'),
+        0x83 => Some('='),
         0x30..=0x39 => char::from_u32(scan as u32),
         0x41..=0x5A => char::from_u32(scan as u32 + 0x20),
         _ => None,

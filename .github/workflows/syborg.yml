@@ -32,7 +32,15 @@ jobs:
           cargo clippy --workspace --release --target armv5te-none-eabi -Zbuild-std=core,alloc,compiler_builtins -- -D warnings
           cargo arm --workspace
           mkdir -p ../../symbian-2010/rust
-          cp target/armv5te-none-eabi/release/{libneoui_symbian,libneoclock}.a exes.txt ../../symbian-2010/rust/
+          cp target/armv5te-none-eabi/release/{libneoui_symbian,libneoclock,libneoterm}.a exes.txt ../../symbian-2010/rust/
+
+      # NEOTEST.EXE (e32-rs's on-device tests), so ESHELL in the Terminal app has a 2010-style text program to run
+      - name: e32-rs neotest
+        run: |
+          git clone -q --depth 1 https://github.com/NeoSymbian/e32-rs.git
+          cd e32-rs && cargo arm -p neotest
+          cp target/armv5te-none-eabi/release/libneotest.a ../symbian-2010/rust/
+          grep '^NEOTEST.EXE' symbian/exes.txt >> ../symbian-2010/rust/exes.txt
 
       - name: Fetch the Symbian sources
         working-directory: symbian-2010
@@ -45,7 +53,8 @@ jobs:
       # A phone-shaped screen with odd sizes (half of the Pixel's 1079x2159 touch range), so the UI must adapt to
       # whatever the device reports. The path is the design's contract, in screen pixels: Apps in the dock
       # (270,1000); Clock in the menu (449,530); a tap inside the Clock app (270,500); Back in the toolbar (88,1033).
-      - name: Boot at 539x1079; open the Clock app (its own process) from the Apps menu, tap it, go back
+      # Then the Terminal app: Apps (270,1000), Terminal (449,735), type `dir` and `neotest`, Back.
+      - name: Boot at 539x1079; Clock (open, tap, back); Terminal (ESHELL; dir; neotest; back)
         working-directory: symbian-2010
         run: |
           export SCREEN=539x1079
@@ -54,7 +63,12 @@ jobs:
           tap 449 530; wait_s 8
           tap 270 500; wait_s 3
           tap 88 1033; wait_s 5
-          MON_GAP=0.3 MONITOR="$M" SECS=150 ./boot.sh
+          tap 270 1000; wait_s 3
+          tap 449 735; wait_s 12
+          type_text dir; wait_s 5
+          type_text neotest; wait_s 25
+          tap 88 1033; wait_s 5
+          MON_GAP=0.3 MONITOR="$M" SECS=220 ./boot.sh
 
       - name: Check the output
         working-directory: symbian-2010
@@ -78,6 +92,16 @@ jobs:
           grep -a 'clock: touch ' $s
           grep -a 'clock: quit' $s
           grep -a 'neoui: app clock exited (type 0, reason 0)' $s
+          # R6b: ESHELL in the Terminal app, through the stock econs.dll and our !E32WindowServer
+          grep -a 'neoui: app terminal started' $s
+          grep -a 'term: eshell started' $s
+          grep -a 'term| ESHELL 0.01' $s
+          grep -a 'term| C:\\>dir' $s
+          grep -a 'term| Directory of C:' $s
+          grep -a 'term| C:\\>neotest' $s
+          grep -a 'neotest: 7 passed, 0 failed' $s
+          grep -a 'term: quit' $s
+          grep -a 'neoui: app terminal exited (type 0, reason 0)' $s
           ! grep -aq 'K::Fault\|Kern::Fault\|\[EKERN\] panic\|rust panic' $s
           python3 - <<'PY'
           d = open("out/fb.ppm", "rb").read()

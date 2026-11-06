@@ -16,3 +16,12 @@ drag() {
 }
 # wait_s N: about N seconds at 0.3 s per command
 wait_s() { i=0; while [ $i -lt $(($1 * 10 / 3)) ]; do add "info status"; i=$((i + 1)); done; }
+# type WORD: one key per character (letters and digits, as QEMU names them), then Enter
+type_text() {
+	w=$1
+	while [ -n "$w" ]; do
+		c=${w%"${w#?}"}; w=${w#?}
+		add "sendkey $c"
+	done
+	add "sendkey ret"
+}

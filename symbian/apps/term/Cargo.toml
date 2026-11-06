@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# The Terminal app (NEOTERM.EXE): the Symbian text console server, ESHELL in a window of the Rust UI.
+[package]
+name = "neoterm"
+description = "neoui's Terminal app: serves the Symbian text console (!E32WindowServer) and runs ESHELL in it (NeoSymbian R6b)"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+publish = false
+
+[lib]
+crate-type = ["staticlib"]
+test = false
+
+[dependencies]
+e32.workspace = true
+neoui-proto.workspace = true
+slint.workspace = true
+neoapp.workspace = true
+neoui-term.workspace = true
+
+[build-dependencies]
+slint-build.workspace = true

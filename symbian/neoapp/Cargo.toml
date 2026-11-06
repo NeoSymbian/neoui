@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: GPL-3.0-only
+[package]
+name = "neoapp"
+description = "What every neoui app process shares: connect to NeoUi, map the surface, a Slint platform drawing into it"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+publish = false
+
+[dependencies]
+e32.workspace = true
+neoui-proto.workspace = true
+slint.workspace = true

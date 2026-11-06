@@ -16,6 +16,7 @@ test = false
 e32.workspace = true
 neoui-proto.workspace = true
 slint.workspace = true
+neoapp.workspace = true
 
 [build-dependencies]
 slint-build.workspace = true

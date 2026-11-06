@@ -2,3 +2,4 @@
 SYSSTART.EXE   0xE0002001  libneoui_symbian.a
 # Apps: separate processes the UI server starts (R6).
 NEOCLOCK.EXE   0xE0002002  libneoclock.a
+NEOTERM.EXE    0xE0002003  libneoterm.a
