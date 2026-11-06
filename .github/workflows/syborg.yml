@@ -32,7 +32,7 @@ jobs:
           cargo clippy --workspace --release --target armv5te-none-eabi -Zbuild-std=core,alloc,compiler_builtins -- -D warnings
           cargo arm --workspace
           mkdir -p ../../symbian-2010/rust
-          cp target/armv5te-none-eabi/release/{libneoui_symbian,libneoclock,libneoterm}.a exes.txt ../../symbian-2010/rust/
+          cp target/armv5te-none-eabi/release/{libneoui_symbian,libneoclock,libneoterm,libneofiles}.a exes.txt ../../symbian-2010/rust/
 
       # NEOTEST.EXE (e32-rs's on-device tests), so ESHELL in the Terminal app has a 2010-style text program to run
       - name: e32-rs neotest
@@ -46,7 +46,7 @@ jobs:
         working-directory: symbian-2010
         run: ./fetch.sh
 
-      - name: Build the ROM (SYSSTART.EXE = the UI server, no window server; NEOCLOCK.EXE = an app)
+      - name: Build the ROM (SYSSTART.EXE = the UI server, no window server; NEOCLOCK/NEOTERM/NEOFILES.EXE = apps)
         working-directory: symbian-2010
         run: ./build.sh
 
