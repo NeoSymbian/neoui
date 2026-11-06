@@ -234,16 +234,10 @@ fn present(ui: &mut Renderer, frame: &mut [u32], display: &Display) -> (usize, D
 /// A raw kernel event as neoui input: button 1 is the (single) touch; keys only where a character is obvious.
 fn to_input(ev: &TRawEvent) -> Option<InputEvent> {
     let touch = |phase| {
+        // Raw pointer events are screen pixels on every device (Syborg's driver scaled x wrongly until NeoSymbian's
+        // adaptation fix, f3b63c6); the UI takes the display size from the HAL and nothing else.
         let (x, y) = ev.pos();
-        // The Syborg pointer driver scales QEMU's absolute 0..0x7FFF by width/0x6000 but height/0x8000
-        // (`syborg_pointer.cpp:118-119`), so x arrives 4/3 too large.
-        // shortcut: Syborg-only correction; the Pixel's touch driver (H4) reports real pixels.
-        Some(InputEvent::Touch {
-            id: 0,
-            x: x * 0x6000 / 0x8000,
-            y,
-            phase,
-        })
+        Some(InputEvent::Touch { id: 0, x, y, phase })
     };
     let key = |down| {
         key_char(ev.scan_code()).map(|c| InputEvent::Key {

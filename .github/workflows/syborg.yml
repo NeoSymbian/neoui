@@ -42,18 +42,18 @@ jobs:
         working-directory: symbian-2010
         run: ./build.sh
 
-      # The path is the design's contract: Apps in the dock (383,580); drag the menu up (x 380, y 450 -> 150); Clock
-      # (96,378); a tap inside the Clock app (380,300); Back in the toolbar (103,585). Screen pixels; QEMU's absolute
-      # pointer is 0..0x7FFF per axis. Commands go 0.3 s apart (a drag needs that), `info status` fills waits.
-      - name: Boot; open the Clock app (its own process) from the Apps menu, tap it, go back
+      # A phone-shaped screen with odd sizes (half of the Pixel's 1079x2159 touch range), so the UI must adapt to
+      # whatever the device reports. The path is the design's contract, in screen pixels: Apps in the dock
+      # (270,1000); Clock in the menu (449,530); a tap inside the Clock app (270,500); Back in the toolbar (88,1033).
+      - name: Boot at 539x1079; open the Clock app (its own process) from the Apps menu, tap it, go back
         working-directory: symbian-2010
         run: |
+          export SCREEN=539x1079
           . ../neoui/symbian/taps.sh
-          tap 383 580; wait_s 3
-          drag 380 450 150; wait_s 3
-          tap 96 378; wait_s 8
-          tap 380 300; wait_s 3
-          tap 103 585; wait_s 5
+          tap 270 1000; wait_s 3
+          tap 449 530; wait_s 8
+          tap 270 500; wait_s 3
+          tap 88 1033; wait_s 5
           MON_GAP=0.3 MONITOR="$M" SECS=150 ./boot.sh
 
       - name: Check the output
@@ -62,7 +62,7 @@ jobs:
           s=out/serial.log
           grep -a '\[proc\] create SYSSTART.EXE' $s
           ! grep -aq '\[proc\] create EWSRV.EXE' $s
-          grep -a 'neoui: display 768x640' $s
+          grep -a 'neoui: display 539x1079' $s
           grep -a 'neoui: launcher shown' $s
           # R5: the first tap (Apps) redrew most of the screen
           px=$(grep -ao 'neoui: tap from .* redrew [0-9]*' $s | grep -o '[0-9]*$' | head -1)
@@ -71,8 +71,8 @@ jobs:
           grep -a 'neoui: screen menu' $s
           grep -a 'neoui: screen clock' $s
           grep -a 'neoui: app clock started' $s
-          grep -a 'neoui: app clock surface 768x' $s
-          grep -a 'clock: surface 768x[0-9]* mapped' $s
+          grep -a 'neoui: app clock surface 539x' $s
+          grep -a 'clock: surface 539x[0-9]* mapped' $s
           ticks=$(grep -ao 'clock: tick [0-9:]*' $s | sort -u | wc -l)
           echo "$ticks distinct ticks"; [ "$ticks" -ge 2 ]
           grep -a 'clock: touch ' $s
@@ -81,11 +81,11 @@ jobs:
           ! grep -aq 'K::Fault\|Kern::Fault\|\[EKERN\] panic\|rust panic' $s
           python3 - <<'PY'
           d = open("out/fb.ppm", "rb").read()
-          assert d.startswith(b"P6\n768 640\n255\n"), d[:20]
-          px = d[15:]
+          assert d.startswith(b"P6\n539 1079\n255\n"), d[:20]
+          px = d[len(b"P6\n539 1079\n255\n"):]
           colours = {px[i:i + 3] for i in range(0, len(px), 3 * 97)}
           assert len(colours) > 8, f"screen looks blank: {len(colours)} colours"
-          print(f"fb.ppm: 768x640, {len(colours)} sampled colours")
+          print(f"fb.ppm: 539x1079, {len(colours)} sampled colours")
           PY
 
       - uses: actions/upload-artifact@v4
