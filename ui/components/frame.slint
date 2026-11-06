@@ -12,6 +12,7 @@ export component Glyph inherits Image {
 export component StatusBar inherits Rectangle {
     in property <string> title;
     in property <bool> shade-open;
+    in property <string> time: "10:24";
     callback tapped;
     height: Theme.status-h;
     background: Theme.bg;
@@ -40,7 +41,7 @@ export component StatusBar inherits Rectangle {
             }
         }
         Text {
-            text: "10:24";
+            text: time;
             color: Theme.text;
             font-size: Theme.font-status;
             font-weight: 600;

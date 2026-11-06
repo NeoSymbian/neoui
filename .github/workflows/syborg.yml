@@ -53,8 +53,9 @@ jobs:
       # A phone-shaped screen with odd sizes (half of the Pixel's 1079x2159 touch range), so the UI must adapt to
       # whatever the device reports. The path is the design's contract, in screen pixels: Apps in the dock
       # (270,1000); Clock in the menu (449,530); a tap inside the Clock app (270,500); Back in the toolbar (88,1033).
-      # Then the Terminal app: Apps (270,1000), Terminal (449,735), type `dir` and `neotest`, Back.
-      - name: Boot at 539x1079; Clock (open, tap, back); Terminal (ESHELL; dir; neotest; back)
+      # Then the Terminal app: Apps (270,1000), Terminal (449,735), `dir` on the system keyboard (R6c), `neotest` on
+      # hardware keys, Back.
+      - name: Boot at 539x1079; Clock (open, tap, back); Terminal (ESHELL; dir by touch; neotest; back)
         working-directory: symbian-2010
         run: |
           export SCREEN=539x1079
@@ -65,7 +66,7 @@ jobs:
           tap 88 1033; wait_s 5
           tap 270 1000; wait_s 3
           tap 449 735; wait_s 12
-          type_text dir; wait_s 5
+          kb_type dir; wait_s 5
           type_text neotest; wait_s 25
           tap 88 1033; wait_s 5
           MON_GAP=0.3 MONITOR="$M" SECS=220 ./boot.sh
@@ -78,6 +79,7 @@ jobs:
           ! grep -aq '\[proc\] create EWSRV.EXE' $s
           grep -a 'neoui: display 539x1079' $s
           grep -a 'neoui: launcher shown' $s
+          grep -aE 'neoui: clock [0-9]{2}:[0-9]{2}' $s
           # R5: the first tap (Apps) redrew most of the screen
           px=$(grep -ao 'neoui: tap from .* redrew [0-9]*' $s | grep -o '[0-9]*$' | head -1)
           echo "redrew $px px"; [ "${px:-0}" -gt 100000 ]
@@ -96,6 +98,8 @@ jobs:
           grep -a 'neoui: app terminal started' $s
           grep -a 'term: eshell started' $s
           grep -a 'term| ESHELL 0.01' $s
+          # R6c: the system keyboard opened for the Terminal and typed `dir` (no hardware key sent it)
+          grep -a 'neoui: keyboard true for terminal' $s
           grep -a 'term| C:\\>dir' $s
           grep -a 'term| Directory of C:' $s
           grep -a 'term| C:\\>neotest' $s

@@ -25,3 +25,27 @@ type_text() {
 	done
 	add "sendkey ret"
 }
+# kb_type WORD: tap WORD (lowercase letters and spaces) on the system keyboard, then its Enter key. The keyboard is
+# open over an app screen (toolbar 61 dp); key geometry mirrors ui/components/keyboard.slint (rows 48 dp apart from
+# 6 dp below its 198 dp top, 10 units per row), as crates/neoui-render/tests/keyboard.rs does.
+kb_key() {
+	awk -v c="$1" -v W="$SW" -v H="$SH" 'BEGIN {
+		d = (W < H ? W : H) / 360; top = H - 61 * d - 198 * d; u = W / 10; w = 1
+		if ((i = index("qwertyuiop", c))) { row = 0; at = i - 1 }
+		else if ((i = index("asdfghjkl", c))) { row = 1; at = i - 0.5 }
+		else if ((i = index("zxcvbnm", c))) { row = 2; at = i + 0.5 }
+		else if (c == " ") { row = 3; at = 2.5; w = 5 }
+		else if (c == "ENTER") { row = 3; at = 8.5; w = 1.5 }
+		else exit 1
+		printf "%d %d\n", (at + w / 2) * u, top + (6 + row * 48 + 21) * d
+	}'
+}
+kb_type() {
+	w=$1
+	while [ -n "$w" ]; do
+		c=${w%"${w#?}"}; w=${w#?}
+		# shellcheck disable=SC2046 # "x y"
+		tap $(kb_key "$c")
+	done
+	tap $(kb_key ENTER)
+}

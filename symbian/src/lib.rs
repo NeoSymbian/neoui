@@ -13,6 +13,7 @@ extern crate alloc;
 
 mod host;
 
+use alloc::format;
 use alloc::vec;
 use core::pin::pin;
 use e32::display::Display;
@@ -77,7 +78,9 @@ fn main() -> i32 {
     );
     // the shell's design unit (theme.slint: min(w, h) / 360), in 1/256 px
     let dp256 = (w.min(h) * 256 / 360) as u32;
-    let mut host = Host::new(ui.body(), dp256);
+    let mut host = Host::new(ui.body(), dp256, ui.keyboard_h());
+    let mut keyboard_shown = false;
+    let mut clock_minute = u32::MAX;
 
     rt::block_on(async {
         // Both stay outstanding across wake-ups, so no input event or message is lost to a cancel.
@@ -116,7 +119,7 @@ fn main() -> i32 {
                             if phase == TouchPhase::Down {
                                 down_at = Some((x, y));
                                 // A touch belongs to the app from press to release if it starts in its body.
-                                to_app = app_on_screen && contains(&body, x, y);
+                                to_app = app_on_screen && contains(&host.app_area(), x, y);
                             }
                             if phase == TouchPhase::Up {
                                 dprintln!("neoui: tap {},{}", x, y);
@@ -127,6 +130,13 @@ fn main() -> i32 {
                                 host.send(AppEvent::Input(InputEvent::Touch { id, x, y, phase }));
                             } else {
                                 ui.dispatch(event);
+                                // the system keyboard types into the app like a hardware key
+                                for code in ui.take_typed() {
+                                    host.send(AppEvent::Input(InputEvent::Key {
+                                        code,
+                                        down: true,
+                                    }));
+                                }
                             }
                         }
                         InputEvent::Key { .. } if app_on_screen => {
@@ -173,6 +183,19 @@ fn main() -> i32 {
                 screen = now;
             }
 
+            let want_keyboard = host.keyboard && host.visible(&screen).is_some();
+            if want_keyboard != keyboard_shown {
+                ui.set_keyboard(want_keyboard);
+                keyboard_shown = want_keyboard;
+            }
+            let t = time::now();
+            if t.minute != clock_minute {
+                clock_minute = t.minute;
+                let text = format!("{:02}:{:02}", t.hour, t.minute);
+                dprintln!("neoui: clock {}", text);
+                ui.set_clock(&text);
+            }
+
             let (px, damage) = present(&mut ui, &mut frame, &display);
             if repaint_all {
                 display.blit(&frame, w, 0, 0, w, h);
@@ -189,11 +212,14 @@ fn contains(r: &Rect, x: i32, y: i32) -> bool {
     x >= r.x && y >= r.y && x < r.x + r.w as i32 && y < r.y + r.h as i32
 }
 
-/// Put the foreground app's surface over the shell's body: all of it when the shell drew under it, else the
-/// rectangles the app reported.
+/// Put the foreground app's surface over the shell's body (less the open keyboard): all of it when the shell drew
+/// under it, else the rectangles the app reported.
 fn compose(host: &mut Host, screen: &str, shell_damage: &Damage, display: &Display) {
     let blits = core::mem::take(&mut host.blits);
     let body = host.body;
+    let area = host.app_area();
+    // the visible part of the surface, in surface coordinates
+    let shown = Rect::new(0, 0, area.w, area.h);
     let Some(surface) = host.visible(screen).and_then(|a| a.surface.as_ref()) else {
         return;
     };
@@ -201,6 +227,10 @@ fn compose(host: &mut Host, screen: &str, shell_damage: &Damage, display: &Displ
     // SAFETY: the chunk is `bw * bh * 4` bytes, committed at creation and mapped here; the app only writes pixels.
     let src = unsafe { core::slice::from_raw_parts(surface.base().cast::<u32>(), bw * bh) };
     let to_screen = |r: Rect| {
+        let r = r.intersection(&shown);
+        if r.is_empty() {
+            return;
+        }
         let (x, y) = (r.x.max(0) as usize, r.y.max(0) as usize);
         let at = (body.x as usize + x, body.y as usize + y);
         display.blit_to(src, bw, (x, y, r.w as usize, r.h as usize), at);
@@ -208,9 +238,9 @@ fn compose(host: &mut Host, screen: &str, shell_damage: &Damage, display: &Displ
     if shell_damage
         .rects()
         .iter()
-        .any(|r| !r.intersection(&body).is_empty())
+        .any(|r| !r.intersection(&area).is_empty())
     {
-        to_screen(Rect::new(0, 0, body.w, body.h));
+        to_screen(shown);
     } else {
         blits.into_iter().for_each(to_screen);
     }

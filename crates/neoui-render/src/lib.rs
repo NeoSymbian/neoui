@@ -8,6 +8,8 @@ extern crate alloc;
 
 use alloc::boxed::Box;
 use alloc::rc::Rc;
+use alloc::vec::Vec;
+use core::cell::RefCell;
 use core::time::Duration;
 
 use neoui_proto::{Damage, InputEvent, Rect, TouchPhase};
@@ -59,6 +61,7 @@ impl Platform for NeoPlatform {
 pub struct Renderer {
     window: Rc<MinimalSoftwareWindow>,
     ui: Shell,
+    typed: Rc<RefCell<Vec<u32>>>,
 }
 
 impl Renderer {
@@ -74,7 +77,10 @@ impl Renderer {
         let ui = Shell::new()?;
         window.set_size(PhysicalSize::new(width, height));
         ui.show()?;
-        Ok(Self { window, ui })
+        let typed: Rc<RefCell<Vec<u32>>> = Rc::default();
+        let sink = typed.clone();
+        ui.on_typed(move |s| sink.borrow_mut().extend(s.chars().map(u32::from)));
+        Ok(Self { window, ui, typed })
     }
 
     /// Renders what changed since the last call into `buf` (XRGB8888, `stride_px`
@@ -103,6 +109,26 @@ impl Renderer {
             size.width,
             self.ui.get_body_h() as u32,
         )
+    }
+
+    /// Show or hide the system keyboard over the bottom of the body.
+    pub fn set_keyboard(&mut self, open: bool) {
+        self.ui.set_keyboard_open(open);
+    }
+
+    /// The keyboard's height (physical pixels) when it is open.
+    pub fn keyboard_h(&self) -> u32 {
+        self.ui.get_keyboard_h() as u32
+    }
+
+    /// What the keyboard typed since the last call, as Unicode code points (Backspace 8, Enter 13).
+    pub fn take_typed(&mut self) -> Vec<u32> {
+        core::mem::take(&mut *self.typed.borrow_mut())
+    }
+
+    /// The status bar's time text, e.g. "09:41".
+    pub fn set_clock(&mut self, text: &str) {
+        self.ui.set_clock(text.into());
     }
 
     pub fn render(&mut self, buf: &mut [u32], stride_px: usize) -> Damage {

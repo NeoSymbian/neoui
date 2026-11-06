@@ -20,6 +20,9 @@ pub const SURFACE: i32 = 2;
 pub const DAMAGE: i32 = 3;
 /// `[Des8 out: EVENT_LEN bytes]` → asynchronous: completes when there is an [`AppEvent`] for the app.
 pub const NEXT_EVENT: i32 = 4;
+/// `[show: 1 | 0]` → the height in pixels of the system keyboard now covering the bottom of the surface (0 when
+/// hidden). Its keys arrive as [`InputEvent::Key`] like hardware keys (NeoSymbian R6c).
+pub const KEYBOARD: i32 = 5;
 
 /// Encoded size of an [`AppEvent`].
 pub const EVENT_LEN: usize = 16;

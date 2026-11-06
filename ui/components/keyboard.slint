@@ -1,0 +1,86 @@
+// SPDX-License-Identifier: Apache-2.0
+// The system on-screen keyboard (NeoSymbian R6c): the UI server shows it over the bottom of an app that asks for it
+// and sends what it types to that app as key events. Two layers (letters, symbols), one-shot shift.
+// Geometry (crates/neoui-render/tests/keyboard.rs and symbian/taps.sh mirror it): rows 48 dp apart from 6 dp below
+// the top, keys 42 dp high, every row 10 units of width / 10.
+// shortcut: US layout only, no key repeat, long-press or Ctrl; add them with text fields in more apps.
+import { Theme } from "../theme.slint";
+
+// `text` is what the key types (empty for shift and the layer switch); `at` and `units` are its left edge and width
+// in tenths of the row.
+struct KeyCap {
+    label: string,
+    text: string,
+    at: float,
+    units: float,
+}
+
+component Key inherits Rectangle {
+    in property <KeyCap> cap;
+    in property <bool> shift;
+    in property <bool> lit;
+    callback pressed-key;
+    border-radius: Theme.radius-small;
+    background: touch.pressed || lit ? #4a5160 : cap.units == 1 || cap.text == " " ? #3a3f48 : #2a2e35;
+    Text {
+        text: shift ? cap.label.to-uppercase() : cap.label;
+        color: Theme.text;
+        font-size: (cap.label.character-count > 1 ? 14 : 19) * Theme.dp;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    touch := TouchArea {
+        clicked => {
+            root.pressed-key();
+        }
+    }
+}
+
+export component Keyboard inherits Rectangle {
+    callback typed(string);
+    out property <length> keyboard-h: 198 * Theme.dp;
+    property <bool> symbols;
+    property <bool> shift;
+    property <length> unit: self.width / 10;
+
+    property <[[KeyCap]]> letters: [
+        [{ label: "q", text: "q", at: 0, units: 1 }, { label: "w", text: "w", at: 1, units: 1 }, { label: "e", text: "e", at: 2, units: 1 }, { label: "r", text: "r", at: 3, units: 1 }, { label: "t", text: "t", at: 4, units: 1 }, { label: "y", text: "y", at: 5, units: 1 }, { label: "u", text: "u", at: 6, units: 1 }, { label: "i", text: "i", at: 7, units: 1 }, { label: "o", text: "o", at: 8, units: 1 }, { label: "p", text: "p", at: 9, units: 1 }],
+        [{ label: "a", text: "a", at: 0.5, units: 1 }, { label: "s", text: "s", at: 1.5, units: 1 }, { label: "d", text: "d", at: 2.5, units: 1 }, { label: "f", text: "f", at: 3.5, units: 1 }, { label: "g", text: "g", at: 4.5, units: 1 }, { label: "h", text: "h", at: 5.5, units: 1 }, { label: "j", text: "j", at: 6.5, units: 1 }, { label: "k", text: "k", at: 7.5, units: 1 }, { label: "l", text: "l", at: 8.5, units: 1 }],
+        [{ label: "⇧", text: "", at: 0, units: 1.5 }, { label: "z", text: "z", at: 1.5, units: 1 }, { label: "x", text: "x", at: 2.5, units: 1 }, { label: "c", text: "c", at: 3.5, units: 1 }, { label: "v", text: "v", at: 4.5, units: 1 }, { label: "b", text: "b", at: 5.5, units: 1 }, { label: "n", text: "n", at: 6.5, units: 1 }, { label: "m", text: "m", at: 7.5, units: 1 }, { label: "⌫", text: "\u{8}", at: 8.5, units: 1.5 }],
+        [{ label: "?123", text: "", at: 0, units: 1.5 }, { label: ",", text: ",", at: 1.5, units: 1 }, { label: "space", text: " ", at: 2.5, units: 5 }, { label: ".", text: ".", at: 7.5, units: 1 }, { label: "⏎", text: "\u{d}", at: 8.5, units: 1.5 }],
+    ];
+    // what ESHELL paths and commands need
+    property <[[KeyCap]]> signs: [
+        [{ label: "1", text: "1", at: 0, units: 1 }, { label: "2", text: "2", at: 1, units: 1 }, { label: "3", text: "3", at: 2, units: 1 }, { label: "4", text: "4", at: 3, units: 1 }, { label: "5", text: "5", at: 4, units: 1 }, { label: "6", text: "6", at: 5, units: 1 }, { label: "7", text: "7", at: 6, units: 1 }, { label: "8", text: "8", at: 7, units: 1 }, { label: "9", text: "9", at: 8, units: 1 }, { label: "0", text: "0", at: 9, units: 1 }],
+        [{ label: "-", text: "-", at: 0.5, units: 1 }, { label: "/", text: "/", at: 1.5, units: 1 }, { label: "\\", text: "\\", at: 2.5, units: 1 }, { label: ":", text: ":", at: 3.5, units: 1 }, { label: ";", text: ";", at: 4.5, units: 1 }, { label: "(", text: "(", at: 5.5, units: 1 }, { label: ")", text: ")", at: 6.5, units: 1 }, { label: "*", text: "*", at: 7.5, units: 1 }, { label: "\"", text: "\"", at: 8.5, units: 1 }],
+        [{ label: "'", text: "'", at: 0, units: 1.5 }, { label: "_", text: "_", at: 1.5, units: 1 }, { label: "+", text: "+", at: 2.5, units: 1 }, { label: "=", text: "=", at: 3.5, units: 1 }, { label: "&", text: "&", at: 4.5, units: 1 }, { label: "@", text: "@", at: 5.5, units: 1 }, { label: "%", text: "%", at: 6.5, units: 1 }, { label: ">", text: ">", at: 7.5, units: 1 }, { label: "⌫", text: "\u{8}", at: 8.5, units: 1.5 }],
+        [{ label: "ABC", text: "", at: 0, units: 1.5 }, { label: ",", text: ",", at: 1.5, units: 1 }, { label: "space", text: " ", at: 2.5, units: 5 }, { label: ".", text: ".", at: 7.5, units: 1 }, { label: "⏎", text: "\u{d}", at: 8.5, units: 1.5 }],
+    ];
+
+    height: keyboard-h;
+    background: #16181c;
+
+    for row[r] in symbols ? signs : letters: Rectangle {
+        y: (6 + r * 48) * Theme.dp;
+        height: 42 * Theme.dp;
+        for cap in row: Key {
+            x: cap.at * unit + 3 * Theme.dp;
+            width: cap.units * unit - 6 * Theme.dp;
+            height: parent.height;
+            cap: cap;
+            shift: root.shift && !root.symbols;
+            lit: cap.label == "⇧" && root.shift;
+            pressed-key => {
+                if (cap.label == "⇧") {
+                    root.shift = !root.shift;
+                } else if (cap.text == "") {
+                    root.symbols = !root.symbols;
+                    root.shift = false;
+                } else {
+                    root.typed(root.shift ? cap.text.to-uppercase() : cap.text);
+                    root.shift = false;
+                }
+            }
+        }
+    }
+}

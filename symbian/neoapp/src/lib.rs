@@ -123,6 +123,15 @@ impl App {
         result
     }
 
+    /// Show or hide the system keyboard; returns how many pixels of the surface's bottom it now covers.
+    pub fn keyboard(&self, show: bool) -> Result<u32, i32> {
+        let mut args = TIpcArgs::new();
+        args.int(0, show as i32);
+        self.server
+            .send_receive(proto::KEYBOARD, &args)
+            .map(|h| h as u32)
+    }
+
     /// A touch from the server (surface coordinates) as Slint pointer events; keys are the app's business.
     pub fn dispatch_touch(&self, input: InputEvent) {
         if let InputEvent::Touch { x, y, phase, .. } = input {

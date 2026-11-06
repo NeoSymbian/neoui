@@ -17,6 +17,8 @@ export component TermApp inherits Window {
     in property <length> font-px;
     in property <length> pad;
     in property <length> bar-h;
+    // the system keyboard's height over the bottom of the surface
+    in property <length> kb-h;
     // a Symbian TKeyCode (Unicode, 13 Enter, 27 Escape, 0xF807-0xF80A arrows)
     callback key(int);
     background: #07090c;
@@ -42,7 +44,7 @@ export component TermApp inherits Window {
     }
 
     Rectangle {
-        y: root.height - root.bar-h;
+        y: root.height - root.kb-h - root.bar-h;
         height: root.bar-h;
         background: #111418;
         HorizontalLayout {

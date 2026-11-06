@@ -40,16 +40,29 @@ pub struct Host {
     pub app: Option<App>,
     /// App damage not yet shown (surface coordinates).
     pub blits: Vec<Rect>,
+    /// The foreground app asked for the system keyboard (`KEYBOARD`).
+    pub keyboard: bool,
+    /// The keyboard's height in pixels when open.
+    pub keyboard_h: u32,
 }
 
 impl Host {
-    pub fn new(body: Rect, dp256: u32) -> Self {
+    pub fn new(body: Rect, dp256: u32, keyboard_h: u32) -> Self {
         Self {
             body,
             dp256,
             app: None,
             blits: Vec::new(),
+            keyboard: false,
+            keyboard_h,
         }
+    }
+
+    /// The part of the body the app's surface shows in (screen coordinates): all of it but the open keyboard.
+    pub fn app_area(&self) -> Rect {
+        let covered = if self.keyboard { self.keyboard_h } else { 0 };
+        let b = self.body;
+        Rect::new(b.x, b.y, b.w, b.h.saturating_sub(covered))
     }
 
     /// Start the app for screen `key`, if it is one.
@@ -89,6 +102,7 @@ impl Host {
     pub fn quit(&mut self) {
         if let Some(app) = self.app.as_mut().filter(|a| !a.quitting) {
             app.quitting = true;
+            self.keyboard = false;
             self.send(AppEvent::Quit);
         }
     }
@@ -104,6 +118,7 @@ impl Host {
     pub fn reap(&mut self) -> Option<&'static str> {
         let (t, r) = self.app.as_ref()?.process.exit_info()?;
         let app = self.app.take()?;
+        self.keyboard = false;
         dprintln!("neoui: app {} exited (type {}, reason {})", app.key, t, r);
         Some(app.key)
     }
@@ -160,6 +175,15 @@ impl Service for Host {
                     m.int(3) as u32,
                 ));
                 m.complete(0);
+            }
+            proto::KEYBOARD => {
+                self.keyboard = m.int(0) != 0;
+                dprintln!("neoui: keyboard {} for {}", self.keyboard, app.key);
+                m.complete(if self.keyboard {
+                    self.keyboard_h as i32
+                } else {
+                    0
+                });
             }
             proto::NEXT_EVENT => match app.queue.pop_front() {
                 Some(e) => deliver(m, e),

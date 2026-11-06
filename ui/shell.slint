@@ -10,6 +10,7 @@ import { Theme } from "theme.slint";
 import { StatusBar, Toolbar } from "components/frame.slint";
 import { OptionsMenu } from "components/controls.slint";
 import { Shade } from "components/shade.slint";
+import { Keyboard } from "components/keyboard.slint";
 import { HomeScreen } from "screens/home.slint";
 import { MenuScreen } from "screens/menu.slint";
 import { PhoneScreen } from "screens/phone.slint";
@@ -65,6 +66,13 @@ export component Shell inherits Window {
     // out: the Symbian UI server places app processes' surfaces in this body rectangle (NeoSymbian R6)
     out property <length> body-y: Theme.status-h;
     out property <length> body-h: self.height - Theme.status-h - (has-toolbar ? Theme.toolbar-h : 0);
+    // in: the UI server shows the system keyboard over the bottom of the body for an app that asked (R6c) and
+    // forwards what it types; out: its height, so the server can tell the app how much is covered
+    in property <bool> keyboard-open;
+    out property <length> keyboard-h: kb.keyboard-h;
+    callback typed(string);
+    // in: the status bar's time, from the system clock (the default is the design's mock time)
+    in property <string> clock: "10:24";
 
     public function open(app: string) {
         root.origin = root.screen == "menu" ? "menu" : "home";
@@ -197,8 +205,15 @@ export component Shell inherits Window {
         }
     }
 
+    kb := Keyboard {
+        y: body-y + body-h - self.height;
+        visible: keyboard-open;
+        typed(t) => { root.typed(t); }
+    }
+
     StatusBar {
         y: 0;
+        time: clock;
         title: screen-title(screen, view);
         tapped => {
             root.shade-open = !root.shade-open;

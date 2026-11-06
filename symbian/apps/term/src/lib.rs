@@ -44,6 +44,9 @@ fn main() -> i32 {
 
 fn run() -> Result<(), i32> {
     let app = App::connect()?;
+    // The phone has no keys: the system keyboard covers the bottom, and the grid fits above it.
+    // shortcut: always shown, no hide toggle; add one with a grid reflow when ESHELL can be told of a resize.
+    let kb_h = app.keyboard(true)? as f32;
     let ui = TermApp::new().map_err(|_| -2)?;
     let dp = app.dp;
     ui.global::<Theme>().set_dp(dp);
@@ -54,12 +57,13 @@ fn run() -> Result<(), i32> {
     let (cell_w, cell_h) = (font_px * 0.5, round(font_px * 1.3));
     let (pad, bar_h) = (round(8.0 * dp), round(52.0 * dp));
     let cols = ((app.width as f32 - 2.0 * pad) / cell_w) as usize;
-    let rows = ((app.height as f32 - bar_h - 2.0 * pad) / cell_h) as usize;
+    let rows = ((app.height as f32 - kb_h - bar_h - 2.0 * pad) / cell_h) as usize;
     ui.set_font_px(font_px);
     ui.set_cell_w(cell_w);
     ui.set_cell_h(cell_h);
     ui.set_pad(pad);
     ui.set_bar_h(bar_h);
+    ui.set_kb_h(kb_h);
     let model = Rc::new(VecModel::from(
         (0..rows).map(|_| SharedString::new()).collect::<Vec<_>>(),
     ));
