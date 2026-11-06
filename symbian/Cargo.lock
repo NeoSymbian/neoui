@@ -828,7 +828,7 @@ dependencies = [
 [[package]]
 name = "e32"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/e32-rs?rev=4659c035ea6a46a2e1c07b1144013275642fa1d6#4659c035ea6a46a2e1c07b1144013275642fa1d6"
+source = "git+https://github.com/NeoSymbian/e32-rs?rev=ecf86979146a4f342f8aeb3625db536500b737a0#ecf86979146a4f342f8aeb3625db536500b737a0"
 dependencies = [
  "critical-section",
  "e32-sys",
@@ -838,7 +838,7 @@ dependencies = [
 [[package]]
 name = "e32-sys"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/e32-rs?rev=4659c035ea6a46a2e1c07b1144013275642fa1d6#4659c035ea6a46a2e1c07b1144013275642fa1d6"
+source = "git+https://github.com/NeoSymbian/e32-rs?rev=ecf86979146a4f342f8aeb3625db536500b737a0#ecf86979146a4f342f8aeb3625db536500b737a0"
 
 [[package]]
 name = "either"
@@ -2597,6 +2597,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "neofiles"
+version = "0.1.0"
+dependencies = [
+ "e32",
+ "neoapp",
+ "neoui-files",
+ "neoui-proto",
+ "slint",
+ "slint-build",
+]
+
+[[package]]
 name = "neoterm"
 version = "0.1.0"
 dependencies = [
@@ -2607,6 +2619,10 @@ dependencies = [
  "slint",
  "slint-build",
 ]
+
+[[package]]
+name = "neoui-files"
+version = "0.1.0"
 
 [[package]]
 name = "neoui-proto"

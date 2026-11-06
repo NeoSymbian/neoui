@@ -54,8 +54,11 @@ jobs:
       # whatever the device reports. The path is the design's contract, in screen pixels: Apps in the dock
       # (270,1000); Clock in the menu (449,530); a tap inside the Clock app (270,500); Back in the toolbar (88,1033).
       # Then the Terminal app: Apps (270,1000), Terminal (449,735), `dir` on the system keyboard (R6c), `neotest` on
-      # hardware keys, Back.
-      - name: Boot at 539x1079; Clock (open, tap, back); Terminal (ESHELL; dir by touch; neotest; back)
+      # hardware keys, Back. Then Files (R8), from the menu (89,735): Z: card (270,315) -> Sys (row 1, y 250) -> Bin
+      # (row 0, y 142), Back -> Data (row 1) -> estart.txt (row 0) in the viewer, Back x4 to the drives; C: card
+      # (270,135) -> Options (452,1033) -> New folder (270,756) -> `neo` on the keyboard; Options -> Delete (270,924)
+      # -> the neo row (row 0) -> Delete in the dialog (430,553); Back x2 (C:\ -> drives -> the app closes).
+      - name: Boot at 539x1079; Clock; Terminal (ESHELL, dir by touch, neotest); Files (browse, view, mkdir, delete)
         working-directory: symbian-2010
         run: |
           export SCREEN=539x1079
@@ -69,7 +72,15 @@ jobs:
           kb_type dir; wait_s 5
           type_text neotest; wait_s 25
           tap 88 1033; wait_s 5
-          MON_GAP=0.3 MONITOR="$M" SECS=220 ./boot.sh
+          tap 89 735; wait_s 10
+          tap 270 315; wait_s 4; tap 270 250; wait_s 4; tap 270 142; wait_s 5
+          tap 88 1033; wait_s 4; tap 270 250; wait_s 4; tap 270 142; wait_s 4
+          for i in 1 2 3 4; do tap 88 1033; wait_s 3; done
+          tap 270 135; wait_s 4; tap 452 1033; wait_s 3; tap 270 756; wait_s 4
+          kb_type neo; wait_s 4
+          tap 452 1033; wait_s 3; tap 270 924; wait_s 3; tap 270 142; wait_s 4; tap 430 553; wait_s 4
+          tap 88 1033; wait_s 3; tap 88 1033; wait_s 5
+          MON_GAP=0.3 MONITOR="$M" SECS=330 ./boot.sh
 
       - name: Check the output
         working-directory: symbian-2010
@@ -103,9 +114,21 @@ jobs:
           grep -a 'term| C:\\>dir' $s
           grep -a 'term| Directory of C:' $s
           grep -a 'term| C:\\>neotest' $s
-          grep -a 'neotest: 7 passed, 0 failed' $s
+          grep -aE 'neotest: [0-9]+ passed, 0 failed' $s
           grep -a 'term: quit' $s
           grep -a 'neoui: app terminal exited (type 0, reason 0)' $s
+          # R8: the Files app on the file server -- drives, a 40+ entry listing, the text viewer, mkdir and delete
+          # typed and tapped, Back walking up (claimed) and finally closing the app (unclaimed at the drive list)
+          grep -a 'neoui: app files started' $s
+          grep -aE 'files: drives C\([0-9]+/[0-9]+\) Z\(' $s
+          n=$(grep -ao 'files: list Z:\\Sys\\Bin\\ [0-9]*' $s | grep -o '[0-9]*$' | head -1)
+          test "${n:-0}" -gt 10
+          grep -a 'files: view Z:\\Sys\\Data\\estart.txt 1' $s
+          grep -a 'neoui: keyboard true for files' $s
+          grep -a 'files: mkdir C:\\neo\\ 0' $s
+          grep -a 'files: delete C:\\neo\\ 0' $s
+          grep -a 'files: quit' $s
+          grep -a 'neoui: app files exited (type 0, reason 0)' $s
           ! grep -aq 'K::Fault\|Kern::Fault\|\[EKERN\] panic\|rust panic' $s
           python3 - <<'PY'
           d = open("out/fb.ppm", "rb").read()

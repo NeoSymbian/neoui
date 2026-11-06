@@ -18,8 +18,8 @@ use neoui_proto::{InputEvent, TouchPhase};
 use slint::platform::software_renderer::{
     MinimalSoftwareWindow, PremultipliedRgbaColor, RepaintBufferType, TargetPixel,
 };
-use slint::platform::{Platform, PointerEventButton, WindowAdapter, WindowEvent};
-use slint::{LogicalPosition, PhysicalSize, PlatformError};
+use slint::platform::{Key, Platform, PointerEventButton, WindowAdapter, WindowEvent};
+use slint::{LogicalPosition, PhysicalSize, PlatformError, SharedString};
 
 /// XRGB8888 as the frame buffer wants it (same as neoui-render's pixel type).
 #[derive(Clone, Copy)]
@@ -130,6 +130,33 @@ impl App {
         self.server
             .send_receive(proto::KEYBOARD, &args)
             .map(|h| h as u32)
+    }
+
+    /// Take over the toolbar's Back and/or Options: the server then sends `AppEvent::Back` / `AppEvent::Options`.
+    pub fn claim_nav(&self, back: bool, options: bool) -> Result<(), i32> {
+        let mut args = TIpcArgs::new();
+        let claims =
+            if back { proto::NAV_BACK } else { 0 } | if options { proto::NAV_OPTIONS } else { 0 };
+        args.int(0, claims);
+        self.server.send_receive(proto::NAV, &args).map(drop)
+    }
+
+    /// A key from the server (a hardware key or the system keyboard: Unicode, Enter 13, Backspace 8, Escape 27) as a
+    /// Slint key press and release, for text fields.
+    pub fn dispatch_key(&self, code: u32) {
+        let text: SharedString = match code {
+            13 | 10 => Key::Return.into(),
+            8 => Key::Backspace.into(),
+            27 => Key::Escape.into(),
+            c => match char::from_u32(c) {
+                Some(ch) => ch.into(),
+                None => return,
+            },
+        };
+        self.window
+            .dispatch_event(WindowEvent::KeyPressed { text: text.clone() });
+        self.window
+            .dispatch_event(WindowEvent::KeyReleased { text });
     }
 
     /// A touch from the server (surface coordinates) as Slint pointer events; keys are the app's business.

@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "neoui-files"
+description = "neoui's file-browser model: paths, sorting, sizes, dates, drive labels, text previews, error messages"
+version.workspace = true
+edition.workspace = true
+license.workspace = true

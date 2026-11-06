@@ -110,7 +110,7 @@ fn run() -> Result<(), i32> {
                     app.dispatch_touch(input);
                     app.draw()?;
                 }
-                None => {}
+                _ => {}
             }
         }
     })

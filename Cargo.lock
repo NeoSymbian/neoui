@@ -2636,6 +2636,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "neoui-files"
+version = "0.1.0"
+
+[[package]]
 name = "neoui-host"
 version = "0.1.0"
 dependencies = [

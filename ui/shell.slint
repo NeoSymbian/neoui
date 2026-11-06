@@ -71,6 +71,11 @@ export component Shell inherits Window {
     in property <bool> keyboard-open;
     out property <length> keyboard-h: kb.keyboard-h;
     callback typed(string);
+    // in: the foreground app claimed the toolbar's Back / Options; the shell then reports them through app-nav
+    // (1 = Back, 2 = Options) instead of acting (R8)
+    in property <bool> app-back;
+    in property <bool> app-options;
+    callback app-nav(int);
     // in: the status bar's time, from the system clock (the default is the design's mock time)
     in property <string> clock: "10:24";
 
@@ -224,8 +229,20 @@ export component Shell inherits Window {
         y: root.height - Theme.toolbar-h;
         has-action: screen == "messages" || screen == "contacts" || screen == "browser" || screen == "clock";
         action-icon: screen == "contacts" ? @image-url("icons/sys/person_add.svg") : screen == "browser" ? @image-url("icons/sys/refresh.svg") : @image-url("icons/sys/add.svg");
-        back => { root.back(); }
-        options => { root.options-open = !root.options-open; }
+        back => {
+            if (root.app-back && !root.shade-open && !root.options-open) {
+                root.app-nav(1);
+            } else {
+                root.back();
+            }
+        }
+        options => {
+            if (root.app-options && !root.shade-open && !root.options-open) {
+                root.app-nav(2);
+            } else {
+                root.options-open = !root.options-open;
+            }
+        }
         action => {
             if (root.screen == "messages") {
                 root.view = "thread";

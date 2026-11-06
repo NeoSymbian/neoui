@@ -1,0 +1,268 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// The Files app (NEOFILES.EXE): real drives and folders from Symbian's file server, in the look of the design's
+// prototype Files screen (ui/screens/files.slint): drive cards with usage bars, list rows, the Options sheet.
+// The Rust side owns the state; this file draws it and reports taps as callbacks.
+import "../../../../ui/fonts/Inter-VariableFont.ttf";
+import "../../../../ui/fonts/UbuntuMono-Regular.ttf";
+import { Theme } from "../../../../ui/theme.slint";
+import { Card, Button, OptionsMenu } from "../../../../ui/components/controls.slint";
+import { ListRow } from "../../../../ui/components/lists.slint";
+import { Glyph } from "../../../../ui/components/frame.slint";
+
+export { Theme }
+
+export struct DriveRow { label: string, detail: string, used: float, rom: bool }
+export struct FileRow { name: string, detail: string, kind: string }
+
+export component FilesApp inherits Window {
+    default-font-family: "Inter";
+    background: Theme.bg;
+
+    // "drives", "folder" or "text"
+    in property <string> view: "drives";
+    in property <[DriveRow]> drives;
+    in property <string> path;
+    in property <[FileRow]> rows;
+    in property <string> text;
+    // a hint over the list ("Tap an item to rename") and a one-line message (errors)
+    in property <string> banner;
+    in property <string> toast;
+    in property <[string]> options;
+    in property <bool> options-open;
+    // "" (none), "name" (a text field) or "confirm"
+    in property <string> dialog;
+    in property <string> dialog-title;
+    in property <string> dialog-ok;
+    in-out property <string> name-text;
+    // the system keyboard's height over the bottom of the surface, while a name is typed
+    in property <length> kb-h;
+
+    callback drive(int);
+    callback open-row(int);
+    callback option(string);
+    callback options-dismissed;
+    callback dialog-done(bool);
+
+    changed dialog => {
+        if (dialog == "name") {
+            input.focus();
+        }
+    }
+
+    if view == "drives": Flickable {
+        VerticalLayout {
+            alignment: start;
+            padding: Theme.margin;
+            spacing: 12 * Theme.dp;
+            for d[i] in drives: Card {
+                height: 108 * Theme.dp;
+                VerticalLayout {
+                    padding: Theme.card-pad;
+                    spacing: 10 * Theme.dp;
+                    HorizontalLayout {
+                        spacing: 12 * Theme.dp;
+                        Glyph {
+                            source: d.rom ? @image-url("../../../../ui/icons/sys/lock.svg") : @image-url("../../../../ui/icons/sys/phone_storage.svg");
+                            size: 28 * Theme.dp;
+                            colorize: Theme.accent;
+                        }
+
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            Text {
+                                text: d.label;
+                                color: Theme.text;
+                                font-size: Theme.font-body;
+                                font-weight: 600;
+                            }
+
+                            Text {
+                                text: d.detail;
+                                color: Theme.text-dim;
+                                font-size: Theme.font-label;
+                            }
+                        }
+
+                        Glyph {
+                            source: @image-url("../../../../ui/icons/sys/chevron_right.svg");
+                            size: 18 * Theme.dp;
+                            colorize: Theme.text-dim;
+                        }
+                    }
+
+                    Rectangle {
+                        height: 6 * Theme.dp;
+                        border-radius: self.height / 2;
+                        background: #2a2e35;
+                        Rectangle {
+                            x: 0;
+                            width: parent.width * d.used;
+                            border-radius: parent.border-radius;
+                            background: d.rom ? #e2a92a : Theme.accent;
+                        }
+                    }
+                }
+
+                TouchArea {
+                    clicked => {
+                        root.drive(i);
+                    }
+                }
+            }
+        }
+    }
+
+    if view == "folder": VerticalLayout {
+        Text {
+            x: Theme.margin;
+            height: 34 * Theme.dp;
+            text: banner != "" ? banner : path;
+            color: banner != "" ? Theme.accent : Theme.text-dim;
+            font-size: Theme.font-label;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+
+        Flickable {
+            vertical-stretch: 1;
+            VerticalLayout {
+                alignment: start;
+                for f[i] in rows: ListRow {
+                    title: f.name;
+                    subtitle: f.detail;
+                    has-icon: true;
+                    icon: f.kind == "folder" ? @image-url("../../../../ui/icons/sys/folder.svg") : f.kind == "image" ? @image-url("../../../../ui/icons/sys/image.svg") : f.kind == "text" ? @image-url("../../../../ui/icons/sys/doc.svg") : @image-url("../../../../ui/icons/sys/file.svg");
+                    icon-tint: f.kind == "folder" ? #e2a92a : f.kind == "image" ? #14a37f : f.kind == "text" ? #e04e9b : Theme.text-secondary;
+                    chevron: f.kind == "folder";
+                    clicked => {
+                        root.open-row(i);
+                    }
+                }
+            }
+        }
+    }
+
+    if view == "text": VerticalLayout {
+        Text {
+            x: Theme.margin;
+            height: 34 * Theme.dp;
+            text: path;
+            color: Theme.text-dim;
+            font-size: Theme.font-label;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+
+        Flickable {
+            vertical-stretch: 1;
+            VerticalLayout {
+                alignment: start;
+                padding: Theme.margin;
+                Text {
+                    text: root.text;
+                    wrap: char-wrap;
+                    font-family: "Ubuntu Mono";
+                    font-size: 13.5 * Theme.dp;
+                    color: #d7dde5;
+                }
+            }
+        }
+    }
+
+    if toast != "": Rectangle {
+        x: Theme.margin;
+        y: parent.height - root.kb-h - self.height - Theme.margin;
+        width: parent.width - 2 * Theme.margin;
+        height: 44 * Theme.dp;
+        border-radius: Theme.radius-small;
+        background: #2a2e35;
+        Text {
+            text: toast;
+            color: Theme.text;
+            font-size: Theme.font-label;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+
+    OptionsMenu {
+        items: options;
+        open: options-open;
+        dismissed => {
+            root.options-dismissed();
+        }
+        selected(s) => {
+            root.option(s);
+        }
+    }
+
+    // a modal card above the keyboard
+    if dialog != "": Rectangle {
+        background: Theme.scrim;
+        TouchArea { }
+    }
+    Card {
+        visible: dialog != "";
+        x: Theme.margin;
+        width: parent.width - 2 * Theme.margin;
+        height: (dialog == "name" ? 176 : 132) * Theme.dp;
+        y: max(Theme.margin, (parent.height - root.kb-h - self.height) / 2);
+        background: #1b1e23;
+        VerticalLayout {
+            padding: Theme.card-pad;
+            spacing: 14 * Theme.dp;
+            Text {
+                text: dialog-title;
+                color: Theme.text;
+                font-size: Theme.font-body;
+                font-weight: 600;
+                overflow: elide;
+            }
+
+            if dialog == "name": Rectangle {
+                height: Theme.field-h;
+                border-radius: Theme.radius-small;
+                background: Theme.field;
+                border-width: max(1px, Theme.dp / 2);
+                border-color: Theme.accent;
+            }
+            HorizontalLayout {
+                alignment: end;
+                spacing: 10 * Theme.dp;
+                Button {
+                    text: "Cancel";
+                    primary: false;
+                    clicked => {
+                        root.dialog-done(false);
+                    }
+                }
+
+                Button {
+                    text: dialog-ok;
+                    tint: dialog == "confirm" ? Theme.danger : Theme.accent;
+                    clicked => {
+                        root.dialog-done(true);
+                    }
+                }
+            }
+        }
+
+        // over the field drawn above (a TextInput can't live inside an `if`: it is focused from `changed dialog`)
+        input := TextInput {
+            visible: dialog == "name";
+            enabled: dialog == "name";
+            x: Theme.card-pad + 12 * Theme.dp;
+            y: Theme.card-pad + 22 * Theme.dp + 14 * Theme.dp;
+            width: parent.width - 2 * Theme.card-pad - 24 * Theme.dp;
+            height: Theme.field-h;
+            text <=> root.name-text;
+            color: Theme.text;
+            font-size: Theme.font-body;
+            vertical-alignment: center;
+            single-line: true;
+            accepted => {
+                root.dialog-done(true);
+            }
+        }
+    }
+}

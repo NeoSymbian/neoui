@@ -80,6 +80,7 @@ fn main() -> i32 {
     let dp256 = (w.min(h) * 256 / 360) as u32;
     let mut host = Host::new(ui.body(), dp256, ui.keyboard_h());
     let mut keyboard_shown = false;
+    let mut nav_shown = 0;
     let mut clock_minute = u32::MAX;
 
     rt::block_on(async {
@@ -137,6 +138,13 @@ fn main() -> i32 {
                                         down: true,
                                     }));
                                 }
+                                for b in ui.take_nav() {
+                                    host.send(if b == proto::NAV_BACK {
+                                        AppEvent::Back
+                                    } else {
+                                        AppEvent::Options
+                                    });
+                                }
                             }
                         }
                         InputEvent::Key { .. } if app_on_screen => {
@@ -187,6 +195,18 @@ fn main() -> i32 {
             if want_keyboard != keyboard_shown {
                 ui.set_keyboard(want_keyboard);
                 keyboard_shown = want_keyboard;
+            }
+            let want_nav = if host.visible(&screen).is_some() {
+                host.nav
+            } else {
+                0
+            };
+            if want_nav != nav_shown {
+                ui.set_app_nav(
+                    want_nav & proto::NAV_BACK != 0,
+                    want_nav & proto::NAV_OPTIONS != 0,
+                );
+                nav_shown = want_nav;
             }
             let t = time::now();
             if t.minute != clock_minute {

@@ -19,7 +19,11 @@ use neoui_proto::ipc::{self as proto, AppEvent};
 
 /// Screen keys that are separate processes, and their EXEs.
 // shortcut: a fixed table; a registry of installed apps comes with app installation.
-pub const APPS: &[(&str, &str)] = &[("clock", "neoclock"), ("terminal", "neoterm")];
+pub const APPS: &[(&str, &str)] = &[
+    ("clock", "neoclock"),
+    ("terminal", "neoterm"),
+    ("files", "neofiles"),
+];
 
 pub struct App {
     pub key: &'static str,
@@ -44,6 +48,8 @@ pub struct Host {
     pub keyboard: bool,
     /// The keyboard's height in pixels when open.
     pub keyboard_h: u32,
+    /// Toolbar buttons the foreground app claimed (`NAV_BACK | NAV_OPTIONS`).
+    pub nav: i32,
 }
 
 impl Host {
@@ -55,6 +61,7 @@ impl Host {
             blits: Vec::new(),
             keyboard: false,
             keyboard_h,
+            nav: 0,
         }
     }
 
@@ -103,6 +110,7 @@ impl Host {
         if let Some(app) = self.app.as_mut().filter(|a| !a.quitting) {
             app.quitting = true;
             self.keyboard = false;
+            self.nav = 0;
             self.send(AppEvent::Quit);
         }
     }
@@ -119,6 +127,7 @@ impl Host {
         let (t, r) = self.app.as_ref()?.process.exit_info()?;
         let app = self.app.take()?;
         self.keyboard = false;
+        self.nav = 0;
         dprintln!("neoui: app {} exited (type {}, reason {})", app.key, t, r);
         Some(app.key)
     }
@@ -184,6 +193,10 @@ impl Service for Host {
                 } else {
                     0
                 });
+            }
+            proto::NAV => {
+                self.nav = m.int(0) & (proto::NAV_BACK | proto::NAV_OPTIONS);
+                m.complete(0);
             }
             proto::NEXT_EVENT => match app.queue.pop_front() {
                 Some(e) => deliver(m, e),

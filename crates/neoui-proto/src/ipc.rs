@@ -23,6 +23,11 @@ pub const NEXT_EVENT: i32 = 4;
 /// `[show: 1 | 0]` → the height in pixels of the system keyboard now covering the bottom of the surface (0 when
 /// hidden). Its keys arrive as [`InputEvent::Key`] like hardware keys (NeoSymbian R6c).
 pub const KEYBOARD: i32 = 5;
+/// `[claims: NAV_BACK | NAV_OPTIONS]` → 0. The app takes over the toolbar's Back and/or Options buttons: the server
+/// sends [`AppEvent::Back`] / [`AppEvent::Options`] instead of the shell acting on them. Claims end with the app.
+pub const NAV: i32 = 6;
+pub const NAV_BACK: i32 = 1;
+pub const NAV_OPTIONS: i32 = 2;
 
 /// Encoded size of an [`AppEvent`].
 pub const EVENT_LEN: usize = 16;
@@ -34,11 +39,17 @@ pub enum AppEvent {
     Input(InputEvent),
     /// Leave now (the user went back or home); the app should exit.
     Quit,
+    /// The toolbar's Back, which the app claimed ([`NAV`]).
+    Back,
+    /// The toolbar's Options, which the app claimed ([`NAV`]).
+    Options,
 }
 
 const KIND_TOUCH: u32 = 1;
 const KIND_KEY: u32 = 2;
 const KIND_QUIT: u32 = 3;
+const KIND_BACK: u32 = 4;
+const KIND_OPTIONS: u32 = 5;
 
 impl AppEvent {
     /// `[kind, a, b, c]` as little-endian u32s: touch = (phase | id << 8, x, y), key = (down, code, 0).
@@ -54,6 +65,8 @@ impl AppEvent {
             }
             AppEvent::Input(InputEvent::Key { code, down }) => [KIND_KEY, down as u32, code, 0],
             AppEvent::Quit => [KIND_QUIT, 0, 0, 0],
+            AppEvent::Back => [KIND_BACK, 0, 0, 0],
+            AppEvent::Options => [KIND_OPTIONS, 0, 0, 0],
         };
         let mut out = [0u8; EVENT_LEN];
         for (i, v) in w.iter().enumerate() {
@@ -81,6 +94,8 @@ impl AppEvent {
                 down: w(1) != 0,
             }),
             KIND_QUIT => AppEvent::Quit,
+            KIND_BACK => AppEvent::Back,
+            KIND_OPTIONS => AppEvent::Options,
             _ => return None,
         })
     }
@@ -104,6 +119,8 @@ mod tests {
                 down: true,
             }),
             AppEvent::Quit,
+            AppEvent::Back,
+            AppEvent::Options,
         ];
         for e in all {
             assert_eq!(AppEvent::decode(&e.encode()), Some(e));

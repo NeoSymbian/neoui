@@ -1,0 +1,23 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# The Files app (NEOFILES.EXE): drives, folders, a text viewer, new folder / rename / delete (NeoSymbian R8).
+[package]
+name = "neofiles"
+description = "neoui's Files app: browse drives and folders, view text files, make, rename and delete (NeoSymbian R8)"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+publish = false
+
+[lib]
+crate-type = ["staticlib"]
+test = false
+
+[dependencies]
+e32.workspace = true
+neoui-proto.workspace = true
+slint.workspace = true
+neoapp.workspace = true
+neoui-files.workspace = true
+
+[build-dependencies]
+slint-build.workspace = true

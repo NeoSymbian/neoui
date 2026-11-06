@@ -62,6 +62,7 @@ pub struct Renderer {
     window: Rc<MinimalSoftwareWindow>,
     ui: Shell,
     typed: Rc<RefCell<Vec<u32>>>,
+    nav: Rc<RefCell<Vec<i32>>>,
 }
 
 impl Renderer {
@@ -80,7 +81,15 @@ impl Renderer {
         let typed: Rc<RefCell<Vec<u32>>> = Rc::default();
         let sink = typed.clone();
         ui.on_typed(move |s| sink.borrow_mut().extend(s.chars().map(u32::from)));
-        Ok(Self { window, ui, typed })
+        let nav: Rc<RefCell<Vec<i32>>> = Rc::default();
+        let sink = nav.clone();
+        ui.on_app_nav(move |b| sink.borrow_mut().push(b));
+        Ok(Self {
+            window,
+            ui,
+            typed,
+            nav,
+        })
     }
 
     /// Renders what changed since the last call into `buf` (XRGB8888, `stride_px`
@@ -124,6 +133,17 @@ impl Renderer {
     /// What the keyboard typed since the last call, as Unicode code points (Backspace 8, Enter 13).
     pub fn take_typed(&mut self) -> Vec<u32> {
         core::mem::take(&mut *self.typed.borrow_mut())
+    }
+
+    /// Whether the foreground app handles the toolbar's Back and Options itself.
+    pub fn set_app_nav(&mut self, back: bool, options: bool) {
+        self.ui.set_app_back(back);
+        self.ui.set_app_options(options);
+    }
+
+    /// Claimed toolbar buttons pressed since the last call: 1 = Back, 2 = Options (`neoui_proto::ipc::NAV_*`).
+    pub fn take_nav(&mut self) -> Vec<i32> {
+        core::mem::take(&mut *self.nav.borrow_mut())
     }
 
     /// The status bar's time text, e.g. "09:41".
