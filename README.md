@@ -70,7 +70,7 @@ On Syborg the first frame takes about 80 ms, and tapping the Phone tile opens th
 
 ```sh
 cd symbian && cargo arm        # target/armv5te-none-eabi/release/libneoui_symbian.a (nightly pinned here)
-# with NeoSymbian/symbian-2010: copy the .a and exes.txt into its rust/, then
+# with NeoSymbian/build: copy the .a and exes.txt into its rust/, then
 ./build.sh && MONITOR="mouse_move 3243 27904;mouse_button 1;mouse_button 0" ./boot.sh   # out/fb.png, out/serial.log
 ```
 
