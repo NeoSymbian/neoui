@@ -1,0 +1,53 @@
+// SPDX-License-Identifier: Apache-2.0
+// neoui design tokens: "Belle, modernized". Sizes are dp: 1 dp = min(window width, height) / 360, so a 360x640
+// layout scales to any screen (1080x2160 = 3 px per dp). Where each value comes from: design/DESIGN.md
+// (measured facts from the Symbian^3 open layout data and from screenshots; no artwork is copied).
+
+export global Theme {
+    // Set by the root window: min(width, height) / 360.
+    in-out property <length> dp: 1px;
+
+    // Frame (measured: thin status pane 25, toolbar 61 at 360x640)
+    out property <length> status-h: 25 * dp;
+    out property <length> toolbar-h: 61 * dp;
+    out property <length> toolbar-button-w: 116 * dp;
+    out property <length> toolbar-icon: 28 * dp;
+    out property <length> status-icon: 15 * dp;
+
+    // App grid (Belle menu: 3 columns, 135 dp row pitch, ~76 dp icon); modernized: a little more air
+    out property <length> app-row-h: 135 * dp;
+    out property <length> app-icon: 72 * dp;
+    out property <length> app-label-gap: 8 * dp;
+
+    // Lists (measured: single row 42, double row 52; modernized to touch-friendly 56 / 72)
+    out property <length> list-row-h: 56 * dp;
+    out property <length> list-row-double-h: 72 * dp;
+    out property <length> margin: 12 * dp;
+    out property <length> radius: 14 * dp;
+    out property <length> radius-small: 8 * dp;
+
+    // Type (dp). Belle labels ~17, titles ~19 (text panes 32/42/41 at 360x640)
+    out property <length> font-status: 13 * dp;
+    out property <length> font-label: 13.5 * dp;
+    out property <length> font-body: 16 * dp;
+    out property <length> font-title: 19 * dp;
+    out property <length> font-clock-large: 56 * dp;
+
+    // Colour: Belle's black canvas and graphite toolbar, softened
+    out property <color> bg: #000000;
+    out property <color> bg-raised: #121417;
+    out property <color> toolbar-top: #2a2a2c;
+    out property <color> toolbar-bottom: #0f0f10;
+    out property <color> hairline: #ffffff1f;
+    out property <color> text: #ffffff;
+    out property <color> text-secondary: #b9bec7;
+    out property <color> text-dim: #7d838c;
+    out property <color> accent: #3d8bfd;
+    out property <color> pressed: #ffffff26;
+    out property <color> selected: #ffffff1a;
+
+    // Motion (ms): appear/open ~ 0.3 s ease-out, like Belle's transitions; filled in from the effects data
+    out property <duration> fast: 120ms;
+    out property <duration> normal: 220ms;
+    out property <duration> slow: 320ms;
+}

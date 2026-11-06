@@ -1,0 +1,190 @@
+{
+ "_source": "Symbian^3 open release (EPL-1.0) aknlayout2 qHD touch + Cdlfontinst_qhd_touch.cpp; px at 360x640, 229 ppi; variety 0. Facts only.",
+ "landscape": {
+  "_screen": [
+   640,
+   360
+  ],
+  "app_cell": {
+   "component": "cell_app_pane/0",
+   "h": 88.0,
+   "w": 93.0,
+   "x": 16.0,
+   "y": 49.0
+  },
+  "list_double": {
+   "component": "list_double_pane/0",
+   "h": 49.0,
+   "w": 609.0,
+   "x": 2.0,
+   "y": 55.0
+  },
+  "list_double_graphic": {
+   "component": "list_double_graphic_pane/0",
+   "h": 49.0,
+   "w": 609.0,
+   "x": 2.0,
+   "y": 55.0
+  },
+  "list_highlight": {
+   "component": "list_highlight_pane_cp1/0",
+   "h": 41.0,
+   "w": 609.0,
+   "x": 2.0,
+   "y": 55.0
+  },
+  "list_single": {
+   "component": "list_single_pane/0",
+   "h": 41.0,
+   "w": 609.0,
+   "x": 2.0,
+   "y": 55.0
+  },
+  "list_single_graphic": {
+   "component": "list_single_graphic_pane/0",
+   "h": 41.0,
+   "w": 609.0,
+   "x": 2.0,
+   "y": 55.0
+  }
+ },
+ "portrait": {
+  "_screen": [
+   360,
+   640
+  ],
+  "app_cell": {
+   "component": "cell_app_pane/0",
+   "h": 162.0,
+   "w": 109.0,
+   "x": 2.0,
+   "y": 94.0
+  },
+  "app_grid": {
+   "component": "grid_app_pane/0",
+   "h": 485.0,
+   "w": 328.0,
+   "x": 2.0,
+   "y": 94.0
+  },
+  "bottom_area": {
+   "component": "area_bottom_pane/0",
+   "h": 61.0,
+   "w": 360.0,
+   "x": 0.0,
+   "y": 579.0
+  },
+  "clock": {
+   "component": "clock_nsta_pane/0",
+   "h": 46.0,
+   "w": 86.0,
+   "x": 254.0,
+   "y": 0.0
+  },
+  "indicators": {
+   "component": "uni_indicator_pane/0",
+   "h": 60.0,
+   "w": 20.0,
+   "x": 320.0,
+   "y": 0.0
+  },
+  "list_double": {
+   "component": "list_double_pane/0",
+   "h": 52.0,
+   "w": 329.0,
+   "x": 2.0,
+   "y": 99.0
+  },
+  "list_double_graphic": {
+   "component": "list_double_graphic_pane/0",
+   "h": 52.0,
+   "w": 329.0,
+   "x": 2.0,
+   "y": 99.0
+  },
+  "list_highlight": {
+   "component": "list_highlight_pane_cp1/0",
+   "h": 42.0,
+   "w": 329.0,
+   "x": 2.0,
+   "y": 99.0
+  },
+  "list_single": {
+   "component": "list_single_pane/0",
+   "h": 42.0,
+   "w": 329.0,
+   "x": 2.0,
+   "y": 99.0
+  },
+  "list_single_graphic": {
+   "component": "list_single_graphic_pane/0",
+   "h": 42.0,
+   "w": 329.0,
+   "x": 2.0,
+   "y": 99.0
+  },
+  "scroll_bar": {
+   "component": "scroll_pane/0",
+   "h": 468.0,
+   "w": 25.0,
+   "x": 333.0,
+   "y": 99.0
+  },
+  "status_bar": {
+   "component": "area_top_pane/1",
+   "h": 25.0,
+   "w": 360.0,
+   "x": 0.0,
+   "y": 0.0
+  },
+  "title_pane": {
+   "component": "title_pane/0",
+   "h": 60.0,
+   "w": 207.0,
+   "x": 113.0,
+   "y": 0.0
+  },
+  "toolbar": {
+   "component": "control_pane/0",
+   "h": 61.0,
+   "w": 360.0,
+   "x": 0.0,
+   "y": 579.0
+  },
+  "toolbar_cell": {
+   "component": "cell_toolbar2_fixed_pane/0",
+   "h": 48.0,
+   "w": 116.0,
+   "x": 5.0,
+   "y": 523.0
+  },
+  "top_area_with_title": {
+   "component": "area_top_pane/0",
+   "h": 92.0,
+   "w": 360.0,
+   "x": 0.0,
+   "y": 0.0
+  },
+  "touch_cell_3": {
+   "component": "cell_touch_3_pane/0",
+   "h": 41.0,
+   "w": 83.0,
+   "x": 14.0,
+   "y": 4.0
+  },
+  "touch_grid_3": {
+   "component": "grid_touch_3_pane/0",
+   "h": 41.0,
+   "w": 332.0,
+   "x": 14.0,
+   "y": 4.0
+  }
+ },
+ "text_pane_heights": {
+  "digital": 72,
+  "primary": 42,
+  "primary_small": 27,
+  "secondary": 32,
+  "title": 41
+ }
+}

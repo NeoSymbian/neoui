@@ -1,154 +1,193 @@
 // SPDX-License-Identifier: Apache-2.0
-// NeoSymbian launcher: status bar, banner, grid of app tiles. Everything is
-// sized from the window, so it fits 768x640 (Syborg) and 1080x2160 (Pixel).
+// NeoSymbian launcher, "Belle, modernized": thin status bar, a 3-column app grid (4 in landscape) and a bottom
+// toolbar with back / search / options. Sizes come from ui/theme.slint in dp, so the same layout fits 768x640
+// (Syborg) and 1080x2160 (Pixel).
 
 // Bundled so the glyphs baked into the binary are the same on every build host.
 import "fonts/Inter-VariableFont.ttf";
+import { Theme } from "theme.slint";
 
 struct App {
     name: string,
-    glyph: string,
-    color: color,
+    icon: image,
+}
+
+component StatusIcon inherits Image {
+    width: Theme.status-icon;
+    height: Theme.status-icon;
+    colorize: Theme.text;
+}
+
+component ToolbarButton inherits Rectangle {
+    in property <image> icon;
+    callback clicked;
+    width: Theme.toolbar-button-w;
+    height: Theme.toolbar-h;
+    background: touch.pressed ? Theme.pressed : transparent;
+    Image {
+        width: Theme.toolbar-icon;
+        height: Theme.toolbar-icon;
+        source: icon;
+        colorize: Theme.text;
+    }
+
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
 }
 
 export component Launcher inherits Window {
     default-font-family: "Inter";
-    background: #101826;
+    background: Theme.bg;
 
     property <[App]> apps: [
-        { name: "Phone", glyph: "P", color: #2fbf71 },
-        { name: "Messages", glyph: "M", color: #3d8bfd },
-        { name: "Contacts", glyph: "C", color: #f0a030 },
-        { name: "Browser", glyph: "B", color: #20b2c8 },
-        { name: "Camera", glyph: "Ca", color: #8a5cf6 },
-        { name: "Files", glyph: "F", color: #e0b020 },
-        { name: "Settings", glyph: "S", color: #7a8597 },
-        { name: "Terminal", glyph: ">_", color: #e5484d },
+        { name: "Phone", icon: @image-url("icons/apps/phone.svg") },
+        { name: "Messages", icon: @image-url("icons/apps/messages.svg") },
+        { name: "Contacts", icon: @image-url("icons/apps/contacts.svg") },
+        { name: "Browser", icon: @image-url("icons/apps/browser.svg") },
+        { name: "Camera", icon: @image-url("icons/apps/camera.svg") },
+        { name: "Photos", icon: @image-url("icons/apps/photos.svg") },
+        { name: "Music", icon: @image-url("icons/apps/music.svg") },
+        { name: "Calendar", icon: @image-url("icons/apps/calendar.svg") },
+        { name: "Clock", icon: @image-url("icons/apps/clock.svg") },
+        { name: "Files", icon: @image-url("icons/apps/files.svg") },
+        { name: "Settings", icon: @image-url("icons/apps/settings.svg") },
+        { name: "Terminal", icon: @image-url("icons/apps/terminal.svg") },
     ];
     property <int> selected: -1;
 
-    property <length> unit: min(self.width, self.height) / 40;
-    property <int> cols: self.width > self.height ? 4 : 3;
-    property <int> rows: Math.ceil(apps.length / cols);
-    property <length> bar-h: unit * 2.4;
-    property <length> banner-h: unit * 4;
-    property <length> avail-y: bar-h + banner-h + unit;
-    property <length> avail-h: self.height - avail-y - unit;
-    property <length> cell-w: self.width / cols;
-    property <length> cell-h: min(cell-w * 1.25, avail-h / rows);
-    property <length> grid-y: avail-y + (avail-h - rows * cell-h) / 2;
-    property <length> icon-size: min(cell-w, cell-h) * 0.55;
+    // 1 dp = min(width, height) / 360 (the Symbian^3 / Belle reference screen is 360x640)
+    property <length> dp: min(self.width, self.height) / 360;
+    init => {
+        Theme.dp = self.dp;
+    }
+    changed dp => {
+        Theme.dp = self.dp;
+    }
 
-    // Status bar
+    property <int> cols: self.width > self.height ? 4 : 3;
+    property <length> cell-w: self.width / cols;
+    property <int> rows: Math.ceil(apps.length / cols);
+
+    // App grid: scrolls between the status bar and the toolbar (landscape has room for two rows)
+    Flickable {
+        y: Theme.status-h;
+        height: parent.height - Theme.status-h - Theme.toolbar-h;
+        viewport-height: 12 * dp + rows * Theme.app-row-h;
+        for app[i] in apps: Rectangle {
+            x: Math.mod(i, cols) * cell-w;
+            y: 12 * dp + Math.floor(i / cols) * Theme.app-row-h;
+            width: cell-w;
+            height: Theme.app-row-h;
+
+            // Selection: a soft plate behind the icon
+            Rectangle {
+                x: (parent.width - Theme.app-icon) / 2 - 8 * dp;
+                y: 4 * dp;
+                width: Theme.app-icon + 16 * dp;
+                height: Theme.app-icon + 16 * dp;
+                border-radius: Theme.radius + 6 * dp;
+                background: i == selected ? Theme.selected : (touch.pressed ? Theme.pressed : transparent);
+                border-width: i == selected ? max(1px, 1.5 * dp) : 0;
+                border-color: Theme.hairline;
+            }
+
+            Image {
+                x: (parent.width - Theme.app-icon) / 2;
+                y: 12 * dp;
+                width: Theme.app-icon;
+                height: Theme.app-icon;
+                source: app.icon;
+            }
+
+            Text {
+                y: 12 * dp + Theme.app-icon + Theme.app-label-gap;
+                width: parent.width;
+                text: app.name;
+                color: i == selected ? Theme.text : Theme.text-secondary;
+                font-size: Theme.font-label;
+                horizontal-alignment: center;
+            }
+
+            touch := TouchArea {
+                clicked => {
+                    root.selected = i;
+                }
+            }
+        }
+    }
+
+    // Status bar: screen title on the left, indicators and clock on the right
     Rectangle {
         y: 0;
-        height: bar-h;
-        background: #070b12;
+        height: Theme.status-h;
+        background: Theme.bg;
         Text {
-            x: unit;
-            text: "12:00";
-            color: white;
-            font-size: unit * 1.2;
+            x: Theme.margin;
+            text: selected < 0 ? "Menu" : apps[selected].name;
+            color: Theme.text;
+            font-size: Theme.font-status;
             font-weight: 600;
             vertical-alignment: center;
         }
 
-        Text {
-            text: "NeoSymbian";
-            color: #9fb0c8;
-            font-size: unit * 1.1;
-            horizontal-alignment: center;
-            vertical-alignment: center;
-        }
-
-        // Battery placeholder
-        Rectangle {
-            x: parent.width - unit * 3.6;
-            width: unit * 2.4;
-            height: unit * 1.1;
-            border-width: max(1px, unit / 8);
-            border-color: white;
-            border-radius: unit / 5;
-            Rectangle {
-                x: unit / 4;
-                width: (parent.width - unit / 2) * 0.7;
-                height: parent.height - unit / 2;
-                background: #2fbf71;
+        HorizontalLayout {
+            alignment: end;
+            padding-right: Theme.margin;
+            spacing: 6 * dp;
+            StatusIcon {
+                source: @image-url("icons/sys/signal.svg");
+                y: (Theme.status-h - Theme.status-icon) / 2;
             }
-        }
 
-        Rectangle {
-            x: parent.width - unit * 1.2;
-            width: unit / 4;
-            height: unit / 2;
-            background: white;
-        }
-    }
+            StatusIcon {
+                source: @image-url("icons/sys/wifi.svg");
+                y: (Theme.status-h - Theme.status-icon) / 2;
+            }
 
-    // Banner: shows the last tapped app.
-    Rectangle {
-        x: unit;
-        y: bar-h + unit / 2;
-        width: parent.width - 2 * unit;
-        height: banner-h;
-        border-radius: unit;
-        background: selected < 0 ? #1b2738 : apps[selected].color.darker(30%);
-        Text {
-            text: selected < 0 ? "Tap an app" : "Opened " + apps[selected].name;
-            color: white;
-            font-size: unit * 1.6;
-            horizontal-alignment: center;
-            vertical-alignment: center;
-        }
-    }
+            StatusIcon {
+                source: @image-url("icons/sys/battery.svg");
+                y: (Theme.status-h - Theme.status-icon) / 2;
+            }
 
-    for app[i] in apps: Rectangle {
-        x: Math.mod(i, cols) * cell-w;
-        y: grid-y + Math.floor(i / cols) * cell-h;
-        width: cell-w;
-        height: cell-h;
-
-        // Selection halo
-        Rectangle {
-            x: (parent.width - icon-size) / 2 - unit / 2;
-            y: unit / 2;
-            width: icon-size + unit;
-            height: icon-size + unit;
-            border-radius: icon-size * 0.3;
-            background: i == selected ? #ffffff40 : transparent;
-            border-width: i == selected ? max(2px, unit / 5) : 0;
-            border-color: white;
-        }
-
-        Rectangle {
-            x: (parent.width - icon-size) / 2;
-            y: unit;
-            width: icon-size;
-            height: icon-size;
-            border-radius: icon-size * 0.24;
-            background: touch.pressed ? app.color.darker(40%) : app.color;
             Text {
-                text: app.glyph;
-                color: white;
-                font-size: icon-size * 0.45;
-                font-weight: 700;
-                horizontal-alignment: center;
+                text: "12:00";
+                color: Theme.text;
+                font-size: Theme.font-status;
+                font-weight: 600;
                 vertical-alignment: center;
             }
         }
+    }
 
-        Text {
-            y: unit * 1.6 + icon-size;
-            width: parent.width;
-            text: app.name;
-            color: i == selected ? white : #c8d3e3;
-            font-size: unit * 1.3;
-            horizontal-alignment: center;
+    // Toolbar: back / search / options
+    Rectangle {
+        y: parent.height - Theme.toolbar-h;
+        height: Theme.toolbar-h;
+        background: @linear-gradient(180deg, Theme.toolbar-top 0%, Theme.toolbar-bottom 100%);
+        Rectangle {
+            y: 0;
+            height: max(1px, dp / 2);
+            background: Theme.hairline;
         }
 
-        touch := TouchArea {
-            clicked => {
-                root.selected = i;
+        HorizontalLayout {
+            alignment: space-between;
+            ToolbarButton {
+                icon: @image-url("icons/sys/back.svg");
+                clicked => {
+                    root.selected = -1;
+                }
+            }
+
+            ToolbarButton {
+                icon: @image-url("icons/sys/search.svg");
+            }
+
+            ToolbarButton {
+                icon: @image-url("icons/sys/options.svg");
             }
         }
     }

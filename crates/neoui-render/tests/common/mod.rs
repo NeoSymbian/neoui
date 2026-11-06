@@ -22,25 +22,35 @@ fn write_png(name: &str, buf: &[u32], w: u32, h: u32) {
     enc.write_header().unwrap().write_image_data(&rgb).unwrap();
 }
 
-/// Centre of tile `i`'s icon; mirrors the layout formulas in ui/launcher.slint.
-fn tile_center(i: usize, w: u32, h: u32) -> (i32, i32) {
-    let (w, h) = (w as f32, h as f32);
-    let unit = w.min(h) / 40.0;
+/// 1 dp at this window size, as ui/launcher.slint computes it.
+fn dp(w: u32, h: u32) -> f32 {
+    w.min(h) as f32 / 360.0
+}
+
+/// Top-left of tile `i`'s cell; mirrors ui/launcher.slint (grid below the 25 dp status bar + 12 dp, 135 dp rows).
+fn tile_origin(i: usize, w: u32, h: u32) -> (f32, f32) {
+    let d = dp(w, h);
     let cols = if w > h { 4 } else { 3 };
-    let rows = 8usize.div_ceil(cols) as f32;
-    let avail_y = 2.4 * unit + 4.0 * unit + unit;
-    let avail_h = h - avail_y - unit;
-    let cell_w = w / cols as f32;
-    let cell_h = (cell_w * 1.25).min(avail_h / rows);
-    let grid_y = avail_y + (avail_h - rows * cell_h) / 2.0;
-    let icon = cell_w.min(cell_h) * 0.55;
-    let x = (i % cols) as f32 * cell_w + cell_w / 2.0;
-    let y = grid_y + (i / cols) as f32 * cell_h + unit + icon / 2.0;
-    (x as i32, y as i32)
+    let cell_w = w as f32 / cols as f32;
+    (
+        (i % cols) as f32 * cell_w,
+        (25.0 + 12.0) * d + (i / cols) as f32 * 135.0 * d,
+    )
+}
+
+/// Centre of tile `i`'s icon (72 dp, 12 dp below the cell top).
+fn tile_center(i: usize, w: u32, h: u32) -> (i32, i32) {
+    let d = dp(w, h);
+    let cols = if w > h { 4 } else { 3 };
+    let (x, y) = tile_origin(i, w, h);
+    (
+        (x + w as f32 / cols as f32 / 2.0) as i32,
+        (y + (12.0 + 36.0) * d) as i32,
+    )
 }
 
 /// Renders one size, writes `launcher-<name>.png` and `launcher-<name>-tapped.png`,
-/// and checks the tap on tile 1 (Messages) changed the banner and was reported as damage.
+/// and checks the tap on tile 1 (Messages) showed its selection plate and was reported as damage.
 pub fn snapshot_and_tap(name: &str, w: u32, h: u32) {
     let mut r = Renderer::new(w, h, || 0).unwrap();
     let mut buf = vec![0u32; (w * h) as usize];
@@ -67,10 +77,14 @@ pub fn snapshot_and_tap(name: &str, w: u32, h: u32) {
     let damage = r.render(&mut buf, w as usize);
     assert!(!damage.is_empty(), "{name}: tap produced no damage");
 
-    // Banner background (left part, clear of the text) takes the app colour.
-    let unit = w.min(h) as f32 / 40.0;
-    let banner = (4.9 * unit) as usize * w as usize + w as usize / 10;
-    assert_ne!(before[banner], buf[banner], "{name}: banner did not change");
+    // The tapped tile gets its selection plate: a pixel inside the plate, above the icon, lights up.
+    let (cx, _) = tile_center(1, w, h);
+    let (_, top) = tile_origin(1, w, h);
+    let plate = (top + 8.0 * dp(w, h)) as usize * w as usize + cx as usize;
+    assert_ne!(
+        before[plate], buf[plate],
+        "{name}: selection plate did not appear"
+    );
 
     // The dirty region must cover every changed pixel.
     let b = damage.bounds();
