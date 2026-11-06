@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-only
-# Build a QEMU monitor script ($M) for symbian-2010's boot.sh MONITOR, in screen pixels of SCREEN (WIDTHxHEIGHT,
+# Build a QEMU monitor script ($M) for NeoSymbian/build's boot.sh MONITOR, in screen pixels of SCREEN (WIDTHxHEIGHT,
 # default 768x640: QEMU's absolute pointer spans 0..0x7FFF per axis). Source it, call tap/drag/wait_s, then run
 # boot.sh with MON_GAP=0.3 MONITOR="$M" (and the same SCREEN).
 M=""

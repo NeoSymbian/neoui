@@ -22,7 +22,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: NeoSymbian/build
-          path: symbian-2010
+          path: build
 
       - name: Rust (toolchain pinned by symbian/rust-toolchain.toml)
         working-directory: neoui/symbian
@@ -31,23 +31,23 @@ jobs:
           cargo fmt --all --check
           cargo clippy --workspace --release --target armv5te-none-eabi -Zbuild-std=core,alloc,compiler_builtins -- -D warnings
           cargo arm --workspace
-          mkdir -p ../../symbian-2010/rust
-          cp target/armv5te-none-eabi/release/{libneoui_symbian,libneoclock,libneoterm,libneofiles}.a exes.txt ../../symbian-2010/rust/
+          mkdir -p ../../build/rust
+          cp target/armv5te-none-eabi/release/{libneoui_symbian,libneoclock,libneoterm,libneofiles}.a exes.txt ../../build/rust/
 
       # NEOTEST.EXE (e32-rs's on-device tests), so ESHELL in the Terminal app has a 2010-style text program to run
       - name: e32-rs neotest
         run: |
           git clone -q --depth 1 https://github.com/NeoSymbian/e32-rs.git
           cd e32-rs && cargo arm -p neotest
-          cp target/armv5te-none-eabi/release/libneotest.a ../symbian-2010/rust/
-          grep '^NEOTEST.EXE' symbian/exes.txt >> ../symbian-2010/rust/exes.txt
+          cp target/armv5te-none-eabi/release/libneotest.a ../build/rust/
+          grep '^NEOTEST.EXE' symbian/exes.txt >> ../build/rust/exes.txt
 
       - name: Fetch the Symbian sources
-        working-directory: symbian-2010
+        working-directory: build
         run: ./fetch.sh
 
       - name: Build the ROM (SYSSTART.EXE = the UI server, no window server; NEOCLOCK/NEOTERM/NEOFILES.EXE = apps)
-        working-directory: symbian-2010
+        working-directory: build
         run: ./build.sh
 
       # A phone-shaped screen with odd sizes (half of the Pixel's 1079x2159 touch range), so the UI must adapt to
@@ -59,7 +59,7 @@ jobs:
       # (270,135) -> Options (452,1033) -> New folder (270,756) -> `neo` on the keyboard; Options -> Delete (270,924)
       # -> the neo row (row 0) -> Delete in the dialog (430,553); Back x2 (C:\ -> drives -> the app closes).
       - name: Boot at 539x1079; Clock; Terminal (ESHELL, dir by touch, neotest); Files (browse, view, mkdir, delete)
-        working-directory: symbian-2010
+        working-directory: build
         run: |
           export SCREEN=539x1079
           . ../neoui/symbian/taps.sh
@@ -83,7 +83,7 @@ jobs:
           MON_GAP=0.3 MONITOR="$M" SECS=330 ./boot.sh
 
       - name: Check the output
-        working-directory: symbian-2010
+        working-directory: build
         run: |
           s=out/serial.log
           grep -a '\[proc\] create SYSSTART.EXE' $s
@@ -144,5 +144,5 @@ jobs:
         with:
           name: syborg
           path: |
-            symbian-2010/out/fb.png
-            symbian-2010/out/serial.log
+            build/out/fb.png
+            build/out/serial.log

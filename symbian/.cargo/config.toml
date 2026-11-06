@@ -1,4 +1,4 @@
-# The Symbian user side is built -march=armv5te, ARM/Thumb, soft-float ABI (symbian-2010 toolchain/symcc).
+# The Symbian user side is built -march=armv5te, ARM/Thumb, soft-float ABI (NeoSymbian/build toolchain/symcc).
 # Never use an eabihf target: it passes floats in VFP registers and breaks calls into Symbian libraries.
 #
 #   cargo arm    the Symbian staticlibs: target/armv5te-none-eabi/release/lib*.a (core built from source: tier 3)
