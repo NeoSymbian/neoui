@@ -25,6 +25,7 @@ Mac the buffer is just shown in a window.
 | `ui/fonts/` | Inter (OFL-1.1), bundled so the glyphs baked into the binary do not depend on the build host's fonts |
 | `crates/neoui-host` | Mac/Linux desktop host: winit + softbuffer, mouse as touch |
 | `snapshots/` | PNGs written by the snapshot tests |
+| `symbian/` | The launcher as a Symbian EXE (`SYSSTART.EXE`, GPL-3.0): its own workspace, built for `armv5te-none-eabi` with [e32-rs](https://github.com/NeoSymbian/e32-rs) |
 
 The renderer takes its time from a caller-supplied millisecond clock and owns
 no thread, file or OS handle. Glyphs are rendered to signed distance fields at
@@ -58,6 +59,22 @@ The snapshot tests render both sizes, check the frame is not blank, tap the
 Messages tile and check that pixels change and that every changed pixel lies
 inside the reported damage.
 
+## On Symbian (QEMU Syborg)
+
+`symbian/` runs the launcher on the 2010 Symbian user side **instead of the window server**: estart starts
+`SYSSTART.EXE` when the ROM has one. It reads the frame buffer from the HAL, registers as the window server to take
+raw pointer and key events from the kernel, renders into a RAM frame and copies the damaged rectangles to the screen.
+On Syborg the first frame takes about 80 ms, and tapping the Phone tile opens the Phone screen.
+
+```sh
+cd symbian && cargo arm        # target/armv5te-none-eabi/release/libneoui_symbian.a (nightly pinned here)
+# with NeoSymbian/symbian-2010: copy the .a and exes.txt into its rust/, then
+./build.sh && MONITOR="mouse_move 3243 27904;mouse_button 1;mouse_button 0" ./boot.sh   # out/fb.png, out/serial.log
+```
+
+The `syborg` CI job does exactly that and checks the serial log and the screen. It publishes the screenshot and the
+log, never the ROM (see the licence note below).
+
 ## Licence
 
 Apache-2.0, see `LICENSE`. Dependencies carry their own licences, notably:
@@ -66,5 +83,6 @@ Apache-2.0, see `LICENSE`. Dependencies carry their own licences, notably:
   licence, or a commercial licence. The royalty-free licence excludes embedded
   systems and applications that expose Slint's APIs. A launcher/UI server that
   is part of a phone OS may fall outside it, so decide the Slint licence before
-  shipping neoui in a NeoSymbian image.
+  shipping neoui in a NeoSymbian image. For now (2026-11-06) the Symbian EXE in `symbian/` uses Slint under
+  GPL-3.0 and is itself GPL-3.0; ROM images that contain it are not distributed.
 - **Inter** font (`ui/fonts/`): OFL-1.1-RFN.

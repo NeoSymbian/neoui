@@ -1,0 +1,78 @@
+# SPDX-License-Identifier: Apache-2.0
+name: syborg
+
+# The launcher on the 2010 Symbian user side: build symbian/ (SYSSTART.EXE) for armv5te, put it in the Syborg ROM
+# with NeoSymbian/symbian-2010 (estart then runs it instead of the window server), boot on QEMU, tap the Phone tile
+# through the QEMU monitor and check the serial log and the screen. Only the screenshot and logs are published,
+# never the ROM (it links Slint under GPL-3.0 with EPL-1.0 Symbian code).
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  syborg:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: neoui
+
+      - uses: actions/checkout@v4
+        with:
+          repository: NeoSymbian/symbian-2010
+          path: symbian-2010
+
+      - name: Rust (toolchain pinned by symbian/rust-toolchain.toml)
+        working-directory: neoui/symbian
+        run: |
+          rustup toolchain install   # reads rust-toolchain.toml
+          cargo fmt --check
+          cargo clippy --release --target armv5te-none-eabi -Zbuild-std=core,alloc,compiler_builtins -- -D warnings
+          cargo arm
+          mkdir -p ../../symbian-2010/rust
+          cp target/armv5te-none-eabi/release/libneoui_symbian.a exes.txt ../../symbian-2010/rust/
+
+      - name: Fetch the Symbian sources
+        working-directory: symbian-2010
+        run: ./fetch.sh
+
+      - name: Build the ROM (SYSSTART.EXE = the launcher, no window server)
+        working-directory: symbian-2010
+        run: ./build.sh
+
+      # The Phone tile sits at (76, 545) on the 768x640 screen: QEMU's absolute pointer is 0..0x7FFF per axis.
+      - name: Boot and tap the Phone tile
+        working-directory: symbian-2010
+        run: MONITOR="mouse_move 3243 27904;mouse_button 1;mouse_button 0" SECS=120 ./boot.sh
+
+      - name: Check the output
+        working-directory: symbian-2010
+        run: |
+          s=out/serial.log
+          grep -a '\[proc\] create SYSSTART.EXE' $s
+          ! grep -aq '\[proc\] create EWSRV.EXE' $s
+          grep -a 'neoui: display 768x640' $s
+          grep -a 'neoui: launcher shown' $s
+          grep -a 'neoui: tap 7[0-9],54[0-9]' $s
+          # the tap opened the Phone screen: most of the screen was redrawn
+          px=$(grep -ao 'neoui: tap from .* redrew [0-9]*' $s | grep -o '[0-9]*$' | head -1)
+          echo "redrew $px px"; [ "${px:-0}" -gt 100000 ]
+          ! grep -aq 'K::Fault\|Kern::Fault\|\[EKERN\] panic\|rust panic' $s
+          python3 - <<'PY'
+          d = open("out/fb.ppm", "rb").read()
+          assert d.startswith(b"P6\n768 640\n255\n"), d[:20]
+          px = d[15:]
+          colours = {px[i:i + 3] for i in range(0, len(px), 3 * 97)}
+          assert len(colours) > 8, f"screen looks blank: {len(colours)} colours"
+          print(f"fb.ppm: 768x640, {len(colours)} sampled colours")
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: syborg
+          path: |
+            symbian-2010/out/fb.png
+            symbian-2010/out/serial.log

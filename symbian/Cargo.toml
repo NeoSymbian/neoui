@@ -1,0 +1,32 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# The neoui launcher as a Symbian EXE (SYSSTART.EXE: estart runs it instead of the window server). Its own workspace:
+# it is built only for armv5te-none-eabi with a pinned nightly (build-std), unlike the host crates around it.
+# GPL-3.0 because it links Slint under GPL-3.0 (NeoSymbian decision 2026-11-06: revisit before any ROM release).
+[package]
+name = "neoui-symbian"
+description = "The neoui launcher on the 2010 Symbian user side: frame buffer + raw input, no window server"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+publish = false
+
+[lib]
+crate-type = ["staticlib"]
+test = false
+
+[dependencies]
+neoui-render = { path = "../crates/neoui-render" }
+neoui-proto = { path = "../crates/neoui-proto" }
+# NeoSymbian/e32-rs: the Symbian user-side runtime (exec calls, heap, display, raw input). Bump the rev to update.
+e32 = { git = "https://github.com/NeoSymbian/e32-rs", rev = "5dae8bd11b21d84ed59b6c42760df3fd66473749", features = ["critical-section"] }
+
+[workspace]
+
+[profile.release]
+panic = "abort"
+opt-level = "s"
+codegen-units = 1
+lto = true
+
+[profile.dev]
+panic = "abort"

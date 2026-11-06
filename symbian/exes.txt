@@ -1,0 +1,2 @@
+# For NeoSymbian/symbian-2010 rust/exes.txt: estart starts SYSSTART.EXE instead of EWSRV.EXE (the window server).
+SYSSTART.EXE   0xE0002001  libneoui_symbian.a
