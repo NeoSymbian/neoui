@@ -2,7 +2,7 @@
 name: syborg
 
 # The launcher on the 2010 Symbian user side: build symbian/ (SYSSTART.EXE) for armv5te, put it in the Syborg ROM
-# with NeoSymbian/symbian-2010 (estart then runs it instead of the window server) plus the Clock app, boot on QEMU,
+# with NeoSymbian/build (estart then runs it instead of the window server) plus the Clock app, boot on QEMU,
 # drive it through the QEMU monitor (open Clock, tap it, go back) and check the serial log and the screen. Only the screenshot and logs are published,
 # never the ROM (it links Slint under GPL-3.0 with EPL-1.0 Symbian code).
 on:
@@ -21,7 +21,7 @@ jobs:
 
       - uses: actions/checkout@v4
         with:
-          repository: NeoSymbian/symbian-2010
+          repository: NeoSymbian/build
           path: symbian-2010
 
       - name: Rust (toolchain pinned by symbian/rust-toolchain.toml)
