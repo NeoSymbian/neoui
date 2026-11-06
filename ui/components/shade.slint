@@ -1,0 +1,150 @@
+// SPDX-License-Identifier: Apache-2.0
+// The notification shade: tap the status bar. Quick toggles, then notifications (Belle's pull-down, modernized).
+import { Theme } from "../theme.slint";
+import { Data } from "../data.slint";
+import { Glyph } from "frame.slint";
+import { ListRow } from "lists.slint";
+import { Slider } from "controls.slint";
+
+component Toggle inherits Rectangle {
+    in property <image> icon;
+    in property <string> label;
+    in-out property <bool> on;
+    height: 74 * Theme.dp;
+    border-radius: Theme.radius;
+    background: on ? Theme.accent : Theme.field;
+    animate background { duration: Theme.fast; }
+    VerticalLayout {
+        alignment: center;
+        spacing: 6 * Theme.dp;
+        HorizontalLayout {
+            alignment: center;
+            Glyph {
+                source: icon;
+                size: 24 * Theme.dp;
+            }
+        }
+
+        Text {
+            text: label;
+            color: Theme.text;
+            font-size: Theme.font-status * 0.92;
+            horizontal-alignment: center;
+        }
+    }
+
+    TouchArea {
+        clicked => {
+            root.on = !root.on;
+        }
+    }
+}
+
+export component Shade inherits Rectangle {
+    in property <bool> open;
+    callback dismissed;
+    callback open-app(string);
+    visible: self.opacity > 0.01;
+    opacity: open ? 1 : 0;
+    animate opacity { duration: Theme.popup; easing: ease-out-quad; }
+    clip: true;
+    Rectangle {
+        background: Theme.scrim;
+        TouchArea {
+            clicked => {
+                root.dismissed();
+            }
+        }
+    }
+
+    panel := Rectangle {
+        y: open ? 0 : -self.height * 0.15;
+        animate y { duration: Theme.popup; easing: ease-out-quad; }
+        height: 470 * Theme.dp;
+        background: #0f1115f7;
+        border-radius: 0;
+        TouchArea { }
+
+        VerticalLayout {
+            padding: Theme.margin;
+            spacing: 12 * Theme.dp;
+            alignment: start;
+            HorizontalLayout {
+                spacing: 8 * Theme.dp;
+                Toggle {
+                    icon: @image-url("../icons/sys/wifi.svg");
+                    label: "Wi-Fi";
+                    on: true;
+                }
+
+                Toggle {
+                    icon: @image-url("../icons/sys/bluetooth.svg");
+                    label: "Bluetooth";
+                }
+
+                Toggle {
+                    icon: @image-url("../icons/sys/data.svg");
+                    label: "Mobile data";
+                    on: true;
+                }
+
+                Toggle {
+                    icon: @image-url("../icons/sys/silent.svg");
+                    label: "Silent";
+                }
+            }
+
+            HorizontalLayout {
+                spacing: 12 * Theme.dp;
+                padding-left: 4 * Theme.dp;
+                padding-right: 4 * Theme.dp;
+                VerticalLayout {
+                    alignment: center;
+                    Glyph {
+                        source: @image-url("../icons/sys/brightness.svg");
+                        size: 20 * Theme.dp;
+                        colorize: Theme.text-dim;
+                    }
+                }
+
+                Slider {
+                    value: 0.62;
+                }
+            }
+
+            Text {
+                text: "NOTIFICATIONS";
+                color: Theme.text-dim;
+                font-size: Theme.font-status * 0.9;
+                font-weight: 600;
+                letter-spacing: 0.06 * Theme.font-status;
+            }
+
+            ListRow {
+                title: "Missed call";
+                subtitle: Data.calls[0].name + " · " + Data.calls[0].when;
+                icon: @image-url("../icons/sys/missed_call.svg");
+                has-icon: true;
+                icon-tint: Theme.danger;
+                clicked => { root.open-app("phone"); }
+            }
+
+            ListRow {
+                title: "2 new messages";
+                subtitle: Data.conversations[0].name + ": " + Data.conversations[0].snippet;
+                icon: @image-url("../icons/sys/message.svg");
+                has-icon: true;
+                icon-tint: Theme.accent;
+                clicked => { root.open-app("messages"); }
+            }
+
+            ListRow {
+                title: "Alarm 06:45";
+                subtitle: "Weekdays";
+                icon: @image-url("../icons/sys/alarm.svg");
+                has-icon: true;
+                divider: false;
+            }
+        }
+    }
+}

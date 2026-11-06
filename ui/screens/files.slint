@@ -1,0 +1,95 @@
+// SPDX-License-Identifier: Apache-2.0
+// Files: drives with usage bars (default), a folder ("folder").
+import { Theme } from "../theme.slint";
+import { Data } from "../data.slint";
+import { Card } from "../components/controls.slint";
+import { ListRow } from "../components/lists.slint";
+import { Glyph } from "../components/frame.slint";
+
+export component FilesScreen inherits Rectangle {
+    in-out property <string> view;
+    if view == "": Flickable {
+        VerticalLayout {
+            padding: Theme.margin;
+            spacing: 12 * Theme.dp;
+            for d[i] in Data.drives: Card {
+                height: 108 * Theme.dp;
+                VerticalLayout {
+                    padding: Theme.card-pad;
+                    spacing: 10 * Theme.dp;
+                    HorizontalLayout {
+                        spacing: 12 * Theme.dp;
+                        Glyph {
+                            source: d.kind == "sd" ? @image-url("../icons/sys/sdcard.svg") : @image-url("../icons/sys/phone_storage.svg");
+                            size: 28 * Theme.dp;
+                            colorize: Theme.accent;
+                        }
+
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            Text {
+                                text: d.name;
+                                color: Theme.text;
+                                font-size: Theme.font-body;
+                                font-weight: 600;
+                            }
+
+                            Text {
+                                text: d.detail;
+                                color: Theme.text-dim;
+                                font-size: Theme.font-label;
+                            }
+                        }
+
+                        Glyph {
+                            source: @image-url("../icons/sys/chevron_right.svg");
+                            size: 18 * Theme.dp;
+                            colorize: Theme.text-dim;
+                        }
+                    }
+
+                    Rectangle {
+                        height: 6 * Theme.dp;
+                        border-radius: self.height / 2;
+                        background: #2a2e35;
+                        Rectangle {
+                            x: 0;
+                            width: parent.width * (i == 0 ? 0.59 : 0.66);
+                            border-radius: parent.border-radius;
+                            background: i == 0 ? Theme.accent : #e2a92a;
+                        }
+                    }
+                }
+
+                TouchArea {
+                    clicked => {
+                        root.view = "folder";
+                    }
+                }
+            }
+        }
+    }
+
+    if view == "folder": Flickable {
+        VerticalLayout {
+            padding-top: 4 * Theme.dp;
+            Text {
+                x: Theme.margin;
+                height: 34 * Theme.dp;
+                text: "    Phone memory › Data";
+                color: Theme.text-dim;
+                font-size: Theme.font-label;
+                vertical-alignment: center;
+            }
+
+            for f in Data.folder: ListRow {
+                title: f.name;
+                subtitle: f.detail;
+                has-icon: true;
+                icon: f.kind == "folder" ? @image-url("../icons/sys/folder.svg") : f.kind == "image" ? @image-url("../icons/sys/image.svg") : f.kind == "note" ? @image-url("../icons/sys/note.svg") : @image-url("../icons/sys/doc.svg");
+                icon-tint: f.kind == "folder" ? #e2a92a : f.kind == "image" ? #14a37f : f.kind == "note" ? #e04e9b : Theme.text-secondary;
+                chevron: f.kind == "folder";
+            }
+        }
+    }
+}

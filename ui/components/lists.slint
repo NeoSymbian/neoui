@@ -1,0 +1,165 @@
+// SPDX-License-Identifier: Apache-2.0
+// List building blocks: avatar, row, section header, switch.
+import { Theme } from "../theme.slint";
+import { Glyph } from "frame.slint";
+
+export component Avatar inherits Rectangle {
+    in property <string> initials;
+    in property <color> tint: Theme.accent;
+    in property <length> size: Theme.avatar;
+    width: size;
+    height: size;
+    border-radius: size / 2;
+    // solid: the software renderer does not round a gradient's corners
+    background: tint;
+    Text {
+        text: initials;
+        color: white;
+        font-size: size * 0.38;
+        font-weight: 600;
+    }
+}
+
+export component Switch inherits Rectangle {
+    in-out property <bool> on;
+    callback toggled(bool);
+    width: 46 * Theme.dp;
+    height: 28 * Theme.dp;
+    border-radius: self.height / 2;
+    background: on ? Theme.accent : #3a3f47;
+    animate background { duration: Theme.fast; }
+    Rectangle {
+        x: on ? parent.width - self.width - 3 * Theme.dp : 3 * Theme.dp;
+        width: parent.height - 6 * Theme.dp;
+        height: self.width;
+        border-radius: self.width / 2;
+        background: white;
+        animate x { duration: Theme.fast; easing: ease-out-quad; }
+    }
+
+    TouchArea {
+        clicked => {
+            root.on = !root.on;
+            root.toggled(root.on);
+        }
+    }
+}
+
+export component SectionHeader inherits Rectangle {
+    in property <string> text;
+    height: Theme.section-h;
+    Text {
+        x: Theme.margin + 4 * Theme.dp;
+        y: parent.height - self.height - 6 * Theme.dp;
+        text: root.text.to-uppercase();
+        color: Theme.text-dim;
+        font-size: Theme.font-status * 0.92;
+        font-weight: 600;
+        letter-spacing: 0.06 * Theme.font-status;
+    }
+}
+
+// One row: leading glyph or avatar, one or two lines, trailing value / chevron / switch.
+export component ListRow inherits Rectangle {
+    in property <string> title;
+    in property <string> subtitle;
+    in property <string> value;
+    in property <image> icon;
+    in property <bool> has-icon;
+    in property <color> icon-tint: Theme.text;
+    in property <string> avatar;  // initials; "" = no avatar
+    in property <color> avatar-tint: Theme.accent;
+    in property <bool> chevron;
+    in property <bool> has-switch;
+    in-out property <bool> switch-on;
+    in property <bool> unread;
+    in property <bool> divider: true;
+    callback clicked;
+    height: subtitle == "" ? Theme.list-row-h : Theme.list-row-double-h;
+    background: touch.pressed ? Theme.pressed : transparent;
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.margin + 4 * Theme.dp;
+        padding-right: Theme.margin + 4 * Theme.dp;
+        spacing: 14 * Theme.dp;
+        if avatar != "": VerticalLayout {
+            alignment: center;
+            Avatar {
+                initials: avatar;
+                tint: avatar-tint;
+            }
+        }
+        if has-icon: VerticalLayout {
+            alignment: center;
+            Glyph {
+                source: icon;
+                colorize: icon-tint;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 3 * Theme.dp;
+            horizontal-stretch: 1;
+            Text {
+                text: title;
+                color: Theme.text;
+                font-size: Theme.font-body;
+                font-weight: unread ? 700 : 500;
+                overflow: elide;
+            }
+
+            if subtitle != "": Text {
+                text: subtitle;
+                color: unread ? Theme.text-secondary : Theme.text-dim;
+                font-size: Theme.font-label;
+                overflow: elide;
+            }
+        }
+
+        if value != "": VerticalLayout {
+            alignment: center;
+            Text {
+                text: value;
+                color: unread ? Theme.accent : Theme.text-dim;
+                font-size: Theme.font-label;
+                horizontal-alignment: right;
+            }
+        }
+        if unread: VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 9 * Theme.dp;
+                height: self.width;
+                border-radius: self.width / 2;
+                background: Theme.accent;
+            }
+        }
+        if has-switch: VerticalLayout {
+            alignment: center;
+            Switch {
+                on <=> root.switch-on;
+            }
+        }
+        if chevron: VerticalLayout {
+            alignment: center;
+            Glyph {
+                source: @image-url("../icons/sys/chevron_right.svg");
+                size: 18 * Theme.dp;
+                colorize: Theme.text-dim;
+            }
+        }
+    }
+
+    if divider: Rectangle {
+        x: Theme.margin + 4 * Theme.dp + (avatar != "" ? Theme.avatar + 14 * Theme.dp : (has-icon ? Theme.row-icon + 14 * Theme.dp : 0));
+        y: parent.height - self.height;
+        width: parent.width - self.x;
+        height: max(1px, Theme.dp / 2);
+        background: Theme.hairline;
+    }
+}

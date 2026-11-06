@@ -1,0 +1,192 @@
+// SPDX-License-Identifier: Apache-2.0
+// Browser: start page with shortcuts (default), a page view ("page").
+import { Theme } from "../theme.slint";
+import { Glyph } from "../components/frame.slint";
+import { Card } from "../components/controls.slint";
+
+component AddressBar inherits Rectangle {
+    in property <string> url;
+    height: Theme.field-h + 16 * Theme.dp;
+    HorizontalLayout {
+        padding: 8 * Theme.dp;
+        padding-left: Theme.margin;
+        padding-right: Theme.margin;
+        spacing: 10 * Theme.dp;
+        Rectangle {
+            horizontal-stretch: 1;
+            border-radius: self.height / 2;
+            background: Theme.field;
+            HorizontalLayout {
+                padding-left: 14 * Theme.dp;
+                padding-right: 14 * Theme.dp;
+                spacing: 8 * Theme.dp;
+                VerticalLayout {
+                    alignment: center;
+                    Glyph {
+                        source: url == "" ? @image-url("../icons/sys/search.svg") : @image-url("../icons/sys/lock.svg");
+                        size: 16 * Theme.dp;
+                        colorize: Theme.text-dim;
+                    }
+                }
+
+                Text {
+                    text: url == "" ? "Search or type an address" : url;
+                    color: url == "" ? Theme.text-dim : Theme.text;
+                    font-size: Theme.font-body * 0.95;
+                    vertical-alignment: center;
+                    overflow: elide;
+                    horizontal-stretch: 1;
+                }
+            }
+        }
+
+        Rectangle {
+            width: 30 * Theme.dp;
+            border-radius: 7 * Theme.dp;
+            border-width: max(1px, 1.5 * Theme.dp);
+            border-color: Theme.text-secondary;
+            height: 26 * Theme.dp;
+            y: (parent.height - self.height) / 2;
+            Text {
+                text: "3";
+                color: Theme.text;
+                font-size: Theme.font-status;
+                font-weight: 700;
+            }
+        }
+    }
+}
+
+export component BrowserScreen inherits Rectangle {
+    in-out property <string> view;
+    AddressBar {
+        y: 0;
+        url: view == "page" ? "github.com/NeoSymbian" : "";
+    }
+
+    if view == "": Rectangle {
+        y: Theme.field-h + 16 * Theme.dp;
+        height: parent.height - self.y;
+        VerticalLayout {
+            padding: Theme.margin;
+            spacing: 14 * Theme.dp;
+            alignment: start;
+            Text {
+                text: "Shortcuts";
+                color: Theme.text-dim;
+                font-size: Theme.font-label;
+                font-weight: 600;
+            }
+
+            for row in [[{ n: "NeoSymbian", c: #2f80ed, l: "N" }, { n: "News", c: #e5484d, l: "Nw" }, { n: "Maps", c: #22b46a, l: "M" }, { n: "Wiki", c: #5b6472, l: "W" }], [{ n: "Weather", c: #1fa9c4, l: "Wx" }, { n: "Mail", c: #f2994a, l: "@" }, { n: "Forum", c: #8656e8, l: "F" }, { n: "Store", c: #e2a92a, l: "S" }]]: HorizontalLayout {
+                spacing: 8 * Theme.dp;
+                for s in row: Rectangle {
+                    height: 86 * Theme.dp;
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 6 * Theme.dp;
+                        HorizontalLayout {
+                            alignment: center;
+                            Rectangle {
+                                width: 50 * Theme.dp;
+                                height: self.width;
+                                border-radius: 14 * Theme.dp;
+                                background: s.c;
+                                Text {
+                                    text: s.l;
+                                    color: white;
+                                    font-size: 18 * Theme.dp;
+                                    font-weight: 700;
+                                }
+                            }
+                        }
+
+                        Text {
+                            text: s.n;
+                            color: Theme.text-secondary;
+                            font-size: Theme.font-status;
+                            horizontal-alignment: center;
+                        }
+                    }
+
+                    TouchArea {
+                        clicked => {
+                            root.view = "page";
+                        }
+                    }
+                }
+            }
+            Text {
+                text: "Recently visited";
+                color: Theme.text-dim;
+                font-size: Theme.font-label;
+                font-weight: 600;
+            }
+
+            for r in ["github.com/NeoSymbian", "symbian.example.org/wiki/EKA2", "slint.dev/docs"]: Card {
+                height: 48 * Theme.dp;
+                Text {
+                    x: 14 * Theme.dp;
+                    text: r;
+                    color: Theme.text;
+                    font-size: Theme.font-body * 0.95;
+                    vertical-alignment: center;
+                }
+
+                TouchArea {
+                    clicked => {
+                        root.view = "page";
+                    }
+                }
+            }
+        }
+    }
+
+    // A rendered page (a simple mock: our own project page)
+    if view == "page": Flickable {
+        y: Theme.field-h + 16 * Theme.dp;
+        height: parent.height - self.y;
+        Rectangle {
+            background: #f6f7f9;
+            height: 900 * Theme.dp;
+            VerticalLayout {
+                padding: 20 * Theme.dp;
+                spacing: 12 * Theme.dp;
+                alignment: start;
+                Text {
+                    text: "NeoSymbian";
+                    color: #111418;
+                    font-size: 28 * Theme.dp;
+                    font-weight: 700;
+                }
+
+                Text {
+                    text: "The open-source 2010 Symbian, brought back to modern hardware: an AArch64 kernel port, the original user side, and a new touch UI written in Rust.";
+                    color: #3b4250;
+                    font-size: Theme.font-body;
+                    wrap: word-wrap;
+                }
+
+                Rectangle {
+                    height: 160 * Theme.dp;
+                    border-radius: Theme.radius;
+                    background: @linear-gradient(135deg, #0c1424 0%, #2f80ed 100%);
+                    Text {
+                        text: "EKA2 · ILP32 · Rust UI";
+                        color: white;
+                        font-size: Theme.font-title;
+                        font-weight: 600;
+                    }
+                }
+
+                for t in ["Status", "Kernel boots on QEMU and the Pixel 3a XL", "Rust programs run on the 2010 user side", "neoui: the new launcher and core apps"]: Text {
+                    text: t;
+                    color: t == "Status" ? #111418 : #3b4250;
+                    font-size: t == "Status" ? Theme.font-title : Theme.font-body;
+                    font-weight: t == "Status" ? 700 : 400;
+                    wrap: word-wrap;
+                }
+            }
+        }
+    }
+}

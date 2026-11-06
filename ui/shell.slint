@@ -1,0 +1,241 @@
+// SPDX-License-Identifier: Apache-2.0
+// The NeoSymbian shell: status bar, the current screen, the toolbar, the Options menu and the notification shade.
+// Navigation is two levels: `screen` (an app, "home" or "menu") and `view` (a sub-view of that app, "" = its main
+// view). Back leaves the sub-view first, then returns to where the app was opened from.
+
+// Bundled so the glyphs baked into the binary are the same on every build host.
+import "fonts/Inter-VariableFont.ttf";
+import "fonts/UbuntuMono-Regular.ttf";
+import { Theme } from "theme.slint";
+import { StatusBar, Toolbar } from "components/frame.slint";
+import { OptionsMenu } from "components/controls.slint";
+import { Shade } from "components/shade.slint";
+import { HomeScreen } from "screens/home.slint";
+import { MenuScreen } from "screens/menu.slint";
+import { PhoneScreen } from "screens/phone.slint";
+import { MessagesScreen } from "screens/messages.slint";
+import { ContactsScreen } from "screens/contacts.slint";
+import { BrowserScreen } from "screens/browser.slint";
+import { CameraScreen } from "screens/camera.slint";
+import { PhotosScreen } from "screens/photos.slint";
+import { MusicScreen } from "screens/music.slint";
+import { CalendarScreen } from "screens/calendar.slint";
+import { ClockScreen } from "screens/clock.slint";
+import { FilesScreen } from "screens/files.slint";
+import { SettingsScreen } from "screens/settings.slint";
+import { TerminalScreen } from "screens/terminal.slint";
+
+// A screen slot: fades and slides in when it becomes the current screen (Belle's app start: 0.25 s).
+component Slot inherits Rectangle {
+    in property <bool> active;
+    visible: self.opacity > 0.01;
+    opacity: active ? 1 : 0;
+    animate opacity { duration: Theme.open; easing: ease-out-quad; }
+    // the content sits 16 dp lower while hidden and rises into place
+    property <length> lift: active ? 0 : 16 * Theme.dp;
+    animate lift { duration: Theme.open; easing: ease-out-quad; }
+    Rectangle {
+        y: lift;
+        width: parent.width;
+        height: parent.height;
+        @children
+    }
+}
+
+export component Shell inherits Window {
+    default-font-family: "Inter";
+    background: Theme.bg;
+
+    in-out property <string> screen: "home";
+    in-out property <string> view: "";
+    in-out property <string> origin: "home";
+    in-out property <bool> options-open;
+    in-out property <bool> shade-open;
+
+    // 1 dp = min(width, height) / 360 (the Belle reference screen is 360x640)
+    property <length> dp: min(self.width, self.height) / 360;
+    init => {
+        Theme.dp = self.dp;
+    }
+    changed dp => {
+        Theme.dp = self.dp;
+    }
+
+    property <bool> has-toolbar: screen != "home";
+    property <length> body-y: Theme.status-h;
+    property <length> body-h: self.height - Theme.status-h - (has-toolbar ? Theme.toolbar-h : 0);
+
+    public function open(app: string) {
+        root.origin = root.screen == "menu" ? "menu" : "home";
+        root.screen = app;
+        root.view = "";
+        root.options-open = false;
+        root.shade-open = false;
+    }
+
+    public function back() {
+        if (root.shade-open) {
+            root.shade-open = false;
+        } else if (root.options-open) {
+            root.options-open = false;
+        } else if (root.view != "") {
+            root.view = "";
+        } else if (root.screen == "menu") {
+            root.screen = "home";
+        } else if (root.screen != "home") {
+            root.screen = root.origin;
+            root.origin = "home";
+        }
+    }
+
+    pure function screen-title(s: string, v: string) -> string {
+        s == "home" ? "" : s == "menu" ? "Menu" : s == "phone" ? (v == "call" ? "Call" : "Phone") : s == "messages" ? (v == "thread" ? "Ava Lindqvist" : "Messages") : s == "contacts" ? "Contacts" : s == "browser" ? "Browser" : s == "camera" ? "Camera" : s == "photos" ? "Photos" : s == "music" ? (v == "playing" ? "Now playing" : "Music") : s == "calendar" ? "Calendar" : s == "clock" ? "Clock" : s == "files" ? "Files" : s == "settings" ? (v == "" ? "Settings" : v == "connectivity" ? "Connectivity" : v == "display" ? "Display" : "About phone") : s == "terminal" ? "Terminal" : s
+    }
+
+    pure function options(s: string) -> [string] {
+        s == "messages" ? ["New message", "Mark all as read", "Delete conversations", "Settings"] : s == "contacts" ? ["New contact", "Import from SIM", "Groups", "Settings"] : s == "phone" ? ["Call settings", "Speed dial", "Voicemail"] : s == "photos" ? ["Slideshow", "Select", "Sort by date"] : s == "files" ? ["New folder", "Sort", "Show hidden files"] : s == "browser" ? ["New tab", "Bookmarks", "History", "Share page"] : s == "music" ? ["Shuffle all", "Playlists", "Sleep timer"] : ["Settings", "Help", "About"]
+    }
+
+    // The current screen
+    Rectangle {
+        y: body-y;
+        height: body-h;
+        clip: true;
+
+        Slot {
+            active: screen == "home";
+            HomeScreen {
+                open-app(a) => { root.open(a); }
+            }
+        }
+
+        Slot {
+            active: screen == "menu";
+            MenuScreen {
+                open-app(a) => { root.open(a); }
+            }
+        }
+
+        Slot {
+            active: screen == "phone";
+            PhoneScreen {
+                view <=> root.view;
+            }
+        }
+
+        Slot {
+            active: screen == "messages";
+            MessagesScreen {
+                view <=> root.view;
+            }
+        }
+
+        Slot {
+            active: screen == "contacts";
+            ContactsScreen {
+                view <=> root.view;
+                open-app(a) => { root.open(a); }
+            }
+        }
+
+        Slot {
+            active: screen == "browser";
+            BrowserScreen {
+                view <=> root.view;
+            }
+        }
+
+        Slot {
+            active: screen == "camera";
+            CameraScreen { }
+        }
+
+        Slot {
+            active: screen == "photos";
+            PhotosScreen {
+                view <=> root.view;
+            }
+        }
+
+        Slot {
+            active: screen == "music";
+            MusicScreen {
+                view <=> root.view;
+            }
+        }
+
+        Slot {
+            active: screen == "calendar";
+            CalendarScreen {
+                view <=> root.view;
+            }
+        }
+
+        Slot {
+            active: screen == "clock";
+            ClockScreen { }
+        }
+
+        Slot {
+            active: screen == "files";
+            FilesScreen {
+                view <=> root.view;
+            }
+        }
+
+        Slot {
+            active: screen == "settings";
+            SettingsScreen {
+                view <=> root.view;
+            }
+        }
+
+        Slot {
+            active: screen == "terminal";
+            TerminalScreen { }
+        }
+    }
+
+    StatusBar {
+        y: 0;
+        title: screen-title(screen, view);
+        tapped => {
+            root.shade-open = !root.shade-open;
+        }
+    }
+
+    if has-toolbar: Toolbar {
+        y: root.height - Theme.toolbar-h;
+        has-action: screen == "messages" || screen == "contacts" || screen == "browser" || screen == "clock";
+        action-icon: screen == "contacts" ? @image-url("icons/sys/person_add.svg") : screen == "browser" ? @image-url("icons/sys/refresh.svg") : @image-url("icons/sys/add.svg");
+        back => { root.back(); }
+        options => { root.options-open = !root.options-open; }
+        action => {
+            if (root.screen == "messages") {
+                root.view = "thread";
+            }
+        }
+    }
+
+    OptionsMenu {
+        y: body-y;
+        height: body-h;
+        items: options(screen);
+        open: options-open;
+        dismissed => { root.options-open = false; }
+        selected(i) => {
+            root.options-open = false;
+            if (i == "Settings") {
+                root.open("settings");
+            }
+        }
+    }
+
+    Shade {
+        y: Theme.status-h;
+        height: root.height - Theme.status-h;
+        open: shade-open;
+        dismissed => { root.shade-open = false; }
+        open-app(a) => { root.open(a); }
+    }
+}

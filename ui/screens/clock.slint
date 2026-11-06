@@ -1,0 +1,162 @@
+// SPDX-License-Identifier: Apache-2.0
+// Clock: tabs for the clock face, alarms (with switches) and world clocks.
+import { Theme } from "../theme.slint";
+import { Data } from "../data.slint";
+import { BigClock, TabBar, Card } from "../components/controls.slint";
+import { Switch } from "../components/lists.slint";
+
+export component ClockScreen inherits Rectangle {
+    in-out property <int> tab;
+    TabBar {
+        y: 0;
+        tabs: ["Clock", "Alarms", "World"];
+        current <=> root.tab;
+    }
+
+    if tab == 0: Rectangle {
+        y: Theme.tab-h;
+        height: parent.height - Theme.tab-h;
+        // analogue face
+        face := Rectangle {
+            y: 40 * Theme.dp;
+            width: 230 * Theme.dp;
+            height: self.width;
+            border-radius: self.width / 2;
+            background: Theme.card;
+            border-width: max(1px, Theme.dp);
+            border-color: Theme.card-border;
+            for i in 12: Rectangle {
+                property <angle> a: i * 30deg;
+                x: parent.width / 2 + sin(a) * parent.width * 0.42 - self.width / 2;
+                y: parent.height / 2 - cos(a) * parent.height * 0.42 - self.height / 2;
+                width: (Math.mod(i, 3) == 0 ? 4 : 2.5) * Theme.dp;
+                height: self.width;
+                border-radius: self.width / 2;
+                background: Math.mod(i, 3) == 0 ? Theme.text : Theme.text-dim;
+            }
+            // hands (10:24 -> hour 312 deg, minute 144 deg): rows of overlapping dots, no Path needed
+            for k in 16: Rectangle {
+                property <float> f: (k + 1) / 16 * 0.25;
+                x: parent.width / 2 + sin(312deg) * parent.width * f - self.width / 2;
+                y: parent.height / 2 - cos(312deg) * parent.height * f - self.height / 2;
+                width: 6 * Theme.dp;
+                height: self.width;
+                border-radius: self.width / 2;
+                background: Theme.text;
+            }
+            for k in 24: Rectangle {
+                property <float> f: (k + 1) / 24 * 0.74;
+                x: parent.width / 2 + sin(144deg) * parent.width * f / 2 - self.width / 2;
+                y: parent.height / 2 - cos(144deg) * parent.height * f / 2 - self.height / 2;
+                width: 4 * Theme.dp;
+                height: self.width;
+                border-radius: self.width / 2;
+                background: Theme.text-secondary;
+            }
+
+            Rectangle {
+                width: 10 * Theme.dp;
+                height: self.width;
+                border-radius: self.width / 2;
+                background: Theme.accent;
+            }
+        }
+
+        BigClock {
+            y: face.y + face.height + 28 * Theme.dp;
+            hours: 10;
+            minutes: 24;
+            digit-h: 54 * Theme.dp;
+            alignment: center;
+            width: parent.width;
+        }
+
+        Text {
+            y: face.y + face.height + 100 * Theme.dp;
+            text: "Friday, 6 November";
+            color: Theme.text-secondary;
+            font-size: Theme.font-body;
+            horizontal-alignment: center;
+            width: parent.width;
+        }
+    }
+
+    if tab == 1: Flickable {
+        y: Theme.tab-h;
+        height: parent.height - Theme.tab-h;
+        VerticalLayout {
+            padding: Theme.margin;
+            spacing: 10 * Theme.dp;
+            for a in Data.alarms: Card {
+                height: 84 * Theme.dp;
+                HorizontalLayout {
+                    padding-left: Theme.card-pad;
+                    padding-right: Theme.card-pad;
+                    VerticalLayout {
+                        alignment: center;
+                        horizontal-stretch: 1;
+                        Text {
+                            text: a.time;
+                            color: a.on ? Theme.text : Theme.text-dim;
+                            font-size: 34 * Theme.dp;
+                            font-weight: 300;
+                        }
+
+                        Text {
+                            text: a.label;
+                            color: Theme.text-dim;
+                            font-size: Theme.font-label;
+                        }
+                    }
+
+                    VerticalLayout {
+                        alignment: center;
+                        Switch {
+                            on: a.on;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    if tab == 2: Flickable {
+        y: Theme.tab-h;
+        height: parent.height - Theme.tab-h;
+        VerticalLayout {
+            padding: Theme.margin;
+            spacing: 10 * Theme.dp;
+            for c in Data.cities: Card {
+                height: 72 * Theme.dp;
+                HorizontalLayout {
+                    padding-left: Theme.card-pad;
+                    padding-right: Theme.card-pad;
+                    VerticalLayout {
+                        alignment: center;
+                        horizontal-stretch: 1;
+                        Text {
+                            text: c.name;
+                            color: Theme.text;
+                            font-size: Theme.font-body;
+                            font-weight: 600;
+                        }
+
+                        Text {
+                            text: c.offset;
+                            color: Theme.text-dim;
+                            font-size: Theme.font-label;
+                        }
+                    }
+
+                    Text {
+                        text: c.time;
+                        color: Theme.text;
+                        font-size: 30 * Theme.dp;
+                        font-weight: 300;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+    }
+}

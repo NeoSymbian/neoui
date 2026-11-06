@@ -1,0 +1,75 @@
+// SPDX-License-Identifier: Apache-2.0
+// The app menu: a scrolling grid, 3 columns in portrait and 4 in landscape (Belle's menu, 135 dp rows).
+import { Theme } from "../theme.slint";
+
+export struct App { name: string, key: string, icon: image }
+
+export global Apps {
+    out property <[App]> all: [
+        { name: "Phone", key: "phone", icon: @image-url("../icons/apps/phone.svg") },
+        { name: "Messages", key: "messages", icon: @image-url("../icons/apps/messages.svg") },
+        { name: "Contacts", key: "contacts", icon: @image-url("../icons/apps/contacts.svg") },
+        { name: "Browser", key: "browser", icon: @image-url("../icons/apps/browser.svg") },
+        { name: "Camera", key: "camera", icon: @image-url("../icons/apps/camera.svg") },
+        { name: "Photos", key: "photos", icon: @image-url("../icons/apps/photos.svg") },
+        { name: "Music", key: "music", icon: @image-url("../icons/apps/music.svg") },
+        { name: "Calendar", key: "calendar", icon: @image-url("../icons/apps/calendar.svg") },
+        { name: "Clock", key: "clock", icon: @image-url("../icons/apps/clock.svg") },
+        { name: "Files", key: "files", icon: @image-url("../icons/apps/files.svg") },
+        { name: "Settings", key: "settings", icon: @image-url("../icons/apps/settings.svg") },
+        { name: "Terminal", key: "terminal", icon: @image-url("../icons/apps/terminal.svg") },
+    ];
+}
+
+export component MenuScreen inherits Rectangle {
+    callback open-app(string);
+    in-out property <int> selected: -1;
+    property <int> cols: self.width > self.height ? 4 : 3;
+    property <length> cell-w: self.width / cols;
+    property <int> rows: Math.ceil(Apps.all.length / cols);
+    Flickable {
+        content-height: 12 * Theme.dp + rows * Theme.app-row-h;
+        for app[i] in Apps.all: Rectangle {
+            x: Math.mod(i, cols) * cell-w;
+            y: 12 * Theme.dp + Math.floor(i / cols) * Theme.app-row-h;
+            width: cell-w;
+            height: Theme.app-row-h;
+
+            // Selection: a soft plate behind the icon
+            Rectangle {
+                x: (parent.width - Theme.app-icon) / 2 - 8 * Theme.dp;
+                y: 4 * Theme.dp;
+                width: Theme.app-icon + 16 * Theme.dp;
+                height: Theme.app-icon + 16 * Theme.dp;
+                border-radius: Theme.radius + 6 * Theme.dp;
+                background: i == selected ? Theme.selected : (touch.pressed ? Theme.pressed : transparent);
+                border-width: i == selected ? max(1px, 1.5 * Theme.dp) : 0;
+                border-color: Theme.hairline;
+            }
+
+            Image {
+                x: (parent.width - Theme.app-icon) / 2;
+                y: 12 * Theme.dp;
+                width: Theme.app-icon;
+                height: Theme.app-icon;
+                source: app.icon;
+            }
+
+            Text {
+                y: 12 * Theme.dp + Theme.app-icon + Theme.app-label-gap;
+                width: parent.width;
+                text: app.name;
+                color: i == selected ? Theme.text : Theme.text-secondary;
+                font-size: Theme.font-label;
+                horizontal-alignment: center;
+            }
+
+            touch := TouchArea {
+                clicked => {
+                    root.selected = i;
+                    root.open-app(app.key);
+                }
+            }
+        }
+    }
+}

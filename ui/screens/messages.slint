@@ -1,0 +1,123 @@
+// SPDX-License-Identifier: Apache-2.0
+// Messages: conversation list (default) and a thread ("thread").
+import { Theme } from "../theme.slint";
+import { Data } from "../data.slint";
+import { SearchField } from "../components/controls.slint";
+import { ListRow } from "../components/lists.slint";
+import { Glyph } from "../components/frame.slint";
+
+export component MessagesScreen inherits Rectangle {
+    in-out property <string> view;
+    if view == "": Flickable {
+        VerticalLayout {
+            padding-top: 8 * Theme.dp;
+            HorizontalLayout {
+                padding-left: Theme.margin;
+                padding-right: Theme.margin;
+                padding-bottom: 8 * Theme.dp;
+                SearchField {
+                    placeholder: "Search messages";
+                }
+            }
+
+            for c in Data.conversations: ListRow {
+                title: c.name;
+                subtitle: c.snippet;
+                value: c.when;
+                avatar: c.initials;
+                avatar-tint: c.tint;
+                unread: c.unread;
+                clicked => {
+                    root.view = "thread";
+                }
+            }
+        }
+    }
+
+    if view == "thread": Rectangle {
+        Flickable {
+            height: parent.height - 64 * Theme.dp;
+            y: 0;
+            VerticalLayout {
+                padding: Theme.margin;
+                spacing: 8 * Theme.dp;
+                Text {
+                    text: "Today";
+                    color: Theme.text-dim;
+                    font-size: Theme.font-status;
+                    horizontal-alignment: center;
+                }
+
+                for m in Data.thread: HorizontalLayout {
+                    alignment: m.mine ? end : start;
+                    Rectangle {
+                        max-width: root.width * 0.74;
+                        border-radius: 18 * Theme.dp;
+                        background: m.mine ? Theme.bubble-out : Theme.bubble-in;
+                        VerticalLayout {
+                            padding-left: 14 * Theme.dp;
+                            padding-right: 14 * Theme.dp;
+                            padding-top: 9 * Theme.dp;
+                            padding-bottom: 8 * Theme.dp;
+                            spacing: 2 * Theme.dp;
+                            Text {
+                                text: m.text;
+                                color: Theme.text;
+                                font-size: Theme.font-body;
+                                wrap: word-wrap;
+                            }
+
+                            Text {
+                                text: m.when;
+                                color: m.mine ? #ffffffaa : Theme.text-dim;
+                                font-size: Theme.font-status * 0.85;
+                                horizontal-alignment: right;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // Composer
+        Rectangle {
+            y: parent.height - self.height;
+            height: 64 * Theme.dp;
+            background: Theme.bg;
+            HorizontalLayout {
+                padding: 10 * Theme.dp;
+                spacing: 10 * Theme.dp;
+                VerticalLayout {
+                    alignment: center;
+                    Glyph {
+                        source: @image-url("../icons/sys/attach.svg");
+                        colorize: Theme.text-dim;
+                    }
+                }
+
+                Rectangle {
+                    horizontal-stretch: 1;
+                    border-radius: self.height / 2;
+                    background: Theme.field;
+                    Text {
+                        x: 16 * Theme.dp;
+                        text: "Text message";
+                        color: Theme.text-dim;
+                        font-size: Theme.font-body;
+                        vertical-alignment: center;
+                    }
+                }
+
+                Rectangle {
+                    width: self.height;
+                    border-radius: self.height / 2;
+                    background: Theme.accent;
+                    Glyph {
+                        source: @image-url("../icons/sys/send.svg");
+                        size: 20 * Theme.dp;
+                    }
+                }
+            }
+        }
+    }
+}

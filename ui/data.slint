@@ -1,0 +1,91 @@
+// SPDX-License-Identifier: Apache-2.0
+// Sample data for the prototype. Every name and number is invented (555-01xx is the fictional range).
+
+export struct Person { name: string, initials: string, tint: color, number: string, label: string, favourite: bool }
+export struct Call { name: string, initials: string, tint: color, kind: string, when: string }
+export struct Conversation { name: string, initials: string, tint: color, snippet: string, when: string, unread: bool }
+export struct Message { text: string, mine: bool, when: string }
+export struct FileItem { name: string, kind: string, detail: string }
+export struct Song { title: string, artist: string, length: string }
+export struct Event { time: string, title: string, place: string, tint: color }
+export struct Alarm { time: string, label: string, on: bool }
+export struct City { name: string, time: string, offset: string }
+
+export global Data {
+    out property <[Person]> people: [
+        { name: "Ava Lindqvist", initials: "AL", tint: #2f80ed, number: "+1 555 0142", label: "Mobile", favourite: true },
+        { name: "Ben Okafor", initials: "BO", tint: #22b46a, number: "+1 555 0118", label: "Mobile", favourite: true },
+        { name: "Chloé Martin", initials: "CM", tint: #e04e9b, number: "+1 555 0177", label: "Work", favourite: false },
+        { name: "Dario Rossi", initials: "DR", tint: #f2994a, number: "+1 555 0163", label: "Mobile", favourite: true },
+        { name: "Elena Sargsyan", initials: "ES", tint: #8656e8, number: "+1 555 0109", label: "Home", favourite: false },
+        { name: "Felix Wagner", initials: "FW", tint: #1fa9c4, number: "+1 555 0131", label: "Mobile", favourite: false },
+        { name: "Grace Nakamura", initials: "GN", tint: #e5484d, number: "+1 555 0185", label: "Mobile", favourite: true },
+        { name: "Hugo Almeida", initials: "HA", tint: #14a37f, number: "+1 555 0154", label: "Work", favourite: false },
+        { name: "Iris Novak", initials: "IN", tint: #e2a92a, number: "+1 555 0126", label: "Mobile", favourite: false },
+        { name: "Jonas Berg", initials: "JB", tint: #5b6472, number: "+1 555 0199", label: "Mobile", favourite: false },
+        { name: "Kira Petrova", initials: "KP", tint: #2f80ed, number: "+1 555 0147", label: "Home", favourite: false },
+        { name: "Lena Ortiz", initials: "LO", tint: #22b46a, number: "+1 555 0172", label: "Mobile", favourite: false },
+    ];
+    out property <[Call]> calls: [
+        { name: "Ava Lindqvist", initials: "AL", tint: #2f80ed, kind: "missed", when: "10:02" },
+        { name: "Dario Rossi", initials: "DR", tint: #f2994a, kind: "out", when: "09:15" },
+        { name: "+1 555 0123", initials: "#", tint: #5b6472, kind: "in", when: "Yesterday" },
+        { name: "Grace Nakamura", initials: "GN", tint: #e5484d, kind: "in", when: "Yesterday" },
+        { name: "Ben Okafor", initials: "BO", tint: #22b46a, kind: "out", when: "Wed" },
+        { name: "Elena Sargsyan", initials: "ES", tint: #8656e8, kind: "missed", when: "Tue" },
+    ];
+    out property <[Conversation]> conversations: [
+        { name: "Ava Lindqvist", initials: "AL", tint: #2f80ed, snippet: "Running late, see you at 7?", when: "10:05", unread: true },
+        { name: "Ben Okafor", initials: "BO", tint: #22b46a, snippet: "The build passed on the phone!", when: "09:48", unread: true },
+        { name: "Grace Nakamura", initials: "GN", tint: #e5484d, snippet: "Photos from Sunday", when: "Yesterday", unread: false },
+        { name: "Dario Rossi", initials: "DR", tint: #f2994a, snippet: "Ok, thanks", when: "Wed", unread: false },
+        { name: "Felix Wagner", initials: "FW", tint: #1fa9c4, snippet: "Can you send the address?", when: "Mon", unread: false },
+        { name: "Iris Novak", initials: "IN", tint: #e2a92a, snippet: "Happy birthday!", when: "2 Nov", unread: false },
+    ];
+    out property <[Message]> thread: [
+        { text: "Hey! Are we still on for dinner tonight?", mine: false, when: "09:51" },
+        { text: "Yes. 7 at the usual place?", mine: true, when: "09:53" },
+        { text: "Perfect. I'll book a table.", mine: false, when: "09:54" },
+        { text: "Great, see you there", mine: true, when: "09:55" },
+        { text: "Running late, see you at 7?", mine: false, when: "10:05" },
+    ];
+    out property <[FileItem]> drives: [
+        { name: "Phone memory", kind: "phone", detail: "9.4 GB of 16 GB used" },
+        { name: "Memory card", kind: "sd", detail: "21.2 GB of 32 GB used" },
+    ];
+    out property <[FileItem]> folder: [
+        { name: "Documents", kind: "folder", detail: "14 items" },
+        { name: "Music", kind: "folder", detail: "212 items" },
+        { name: "Pictures", kind: "folder", detail: "1,038 items" },
+        { name: "Videos", kind: "folder", detail: "26 items" },
+        { name: "trip-notes.txt", kind: "doc", detail: "4 KB · 3 Nov" },
+        { name: "boarding-pass.pdf", kind: "doc", detail: "212 KB · 1 Nov" },
+        { name: "sunset.jpg", kind: "image", detail: "3.1 MB · 29 Oct" },
+        { name: "voice-memo.m4a", kind: "note", detail: "1.2 MB · 27 Oct" },
+    ];
+    out property <[Song]> songs: [
+        { title: "Northern Lights", artist: "The Harbour", length: "3:42" },
+        { title: "Paper Planes", artist: "Mira Vale", length: "4:05" },
+        { title: "Slow Tide", artist: "Oslo Drive", length: "5:11" },
+        { title: "Copper Sky", artist: "The Harbour", length: "3:18" },
+        { title: "Midnight Rail", artist: "Juno & Kite", length: "4:27" },
+        { title: "Small Hours", artist: "Mira Vale", length: "3:56" },
+    ];
+    out property <[Event]> events: [
+        { time: "09:30", title: "Stand-up", place: "Video call", tint: #2f80ed },
+        { time: "13:00", title: "Lunch with Ben", place: "Harbour Café", tint: #22b46a },
+        { time: "16:00", title: "Kernel review", place: "Room 4", tint: #8656e8 },
+        { time: "19:00", title: "Dinner with Ava", place: "Trattoria", tint: #f2994a },
+    ];
+    out property <[Alarm]> alarms: [
+        { time: "06:45", label: "Weekdays", on: true },
+        { time: "08:00", label: "Weekend", on: false },
+        { time: "14:30", label: "Pick up parcel", on: true },
+    ];
+    out property <[City]> cities: [
+        { name: "Yerevan", time: "13:24", offset: "+3 h" },
+        { name: "London", time: "09:24", offset: "−1 h" },
+        { name: "New York", time: "04:24", offset: "−6 h" },
+        { name: "Tokyo", time: "18:24", offset: "+8 h" },
+    ];
+}

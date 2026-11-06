@@ -1,0 +1,111 @@
+// SPDX-License-Identifier: Apache-2.0
+// Camera: a viewfinder (a placeholder gradient until there is a camera), shutter, photo/video switch.
+import { Theme } from "../theme.slint";
+import { Glyph } from "../components/frame.slint";
+
+export component CameraScreen inherits Rectangle {
+    in-out property <bool> video;
+    in-out property <int> shots;
+    background: #000000;
+    // viewfinder
+    Rectangle {
+        y: 0;
+        height: parent.height - 150 * Theme.dp;
+        background: @linear-gradient(170deg, #31465f 0%, #1a2433 45%, #0b0f15 100%);
+        // rule-of-thirds grid
+        for i in 2: Rectangle {
+            x: (i + 1) * parent.width / 3;
+            width: max(1px, Theme.dp / 2);
+            background: #ffffff22;
+        }
+        for i in 2: Rectangle {
+            y: (i + 1) * parent.height / 3;
+            height: max(1px, Theme.dp / 2);
+            background: #ffffff22;
+        }
+        HorizontalLayout {
+            y: 12 * Theme.dp;
+            height: 32 * Theme.dp;
+            padding-left: Theme.margin;
+            padding-right: Theme.margin;
+            alignment: space-between;
+            Glyph {
+                source: @image-url("../icons/sys/flash.svg");
+                size: 24 * Theme.dp;
+            }
+
+            Text {
+                text: video ? "00:00" : "12 MP";
+                color: Theme.text;
+                font-size: Theme.font-status;
+                font-weight: 600;
+                vertical-alignment: center;
+            }
+
+            Glyph {
+                source: @image-url("../icons/sys/switch_camera.svg");
+                size: 24 * Theme.dp;
+            }
+        }
+    }
+
+    // controls
+    Rectangle {
+        y: parent.height - 150 * Theme.dp;
+        height: 150 * Theme.dp;
+        HorizontalLayout {
+            y: 12 * Theme.dp;
+            height: 24 * Theme.dp;
+            alignment: center;
+            spacing: 26 * Theme.dp;
+            for m[i] in ["Photo", "Video"]: Text {
+                text: m.to-uppercase();
+                color: (i == 1) == video ? #f2c94c : Theme.text-dim;
+                font-size: Theme.font-status;
+                font-weight: 700;
+                letter-spacing: 0.08 * Theme.font-status;
+                TouchArea {
+                    clicked => {
+                        root.video = i == 1;
+                    }
+                }
+            }
+        }
+
+        HorizontalLayout {
+            y: 48 * Theme.dp;
+            height: 80 * Theme.dp;
+            alignment: space-around;
+            Rectangle {
+                width: 48 * Theme.dp;
+                height: self.width;
+                y: (parent.height - self.height) / 2;
+                border-radius: 10 * Theme.dp;
+                background: shots > 0 ? @linear-gradient(135deg, #31465f 0%, #f2994a 100%) : #1d2025;
+            }
+
+            // shutter
+            Rectangle {
+                width: 76 * Theme.dp;
+                height: self.width;
+                border-radius: self.width / 2;
+                border-width: 4 * Theme.dp;
+                border-color: white;
+                Rectangle {
+                    width: parent.width - 14 * Theme.dp;
+                    height: self.width;
+                    border-radius: self.width / 2;
+                    background: video ? Theme.danger : (t.pressed ? #d0d0d0 : white);
+                }
+
+                t := TouchArea {
+                    clicked => {
+                        root.shots += 1;
+                    }
+                }
+            }
+
+            Rectangle { width: 48 * Theme.dp; }
+        }
+    }
+}

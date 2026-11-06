@@ -1,0 +1,144 @@
+// SPDX-License-Identifier: Apache-2.0
+// The frame every screen shares: status bar, bottom toolbar, title bar.
+import { Theme } from "../theme.slint";
+
+export component Glyph inherits Image {
+    in property <length> size: Theme.row-icon;
+    width: size;
+    height: size;
+    colorize: Theme.text;
+}
+
+export component StatusBar inherits Rectangle {
+    in property <string> title;
+    in property <bool> shade-open;
+    callback tapped;
+    height: Theme.status-h;
+    background: Theme.bg;
+    Text {
+        x: Theme.margin;
+        text: title;
+        color: Theme.text;
+        font-size: Theme.font-status;
+        font-weight: 600;
+        vertical-alignment: center;
+    }
+
+    HorizontalLayout {
+        alignment: end;
+        padding-right: Theme.margin;
+        spacing: 6 * Theme.dp;
+        for icon in [
+            @image-url("../icons/sys/signal.svg"),
+            @image-url("../icons/sys/wifi.svg"),
+            @image-url("../icons/sys/battery.svg")
+        ]: VerticalLayout {
+            alignment: center;
+            Glyph {
+                source: icon;
+                size: Theme.status-icon;
+            }
+        }
+        Text {
+            text: "10:24";
+            color: Theme.text;
+            font-size: Theme.font-status;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+    }
+
+    TouchArea {
+        clicked => {
+            root.tapped();
+        }
+    }
+}
+
+export component ToolbarButton inherits Rectangle {
+    in property <image> icon;
+    in property <bool> enabled: true;
+    callback clicked;
+    width: Theme.toolbar-button-w;
+    height: Theme.toolbar-h;
+    background: touch.pressed && enabled ? Theme.pressed : transparent;
+    opacity: enabled ? 1 : 0;
+    Glyph {
+        source: icon;
+        size: Theme.toolbar-icon;
+    }
+
+    touch := TouchArea {
+        enabled: root.enabled;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// Back on the left, an optional action in the middle, Options on the right (Belle's toolbar).
+export component Toolbar inherits Rectangle {
+    in property <image> action-icon;
+    in property <bool> has-action;
+    callback back;
+    callback action;
+    callback options;
+    height: Theme.toolbar-h;
+    background: @linear-gradient(180deg, Theme.toolbar-top 0%, Theme.toolbar-bottom 100%);
+    Rectangle {
+        y: 0;
+        height: max(1px, Theme.dp / 2);
+        background: Theme.hairline;
+    }
+
+    HorizontalLayout {
+        alignment: space-between;
+        ToolbarButton {
+            icon: @image-url("../icons/sys/back.svg");
+            clicked => {
+                root.back();
+            }
+        }
+
+        ToolbarButton {
+            icon: action-icon;
+            enabled: has-action;
+            clicked => {
+                root.action();
+            }
+        }
+
+        ToolbarButton {
+            icon: @image-url("../icons/sys/options.svg");
+            clicked => {
+                root.options();
+            }
+        }
+    }
+}
+
+// A screen's heading: large title, optional subtitle.
+export component TitleBar inherits Rectangle {
+    in property <string> title;
+    in property <string> subtitle;
+    height: Theme.title-h;
+    VerticalLayout {
+        padding-left: Theme.margin + 4 * Theme.dp;
+        padding-right: Theme.margin;
+        alignment: center;
+        Text {
+            text: title;
+            color: Theme.text;
+            font-size: Theme.font-title * 1.15;
+            font-weight: 700;
+            overflow: elide;
+        }
+
+        if subtitle != "": Text {
+            text: subtitle;
+            color: Theme.text-dim;
+            font-size: Theme.font-label;
+            overflow: elide;
+        }
+    }
+}

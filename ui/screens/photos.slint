@@ -1,0 +1,61 @@
+// SPDX-License-Identifier: Apache-2.0
+// Photos: a grid (default) and one photo ("photo"). Tiles are generated gradients, not real pictures.
+import { Theme } from "../theme.slint";
+
+export global Palette {
+    out property <[[color]]> tiles: [
+        [#31465f, #f2994a], [#0e3b43, #1fa9c4], [#3b1f4f, #e04e9b], [#203a24, #8fd16a], [#4a2c14, #f2c94c],
+        [#1a2433, #2f80ed], [#402020, #e5484d], [#1f2f3f, #a0b8d0], [#2b1f3f, #8656e8], [#14302a, #14a37f],
+        [#3a3a14, #e2a92a], [#101828, #5b6472], [#3d1f2f, #f28fb0], [#1d3a3a, #6fd6c9], [#2f2a1d, #d6b56f],
+        [#1f1f3a, #6f8bd6], [#38221a, #e07a4e], [#16322e, #3fbf9f],
+    ];
+}
+
+export component PhotosScreen inherits Rectangle {
+    in-out property <string> view;
+    in-out property <int> current;
+    property <int> cols: self.width > self.height ? 6 : 3;
+    property <length> gap: 2 * Theme.dp;
+    property <length> cell: (self.width - (cols - 1) * gap) / cols;
+    if view == "": Flickable {
+        content-height: 40 * Theme.dp + Math.ceil(Palette.tiles.length / cols) * (cell + gap);
+        Text {
+            x: Theme.margin + 4 * Theme.dp;
+            y: 10 * Theme.dp;
+            text: "This week · " + Palette.tiles.length + " photos";
+            color: Theme.text-secondary;
+            font-size: Theme.font-label;
+            font-weight: 600;
+        }
+
+        for c[i] in Palette.tiles: Rectangle {
+            x: Math.mod(i, cols) * (cell + gap);
+            y: 40 * Theme.dp + Math.floor(i / cols) * (cell + gap);
+            width: cell;
+            height: cell;
+            background: @linear-gradient(160deg, c[1] 0%, c[0] 100%);
+            TouchArea {
+                clicked => {
+                    root.current = i;
+                    root.view = "photo";
+                }
+            }
+        }
+    }
+
+    if view == "photo": Rectangle {
+        background: #000000;
+        Rectangle {
+            height: parent.width * 0.75;
+            background: @linear-gradient(160deg, Palette.tiles[current][1] 0%, Palette.tiles[current][0] 100%);
+        }
+
+        Text {
+            y: parent.height - 56 * Theme.dp;
+            x: Theme.margin + 4 * Theme.dp;
+            text: "IMG_" + (2041 + current) + ".jpg · 6 Nov 2026";
+            color: Theme.text-secondary;
+            font-size: Theme.font-label;
+        }
+    }
+}

@@ -46,8 +46,31 @@ export global Theme {
     out property <color> pressed: #ffffff26;
     out property <color> selected: #ffffff1a;
 
-    // Motion (ms): appear/open ~ 0.3 s ease-out, like Belle's transitions; filled in from the effects data
-    out property <duration> fast: 120ms;
-    out property <duration> normal: 220ms;
-    out property <duration> slow: 320ms;
+    // Components (dp; modernized from the measured Belle/S^3 frame, see design/DESIGN.md)
+    out property <length> title-h: 52 * dp;
+    out property <length> row-icon: 26 * dp;
+    out property <length> avatar: 44 * dp;
+    out property <length> avatar-large: 104 * dp;
+    out property <length> section-h: 34 * dp;
+    out property <length> tab-h: 46 * dp;
+    out property <length> key-h: 66 * dp;
+    out property <length> dock-h: 92 * dp;
+    out property <length> card-pad: 16 * dp;
+    out property <length> field-h: 44 * dp;
+    out property <color> card: #15181c;
+    out property <color> card-border: #ffffff14;
+    out property <color> field: #1d2025;
+    out property <color> bubble-in: #1f2328;
+    out property <color> bubble-out: #2f6fd6;
+    out property <color> danger: #e5484d;
+    out property <color> ok: #22b46a;
+    out property <color> scrim: #000000b3;
+
+    // Motion, from the phone's transition effects (Belle: app start 0.25 s, exit 0.3 s, pop-ups 0.25 s,
+    // options menu 0.3 s, page switch 0.35 s; mostly out-quad)
+    out property <duration> fast: 150ms;
+    out property <duration> open: 250ms;
+    out property <duration> close: 300ms;
+    out property <duration> popup: 250ms;
+    out property <duration> page: 350ms;
 }

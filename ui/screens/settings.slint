@@ -1,0 +1,298 @@
+// SPDX-License-Identifier: Apache-2.0
+// Settings: grouped root list (default), and the sub-pages "connectivity", "display", "about".
+import { Theme } from "../theme.slint";
+import { ListRow, SectionHeader } from "../components/lists.slint";
+import { Slider, Card } from "../components/controls.slint";
+
+component Tinted inherits Rectangle {
+    in property <image> icon;
+    in property <color> tint;
+    width: 30 * Theme.dp;
+    height: self.width;
+    border-radius: 8 * Theme.dp;
+    background: tint;
+    Image {
+        width: 18 * Theme.dp;
+        height: self.width;
+        source: icon;
+        colorize: white;
+    }
+}
+
+component SettingRow inherits Rectangle {
+    in property <string> title;
+    in property <string> value;
+    in property <image> icon;
+    in property <color> tint;
+    callback clicked;
+    height: Theme.list-row-h;
+    background: t.pressed ? Theme.pressed : transparent;
+    HorizontalLayout {
+        padding-left: Theme.margin + 4 * Theme.dp;
+        padding-right: Theme.margin + 4 * Theme.dp;
+        spacing: 14 * Theme.dp;
+        VerticalLayout {
+            alignment: center;
+            Tinted {
+                icon: icon;
+                tint: tint;
+            }
+        }
+
+        Text {
+            text: title;
+            color: Theme.text;
+            font-size: Theme.font-body;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+
+        Text {
+            text: value;
+            color: Theme.text-dim;
+            font-size: Theme.font-label;
+            vertical-alignment: center;
+        }
+
+        VerticalLayout {
+            alignment: center;
+            Image {
+                width: 18 * Theme.dp;
+                height: self.width;
+                source: @image-url("../icons/sys/chevron_right.svg");
+                colorize: Theme.text-dim;
+            }
+        }
+    }
+
+    t := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+export component SettingsScreen inherits Rectangle {
+    in-out property <string> view;
+    in-out property <bool> wifi: true;
+    in-out property <bool> bluetooth: false;
+    in-out property <bool> data: true;
+    in-out property <bool> airplane: false;
+    in-out property <bool> dark: true;
+    in-out property <float> brightness: 0.62;
+
+    if view == "": Flickable {
+        VerticalLayout {
+            SectionHeader { text: "Connections"; }
+            SettingRow {
+                title: "Wi-Fi";
+                value: wifi ? "Home" : "Off";
+                icon: @image-url("../icons/sys/wifi.svg");
+                tint: #2f80ed;
+                clicked => { root.view = "connectivity"; }
+            }
+
+            SettingRow {
+                title: "Bluetooth";
+                value: bluetooth ? "On" : "Off";
+                icon: @image-url("../icons/sys/bluetooth.svg");
+                tint: #2f80ed;
+                clicked => { root.view = "connectivity"; }
+            }
+
+            SettingRow {
+                title: "Mobile network";
+                value: data ? "4G" : "Off";
+                icon: @image-url("../icons/sys/signal.svg");
+                tint: #22b46a;
+                clicked => { root.view = "connectivity"; }
+            }
+
+            SectionHeader { text: "Device"; }
+            SettingRow {
+                title: "Display";
+                value: dark ? "Dark" : "Light";
+                icon: @image-url("../icons/sys/brightness.svg");
+                tint: #e2a92a;
+                clicked => { root.view = "display"; }
+            }
+
+            SettingRow {
+                title: "Sounds";
+                value: "Ringing";
+                icon: @image-url("../icons/sys/volume.svg");
+                tint: #e5484d;
+            }
+
+            SettingRow {
+                title: "Battery";
+                value: "82%";
+                icon: @image-url("../icons/sys/battery_saver.svg");
+                tint: #14a37f;
+            }
+
+            SettingRow {
+                title: "Apps";
+                value: "12";
+                icon: @image-url("../icons/sys/apps.svg");
+                tint: #8656e8;
+            }
+
+            SectionHeader { text: "System"; }
+            SettingRow {
+                title: "Language";
+                value: "English";
+                icon: @image-url("../icons/sys/language.svg");
+                tint: #1fa9c4;
+            }
+
+            SettingRow {
+                title: "Privacy";
+                icon: @image-url("../icons/sys/privacy.svg");
+                tint: #5b6472;
+            }
+
+            SettingRow {
+                title: "About phone";
+                icon: @image-url("../icons/sys/info.svg");
+                tint: #5b6472;
+                clicked => { root.view = "about"; }
+            }
+        }
+    }
+
+    if view == "connectivity": Flickable {
+        VerticalLayout {
+            SectionHeader { text: "Wireless"; }
+            ListRow {
+                title: "Wi-Fi";
+                subtitle: wifi ? "Connected to Home" : "Off";
+                has-icon: true;
+                icon: @image-url("../icons/sys/wifi.svg");
+                has-switch: true;
+                switch-on <=> root.wifi;
+            }
+
+            ListRow {
+                title: "Bluetooth";
+                subtitle: bluetooth ? "Visible to nearby devices" : "Off";
+                has-icon: true;
+                icon: @image-url("../icons/sys/bluetooth.svg");
+                has-switch: true;
+                switch-on <=> root.bluetooth;
+            }
+
+            SectionHeader { text: "Mobile"; }
+            ListRow {
+                title: "Mobile data";
+                subtitle: data ? "4G · 1.2 GB this month" : "Off";
+                has-icon: true;
+                icon: @image-url("../icons/sys/data.svg");
+                has-switch: true;
+                switch-on <=> root.data;
+            }
+
+            ListRow {
+                title: "Airplane mode";
+                has-icon: true;
+                icon: @image-url("../icons/sys/lock.svg");
+                has-switch: true;
+                switch-on <=> root.airplane;
+                divider: false;
+            }
+        }
+    }
+
+    if view == "display": Flickable {
+        VerticalLayout {
+            SectionHeader { text: "Brightness"; }
+            HorizontalLayout {
+                padding-left: Theme.margin + 8 * Theme.dp;
+                padding-right: Theme.margin + 8 * Theme.dp;
+                height: 56 * Theme.dp;
+                Slider {
+                    value <=> root.brightness;
+                }
+            }
+
+            SectionHeader { text: "Appearance"; }
+            ListRow {
+                title: "Dark theme";
+                has-icon: true;
+                icon: @image-url("../icons/sys/theme.svg");
+                has-switch: true;
+                switch-on <=> root.dark;
+            }
+
+            ListRow {
+                title: "Font size";
+                value: "Medium";
+                has-icon: true;
+                icon: @image-url("../icons/sys/edit.svg");
+                chevron: true;
+            }
+
+            ListRow {
+                title: "Screen timeout";
+                value: "1 minute";
+                has-icon: true;
+                icon: @image-url("../icons/sys/stopwatch.svg");
+                chevron: true;
+                divider: false;
+            }
+        }
+    }
+
+    if view == "about": Flickable {
+        VerticalLayout {
+            padding: Theme.margin;
+            spacing: 12 * Theme.dp;
+            Card {
+                height: 132 * Theme.dp;
+                VerticalLayout {
+                    padding: Theme.card-pad;
+                    spacing: 4 * Theme.dp;
+                    alignment: center;
+                    Text {
+                        text: "NeoSymbian";
+                        color: Theme.text;
+                        font-size: Theme.font-title * 1.3;
+                        font-weight: 700;
+                    }
+
+                    Text {
+                        text: "Developer preview · neoui";
+                        color: Theme.text-secondary;
+                        font-size: Theme.font-body;
+                    }
+
+                    Text {
+                        text: "EKA2 on AArch64 (ILP32) · 2010 user side";
+                        color: Theme.text-dim;
+                        font-size: Theme.font-label;
+                    }
+                }
+            }
+
+            for kv in [["Model", "Pixel 3a XL (bonito)"], ["Kernel", "EKA2, AArch64 ILP32"], ["User side", "Symbian^3 (2010), ARMv5TE"], ["UI", "neoui (Rust + Slint)"], ["Build", "2026-11-06"]]: HorizontalLayout {
+                height: 40 * Theme.dp;
+                padding-left: 4 * Theme.dp;
+                padding-right: 4 * Theme.dp;
+                Text {
+                    text: kv[0];
+                    color: Theme.text-dim;
+                    font-size: Theme.font-body;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+
+                Text {
+                    text: kv[1];
+                    color: Theme.text;
+                    font-size: Theme.font-body;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+}

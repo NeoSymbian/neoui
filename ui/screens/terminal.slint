@@ -1,0 +1,60 @@
+// SPDX-License-Identifier: Apache-2.0
+// Terminal: a console with a prompt and a row of extra keys (Esc, Tab, Ctrl, arrows) above where the keyboard sits.
+import { Theme } from "../theme.slint";
+
+export component TerminalScreen inherits Rectangle {
+    background: #07090c;
+    property <[string]> lines: [
+        "NeoSymbian shell 0.1 (eshell over phetty)",
+        "~ $ uname -a",
+        "NeoSymbian 0.1 EKA2 aarch64-ilp32 Pixel3aXL",
+        "~ $ ps",
+        "  PID  NAME",
+        "    1  ekern.exe",
+        "   12  efile.exe",
+        "   41  neoui-server",
+        "   57  pheshell",
+        "~ $ ls z:\\sys\\bin | wc -l",
+        "1342",
+        "~ $ ",
+    ];
+    property <length> line-h: 19 * Theme.dp;
+
+    Flickable {
+        height: parent.height - 52 * Theme.dp;
+        y: 0;
+        VerticalLayout {
+            padding: 10 * Theme.dp;
+            for l[i] in lines: Text {
+                height: line-h;
+                text: l + (i == lines.length - 1 ? "▌" : "");
+                font-family: "Ubuntu Mono";
+                font-size: 14.5 * Theme.dp;
+                color: l.character-count > 3 && (l == "1342" || l.to-uppercase() == l) ? #9fb0c8 : (i == lines.length - 1 ? #7ee787 : #d7dde5);
+            }
+        }
+    }
+
+    // extra keys
+    Rectangle {
+        y: parent.height - self.height;
+        height: 52 * Theme.dp;
+        background: #111418;
+        HorizontalLayout {
+            padding: 7 * Theme.dp;
+            spacing: 6 * Theme.dp;
+            for k in ["Esc", "Tab", "Ctrl", "Alt", "|", "/", "←", "↑", "↓", "→"]: Rectangle {
+                border-radius: 7 * Theme.dp;
+                background: t.pressed ? Theme.pressed : #1d2025;
+                Text {
+                    text: k;
+                    color: Theme.text-secondary;
+                    font-family: "Ubuntu Mono";
+                    font-size: 13 * Theme.dp;
+                }
+
+                t := TouchArea { }
+            }
+        }
+    }
+}

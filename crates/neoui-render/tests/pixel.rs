@@ -1,8 +1,61 @@
 // SPDX-License-Identifier: Apache-2.0
-// Own test binary (process): Slint's platform is a per-process singleton.
+// Own test binary (process): Slint's platform is a per-process singleton, so one renderer runs every check.
 mod common;
 
+/// Every screen and sub-view, as (screen, view).
+const SCREENS: &[(&str, &str)] = &[
+    ("home", ""),
+    ("menu", ""),
+    ("phone", ""),
+    ("phone", "log"),
+    ("phone", "call"),
+    ("messages", ""),
+    ("messages", "thread"),
+    ("contacts", ""),
+    ("contacts", "card"),
+    ("browser", ""),
+    ("browser", "page"),
+    ("camera", ""),
+    ("photos", ""),
+    ("photos", "photo"),
+    ("music", ""),
+    ("music", "playing"),
+    ("calendar", ""),
+    ("calendar", "day"),
+    ("clock", ""),
+    ("files", ""),
+    ("files", "folder"),
+    ("settings", ""),
+    ("settings", "connectivity"),
+    ("settings", "display"),
+    ("settings", "about"),
+    ("terminal", ""),
+];
+
 #[test]
-fn launcher_pixel() {
-    common::snapshot_and_tap("pixel", 1080, 2160);
+fn pixel() {
+    let (w, h) = (1080, 2160);
+    let mut r = common::renderer(w, h);
+    let mut buf = vec![0u32; (w * h) as usize];
+    for (screen, view) in SCREENS {
+        common::snapshot(&mut r, &mut buf, screen, view, "pixel", w, h);
+    }
+    common::menu_tap(&mut r, &mut buf, "pixel", w, h);
+
+    // Overlays, opened by real taps: Options (toolbar, right button) and the notification shade (status bar).
+    let d = common::dp(w, h);
+    r.show("messages", "");
+    common::frame(&mut r, &mut buf, w, "messages");
+    common::tap(
+        &mut r,
+        (w as f32 - 58.0 * d) as i32,
+        (h as f32 - 30.0 * d) as i32,
+    );
+    common::frame(&mut r, &mut buf, w, "options");
+    common::write_png("options-pixel.png", &buf, w, h);
+    r.show("home", "");
+    common::frame(&mut r, &mut buf, w, "home");
+    common::tap(&mut r, (w / 2) as i32, (12.0 * d) as i32);
+    common::frame(&mut r, &mut buf, w, "shade");
+    common::write_png("shade-pixel.png", &buf, w, h);
 }

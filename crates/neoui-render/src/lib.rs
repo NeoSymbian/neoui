@@ -58,7 +58,7 @@ impl Platform for NeoPlatform {
 /// `Renderer` can exist per process; a second `new` returns an error.
 pub struct Renderer {
     window: Rc<MinimalSoftwareWindow>,
-    _ui: Launcher,
+    ui: Shell,
 }
 
 impl Renderer {
@@ -71,15 +71,24 @@ impl Renderer {
             now_ms,
         }))
         .map_err(PlatformError::SetPlatformError)?;
-        let ui = Launcher::new()?;
+        let ui = Shell::new()?;
         window.set_size(PhysicalSize::new(width, height));
         ui.show()?;
-        Ok(Self { window, _ui: ui })
+        Ok(Self { window, ui })
     }
 
     /// Renders what changed since the last call into `buf` (XRGB8888, `stride_px`
     /// pixels per row, at least `stride_px * height` long) and returns the dirty region.
     /// `buf` must hold the previous frame (`RepaintBufferType::ReusedBuffer`).
+    /// Jump straight to `screen` (an app key, "home" or "menu") and its sub-`view` ("" = the main view), closing
+    /// any overlay. For snapshots and the host's `--screen`.
+    pub fn show(&mut self, screen: &str, view: &str) {
+        self.ui.set_screen(screen.into());
+        self.ui.set_view(view.into());
+        self.ui.set_options_open(false);
+        self.ui.set_shade_open(false);
+    }
+
     pub fn render(&mut self, buf: &mut [u32], stride_px: usize) -> Damage {
         slint::platform::update_timers_and_animations();
         // SAFETY: Xrgb8888 is repr(transparent) over u32, same size/alignment.

@@ -1,0 +1,183 @@
+// SPDX-License-Identifier: Apache-2.0
+// Calendar: month view with today's agenda below (default), a day view ("day").
+// November 2026: the 1st is a Sunday; weeks start on Monday, so the grid starts with 6 blank cells.
+import { Theme } from "../theme.slint";
+import { Data } from "../data.slint";
+
+export component CalendarScreen inherits Rectangle {
+    in-out property <string> view;
+    in-out property <int> day: 6;
+    property <int> blank: 6;
+    property <length> cell: (self.width - 2 * Theme.margin) / 7;
+    property <[int]> busy: [3, 6, 9, 12, 17, 20, 24, 27];
+
+    if view == "": Flickable {
+        VerticalLayout {
+            padding-top: 10 * Theme.dp;
+            spacing: 6 * Theme.dp;
+            Text {
+                x: Theme.margin;
+                text: "November 2026";
+                color: Theme.text;
+                font-size: Theme.font-title * 1.1;
+                font-weight: 700;
+                horizontal-alignment: center;
+            }
+
+            HorizontalLayout {
+                padding-left: Theme.margin;
+                padding-right: Theme.margin;
+                for d in ["M", "T", "W", "T", "F", "S", "S"]: Text {
+                    width: cell;
+                    text: d;
+                    color: Theme.text-dim;
+                    font-size: Theme.font-status;
+                    font-weight: 600;
+                    horizontal-alignment: center;
+                }
+            }
+
+            Rectangle {
+                height: 6 * cell * 0.86;
+                for n in 36: Rectangle {
+                    property <int> date: n - blank + 1;
+                    x: Theme.margin + Math.mod(n, 7) * cell;
+                    y: Math.floor(n / 7) * cell * 0.86;
+                    width: cell;
+                    height: cell * 0.86;
+                    visible: date >= 1 && date <= 30;
+                    Rectangle {
+                        width: min(parent.width, parent.height) * 0.8;
+                        height: self.width;
+                        border-radius: self.width / 2;
+                        background: date == 6 ? Theme.accent : (date == day ? Theme.selected : transparent);
+                    }
+
+                    Text {
+                        text: date;
+                        color: Math.mod(n, 7) >= 5 ? Theme.text-secondary : Theme.text;
+                        font-size: Theme.font-body;
+                        font-weight: date == 6 ? 700 : 400;
+                    }
+
+                    // event dot
+                    Rectangle {
+                        visible: date == 3 || date == 6 || date == 9 || date == 12 || date == 17 || date == 20 || date == 24 || date == 27;
+                        y: parent.height - 8 * Theme.dp;
+                        width: 5 * Theme.dp;
+                        height: self.width;
+                        border-radius: self.width / 2;
+                        background: date == 6 ? white : Theme.accent;
+                    }
+
+                    TouchArea {
+                        clicked => {
+                            root.day = date;
+                            root.view = "day";
+                        }
+                    }
+                }
+            }
+
+            Text {
+                x: Theme.margin;
+                text: "  TODAY";
+                color: Theme.text-dim;
+                font-size: Theme.font-status * 0.9;
+                font-weight: 600;
+            }
+
+            for e in Data.events: HorizontalLayout {
+                padding-left: Theme.margin + 4 * Theme.dp;
+                padding-right: Theme.margin;
+                spacing: 12 * Theme.dp;
+                height: 56 * Theme.dp;
+                Text {
+                    width: 46 * Theme.dp;
+                    text: e.time;
+                    color: Theme.text-secondary;
+                    font-size: Theme.font-label;
+                    vertical-alignment: center;
+                }
+
+                Rectangle {
+                    width: 4 * Theme.dp;
+                    border-radius: 2 * Theme.dp;
+                    background: e.tint;
+                }
+
+                VerticalLayout {
+                    alignment: center;
+                    Text {
+                        text: e.title;
+                        color: Theme.text;
+                        font-size: Theme.font-body;
+                        font-weight: 600;
+                    }
+
+                    Text {
+                        text: e.place;
+                        color: Theme.text-dim;
+                        font-size: Theme.font-label;
+                    }
+                }
+            }
+        }
+    }
+
+    if view == "day": Flickable {
+        VerticalLayout {
+            padding-top: 10 * Theme.dp;
+            Text {
+                x: Theme.margin;
+                text: "  " + (day == 6 ? "Friday" : "") + " " + day + " November";
+                color: Theme.text;
+                font-size: Theme.font-title * 1.1;
+                font-weight: 700;
+            }
+
+            for h in 14: Rectangle {
+                height: 52 * Theme.dp;
+                property <int> hour: h + 8;
+                Text {
+                    x: Theme.margin;
+                    y: 2 * Theme.dp;
+                    text: (hour < 10 ? "0" : "") + hour + ":00";
+                    color: Theme.text-dim;
+                    font-size: Theme.font-status;
+                }
+
+                Rectangle {
+                    x: 64 * Theme.dp;
+                    y: 10 * Theme.dp;
+                    height: max(1px, Theme.dp / 2);
+                    width: parent.width - self.x - Theme.margin;
+                    background: Theme.hairline;
+                }
+
+                for e in Data.events: Rectangle {
+                    visible: day == 6 && (e.time == (hour < 10 ? "0" : "") + hour + ":00" || (e.time == "09:30" && hour == 9));
+                    x: 64 * Theme.dp;
+                    y: 12 * Theme.dp;
+                    width: parent.width - self.x - Theme.margin;
+                    height: 44 * Theme.dp;
+                    border-radius: Theme.radius-small;
+                    background: e.tint.with-alpha(0.25);
+                    Rectangle {
+                        x: 0;
+                        width: 4 * Theme.dp;
+                        background: e.tint;
+                    }
+
+                    Text {
+                        x: 12 * Theme.dp;
+                        text: e.title + " · " + e.place;
+                        color: Theme.text;
+                        font-size: Theme.font-label;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+    }
+}

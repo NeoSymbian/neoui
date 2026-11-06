@@ -1,0 +1,269 @@
+// SPDX-License-Identifier: Apache-2.0
+// Controls: buttons, search field, tabs, slider, card, page dots, the Options menu.
+import { Theme } from "../theme.slint";
+import { Glyph } from "frame.slint";
+
+export component Button inherits Rectangle {
+    in property <string> text;
+    in property <bool> primary: true;
+    in property <color> tint: Theme.accent;
+    callback clicked;
+    height: Theme.field-h;
+    border-radius: self.height / 2;
+    background: primary ? (touch.pressed ? tint.darker(20%) : tint) : (touch.pressed ? Theme.pressed : Theme.field);
+    HorizontalLayout {
+        padding-left: 20 * Theme.dp;
+        padding-right: 20 * Theme.dp;
+        Text {
+            text: root.text;
+            color: white;
+            font-size: Theme.font-body;
+            font-weight: 600;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// A round icon button (call actions, media controls).
+export component RoundButton inherits Rectangle {
+    in property <image> icon;
+    in property <length> size: 56 * Theme.dp;
+    in property <color> fill: Theme.field;
+    in property <string> label;
+    in property <bool> active;
+    callback clicked;
+    width: size;
+    height: size + (label != "" ? 22 * Theme.dp : 0);
+    Rectangle {
+        y: 0;
+        width: size;
+        height: size;
+        border-radius: size / 2;
+        background: active ? Theme.text : (touch.pressed ? fill.brighter(30%) : fill);
+        Glyph {
+            source: icon;
+            size: root.size * 0.42;
+            colorize: active ? Theme.bg : Theme.text;
+        }
+    }
+
+    if label != "": Text {
+        y: size + 6 * Theme.dp;
+        text: label;
+        color: Theme.text-secondary;
+        font-size: Theme.font-status;
+        horizontal-alignment: center;
+        width: parent.width;
+    }
+    touch := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+export component SearchField inherits Rectangle {
+    in property <string> placeholder: "Search";
+    height: Theme.field-h;
+    border-radius: self.height / 2;
+    background: Theme.field;
+    HorizontalLayout {
+        padding-left: 14 * Theme.dp;
+        padding-right: 14 * Theme.dp;
+        spacing: 10 * Theme.dp;
+        VerticalLayout {
+            alignment: center;
+            Glyph {
+                source: @image-url("../icons/sys/search.svg");
+                size: 18 * Theme.dp;
+                colorize: Theme.text-dim;
+            }
+        }
+
+        Text {
+            text: placeholder;
+            color: Theme.text-dim;
+            font-size: Theme.font-body;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+    }
+}
+
+export component TabBar inherits Rectangle {
+    in property <[string]> tabs;
+    in-out property <int> current;
+    callback tab-clicked(int);  // a tap (not a binding change) picked tab i
+    height: Theme.tab-h;
+    HorizontalLayout {
+        padding-left: Theme.margin;
+        padding-right: Theme.margin;
+        for t[i] in tabs: Rectangle {
+            Text {
+                text: t;
+                color: i == current ? Theme.text : Theme.text-dim;
+                font-size: Theme.font-body * 0.95;
+                font-weight: i == current ? 700 : 500;
+            }
+
+            Rectangle {
+                y: parent.height - self.height;
+                width: i == current ? 28 * Theme.dp : 0;
+                height: 3 * Theme.dp;
+                border-radius: self.height / 2;
+                background: Theme.accent;
+                animate width { duration: Theme.fast; easing: ease-out-quad; }
+            }
+
+            TouchArea {
+                clicked => {
+                    root.current = i;
+                    root.tab-clicked(i);
+                }
+            }
+        }
+    }
+
+    Rectangle {
+        y: parent.height - self.height;
+        height: max(1px, Theme.dp / 2);
+        background: Theme.hairline;
+    }
+}
+
+export component Slider inherits Rectangle {
+    in-out property <float> value: 0.5;
+    height: 32 * Theme.dp;
+    Rectangle {
+        height: 4 * Theme.dp;
+        border-radius: self.height / 2;
+        background: #3a3f47;
+    }
+
+    Rectangle {
+        x: 0;
+        width: root.width * value;
+        height: 4 * Theme.dp;
+        border-radius: self.height / 2;
+        background: Theme.accent;
+    }
+
+    Rectangle {
+        x: root.width * value - self.width / 2;
+        width: 22 * Theme.dp;
+        height: self.width;
+        border-radius: self.width / 2;
+        background: white;
+    }
+
+    TouchArea {
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down || e.kind == PointerEventKind.move) {
+                root.value = max(0, min(1, self.mouse-x / root.width));
+            }
+        }
+    }
+}
+
+export component Card inherits Rectangle {
+    border-radius: Theme.radius;
+    background: Theme.card;
+    border-width: max(1px, Theme.dp / 2);
+    border-color: Theme.card-border;
+}
+
+export component PageDots inherits HorizontalLayout {
+    in property <int> count;
+    in property <int> current;
+    alignment: center;
+    spacing: 7 * Theme.dp;
+    for i in count: Rectangle {
+        width: i == current ? 18 * Theme.dp : 7 * Theme.dp;
+        height: 7 * Theme.dp;
+        border-radius: self.height / 2;
+        background: i == current ? Theme.text : #ffffff55;
+        animate width { duration: Theme.fast; }
+    }
+}
+
+// Belle's Options menu: a sheet that rises above the toolbar; the rest of the screen dims.
+export component OptionsMenu inherits Rectangle {
+    in property <[string]> items;
+    in property <bool> open;
+    callback dismissed;
+    callback selected(string);
+    visible: self.opacity > 0.01;
+    opacity: open ? 1 : 0;
+    animate opacity { duration: Theme.popup; easing: ease-out-quad; }
+    Rectangle {
+        background: Theme.scrim;
+        TouchArea {
+            clicked => {
+                root.dismissed();
+            }
+        }
+    }
+
+    sheet := Rectangle {
+        x: 8 * Theme.dp;
+        width: parent.width - 16 * Theme.dp;
+        height: items.length * Theme.list-row-h + 12 * Theme.dp;
+        y: parent.height - self.height - 8 * Theme.dp + (open ? 0 : 24 * Theme.dp);
+        animate y { duration: Theme.popup; easing: ease-out-quad; }
+        border-radius: Theme.radius + 4 * Theme.dp;
+        background: #1b1e23;
+        border-width: max(1px, Theme.dp / 2);
+        border-color: Theme.card-border;
+        TouchArea { }
+
+        VerticalLayout {
+            padding-top: 6 * Theme.dp;
+            padding-bottom: 6 * Theme.dp;
+            for item in items: Rectangle {
+                height: Theme.list-row-h;
+                background: t.pressed ? Theme.pressed : transparent;
+                Text {
+                    x: 20 * Theme.dp;
+                    text: item;
+                    color: Theme.text;
+                    font-size: Theme.font-body;
+                    vertical-alignment: center;
+                }
+
+                t := TouchArea {
+                    clicked => {
+                        root.selected(item);
+                    }
+                }
+            }
+        }
+    }
+}
+
+// A large clock from our display digits (ui/icons/digits): SDF text breaks up at these sizes.
+export component BigClock inherits HorizontalLayout {
+    in property <int> hours;
+    in property <int> minutes;
+    in property <length> digit-h: 64 * Theme.dp;
+    property <[image]> d: [
+        @image-url("../icons/digits/d0.svg"), @image-url("../icons/digits/d1.svg"),
+        @image-url("../icons/digits/d2.svg"), @image-url("../icons/digits/d3.svg"),
+        @image-url("../icons/digits/d4.svg"), @image-url("../icons/digits/d5.svg"),
+        @image-url("../icons/digits/d6.svg"), @image-url("../icons/digits/d7.svg"),
+        @image-url("../icons/digits/d8.svg"), @image-url("../icons/digits/d9.svg"),
+    ];
+    spacing: digit-h * 0.07;
+    height: digit-h;
+    for i in [Math.floor(hours / 10), Math.mod(hours, 10), -1, Math.floor(minutes / 10), Math.mod(minutes, 10)]: Image {
+        width: i < 0 ? digit-h * 6 / 24 : digit-h * 14 / 24;
+        height: digit-h;
+        source: i < 0 ? @image-url("../icons/digits/colon.svg") : d[i];
+    }
+}

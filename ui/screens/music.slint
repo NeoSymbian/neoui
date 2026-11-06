@@ -1,0 +1,220 @@
+// SPDX-License-Identifier: Apache-2.0
+// Music: library with tabs (default), now playing ("playing"), and a mini player at the bottom of the library.
+import { Theme } from "../theme.slint";
+import { Data } from "../data.slint";
+import { TabBar, Slider } from "../components/controls.slint";
+import { Glyph } from "../components/frame.slint";
+import { ListRow } from "../components/lists.slint";
+
+component Art inherits Rectangle {
+    in property <int> seed;
+    border-radius: Theme.radius-small;
+    background: seed == 0 ? @linear-gradient(135deg, #e04e9b 0%, #8656e8 100%) : seed == 1 ? @linear-gradient(135deg, #f2994a 0%, #e5484d 100%) : seed == 2 ? @linear-gradient(135deg, #1fa9c4 0%, #2f80ed 100%) : @linear-gradient(135deg, #22b46a 0%, #14a37f 100%);
+    Glyph {
+        source: @image-url("../icons/sys/note.svg");
+        size: min(parent.width, parent.height) * 0.36;
+        colorize: #ffffffcc;
+    }
+}
+
+component Control inherits Rectangle {
+    in property <image> icon;
+    in property <length> size: 30 * Theme.dp;
+    callback clicked;
+    width: size * 1.8;
+    height: size * 1.8;
+    Glyph {
+        source: icon;
+        size: root.size;
+    }
+
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+export component MusicScreen inherits Rectangle {
+    in-out property <string> view;
+    in-out property <bool> playing: true;
+    in-out property <int> tab;
+    if view == "": Rectangle {
+        TabBar {
+            y: 0;
+            tabs: ["Songs", "Albums", "Artists"];
+            current <=> root.tab;
+        }
+
+        Flickable {
+            y: Theme.tab-h;
+            height: parent.height - Theme.tab-h - 68 * Theme.dp;
+            VerticalLayout {
+                for s[i] in Data.songs: HorizontalLayout {
+                    padding-left: Theme.margin + 4 * Theme.dp;
+                    spacing: 12 * Theme.dp;
+                    height: Theme.list-row-double-h;
+                    VerticalLayout {
+                        alignment: center;
+                        Art {
+                            seed: Math.mod(i, 4);
+                            width: 48 * Theme.dp;
+                            height: 48 * Theme.dp;
+                        }
+                    }
+
+                    ListRow {
+                        horizontal-stretch: 1;
+                        title: s.title;
+                        subtitle: s.artist;
+                        value: s.length;
+                        clicked => {
+                            root.view = "playing";
+                        }
+                    }
+                }
+            }
+        }
+
+        // mini player
+        Rectangle {
+            y: parent.height - self.height;
+            height: 68 * Theme.dp;
+            background: Theme.card;
+            Rectangle {
+                y: 0;
+                height: 2 * Theme.dp;
+                width: parent.width * 0.38;
+                x: 0;
+                background: Theme.accent;
+            }
+
+            HorizontalLayout {
+                padding: 10 * Theme.dp;
+                padding-left: Theme.margin;
+                spacing: 12 * Theme.dp;
+                Art {
+                    seed: 0;
+                    width: 48 * Theme.dp;
+                }
+
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    Text {
+                        text: Data.songs[0].title;
+                        color: Theme.text;
+                        font-size: Theme.font-body;
+                        font-weight: 600;
+                    }
+
+                    Text {
+                        text: Data.songs[0].artist;
+                        color: Theme.text-dim;
+                        font-size: Theme.font-label;
+                    }
+                }
+
+                Control {
+                    icon: playing ? @image-url("../icons/sys/pause.svg") : @image-url("../icons/sys/play.svg");
+                    size: 24 * Theme.dp;
+                    clicked => { root.playing = !root.playing; }
+                }
+            }
+
+            TouchArea {
+                width: parent.width - 80 * Theme.dp;
+                x: 0;
+                clicked => {
+                    root.view = "playing";
+                }
+            }
+        }
+    }
+
+    if view == "playing": Rectangle {
+        background: @linear-gradient(180deg, #2a1838 0%, #000000 80%);
+        VerticalLayout {
+            padding: 28 * Theme.dp;
+            spacing: 14 * Theme.dp;
+            Art {
+                seed: 0;
+                height: self.width;
+                border-radius: Theme.radius + 6 * Theme.dp;
+            }
+
+            Rectangle { height: 4 * Theme.dp; }
+
+            Text {
+                text: Data.songs[0].title;
+                color: Theme.text;
+                font-size: Theme.font-title * 1.25;
+                font-weight: 700;
+            }
+
+            Text {
+                text: Data.songs[0].artist;
+                color: Theme.text-secondary;
+                font-size: Theme.font-body;
+            }
+
+            Slider {
+                value: 0.38;
+            }
+
+            HorizontalLayout {
+                Text {
+                    text: "1:24";
+                    color: Theme.text-dim;
+                    font-size: Theme.font-status;
+                }
+
+                Text {
+                    text: Data.songs[0].length;
+                    color: Theme.text-dim;
+                    font-size: Theme.font-status;
+                    horizontal-alignment: right;
+                }
+            }
+
+            HorizontalLayout {
+                alignment: space-between;
+                Control {
+                    icon: @image-url("../icons/sys/shuffle.svg");
+                    size: 22 * Theme.dp;
+                }
+
+                Control {
+                    icon: @image-url("../icons/sys/prev.svg");
+                }
+
+                Rectangle {
+                    width: 72 * Theme.dp;
+                    height: self.width;
+                    border-radius: self.width / 2;
+                    background: white;
+                    Glyph {
+                        source: playing ? @image-url("../icons/sys/pause.svg") : @image-url("../icons/sys/play.svg");
+                        size: 30 * Theme.dp;
+                        colorize: #000000;
+                    }
+
+                    TouchArea {
+                        clicked => {
+                            root.playing = !root.playing;
+                        }
+                    }
+                }
+
+                Control {
+                    icon: @image-url("../icons/sys/next.svg");
+                }
+
+                Control {
+                    icon: @image-url("../icons/sys/repeat.svg");
+                    size: 22 * Theme.dp;
+                }
+            }
+        }
+    }
+}

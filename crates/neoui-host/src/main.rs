@@ -129,20 +129,31 @@ impl ApplicationHandler for App {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    let size = match args.as_slice() {
-        [] => "pixel",
-        [flag, s] if flag == "--size" => s.as_str(),
-        _ => return Err("usage: neoui-host [--size pixel|syborg]".into()),
-    };
+    const USAGE: &str = "usage: neoui-host [--size pixel|syborg] [--screen <app>[/<view>]]";
+    let mut size = "pixel".to_string();
+    let mut screen = None;
+    let mut args = std::env::args().skip(1);
+    while let Some(flag) = args.next() {
+        let value = args.next().ok_or(USAGE)?;
+        match flag.as_str() {
+            "--size" => size = value,
+            "--screen" => screen = Some(value),
+            _ => return Err(USAGE.into()),
+        }
+    }
     // (framebuffer px, window logical size)
-    let ((fb_w, fb_h), window_size) = match size {
+    let ((fb_w, fb_h), window_size) = match size.as_str() {
         "pixel" => ((1080, 2160), LogicalSize::new(540.0, 1080.0)),
         "syborg" => ((768, 640), LogicalSize::new(768.0, 640.0)),
         other => return Err(format!("unknown size {other:?}, expected pixel or syborg").into()),
     };
-    let renderer =
+    let mut renderer =
         Renderer::new(fb_w as u32, fb_h as u32, now_ms).map_err(|e| format!("slint: {e}"))?;
+    if let Some(s) = &screen {
+        // e.g. "settings/display": an app key, optionally a sub-view
+        let (app, view) = s.split_once('/').unwrap_or((s, ""));
+        renderer.show(app, view);
+    }
     let mut app = App {
         renderer,
         fb: vec![0; fb_w * fb_h],
