@@ -1,0 +1,7 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "neoui-proto"
+description = "neoui wire types: rects, damage, input events, surface ids"
+version.workspace = true
+edition.workspace = true
+license.workspace = true

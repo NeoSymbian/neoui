@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "neoui-render"
+description = "Slint software renderer driving the neoui launcher into a raw XRGB8888 buffer"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+neoui-proto.workspace = true
+slint.workspace = true
+
+[build-dependencies]
+slint-build.workspace = true
+
+[dev-dependencies]
+png.workspace = true

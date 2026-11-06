@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "neoui-host"
+description = "Desktop host for neoui: winit window + softbuffer, mouse as touch"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+neoui-proto.workspace = true
+neoui-render.workspace = true
+winit.workspace = true
+softbuffer.workspace = true
