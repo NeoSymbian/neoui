@@ -1,0 +1,94 @@
+// SPDX-License-Identifier: Apache-2.0
+// Open apps (NeoSymbian R10): the apps the UI server keeps running, most recent first, as cards in two columns (Belle's
+// task switcher, modernized). Tap a card to go back to the app; × closes it. Opened from the Apps menu's toolbar.
+// Geometry (crates/neoui-render/tests/switcher.rs and the Syborg CI mirror it): 12 dp margins and gaps, cards 160 dp
+// high, × in a 44 dp square at the card's top-right.
+// shortcut: icons, not live thumbnails of the apps; add downscaled surface snapshots later.
+import { Theme } from "../theme.slint";
+import { Apps } from "menu.slint";
+import { Glyph } from "../components/frame.slint";
+
+export component SwitcherScreen inherits Rectangle {
+    // app keys, most recent first
+    in property <[string]> running;
+    callback open-app(string);
+    callback close-app(string);
+    property <length> gap: 12 * Theme.dp;
+    property <length> card-w: (self.width - 3 * gap) / 2;
+    property <length> card-h: 160 * Theme.dp;
+
+    if running.length == 0: Text {
+        text: "No open apps";
+        color: Theme.text-dim;
+        font-size: Theme.font-body;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+
+    Flickable {
+        content-height: gap + Math.ceil(running.length / 2) * (card-h + gap);
+        for key[i] in running: Rectangle {
+            x: gap + Math.mod(i, 2) * (card-w + gap);
+            y: gap + Math.floor(i / 2) * (card-h + gap);
+            width: card-w;
+            height: card-h;
+            border-radius: Theme.radius;
+            background: open.pressed ? Theme.pressed : Theme.card;
+            border-width: max(1px, Theme.dp / 2);
+            border-color: Theme.card-border;
+
+            open := TouchArea {
+                clicked => {
+                    root.open-app(key);
+                }
+            }
+
+            for app in Apps.all: Rectangle {
+                if app.key == key: VerticalLayout {
+                    alignment: center;
+                    spacing: Theme.app-label-gap;
+                    HorizontalLayout {
+                        alignment: center;
+                        Image {
+                            width: Theme.app-icon;
+                            height: Theme.app-icon;
+                            source: app.icon;
+                        }
+                    }
+
+                    Text {
+                        text: app.name;
+                        color: Theme.text;
+                        font-size: Theme.font-label;
+                        horizontal-alignment: center;
+                    }
+                }
+            }
+
+            // ×: above the card's own touch area
+            Rectangle {
+                x: parent.width - self.width;
+                y: 0;
+                width: 44 * Theme.dp;
+                height: 44 * Theme.dp;
+                Rectangle {
+                    width: 28 * Theme.dp;
+                    height: 28 * Theme.dp;
+                    border-radius: self.width / 2;
+                    background: close.pressed ? Theme.pressed : #2a2e35;
+                    Glyph {
+                        source: @image-url("../icons/sys/close.svg");
+                        size: 16 * Theme.dp;
+                        colorize: Theme.text-secondary;
+                    }
+                }
+
+                close := TouchArea {
+                    clicked => {
+                        root.close-app(key);
+                    }
+                }
+            }
+        }
+    }
+}

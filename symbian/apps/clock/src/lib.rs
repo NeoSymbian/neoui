@@ -63,6 +63,8 @@ fn run() -> Result<(), i32> {
     ui.show().map_err(|_| -2)?;
 
     let mut shown_second = u32::MAX;
+    // In the background (R10) the clock neither ticks nor draws.
+    let mut visible = true;
     rt::block_on(async {
         loop {
             let mut ev = [0u8; proto::EVENT_LEN];
@@ -74,7 +76,7 @@ fn run() -> Result<(), i32> {
                 let mut next = pin!(app.server.send(proto::NEXT_EVENT, &args));
                 loop {
                     let now = time::now();
-                    if now.second != shown_second {
+                    if visible && now.second != shown_second {
                         shown_second = now.second;
                         set_time(&ui, &now);
                         dprintln!(
@@ -96,6 +98,11 @@ fn run() -> Result<(), i32> {
                 Some(AppEvent::Quit) => {
                     dprintln!("clock: quit");
                     return Ok(());
+                }
+                Some(AppEvent::Visible(v)) => {
+                    dprintln!("clock: visible {}", v);
+                    visible = v;
+                    shown_second = u32::MAX; // redraw at once when shown again
                 }
                 Some(AppEvent::Input(input)) => {
                     if let InputEvent::Touch {

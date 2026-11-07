@@ -58,7 +58,10 @@ jobs:
       # (row 0, y 142), Back -> Data (row 1) -> estart.txt (row 0) in the viewer, Back x4 to the drives; C: card
       # (270,135) -> Options (452,1033) -> New folder (270,756) -> `neo` on the keyboard; Options -> Delete (270,924)
       # -> the neo row (row 0) -> Delete in the dialog (430,553); Back x2 (C:\ -> drives -> the app closes).
-      - name: Boot at 539x1079; Clock; Terminal (ESHELL, dir by touch, neotest); Files (browse, view, mkdir, delete)
+      # R10: apps keep running -- Back returns to the menu (where the toolbar's middle button now opens Open apps), so
+      # each app is opened from the menu directly; then Terminal is reopened (resumed, not restarted), and Open apps
+      # (menu toolbar middle, 270,1000) closes all three with the first card's x (227,88).
+      - name: Boot at 539x1079; Clock; Terminal (ESHELL, dir by touch, neotest); Files; resume; Open apps closes all
         working-directory: build
         run: |
           export SCREEN=539x1079
@@ -67,7 +70,6 @@ jobs:
           tap 449 530; wait_s 8
           tap 270 500; wait_s 3
           tap 88 1033; wait_s 5
-          tap 270 1000; wait_s 3
           tap 449 735; wait_s 12
           kb_type dir; wait_s 5
           type_text neotest; wait_s 25
@@ -80,7 +82,10 @@ jobs:
           kb_type neo; wait_s 4
           tap 452 1033; wait_s 3; tap 270 924; wait_s 3; tap 270 142; wait_s 4; tap 430 553; wait_s 4
           tap 88 1033; wait_s 3; tap 88 1033; wait_s 5
-          MON_GAP=0.3 MONITOR="$M" SECS=330 ./boot.sh
+          tap 449 735; wait_s 5; tap 88 1033; wait_s 4
+          tap 270 1000; wait_s 4
+          for i in 1 2 3; do tap 227 88; wait_s 6; done
+          MON_GAP=0.3 MONITOR="$M" SECS=390 ./boot.sh
 
       - name: Check the output
         working-directory: build
@@ -132,6 +137,14 @@ jobs:
           grep -a 'files: delete C:\\neo\\ 0' $s
           grep -a 'files: quit' $s
           grep -a 'neoui: app files exited (type 0, reason 0)' $s
+          # R10: Back keeps apps running (Clock is told it is hidden); Terminal comes back with its ESHELL session;
+          # Open apps closes each one, and every app quits by itself (none killed)
+          grep -a 'clock: visible false' $s
+          grep -a 'neoui: app terminal resumed' $s
+          test "$(grep -ac 'neoui: app terminal started' $s)" = 1
+          grep -a 'neoui: screen switcher' $s
+          for a in clock terminal files; do grep -a "neoui: app $a closed" $s; done
+          ! grep -aq 'killed (did not quit)' $s
           ! grep -aq 'K::Fault\|Kern::Fault\|\[EKERN\] panic\|rust panic' $s
           python3 - <<'PY'
           d = open("out/fb.ppm", "rb").read()

@@ -63,6 +63,7 @@ pub struct Renderer {
     ui: Shell,
     typed: Rc<RefCell<Vec<u32>>>,
     nav: Rc<RefCell<Vec<i32>>>,
+    closed: Rc<RefCell<Vec<alloc::string::String>>>,
 }
 
 impl Renderer {
@@ -84,11 +85,15 @@ impl Renderer {
         let nav: Rc<RefCell<Vec<i32>>> = Rc::default();
         let sink = nav.clone();
         ui.on_app_nav(move |b| sink.borrow_mut().push(b));
+        let closed: Rc<RefCell<Vec<alloc::string::String>>> = Rc::default();
+        let sink = closed.clone();
+        ui.on_close_app(move |k| sink.borrow_mut().push(k.as_str().into()));
         Ok(Self {
             window,
             ui,
             typed,
             nav,
+            closed,
         })
     }
 
@@ -144,6 +149,18 @@ impl Renderer {
     /// Claimed toolbar buttons pressed since the last call: 1 = Back, 2 = Options (`neoui_proto::ipc::NAV_*`).
     pub fn take_nav(&mut self) -> Vec<i32> {
         core::mem::take(&mut *self.nav.borrow_mut())
+    }
+
+    /// The running apps' keys, most recent first, for the switcher (screen `switcher`).
+    pub fn set_running(&mut self, keys: &[&str]) {
+        let model: Vec<slint::SharedString> = keys.iter().map(|k| (*k).into()).collect();
+        self.ui
+            .set_running(slint::ModelRc::from(Rc::new(slint::VecModel::from(model))));
+    }
+
+    /// Apps the switcher's × asked to close since the last call.
+    pub fn take_closed(&mut self) -> Vec<alloc::string::String> {
+        core::mem::take(&mut *self.closed.borrow_mut())
     }
 
     /// The status bar's time text, e.g. "09:41".

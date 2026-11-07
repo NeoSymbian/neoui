@@ -16,6 +16,7 @@ mod perf;
 
 use alloc::format;
 use alloc::vec;
+use alloc::vec::Vec;
 use core::pin::pin;
 use e32::display::Display;
 use e32::event::{EventHook, TRawEvent, raw};
@@ -85,6 +86,7 @@ fn main() -> i32 {
     let mut host = Host::new(ui.body(), dp256, ui.keyboard_h());
     let mut keyboard_shown = false;
     let mut nav_shown = 0;
+    let mut running_shown: Vec<&'static str> = Vec::new();
     let mut clock_minute = u32::MAX;
 
     rt::block_on(async {
@@ -117,7 +119,7 @@ fn main() -> i32 {
                         }
                     };
                     let Some(event) = to_input(&ev) else { continue };
-                    let app_on_screen = host.visible(&screen).is_some();
+                    let app_on_screen = host.front().is_some();
                     match event {
                         InputEvent::Touch { id, x, y, phase } => {
                             let body = host.body;
@@ -149,6 +151,10 @@ fn main() -> i32 {
                                         AppEvent::Options
                                     });
                                 }
+                                for key in ui.take_closed() {
+                                    dprintln!("neoui: app {} closed", key);
+                                    host.close(&key, time::millis());
+                                }
                             }
                         }
                         InputEvent::Key { .. } if app_on_screen => {
@@ -172,9 +178,10 @@ fn main() -> i32 {
                 Either::Right(()) => {}
             }
 
-            // App lifecycle: the shell's screen decides which app runs.
+            // App lifecycle: the shell's screen decides which app is in front; the others keep running (R10).
             let mut repaint_all = false;
-            if let Some(key) = host.reap() {
+            let ms = time::millis();
+            for key in host.reap(ms) {
                 if ui.screen() == key {
                     ui.show("home", "");
                 }
@@ -183,28 +190,23 @@ fn main() -> i32 {
             let now = ui.screen();
             if now != screen {
                 dprintln!("neoui: screen {}", now);
-                if host.app.as_ref().is_some_and(|a| a.key != now) {
-                    host.quit();
-                    repaint_all = true;
-                }
-                if host.app.is_none() {
-                    // The body depends on the screen (app screens have a toolbar), so take it at launch.
-                    host.body = ui.body();
-                    host.launch(&now);
-                }
+                // The body depends on the screen (app screens have a toolbar): take it before an app is shown.
+                host.body = ui.body();
+                host.set_screen(&now, ms);
                 screen = now;
             }
+            let running = host.running();
+            if running != running_shown {
+                ui.set_running(&running);
+                running_shown = running;
+            }
 
-            let want_keyboard = host.keyboard && host.visible(&screen).is_some();
+            let want_keyboard = host.front().is_some_and(|a| a.keyboard);
             if want_keyboard != keyboard_shown {
                 ui.set_keyboard(want_keyboard);
                 keyboard_shown = want_keyboard;
             }
-            let want_nav = if host.visible(&screen).is_some() {
-                host.nav
-            } else {
-                0
-            };
+            let want_nav = host.front().map_or(0, |a| a.nav);
             if want_nav != nav_shown {
                 ui.set_app_nav(
                     want_nav & proto::NAV_BACK != 0,
@@ -228,7 +230,7 @@ fn main() -> i32 {
                 copy_us += perf.since(&m);
             }
             let m = perf.mark();
-            let app_px = compose(&mut host, &screen, &damage, &display);
+            let app_px = compose(&mut host, &damage, &display);
             perf.frame(render_us, copy_us, perf.since(&m), px + app_px);
             perf.idle();
             if tap_end {
@@ -244,13 +246,14 @@ fn contains(r: &Rect, x: i32, y: i32) -> bool {
 
 /// Put the foreground app's surface over the shell's body (less the open keyboard): all of it when the shell drew
 /// under it, else the rectangles the app reported.
-fn compose(host: &mut Host, screen: &str, shell_damage: &Damage, display: &Display) -> usize {
+fn compose(host: &mut Host, shell_damage: &Damage, display: &Display) -> usize {
     let blits = core::mem::take(&mut host.blits);
     let body = host.body;
     let area = host.app_area();
     // the visible part of the surface, in surface coordinates
     let shown = Rect::new(0, 0, area.w, area.h);
-    let Some(surface) = host.visible(screen).and_then(|a| a.surface.as_ref()) else {
+    let refresh = core::mem::take(&mut host.refresh);
+    let Some(surface) = host.front().and_then(|a| a.surface.as_ref()) else {
         return 0;
     };
     let (bw, bh) = (body.w as usize, body.h as usize);
@@ -267,10 +270,11 @@ fn compose(host: &mut Host, screen: &str, shell_damage: &Damage, display: &Displ
         let at = (body.x as usize + x, body.y as usize + y);
         display.blit_to(src, bw, (x, y, r.w as usize, r.h as usize), at);
     };
-    if shell_damage
-        .rects()
-        .iter()
-        .any(|r| !r.intersection(&area).is_empty())
+    if refresh
+        || shell_damage
+            .rects()
+            .iter()
+            .any(|r| !r.intersection(&area).is_empty())
     {
         to_screen(shown);
     } else {

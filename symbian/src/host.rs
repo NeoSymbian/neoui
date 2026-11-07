@@ -1,10 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! App processes (NeoSymbian R6): the `NeoUi` IPC service an app talks to, and the one foreground app's state.
+//! App processes (NeoSymbian R6, R10): the `NeoUi` IPC service apps talk to, and the apps that are running.
 //!
-//! An app (e.g. `NEOCLOCK.EXE`) is started when the shell navigates to its key, connects to `NeoUi`, asks for its
-//! geometry and its surface — an unnamed global chunk the server creates and hands over with
+//! An app (e.g. `NEOCLOCK.EXE`) is started when the shell first navigates to its key, connects to `NeoUi`, asks for
+//! its geometry and its surface — an unnamed global chunk the server creates and hands over with
 //! `complete_with_handle` (same address in both processes) — draws, reports `DAMAGE`, and keeps one `NEXT_EVENT`
-//! outstanding, which the server completes with input or `Quit`.
+//! outstanding, which the server completes with input, `Visible`, or `Quit`.
+//!
+//! Apps keep running when the shell moves away (R10): the one whose key is the current screen is the foreground app
+//! (its surface is shown, it gets input and its keyboard/toolbar claims apply); the others are told they are hidden.
+//! They end when closed in the switcher, or when more than [`MAX_RUNNING`] run (the least recently used).
 
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
@@ -16,6 +20,7 @@ use e32::server::{Message, Service};
 use e32::sys::{TVersion, err};
 use neoui_proto::Rect;
 use neoui_proto::ipc::{self as proto, AppEvent};
+use neoui_proto::recents::Recents;
 
 /// Screen keys that are separate processes, and their EXEs.
 // shortcut: a fixed table; a registry of installed apps comes with app installation.
@@ -25,31 +30,61 @@ pub const APPS: &[(&str, &str)] = &[
     ("files", "neofiles"),
 ];
 
+/// Most apps kept running; starting one more asks the least recently used to quit.
+// shortcut: a fixed count; size it by free RAM when the kernel reports it (a surface is ~2 MB on Syborg, ~7 MB on
+// the phone).
+const MAX_RUNNING: usize = 4;
+/// An app asked to quit that is still running after this long is killed.
+const QUIT_GRACE_MS: u64 = 3000;
+
 pub struct App {
     pub key: &'static str,
+    /// Its `NeoUi` session, once it connected.
+    session: Option<u32>,
     pub process: Process,
     pub surface: Option<Chunk>,
     /// The app's outstanding `NEXT_EVENT`, if any.
     waiting: Option<Message>,
     queue: VecDeque<AppEvent>,
-    /// `Quit` was sent: the app is hidden and should exit.
-    pub quitting: bool,
+    /// When `Quit` was sent (ms): it is leaving, and is killed if it hasn't after [`QUIT_GRACE_MS`].
+    quit_at: Option<u64>,
+    /// It asked for the system keyboard (`KEYBOARD`); applies while it is in front.
+    pub keyboard: bool,
+    /// Toolbar buttons it claimed (`NAV_BACK | NAV_OPTIONS`); apply while it is in front.
+    pub nav: i32,
+}
+
+impl App {
+    fn send(&mut self, e: AppEvent) {
+        match self.waiting.take() {
+            Some(m) => deliver(m, e),
+            None => self.queue.push_back(e),
+        }
+    }
+
+    fn quit(&mut self, now_ms: u64) {
+        if self.quit_at.is_none() {
+            self.quit_at = Some(now_ms);
+            self.send(AppEvent::Quit);
+        }
+    }
 }
 
 pub struct Host {
-    /// Where app surfaces go on the screen (the shell's body).
+    /// Where app surfaces go on the screen (the shell's body on an app screen).
     pub body: Rect,
     /// The shell's design unit in 1/256 px, for apps.
     pub dp256: u32,
-    pub app: Option<App>,
-    /// App damage not yet shown (surface coordinates).
-    pub blits: Vec<Rect>,
-    /// The foreground app asked for the system keyboard (`KEYBOARD`).
-    pub keyboard: bool,
     /// The keyboard's height in pixels when open.
     pub keyboard_h: u32,
-    /// Toolbar buttons the foreground app claimed (`NAV_BACK | NAV_OPTIONS`).
-    pub nav: i32,
+    apps: Recents<App>,
+    /// The current screen when it is an app's key.
+    front: Option<&'static str>,
+    next_session: u32,
+    /// The foreground app's damage not yet shown (surface coordinates).
+    pub blits: Vec<Rect>,
+    /// Show the foreground app's whole surface on the next compose (it just came back).
+    pub refresh: bool,
 }
 
 impl Host {
@@ -57,79 +92,133 @@ impl Host {
         Self {
             body,
             dp256,
-            app: None,
-            blits: Vec::new(),
-            keyboard: false,
             keyboard_h,
-            nav: 0,
+            apps: Recents::default(),
+            front: None,
+            next_session: 1,
+            blits: Vec::new(),
+            refresh: false,
         }
+    }
+
+    /// The foreground app, if it is on screen with its surface and not leaving.
+    pub fn front(&self) -> Option<&App> {
+        let key = self.front?;
+        self.apps
+            .find(|a| a.key == key && a.quit_at.is_none() && a.surface.is_some())
     }
 
     /// The part of the body the app's surface shows in (screen coordinates): all of it but the open keyboard.
     pub fn app_area(&self) -> Rect {
-        let covered = if self.keyboard { self.keyboard_h } else { 0 };
+        let covered = if self.front().is_some_and(|a| a.keyboard) {
+            self.keyboard_h
+        } else {
+            0
+        };
         let b = self.body;
         Rect::new(b.x, b.y, b.w, b.h.saturating_sub(covered))
     }
 
-    /// Start the app for screen `key`, if it is one.
-    pub fn launch(&mut self, key: &str) {
-        let Some(&(key, exe)) = APPS.iter().find(|(k, _)| *k == key) else {
+    /// The shell moved to `screen`: hide the app that was in front, and show (or start) the one for `screen`.
+    pub fn set_screen(&mut self, screen: &str, now_ms: u64) {
+        let key = APPS.iter().find(|(k, _)| *k == screen).map(|(k, _)| *k);
+        if self.front == key {
             return;
-        };
+        }
+        if let Some(old) = self.front.take()
+            && let Some(app) = self.apps.find_mut(|a| a.key == old)
+        {
+            app.send(AppEvent::Visible(false));
+        }
+        self.blits.clear();
+        let Some(key) = key else { return };
+        self.front = Some(key);
+        if self.apps.touch(|a| a.key == key && a.quit_at.is_none()) {
+            if let Some(app) = self.apps.find_mut(|a| a.key == key) {
+                app.send(AppEvent::Visible(true));
+            }
+            self.refresh = true;
+            dprintln!("neoui: app {} resumed", key);
+        } else {
+            self.launch(key);
+        }
+        let over: Vec<&'static str> = self
+            .apps
+            .over_limit(MAX_RUNNING, |a| a.key == key || a.quit_at.is_some())
+            .map(|a| a.key)
+            .collect();
+        for k in over {
+            dprintln!("neoui: app {} closed (too many running)", k);
+            self.close(k, now_ms);
+        }
+    }
+
+    fn launch(&mut self, key: &'static str) {
+        let exe = APPS.iter().find(|(k, _)| *k == key).map_or("", |(_, e)| *e);
         match Process::spawn(exe, "") {
             Ok(process) => {
                 process.resume();
                 dprintln!("neoui: app {} started", key);
-                self.app = Some(App {
+                self.apps.push(App {
                     key,
+                    session: None,
                     process,
                     surface: None,
                     waiting: None,
                     queue: VecDeque::new(),
-                    quitting: false,
+                    quit_at: None,
+                    keyboard: false,
+                    nav: 0,
                 });
             }
             Err(e) => dprintln!("neoui: app {} failed to start ({})", key, e),
         }
     }
 
-    /// Queue `e` for the app, or answer its outstanding `NEXT_EVENT` now.
+    /// Input and claimed toolbar buttons go to the foreground app.
     pub fn send(&mut self, e: AppEvent) {
-        let Some(app) = self.app.as_mut() else {
-            return;
-        };
-        match app.waiting.take() {
-            Some(m) => deliver(m, e),
-            None => app.queue.push_back(e),
+        let Some(key) = self.front else { return };
+        if let Some(app) = self.apps.find_mut(|a| a.key == key && a.quit_at.is_none()) {
+            app.send(e);
         }
     }
 
-    /// Ask the app to leave (the shell moved away from it).
-    pub fn quit(&mut self) {
-        if let Some(app) = self.app.as_mut().filter(|a| !a.quitting) {
-            app.quitting = true;
-            self.keyboard = false;
-            self.nav = 0;
-            self.send(AppEvent::Quit);
+    /// Ask app `key` to quit (the switcher's ×, or too many running).
+    pub fn close(&mut self, key: &str, now_ms: u64) {
+        if let Some(app) = self.apps.find_mut(|a| a.key == key) {
+            app.quit(now_ms);
         }
     }
 
-    /// The foreground app is on screen with its surface: `screen` is its key and it is not leaving.
-    pub fn visible(&self, screen: &str) -> Option<&App> {
-        self.app
-            .as_ref()
-            .filter(|a| a.key == screen && !a.quitting && a.surface.is_some())
+    /// Running apps, most recent first (not those leaving), for the switcher.
+    pub fn running(&self) -> Vec<&'static str> {
+        self.apps
+            .newest_first()
+            .filter(|a| a.quit_at.is_none())
+            .map(|a| a.key)
+            .collect()
     }
 
-    /// If the app process has ended, forget it and say how it ended.
-    pub fn reap(&mut self) -> Option<&'static str> {
-        let (t, r) = self.app.as_ref()?.process.exit_info()?;
-        let app = self.app.take()?;
-        self.keyboard = false;
-        self.nav = 0;
-        dprintln!("neoui: app {} exited (type {}, reason {})", app.key, t, r);
-        Some(app.key)
+    /// Forget apps whose process ended (and say which), and kill those that were asked to quit too long ago.
+    pub fn reap(&mut self, now_ms: u64) -> Vec<&'static str> {
+        for app in self.apps.iter_mut() {
+            if let Some(at) = app.quit_at
+                && now_ms.saturating_sub(at) > QUIT_GRACE_MS
+                && app.process.exit_info().is_none()
+            {
+                dprintln!("neoui: app {} killed (did not quit)", app.key);
+                app.process.kill(0);
+                app.quit_at = Some(u64::MAX / 2); // don't kill twice
+            }
+        }
+        let gone = self.apps.remove(|a| a.process.exit_info().is_some());
+        gone.iter()
+            .map(|app| {
+                let (t, r) = app.process.exit_info().unwrap_or((0, 0));
+                dprintln!("neoui: app {} exited (type {}, reason {})", app.key, t, r);
+                app.key
+            })
+            .collect()
     }
 }
 
@@ -139,22 +228,29 @@ fn deliver(m: Message, e: AppEvent) {
 }
 
 impl Service for Host {
-    type Session = ();
+    /// Which app the session is.
+    type Session = u32;
 
-    fn connect(&mut self, version: TVersion) -> Result<(), i32> {
+    fn connect(&mut self, version: TVersion) -> Result<u32, i32> {
         if version.major != proto::VERSION.0 {
             return Err(err::KERR_NOT_SUPPORTED);
         }
-        Ok(())
+        // The newest app without a session is the one connecting: apps start one at a time.
+        // shortcut: identify the client's process (MessageClient) if two launches ever overlap.
+        let id = self.next_session;
+        let app = self.apps.iter_mut().rev().find(|a| a.session.is_none());
+        let Some(app) = app else {
+            return Err(err::KERR_NOT_SUPPORTED);
+        };
+        app.session = Some(id);
+        self.next_session += 1;
+        Ok(id)
     }
 
-    fn message(&mut self, _: &mut (), m: Message) {
-        let body = self.body;
-        let dp256 = self.dp256;
-        let Some(app) = self.app.as_mut() else {
-            // shortcut: no access policy — only the foreground app gets service; others are refused.
-            m.complete(err::KERR_NOT_SUPPORTED);
-            return;
+    fn message(&mut self, id: &mut u32, m: Message) {
+        let (body, dp256, keyboard_h, front) = (self.body, self.dp256, self.keyboard_h, self.front);
+        let Some(app) = self.apps.find_mut(|a| a.session == Some(*id)) else {
+            return m.complete(err::KERR_NOT_SUPPORTED);
         };
         match m.function() {
             proto::GEOMETRY => {
@@ -177,25 +273,24 @@ impl Service for Host {
                 m.complete_with_handle(h);
             }
             proto::DAMAGE => {
-                self.blits.push(Rect::new(
-                    m.int(0),
-                    m.int(1),
-                    m.int(2) as u32,
-                    m.int(3) as u32,
-                ));
+                // a background app's drawing shows when it comes back (the whole surface is shown then)
+                if front == Some(app.key) {
+                    self.blits.push(Rect::new(
+                        m.int(0),
+                        m.int(1),
+                        m.int(2) as u32,
+                        m.int(3) as u32,
+                    ));
+                }
                 m.complete(0);
             }
             proto::KEYBOARD => {
-                self.keyboard = m.int(0) != 0;
-                dprintln!("neoui: keyboard {} for {}", self.keyboard, app.key);
-                m.complete(if self.keyboard {
-                    self.keyboard_h as i32
-                } else {
-                    0
-                });
+                app.keyboard = m.int(0) != 0;
+                dprintln!("neoui: keyboard {} for {}", app.keyboard, app.key);
+                m.complete(if app.keyboard { keyboard_h as i32 } else { 0 });
             }
             proto::NAV => {
-                self.nav = m.int(0) & (proto::NAV_BACK | proto::NAV_OPTIONS);
+                app.nav = m.int(0) & (proto::NAV_BACK | proto::NAV_OPTIONS);
                 m.complete(0);
             }
             proto::NEXT_EVENT => match app.queue.pop_front() {
@@ -206,9 +301,13 @@ impl Service for Host {
         }
     }
 
-    fn disconnect(&mut self, _: ()) -> ControlFlow<()> {
+    fn disconnect(&mut self, id: u32) -> ControlFlow<()> {
         // Complete what the session still has outstanding before its disconnect completes.
-        if let Some(m) = self.app.as_mut().and_then(|a| a.waiting.take()) {
+        if let Some(m) = self
+            .apps
+            .find_mut(|a| a.session == Some(id))
+            .and_then(|a| a.waiting.take())
+        {
             m.complete(err::KERR_CANCEL);
         }
         ControlFlow::Continue(())

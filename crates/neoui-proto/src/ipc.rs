@@ -43,6 +43,8 @@ pub enum AppEvent {
     Back,
     /// The toolbar's Options, which the app claimed ([`NAV`]).
     Options,
+    /// The app went to the background (false) or came back (true); it keeps running either way (R10).
+    Visible(bool),
 }
 
 const KIND_TOUCH: u32 = 1;
@@ -50,6 +52,7 @@ const KIND_KEY: u32 = 2;
 const KIND_QUIT: u32 = 3;
 const KIND_BACK: u32 = 4;
 const KIND_OPTIONS: u32 = 5;
+const KIND_VISIBLE: u32 = 6;
 
 impl AppEvent {
     /// `[kind, a, b, c]` as little-endian u32s: touch = (phase | id << 8, x, y), key = (down, code, 0).
@@ -67,6 +70,7 @@ impl AppEvent {
             AppEvent::Quit => [KIND_QUIT, 0, 0, 0],
             AppEvent::Back => [KIND_BACK, 0, 0, 0],
             AppEvent::Options => [KIND_OPTIONS, 0, 0, 0],
+            AppEvent::Visible(v) => [KIND_VISIBLE, v as u32, 0, 0],
         };
         let mut out = [0u8; EVENT_LEN];
         for (i, v) in w.iter().enumerate() {
@@ -96,6 +100,7 @@ impl AppEvent {
             KIND_QUIT => AppEvent::Quit,
             KIND_BACK => AppEvent::Back,
             KIND_OPTIONS => AppEvent::Options,
+            KIND_VISIBLE => AppEvent::Visible(w(1) != 0),
             _ => return None,
         })
     }
@@ -121,6 +126,8 @@ mod tests {
             AppEvent::Quit,
             AppEvent::Back,
             AppEvent::Options,
+            AppEvent::Visible(true),
+            AppEvent::Visible(false),
         ];
         for e in all {
             assert_eq!(AppEvent::decode(&e.encode()), Some(e));

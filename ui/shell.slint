@@ -25,6 +25,7 @@ import { ClockScreen } from "screens/clock.slint";
 import { FilesScreen } from "screens/files.slint";
 import { SettingsScreen } from "screens/settings.slint";
 import { TerminalScreen } from "screens/terminal.slint";
+import { SwitcherScreen } from "screens/switcher.slint";
 
 // A screen slot: fades and slides in when it becomes the current screen (Belle's app start: 0.25 s).
 component Slot inherits Rectangle {
@@ -76,6 +77,9 @@ export component Shell inherits Window {
     in property <bool> app-back;
     in property <bool> app-options;
     callback app-nav(int);
+    // in: the apps the UI server keeps running, most recent first (R10); out: the switcher's close button
+    in property <[string]> running;
+    callback close-app(string);
     // in: the status bar's time, from the system clock (the default is the design's mock time)
     in property <string> clock: "10:24";
 
@@ -103,7 +107,7 @@ export component Shell inherits Window {
     }
 
     pure function screen-title(s: string, v: string) -> string {
-        s == "home" ? "" : s == "menu" ? "Menu" : s == "phone" ? (v == "call" ? "Call" : "Phone") : s == "messages" ? (v == "thread" ? "Ava Lindqvist" : "Messages") : s == "contacts" ? "Contacts" : s == "browser" ? "Browser" : s == "camera" ? "Camera" : s == "photos" ? "Photos" : s == "music" ? (v == "playing" ? "Now playing" : "Music") : s == "calendar" ? "Calendar" : s == "clock" ? "Clock" : s == "files" ? "Files" : s == "settings" ? (v == "" ? "Settings" : v == "connectivity" ? "Connectivity" : v == "display" ? "Display" : "About phone") : s == "terminal" ? "Terminal" : s
+        s == "home" ? "" : s == "menu" ? "Menu" : s == "phone" ? (v == "call" ? "Call" : "Phone") : s == "messages" ? (v == "thread" ? "Ava Lindqvist" : "Messages") : s == "contacts" ? "Contacts" : s == "browser" ? "Browser" : s == "camera" ? "Camera" : s == "photos" ? "Photos" : s == "music" ? (v == "playing" ? "Now playing" : "Music") : s == "calendar" ? "Calendar" : s == "clock" ? "Clock" : s == "files" ? "Files" : s == "settings" ? (v == "" ? "Settings" : v == "connectivity" ? "Connectivity" : v == "display" ? "Display" : "About phone") : s == "terminal" ? "Terminal" : s == "switcher" ? "Open apps" : s
     }
 
     pure function options(s: string) -> [string] {
@@ -208,6 +212,15 @@ export component Shell inherits Window {
             active: screen == "terminal";
             TerminalScreen { }
         }
+
+        Slot {
+            active: screen == "switcher";
+            SwitcherScreen {
+                running: root.running;
+                open-app(a) => { root.open(a); }
+                close-app(a) => { root.close-app(a); }
+            }
+        }
     }
 
     kb := Keyboard {
@@ -227,8 +240,8 @@ export component Shell inherits Window {
 
     if has-toolbar: Toolbar {
         y: root.height - Theme.toolbar-h;
-        has-action: screen == "messages" || screen == "contacts" || screen == "browser" || screen == "clock";
-        action-icon: screen == "contacts" ? @image-url("icons/sys/person_add.svg") : screen == "browser" ? @image-url("icons/sys/refresh.svg") : @image-url("icons/sys/add.svg");
+        has-action: screen == "messages" || screen == "contacts" || screen == "browser" || screen == "clock" || screen == "menu";
+        action-icon: screen == "contacts" ? @image-url("icons/sys/person_add.svg") : screen == "browser" ? @image-url("icons/sys/refresh.svg") : screen == "menu" ? @image-url("icons/sys/tabs.svg") : @image-url("icons/sys/add.svg");
         back => {
             if (root.app-back && !root.shade-open && !root.options-open) {
                 root.app-nav(1);
@@ -246,6 +259,8 @@ export component Shell inherits Window {
         action => {
             if (root.screen == "messages") {
                 root.view = "thread";
+            } else if (root.screen == "menu") {
+                root.open("switcher");
             }
         }
     }
