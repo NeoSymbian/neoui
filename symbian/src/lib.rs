@@ -12,6 +12,7 @@
 extern crate alloc;
 
 mod host;
+mod perf;
 
 use alloc::format;
 use alloc::vec;
@@ -70,11 +71,14 @@ fn main() -> i32 {
     let mut frame = vec![0u32; w * h];
 
     let t0 = time::millis();
-    let (px, _) = present(&mut ui, &mut frame, &display);
+    let mut perf = perf::Perf::new();
+    let (px, _, render_us, copy_us) = present(&mut ui, &mut frame, &display, &perf);
     dprintln!(
-        "neoui: launcher shown ({} px drawn in {} ms)",
+        "neoui: launcher shown ({} px drawn in {} ms: render {} us, copy {} us)",
         px,
-        time::millis() - t0
+        time::millis() - t0,
+        render_us,
+        copy_us
     );
     // the shell's design unit (theme.slint: min(w, h) / 360), in 1/256 px
     let dp256 = (w.min(h) * 256 / 360) as u32;
@@ -216,11 +220,17 @@ fn main() -> i32 {
                 ui.set_clock(&text);
             }
 
-            let (px, damage) = present(&mut ui, &mut frame, &display);
+            let (px, damage, render_us, mut copy_us) =
+                present(&mut ui, &mut frame, &display, &perf);
             if repaint_all {
+                let m = perf.mark();
                 display.blit(&frame, w, 0, 0, w, h);
+                copy_us += perf.since(&m);
             }
-            compose(&mut host, &screen, &damage, &display);
+            let m = perf.mark();
+            let app_px = compose(&mut host, &screen, &damage, &display);
+            perf.frame(render_us, copy_us, perf.since(&m), px + app_px);
+            perf.idle();
             if tap_end {
                 dprintln!("neoui: tap from {:?} redrew {} px", down_at.take(), px);
             }
@@ -234,23 +244,25 @@ fn contains(r: &Rect, x: i32, y: i32) -> bool {
 
 /// Put the foreground app's surface over the shell's body (less the open keyboard): all of it when the shell drew
 /// under it, else the rectangles the app reported.
-fn compose(host: &mut Host, screen: &str, shell_damage: &Damage, display: &Display) {
+fn compose(host: &mut Host, screen: &str, shell_damage: &Damage, display: &Display) -> usize {
     let blits = core::mem::take(&mut host.blits);
     let body = host.body;
     let area = host.app_area();
     // the visible part of the surface, in surface coordinates
     let shown = Rect::new(0, 0, area.w, area.h);
     let Some(surface) = host.visible(screen).and_then(|a| a.surface.as_ref()) else {
-        return;
+        return 0;
     };
     let (bw, bh) = (body.w as usize, body.h as usize);
     // SAFETY: the chunk is `bw * bh * 4` bytes, committed at creation and mapped here; the app only writes pixels.
     let src = unsafe { core::slice::from_raw_parts(surface.base().cast::<u32>(), bw * bh) };
-    let to_screen = |r: Rect| {
+    let mut px = 0;
+    let mut to_screen = |r: Rect| {
         let r = r.intersection(&shown);
         if r.is_empty() {
             return;
         }
+        px += r.w as usize * r.h as usize;
         let (x, y) = (r.x.max(0) as usize, r.y.max(0) as usize);
         let at = (body.x as usize + x, body.y as usize + y);
         display.blit_to(src, bw, (x, y, r.w as usize, r.h as usize), at);
@@ -262,13 +274,23 @@ fn compose(host: &mut Host, screen: &str, shell_damage: &Damage, display: &Displ
     {
         to_screen(shown);
     } else {
-        blits.into_iter().for_each(to_screen);
+        blits.into_iter().for_each(&mut to_screen);
     }
+    px
 }
 
-/// Render what changed and copy it to the screen; returns the number of pixels copied and the damage.
-fn present(ui: &mut Renderer, frame: &mut [u32], display: &Display) -> (usize, Damage) {
+/// Render what changed and copy it to the screen; returns the pixels copied, the damage, and the render and copy times
+/// (µs).
+fn present(
+    ui: &mut Renderer,
+    frame: &mut [u32],
+    display: &Display,
+    perf: &perf::Perf,
+) -> (usize, Damage, u32, u32) {
+    let m = perf.mark();
     let damage: Damage = ui.render(frame, display.width);
+    let render_us = perf.since(&m);
+    let m = perf.mark();
     let px = damage
         .rects()
         .iter()
@@ -278,7 +300,7 @@ fn present(ui: &mut Renderer, frame: &mut [u32], display: &Display) -> (usize, D
             r.w as usize * r.h as usize
         })
         .sum();
-    (px, damage)
+    (px, damage, render_us, perf.since(&m))
 }
 
 /// A raw kernel event as neoui input: button 1 is the (single) touch; keys only where a character is obvious.

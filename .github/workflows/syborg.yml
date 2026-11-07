@@ -91,6 +91,9 @@ jobs:
           grep -a 'neoui: display 539x1079' $s
           grep -a 'neoui: launcher shown' $s
           grep -aE 'neoui: clock [0-9]{2}:[0-9]{2}' $s
+          # R9: frame timing (one summary per second of activity) on the fast counter
+          grep -aE 'neoui: fast counter [1-9][0-9]* Hz' $s
+          grep -aE 'neoui: perf [0-9]+ frames/[0-9]+ ms: render avg' $s
           # R5: the first tap (Apps) redrew most of the screen
           px=$(grep -ao 'neoui: tap from .* redrew [0-9]*' $s | grep -o '[0-9]*$' | head -1)
           echo "redrew $px px"; [ "${px:-0}" -gt 100000 ]

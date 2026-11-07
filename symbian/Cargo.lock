@@ -828,7 +828,7 @@ dependencies = [
 [[package]]
 name = "e32"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/e32-rs?rev=ecf86979146a4f342f8aeb3625db536500b737a0#ecf86979146a4f342f8aeb3625db536500b737a0"
+source = "git+https://github.com/NeoSymbian/e32-rs?rev=3e443ca63e48c25cea9068e268be22363c7ac5da#3e443ca63e48c25cea9068e268be22363c7ac5da"
 dependencies = [
  "critical-section",
  "e32-sys",
@@ -838,7 +838,7 @@ dependencies = [
 [[package]]
 name = "e32-sys"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/e32-rs?rev=ecf86979146a4f342f8aeb3625db536500b737a0#ecf86979146a4f342f8aeb3625db536500b737a0"
+source = "git+https://github.com/NeoSymbian/e32-rs?rev=3e443ca63e48c25cea9068e268be22363c7ac5da#3e443ca63e48c25cea9068e268be22363c7ac5da"
 
 [[package]]
 name = "either"

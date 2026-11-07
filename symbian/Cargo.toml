@@ -24,7 +24,7 @@ members = ["apps/clock", "apps/term", "apps/files", "neoapp"]
 
 [workspace.dependencies]
 # NeoSymbian/e32-rs: the Symbian user-side runtime (exec calls, heap, display, raw input, IPC, processes).
-e32 = { git = "https://github.com/NeoSymbian/e32-rs", rev = "ecf86979146a4f342f8aeb3625db536500b737a0", features = ["critical-section"] }
+e32 = { git = "https://github.com/NeoSymbian/e32-rs", rev = "3e443ca63e48c25cea9068e268be22363c7ac5da", features = ["critical-section"] }
 neoui-proto = { path = "../crates/neoui-proto" }
 slint = { version = "=1.18.1", default-features = false, features = ["compat-1-2", "unsafe-single-threaded", "libm", "renderer-software"] }
 slint-build = { version = "=1.18.1", features = ["sdf-fonts"] }
@@ -34,7 +34,7 @@ neoui-files = { path = "../crates/neoui-files" }
 
 [profile.release]
 panic = "abort"
-opt-level = "s"
+opt-level = 3
 codegen-units = 1
 lto = true
 
