@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Phone: dialer (default), call log ("log"), in-call ("call").
 import { Theme } from "../theme.slint";
+import { NeoList } from "../components/scroll.slint";
 import { Data } from "../data.slint";
 import { TabBar, RoundButton } from "../components/controls.slint";
 import { ListRow, Avatar } from "../components/lists.slint";
@@ -115,7 +116,7 @@ export component PhoneScreen inherits Rectangle {
     }
 
     // Call log
-    if view == "log": Flickable {
+    if view == "log": NeoList {
         y: Theme.tab-h;
         height: parent.height - Theme.tab-h;
         VerticalLayout {

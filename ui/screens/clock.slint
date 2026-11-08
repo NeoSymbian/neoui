@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Clock: tabs for the clock face, alarms (with switches) and world clocks.
 import { Theme } from "../theme.slint";
+import { NeoList } from "../components/scroll.slint";
 import { Data } from "../data.slint";
 import { BigClock, TabBar, Card } from "../components/controls.slint";
 import { Switch } from "../components/lists.slint";
@@ -81,7 +82,7 @@ export component ClockScreen inherits Rectangle {
         }
     }
 
-    if tab == 1: Flickable {
+    if tab == 1: NeoList {
         y: Theme.tab-h;
         height: parent.height - Theme.tab-h;
         VerticalLayout {
@@ -120,7 +121,7 @@ export component ClockScreen inherits Rectangle {
         }
     }
 
-    if tab == 2: Flickable {
+    if tab == 2: NeoList {
         y: Theme.tab-h;
         height: parent.height - Theme.tab-h;
         VerticalLayout {

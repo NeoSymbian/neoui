@@ -5,6 +5,7 @@
 // high, × in a 44 dp square at the card's top-right.
 // shortcut: icons, not live thumbnails of the apps; add downscaled surface snapshots later.
 import { Theme } from "../theme.slint";
+import { NeoList } from "../components/scroll.slint";
 import { Apps } from "menu.slint";
 import { Glyph } from "../components/frame.slint";
 
@@ -25,7 +26,7 @@ export component SwitcherScreen inherits Rectangle {
         vertical-alignment: center;
     }
 
-    Flickable {
+    NeoList {
         content-height: gap + Math.ceil(running.length / 2) * (card-h + gap);
         for key[i] in running: Rectangle {
             x: gap + Math.mod(i, 2) * (card-w + gap);

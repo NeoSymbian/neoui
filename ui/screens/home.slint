@@ -132,15 +132,17 @@ export component HomeScreen inherits Rectangle {
     // landscape has 360 dp of height: a compact dock without labels
     property <bool> landscape: self.width > self.height;
     property <length> dock-h: landscape ? 64 * Theme.dp : Theme.dock-h;
+    // the pages' band (the UI server slides it itself, smooth-ui S2c)
+    out property <length> strip-h: self.height - dock-h - 24 * Theme.dp;
     background: @linear-gradient(180deg, #0c1424 0%, #05070b 55%, #000000 100%);
     clip: true;
 
     // Pages, side by side; swipe left/right moves between them
     Rectangle {
         x: -page * page-w + drag;
-        animate x { duration: Theme.page; easing: ease-out-quad; }
+        animate x { duration: Theme.instant ? 0ms : Theme.page; easing: ease-out-quad; }
         width: 3 * page-w;
-        height: parent.height - dock-h - 24 * Theme.dp;
+        height: root.strip-h;
 
         // Page 0: clock, agenda, favourites, music (landscape: two columns, below)
         if root.width <= root.height: Rectangle {
@@ -320,13 +322,14 @@ export component HomeScreen inherits Rectangle {
     }
 
     swipe := TouchArea {
-        height: parent.height - dock-h - 24 * Theme.dp;
+        height: root.strip-h;
         y: 0;
         property <length> start-x;
         pointer-event(e) => {
             if (e.kind == PointerEventKind.down) {
                 self.start-x = self.mouse-x;
-            } else if (e.kind == PointerEventKind.move && self.pressed) {
+            } else if (e.kind == PointerEventKind.move && self.pressed && !Theme.instant) {
+                // with server transitions the UI server slides the pages itself (smooth-ui S2c)
                 root.drag = (self.mouse-x - self.start-x) * 0.6;
             } else if (e.kind == PointerEventKind.up) {
                 if (self.mouse-x - self.start-x < -60 * Theme.dp && root.page < 2) {

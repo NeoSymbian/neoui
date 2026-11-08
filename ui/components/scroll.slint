@@ -1,0 +1,28 @@
+// SPDX-License-Identifier: Apache-2.0
+// Lists that tell the UI server how far they scrolled (smooth-ui S2d): it moves the pixels already drawn and lets
+// Slint draw only the rows the move uncovered.
+
+// What scrolled since the UI server last rendered: whole pixels (> 0 = the content moved down), how many lists moved
+// (the server shifts only when exactly one did), and that list's place on screen (physical px).
+export global Scroll {
+    in-out property <int> dy;
+    in-out property <int> lists;
+    in-out property <length> x;
+    in-out property <length> y;
+    in-out property <length> width;
+    in-out property <length> height;
+}
+
+// A Flickable that reports its scrolling to `Scroll`.
+export component NeoList inherits Flickable {
+    property <int> shown: 0;
+    changed content-y => {
+        Scroll.dy += Math.round(self.content-y / 1px) - self.shown;
+        self.shown = Math.round(self.content-y / 1px);
+        Scroll.lists += 1;
+        Scroll.x = self.absolute-position.x;
+        Scroll.y = self.absolute-position.y;
+        Scroll.width = self.width;
+        Scroll.height = self.height;
+    }
+}

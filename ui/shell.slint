@@ -7,6 +7,7 @@
 import "fonts/Inter-VariableFont.ttf";
 import "fonts/UbuntuMono-Regular.ttf";
 import { Theme } from "theme.slint";
+export { Scroll } from "components/scroll.slint";
 import { StatusBar, Toolbar } from "components/frame.slint";
 import { OptionsMenu } from "components/controls.slint";
 import { Shade } from "components/shade.slint";
@@ -74,6 +75,9 @@ export component Shell inherits Window {
     property <bool> has-toolbar: screen != "home";
     // out: the Symbian UI server places app processes' surfaces in this body rectangle (NeoSymbian R6)
     out property <length> body-y: Theme.status-h;
+    // the home screen's pages, for the UI server's swipe (smooth-ui S2c): which one shows, and the band they fill
+    in-out property <int> home-page <=> home.page;
+    out property <length> home-strip-h: home.strip-h;
     out property <length> body-h: self.height - Theme.status-h - (has-toolbar ? Theme.toolbar-h : 0);
     // in: the UI server shows the system keyboard over the bottom of the body for an app that asked (R6c) and
     // forwards what it types; out: its height, so the server can tell the app how much is covered
@@ -134,7 +138,7 @@ export component Shell inherits Window {
 
         Slot {
             active: screen == "home";
-            HomeScreen {
+            home := HomeScreen {
                 open-app(a) => { root.open(a); }
             }
         }

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Contacts: A-Z list with search and a favourites strip (default), a contact card ("card").
 import { Theme } from "../theme.slint";
+import { NeoList } from "../components/scroll.slint";
 import { Data } from "../data.slint";
 import { SearchField, RoundButton } from "../components/controls.slint";
 import { ListRow, SectionHeader, Avatar } from "../components/lists.slint";
@@ -9,7 +10,7 @@ export component ContactsScreen inherits Rectangle {
     in-out property <string> view;
     in-out property <int> current: 0;
     callback open-app(string);
-    if view == "": Flickable {
+    if view == "": NeoList {
         VerticalLayout {
             padding-top: 8 * Theme.dp;
             HorizontalLayout {
@@ -53,7 +54,7 @@ export component ContactsScreen inherits Rectangle {
         }
     }
 
-    if view == "card": Flickable {
+    if view == "card": NeoList {
         VerticalLayout {
             padding-top: 28 * Theme.dp;
             spacing: 10 * Theme.dp;

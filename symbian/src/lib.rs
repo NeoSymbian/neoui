@@ -29,8 +29,8 @@ use e32::{dprintln, time};
 use host::Host;
 use neoui_proto::ipc::{self as proto, AppEvent};
 use neoui_proto::{Damage, InputEvent, Rect, TouchPhase, coalesce_moves, next_deadline};
-use neoui_render::Renderer;
-use neoui_render::layer::{self, Transition};
+use neoui_render::layer::{self, Slide, Transition};
+use neoui_render::{HOME_PAGES, Renderer};
 
 e32::main!(main);
 
@@ -40,6 +40,8 @@ const FRAME_US: u64 = 16_667;
 const IDLE_US: u64 = 1_000_000;
 /// A screen change's fade (ui/theme.slint `open`, Belle's app start).
 const TRANSITION_MS: u32 = 250;
+/// A home page swipe settling onto a page or back (smooth-ui S2c).
+const SWIPE_MS: u32 = 250;
 /// How long Power is held before the Power menu opens (H3a).
 const POWER_HOLD_MS: u64 = 1000;
 /// `EStdKeyDevice0` (`e32keys.h`): the Pixel's Power key (kernel `a64_keys.cpp`).
@@ -141,9 +143,16 @@ fn main() -> i32 {
         let mut next_frame = 0u64;
         let mut due = false;
         let mut transition: Option<Transition> = None;
+        // smooth-ui S2c: a press on the home pages (where it went down), the server's page slide once it moves
+        // sideways (with the page it started from), and a touch that comes while the slide settles (ignored)
+        let mut home_press: Option<i32> = None;
+        let mut swipe: Option<(Slide, i32)> = None;
+        let mut swallow = false;
+        let (slop, turn) = ((8 * dp256 / 256) as i32, (60 * dp256 / 256) as i32);
         loop {
             let wait = if due
                 || transition.is_some()
+                || swipe.is_some()
                 || ui.has_active_animations()
                 || power_down_at.is_some()
             {
@@ -187,6 +196,14 @@ fn main() -> i32 {
                             InputEvent::Touch { id, x, y, phase } => {
                                 let body = host.body;
                                 if phase == TouchPhase::Down {
+                                    swallow = swipe.is_some();
+                                    home_press = (screen == "home"
+                                        && !app_on_screen
+                                        && !power_menu
+                                        && transition.is_none()
+                                        && !swallow
+                                        && contains(&ui.home_strip(), x, y))
+                                    .then_some(x);
                                     down_at = Some((x, y));
                                     // A touch belongs to the app from press to release if it starts in its body.
                                     to_app = app_on_screen
@@ -197,6 +214,56 @@ fn main() -> i32 {
                                     let down = down_at.take();
                                     dprintln!("neoui: tap {},{} down {:?}", x, y, down);
                                     tap_end = Some(down);
+                                }
+                                if swallow {
+                                    swallow = phase != TouchPhase::Up;
+                                    continue;
+                                }
+                                if let Some((s, _)) = swipe.as_mut() {
+                                    // the server's slide owns the touch now, Slint doesn't see it
+                                    match phase {
+                                        TouchPhase::Move => s.drag(x),
+                                        TouchPhase::Up => {
+                                            let dx = x - home_press.take().unwrap_or(x);
+                                            s.release(
+                                                time::millis(),
+                                                dx * s.dir() > turn,
+                                                SWIPE_MS,
+                                            );
+                                            dprintln!("neoui: swipe {} px", dx);
+                                        }
+                                        TouchPhase::Down => {}
+                                    }
+                                    continue;
+                                }
+                                if let (TouchPhase::Move, Some(x0)) = (phase, home_press)
+                                    && (x - x0).abs() >= slop
+                                {
+                                    let (dir, page) = ((x - x0).signum(), ui.home_page());
+                                    let to = page - dir;
+                                    if (0..HOME_PAGES).contains(&to)
+                                        && (old.len() == w * h
+                                            || old.try_reserve_exact(w * h).is_ok())
+                                    {
+                                        // Slint lets go where it was pressed (no page change, no tap), the screen
+                                        // as it is becomes the current page's layer, and Slint draws the neighbour
+                                        // once into the frame (below); from here the server only copies
+                                        let (_, y0) = down_at.unwrap_or((x0, y));
+                                        ui.dispatch(InputEvent::Touch {
+                                            id,
+                                            x: x0,
+                                            y: y0,
+                                            phase: TouchPhase::Up,
+                                        });
+                                        old.resize(w * h, 0);
+                                        snapshot(&host, &frame, &mut old, w);
+                                        ui.set_home_page(to);
+                                        let mut s = Slide::start(dir, w as i32, x0, 0);
+                                        s.drag(x);
+                                        swipe = Some((s, page));
+                                        continue;
+                                    }
+                                    home_press = None; // no neighbour, or no memory: Slint's own swipe
                                 }
                                 if to_app {
                                     let (x, y) = (x - body.x, y - body.y);
@@ -335,9 +402,40 @@ fn main() -> i32 {
                 ui.set_clock(&text);
             }
 
-            let fading = transition.is_some();
+            let fading = transition.is_some() || swipe.is_some();
             let (px, damage, render_us, mut copy_us) =
                 present(&mut ui, &mut frame, &display, &perf, !fading);
+            perf.shifts(ui.take_shifts());
+            if let Some((s, from)) = swipe.as_mut() {
+                perf.frame(render_us, 0, 0, px);
+                let m = perf.mark();
+                let live = s.step(time::millis());
+                slide(
+                    &old,
+                    &frame,
+                    ui.home_strip(),
+                    s.offset,
+                    w,
+                    &mut rows.1,
+                    &display,
+                );
+                perf.layer(perf.since(&m));
+                if !live {
+                    if s.committed() {
+                        // the frame holds the new page (and its dots) already
+                        display.blit(&frame, w, 0, 0, w, h);
+                    } else {
+                        // the screen shows the old page again; Slint goes back to it unseen
+                        ui.set_home_page(*from);
+                        present(&mut ui, &mut frame, &display, &perf, false);
+                    }
+                    dprintln!("neoui: home page {}", ui.home_page());
+                    swipe = None;
+                    old = Vec::new();
+                }
+                perf.idle();
+                continue;
+            }
             match transition.and_then(|t| t.progress(time::millis())) {
                 Some(e) => {
                     perf.frame(render_us, 0, 0, px);
@@ -445,6 +543,24 @@ fn fade(
         new.copy_from_slice(&frame[sy * w..][..w]);
         app_row(app, sy, new);
         layer::blend_row(out, &old[y * w..][..w], new, e);
+        display.blit_to(out, w, (0, 0, w, 1), (0, y));
+    }
+}
+
+/// One frame of a home page swipe (smooth-ui S2c): the pages band only (the rest of the screen stays as it was),
+/// the current page (`old`) at `offset` with the neighbour (in `frame`) beside it.
+fn slide(
+    old: &[u32],
+    frame: &[u32],
+    strip: Rect,
+    offset: i32,
+    w: usize,
+    out: &mut [u32],
+    display: &Display,
+) {
+    let y0 = strip.y.max(0) as usize;
+    for y in y0..(y0 + strip.h as usize).min(frame.len() / w) {
+        layer::slide_row(out, &old[y * w..][..w], &frame[y * w..][..w], offset);
         display.blit_to(out, w, (0, 0, w, 1), (0, y));
     }
 }

@@ -2,6 +2,7 @@
 // Calendar: month view with today's agenda below (default), a day view ("day").
 // November 2026: the 1st is a Sunday; weeks start on Monday, so the grid starts with 6 blank cells.
 import { Theme } from "../theme.slint";
+import { NeoList } from "../components/scroll.slint";
 import { Data } from "../data.slint";
 
 export component CalendarScreen inherits Rectangle {
@@ -11,7 +12,7 @@ export component CalendarScreen inherits Rectangle {
     property <length> cell: (self.width - 2 * Theme.margin) / 7;
     property <[int]> busy: [3, 6, 9, 12, 17, 20, 24, 27];
 
-    if view == "": Flickable {
+    if view == "": NeoList {
         VerticalLayout {
             padding-top: 10 * Theme.dp;
             spacing: 6 * Theme.dp;
@@ -125,7 +126,7 @@ export component CalendarScreen inherits Rectangle {
         }
     }
 
-    if view == "day": Flickable {
+    if view == "day": NeoList {
         VerticalLayout {
             padding-top: 10 * Theme.dp;
             Text {

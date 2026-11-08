@@ -10,15 +10,17 @@ pub mod build;
 
 use alloc::boxed::Box;
 use alloc::rc::Rc;
+use core::cell::RefCell;
 use core::time::Duration;
 use e32::chunk::Chunk;
 use e32::ipc::{Session, TIpcArgs, TVersion};
 use e32::sys::TPtr8;
 use e32::time;
 use neoui_proto::ipc as proto;
-use neoui_proto::{InputEvent, TouchPhase};
+use neoui_proto::{InputEvent, Rect, ScrollPlan, Scrolling, TouchPhase};
 use slint::platform::software_renderer::{
-    MinimalSoftwareWindow, PremultipliedRgbaColor, RepaintBufferType, TargetPixel,
+    LineBufferProvider, MinimalSoftwareWindow, PremultipliedRgbaColor, RepaintBufferType,
+    TargetPixel,
 };
 use slint::platform::{Key, Platform, PointerEventButton, WindowAdapter, WindowEvent};
 use slint::{LogicalPosition, PhysicalSize, PlatformError, SharedString};
@@ -36,6 +38,36 @@ impl TargetPixel for Xrgb8888 {
     }
     fn from_rgb(r: u8, g: u8, b: u8) -> Self {
         Self(0xFF00_0000 | (r as u32) << 16 | (g as u32) << 8 | b as u32)
+    }
+}
+
+/// Slint's lines for a scrolled list's frame (smooth-ui S2d, as neoui-render's): the rows of `list` outside `draw`
+/// were moved into place already, so Slint skips them.
+struct ScrollLines<'a> {
+    px: &'a mut [Xrgb8888],
+    stride: usize,
+    list: Rect,
+    draw: core::ops::Range<i32>,
+}
+
+impl LineBufferProvider for ScrollLines<'_> {
+    type TargetPixel = Xrgb8888;
+
+    fn process_line(
+        &mut self,
+        line: usize,
+        range: core::ops::Range<usize>,
+        render_fn: impl FnOnce(&mut [Xrgb8888]),
+    ) {
+        let (l, y) = (&self.list, line as i32);
+        let moved = y >= l.y
+            && y < l.y + l.h as i32
+            && !self.draw.contains(&y)
+            && range.start >= l.x as usize
+            && range.end <= l.x as usize + l.w as usize;
+        if !moved {
+            render_fn(&mut self.px[line * self.stride..][range]);
+        }
     }
 }
 
@@ -59,6 +91,7 @@ pub struct App {
     pub dp: f32,
     pub window: Rc<MinimalSoftwareWindow>,
     surface: Chunk,
+    scrolling: RefCell<Scrolling>,
 }
 
 impl App {
@@ -95,12 +128,20 @@ impl App {
             dp,
             window,
             surface,
+            scrolling: RefCell::default(),
         })
     }
 
     /// Render what changed into the surface and tell the server which rectangles to show.
     pub fn draw(&self) -> Result<(), i32> {
+        self.draw_scrolled(|| ((0, 0), Rect::default()))
+    }
+
+    /// [`Self::draw`] for an app with `NeoList`s (`ui/components/scroll.slint`, smooth-ui S2d): `scrolled` reads and
+    /// clears its `Scroll` global (px moved, lists moved, the list's place) once the change handlers have run.
+    pub fn draw_scrolled(&self, scrolled: impl FnOnce() -> ((i32, i32), Rect)) -> Result<(), i32> {
         slint::platform::update_timers_and_animations();
+        let (moved, list) = scrolled();
         // SAFETY: the server made the chunk `width * height * 4` bytes, committed; only this thread writes it and the
         // server only reads it; the slice lives for this call.
         let px = unsafe {
@@ -109,9 +150,32 @@ impl App {
                 self.width * self.height,
             )
         };
+        let screen = Rect::new(0, 0, self.width as u32, self.height as u32);
+        let plan = self
+            .scrolling
+            .borrow_mut()
+            .plan(px, self.width, screen, moved, list);
+        if plan == ScrollPlan::Full {
+            self.window.request_redraw();
+        }
         let mut result = Ok(());
         self.window.draw_if_needed(|r| {
-            for (o, s) in r.render(px, self.width).iter() {
+            let region = match plan {
+                ScrollPlan::Shift { list, draw } => r.render_by_line(ScrollLines {
+                    px,
+                    stride: self.width,
+                    list,
+                    draw,
+                }),
+                ScrollPlan::Full => {
+                    // a change of buffer type drops Slint's cache, so this render draws the whole surface
+                    r.set_repaint_buffer_type(RepaintBufferType::NewBuffer);
+                    r.set_repaint_buffer_type(RepaintBufferType::ReusedBuffer);
+                    r.render(px, self.width)
+                }
+                ScrollPlan::Normal => r.render(px, self.width),
+            };
+            for (o, s) in region.iter() {
                 let mut args = TIpcArgs::new();
                 args.int(0, o.x)
                     .int(1, o.y)

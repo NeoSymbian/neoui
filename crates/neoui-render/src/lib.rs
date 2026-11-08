@@ -15,12 +15,16 @@ use alloc::vec::Vec;
 use core::cell::RefCell;
 use core::time::Duration;
 
-use neoui_proto::{Damage, InputEvent, Rect, TouchPhase};
+use neoui_proto::{Damage, InputEvent, Rect, ScrollPlan, Scrolling, TouchPhase};
 use slint::platform::software_renderer::{
-    MinimalSoftwareWindow, PremultipliedRgbaColor, RepaintBufferType, TargetPixel,
+    LineBufferProvider, MinimalSoftwareWindow, PremultipliedRgbaColor, RepaintBufferType,
+    TargetPixel,
 };
 use slint::platform::{Platform, PointerEventButton, WindowAdapter, WindowEvent};
 use slint::{ComponentHandle, LogicalPosition, PhysicalSize, PlatformError};
+
+/// The home screen's page count (`ui/screens/home.slint`).
+pub const HOME_PAGES: i32 = 3;
 
 slint::include_modules!();
 
@@ -68,6 +72,39 @@ pub struct Renderer {
     nav: Rc<RefCell<Vec<i32>>>,
     closed: Rc<RefCell<Vec<alloc::string::String>>>,
     power: Rc<RefCell<Vec<i32>>>,
+    /// lists scrolled by shifting pixels (smooth-ui S2d), and how many frames did so
+    scrolling: Scrolling,
+    shifts: u32,
+}
+
+/// Slint's lines for a scrolled list's frame (smooth-ui S2d): the rows of `list` outside `draw` were moved into place
+/// already ([`neoui_proto::shift_rows`]), so Slint skips them; everything else it draws as usual.
+struct ScrollLines<'a> {
+    px: &'a mut [Xrgb8888],
+    stride: usize,
+    list: Rect,
+    draw: core::ops::Range<i32>,
+}
+
+impl LineBufferProvider for ScrollLines<'_> {
+    type TargetPixel = Xrgb8888;
+
+    fn process_line(
+        &mut self,
+        line: usize,
+        range: core::ops::Range<usize>,
+        render_fn: impl FnOnce(&mut [Xrgb8888]),
+    ) {
+        let (l, y) = (&self.list, line as i32);
+        let moved = y >= l.y
+            && y < l.y + l.h as i32
+            && !self.draw.contains(&y)
+            && range.start >= l.x as usize
+            && range.end <= l.x as usize + l.w as usize;
+        if !moved {
+            render_fn(&mut self.px[line * self.stride..][range]);
+        }
+    }
 }
 
 impl Renderer {
@@ -102,6 +139,8 @@ impl Renderer {
             nav,
             closed,
             power,
+            scrolling: Scrolling::default(),
+            shifts: 0,
         })
     }
 
@@ -131,6 +170,26 @@ impl Renderer {
             size.width,
             self.ui.get_body_h() as u32,
         )
+    }
+
+    /// The home screen's pages band, where its swipe works (physical pixels; smooth-ui S2c).
+    pub fn home_strip(&self) -> Rect {
+        Rect::new(
+            0,
+            self.ui.get_body_y() as i32,
+            self.window.size().width,
+            self.ui.get_home_strip_h() as u32,
+        )
+    }
+
+    /// The home page on show (0..`HOME_PAGES`).
+    pub fn home_page(&self) -> i32 {
+        self.ui.get_home_page()
+    }
+
+    /// Show home page `n` (at once with server transitions on).
+    pub fn set_home_page(&mut self, n: i32) {
+        self.ui.set_home_page(n.clamp(0, HOME_PAGES - 1));
     }
 
     /// Show or hide the system keyboard over the bottom of the body.
@@ -200,13 +259,51 @@ impl Renderer {
 
     pub fn render(&mut self, buf: &mut [u32], stride_px: usize) -> Damage {
         slint::platform::update_timers_and_animations();
+        // smooth-ui S2d: one list scrolled (`ui/components/scroll.slint`, its change handler ran above): move what it
+        // showed, and Slint draws only the rows that came into view. Once the scrolling stops, one full redraw puts
+        // right whatever the skipped rows missed (a highlight, a sub-pixel position).
+        let sc = self.ui.global::<Scroll>();
+        let (dy, lists) = (sc.get_dy(), sc.get_lists());
+        sc.set_dy(0);
+        sc.set_lists(0);
+        let size = self.window.size();
+        let list = Rect::new(
+            sc.get_x() as i32,
+            sc.get_y() as i32,
+            sc.get_width() as u32,
+            sc.get_height() as u32,
+        );
+        let screen = Rect::new(0, 0, size.width, size.height);
+        let plan = self
+            .scrolling
+            .plan(buf, stride_px, screen, (dy, lists), list);
+        let full = plan == ScrollPlan::Full;
+        if full {
+            self.window.request_redraw();
+        } else if plan != ScrollPlan::Normal {
+            self.shifts += 1;
+        }
         // SAFETY: Xrgb8888 is repr(transparent) over u32, same size/alignment.
         let px = unsafe {
             core::slice::from_raw_parts_mut(buf.as_mut_ptr().cast::<Xrgb8888>(), buf.len())
         };
         let mut damage = Damage::new();
         self.window.draw_if_needed(|r| {
-            for (o, s) in r.render(px, stride_px).iter() {
+            if full {
+                // a change of buffer type drops Slint's cache, so this render draws the whole window
+                r.set_repaint_buffer_type(RepaintBufferType::NewBuffer);
+                r.set_repaint_buffer_type(RepaintBufferType::ReusedBuffer);
+            }
+            let region = match plan {
+                ScrollPlan::Shift { list, draw } => r.render_by_line(ScrollLines {
+                    px,
+                    stride: stride_px,
+                    list,
+                    draw,
+                }),
+                _ => r.render(px, stride_px),
+            };
+            for (o, s) in region.iter() {
                 damage.add(Rect::new(o.x, o.y, s.width, s.height));
             }
         });
@@ -245,6 +342,11 @@ impl Renderer {
             }
         };
         self.window.dispatch_event(event);
+    }
+
+    /// Frames that scrolled a list by shifting its pixels since the last call (smooth-ui S2d).
+    pub fn take_shifts(&mut self) -> u32 {
+        core::mem::take(&mut self.shifts)
     }
 
     /// True while an animation runs, so the caller should keep rendering.

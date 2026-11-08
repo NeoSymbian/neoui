@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Music: library with tabs (default), now playing ("playing"), and a mini player at the bottom of the library.
 import { Theme } from "../theme.slint";
+import { NeoList } from "../components/scroll.slint";
 import { Data } from "../data.slint";
 import { TabBar, Slider } from "../components/controls.slint";
 import { Glyph } from "../components/frame.slint";
@@ -46,7 +47,7 @@ export component MusicScreen inherits Rectangle {
             current <=> root.tab;
         }
 
-        Flickable {
+        NeoList {
             y: Theme.tab-h;
             height: parent.height - Theme.tab-h - 68 * Theme.dp;
             VerticalLayout {

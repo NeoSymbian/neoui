@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Photos: a grid (default) and one photo ("photo"). Tiles are generated gradients, not real pictures.
 import { Theme } from "../theme.slint";
+import { NeoList } from "../components/scroll.slint";
 
 export global Palette {
     out property <[[color]]> tiles: [
@@ -17,7 +18,7 @@ export component PhotosScreen inherits Rectangle {
     property <int> cols: self.width > self.height ? 6 : 3;
     property <length> gap: 2 * Theme.dp;
     property <length> cell: (self.width - (cols - 1) * gap) / cols;
-    if view == "": Flickable {
+    if view == "": NeoList {
         content-height: 40 * Theme.dp + Math.ceil(Palette.tiles.length / cols) * (cell + gap);
         Text {
             x: Theme.margin + 4 * Theme.dp;

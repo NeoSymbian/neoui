@@ -17,8 +17,8 @@ use e32::ipc::TIpcArgs;
 use e32::sys::TPtr8;
 use neoapp::App;
 use neoui_files::{self as model, Item};
-use neoui_proto::InputEvent;
 use neoui_proto::ipc::{self as proto, AppEvent};
+use neoui_proto::{InputEvent, Rect};
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 
 slint::include_modules!();
@@ -156,8 +156,23 @@ fn run() -> Result<(), i32> {
             app.claim_nav(claims.0, claims.1)?;
             st.claims = claims;
         }
-        app.draw()?;
+        app.draw_scrolled(|| scrolled(&ui))?;
     }
+}
+
+/// What the lists scrolled since the last frame (smooth-ui S2d), cleared for the next.
+fn scrolled(ui: &FilesApp) -> ((i32, i32), Rect) {
+    let sc = ui.global::<Scroll>();
+    let moved = (sc.get_dy(), sc.get_lists());
+    sc.set_dy(0);
+    sc.set_lists(0);
+    let list = Rect::new(
+        sc.get_x() as i32,
+        sc.get_y() as i32,
+        sc.get_width() as u32,
+        sc.get_height() as u32,
+    );
+    (moved, list)
 }
 
 fn act(app: &App, ui: &FilesApp, st: &mut State, a: Action) {

@@ -20,6 +20,12 @@ pub fn settle() {
     CLOCK_MS.fetch_add(1000, Ordering::Relaxed);
 }
 
+/// Moves the test clock by `ms` (one frame is about 17).
+#[allow(dead_code)] // only tests/scroll.rs drags
+pub fn advance(ms: u64) {
+    CLOCK_MS.fetch_add(ms, Ordering::Relaxed);
+}
+
 pub fn renderer(w: u32, h: u32) -> Renderer {
     Renderer::new(w, h, now).unwrap()
 }

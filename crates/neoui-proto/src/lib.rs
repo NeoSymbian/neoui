@@ -162,12 +162,158 @@ pub fn next_deadline(last: u64, now: u64, period: u64) -> u64 {
     last + ((now - last) / period + 1) * period
 }
 
+/// A list scrolled by `dy` px (smooth-ui S2d; > 0 = its content moved down): move the pixels already drawn inside
+/// `list` with it (`stride` px per row), so only the rows [`exposed`] by the move need drawing. `list` must lie
+/// inside `buf`.
+pub fn shift_rows<T: Copy>(buf: &mut [T], stride: usize, list: Rect, dy: i32) {
+    let (x, y0, w, h) = (
+        list.x as usize,
+        list.y as usize,
+        list.w as usize,
+        list.h as usize,
+    );
+    let n = dy.unsigned_abs() as usize;
+    if n >= h {
+        return;
+    }
+    let row = |y: usize| (y0 + y) * stride + x;
+    if dy < 0 {
+        for y in 0..h - n {
+            buf.copy_within(row(y + n)..row(y + n) + w, row(y));
+        }
+    } else {
+        for y in (n..h).rev() {
+            buf.copy_within(row(y - n)..row(y - n) + w, row(y));
+        }
+    }
+}
+
+/// The rows of `list` (screen y) a scroll by `dy` uncovers, which [`shift_rows`] could not fill.
+pub fn exposed(list: Rect, dy: i32) -> core::ops::Range<i32> {
+    let n = (dy.unsigned_abs() as i32).min(list.h as i32);
+    let bottom = list.y + list.h as i32;
+    if dy < 0 {
+        bottom - n..bottom
+    } else {
+        list.y..list.y + n
+    }
+}
+
+/// How to draw a frame, given what the lists reported (smooth-ui S2d; `ui/components/scroll.slint`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ScrollPlan {
+    /// as usual
+    Normal,
+    /// the list's pixels were moved: Slint draws only the rows `draw` of `list`, and everything outside it
+    Shift {
+        list: Rect,
+        draw: core::ops::Range<i32>,
+    },
+    /// the scrolling stopped: draw the whole window once, to put right what the skipped rows missed (a highlight,
+    /// a sub-pixel position)
+    Full,
+}
+
+/// Whether frames since the last full one were drawn by shifting.
+#[derive(Default)]
+pub struct Scrolling {
+    shifted: bool,
+}
+
+impl Scrolling {
+    /// `lists` lists scrolled by `dy` px in all since the last frame, the last of them at `list`. Exactly one list on
+    /// `screen` that moved less than its height is shifted in `buf` here (`stride` px per row).
+    pub fn plan<T: Copy>(
+        &mut self,
+        buf: &mut [T],
+        stride: usize,
+        screen: Rect,
+        (dy, lists): (i32, i32),
+        list: Rect,
+    ) -> ScrollPlan {
+        let list = list.intersection(&screen);
+        if lists == 1 && dy != 0 && !list.is_empty() && dy.unsigned_abs() < list.h {
+            shift_rows(buf, stride, list, dy);
+            self.shifted = true;
+            ScrollPlan::Shift {
+                list,
+                draw: exposed(list, dy),
+            }
+        } else if lists == 0 && core::mem::take(&mut self.shifted) {
+            ScrollPlan::Full
+        } else {
+            ScrollPlan::Normal
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SurfaceId(pub u32);
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn scroll_shift_moves_rows_and_exposes_the_rest() {
+        // a 3-wide buffer of 5 rows, row r filled with r; the list covers columns 1..3 of rows 1..4
+        let mut buf: [u32; 15] = core::array::from_fn(|i| (i / 3) as u32);
+        let list = Rect::new(1, 1, 2, 3);
+        // content up by 1: rows 2,3 move to 1,2; row 3 is exposed; column 0 and rows 0/4 stay
+        shift_rows(&mut buf, 3, list, -1);
+        assert_eq!(buf, [0, 0, 0, 1, 2, 2, 2, 3, 3, 3, 3, 3, 4, 4, 4]);
+        assert_eq!(exposed(list, -1), 3..4);
+        let mut buf: [u32; 15] = core::array::from_fn(|i| (i / 3) as u32);
+        // content down by 2: row 1 moves to 3; rows 1..3 are exposed
+        shift_rows(&mut buf, 3, list, 2);
+        assert_eq!(&buf[9..12], &[3, 1, 1]);
+        assert_eq!(exposed(list, 2), 1..3);
+        // a shift as tall as the list exposes all of it and moves nothing
+        let before = buf;
+        shift_rows(&mut buf, 3, list, 3);
+        assert_eq!(buf, before);
+        assert_eq!(exposed(list, -3), 1..4);
+        assert_eq!(exposed(list, 0), 1..1);
+    }
+
+    #[test]
+    fn scroll_plan_shifts_one_list_then_redraws_once_when_it_stops() {
+        let screen = Rect::new(0, 0, 3, 5);
+        let list = Rect::new(0, 1, 3, 3);
+        let mut buf = [0u32; 15];
+        let mut s = Scrolling::default();
+        assert_eq!(
+            s.plan(&mut buf, 3, screen, (0, 0), list),
+            ScrollPlan::Normal
+        );
+        assert_eq!(
+            s.plan(&mut buf, 3, screen, (-1, 1), list),
+            ScrollPlan::Shift { list, draw: 3..4 }
+        );
+        // two lists moved, or one by its whole height: no shift, but still owed a full redraw
+        assert_eq!(
+            s.plan(&mut buf, 3, screen, (-1, 2), list),
+            ScrollPlan::Normal
+        );
+        assert_eq!(
+            s.plan(&mut buf, 3, screen, (3, 1), list),
+            ScrollPlan::Normal
+        );
+        assert_eq!(s.plan(&mut buf, 3, screen, (0, 0), list), ScrollPlan::Full);
+        assert_eq!(
+            s.plan(&mut buf, 3, screen, (0, 0), list),
+            ScrollPlan::Normal
+        );
+        // a list partly off screen is shifted where it shows
+        let low = Rect::new(0, 3, 3, 4);
+        assert_eq!(
+            s.plan(&mut buf, 3, screen, (1, 1), low),
+            ScrollPlan::Shift {
+                list: Rect::new(0, 3, 3, 2),
+                draw: 3..4
+            }
+        );
+    }
 
     #[test]
     fn empty() {

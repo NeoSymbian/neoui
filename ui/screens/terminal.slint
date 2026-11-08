@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Terminal: a console with a prompt and a row of extra keys (Esc, Tab, Ctrl, arrows) above where the keyboard sits.
 import { Theme } from "../theme.slint";
+import { NeoList } from "../components/scroll.slint";
 
 export component TerminalScreen inherits Rectangle {
     background: #07090c;
@@ -20,7 +21,7 @@ export component TerminalScreen inherits Rectangle {
     ];
     property <length> line-h: 19 * Theme.dp;
 
-    Flickable {
+    NeoList {
         height: parent.height - 52 * Theme.dp;
         y: 0;
         VerticalLayout {

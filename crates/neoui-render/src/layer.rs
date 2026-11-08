@@ -47,6 +47,88 @@ impl Transition {
     }
 }
 
+/// A row of two pages side by side (smooth-ui S2c): `cur` shifted right by `offset` px, the gap it leaves filled
+/// from `next` (the page to the right when `offset` < 0, to the left when > 0). All three rows are as long.
+pub fn slide_row(out: &mut [u32], cur: &[u32], next: &[u32], offset: i32) {
+    let w = out.len();
+    let s = offset.unsigned_abs() as usize;
+    if s >= w {
+        out.copy_from_slice(next);
+    } else if offset <= 0 {
+        out[..w - s].copy_from_slice(&cur[s..]);
+        out[w - s..].copy_from_slice(&next[..s]);
+    } else {
+        out[..s].copy_from_slice(&next[w - s..]);
+        out[s..].copy_from_slice(&cur[..w - s]);
+    }
+}
+
+/// The home page swipe as the UI server runs it (smooth-ui S2c): the current page follows the finger 1:1 toward one
+/// neighbour (`dir` -1 = the next page, coming in from the right; 1 = the previous one), then settles onto it or back.
+#[derive(Clone, Copy, Debug)]
+pub struct Slide {
+    dir: i32,
+    width: i32,
+    /// offset minus the finger's x
+    base: i32,
+    /// where the current page is drawn now (px; 0 = in place, `dir * width` = the neighbour in place)
+    pub offset: i32,
+    settle: Option<(Transition, i32, i32)>,
+}
+
+impl Slide {
+    /// Start at `offset` (what is on screen) with the finger at `x`.
+    pub fn start(dir: i32, width: i32, x: i32, offset: i32) -> Self {
+        Self {
+            dir: dir.signum(),
+            width,
+            base: offset - x,
+            offset,
+            settle: None,
+        }
+    }
+
+    pub fn dir(&self) -> i32 {
+        self.dir
+    }
+
+    pub fn drag(&mut self, x: i32) {
+        let o = self.base + x;
+        self.offset = if self.dir < 0 {
+            o.clamp(-self.width, 0)
+        } else {
+            o.clamp(0, self.width)
+        };
+    }
+
+    /// The finger lifted: settle onto the neighbour (`commit`) or back, over `ms`.
+    pub fn release(&mut self, now_ms: u64, commit: bool, ms: u32) {
+        let to = if commit { self.dir * self.width } else { 0 };
+        self.settle = Some((Transition::new(now_ms, ms), self.offset, to));
+    }
+
+    pub fn committed(&self) -> bool {
+        self.settle.is_some_and(|(_, _, to)| to != 0)
+    }
+
+    /// Move the settling page on; true while the finger is down or the page settles, false once it has settled.
+    pub fn step(&mut self, now_ms: u64) -> bool {
+        let Some((tr, from, to)) = self.settle else {
+            return true;
+        };
+        match tr.progress(now_ms) {
+            Some(e) => {
+                self.offset = from + (to - from) * e as i32 / 256;
+                true
+            }
+            None => {
+                self.offset = to;
+                false
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -83,6 +165,50 @@ mod tests {
         assert_eq!(&d[..4], &a[..4]);
         blend_row(&mut d, &a, &b, 256);
         assert_eq!(&d[..4], &b[..4]);
+    }
+
+    #[test]
+    fn slide_puts_the_neighbour_beside_the_current_row() {
+        let cur = [1, 2, 3, 4];
+        let next = [5, 6, 7, 8];
+        let mut out = [0; 4];
+        slide_row(&mut out, &cur, &next, 0);
+        assert_eq!(out, cur);
+        // finger moved left by 1: the next page comes in from the right
+        slide_row(&mut out, &cur, &next, -1);
+        assert_eq!(out, [2, 3, 4, 5]);
+        slide_row(&mut out, &cur, &next, -4);
+        assert_eq!(out, next);
+        // finger moved right by 3: the previous page comes in from the left
+        slide_row(&mut out, &cur, &next, 3);
+        assert_eq!(out, [6, 7, 8, 1]);
+    }
+
+    #[test]
+    fn slide_follows_the_finger_toward_the_neighbour_only_then_settles() {
+        // toward the next page (finger moving left), 100 px wide, started with Slint's drag at -6 and the finger at 50
+        let mut s = Slide::start(-1, 100, 50, -6);
+        assert_eq!(s.offset, -6);
+        s.drag(30);
+        assert_eq!(s.offset, -26, "1:1 with the finger");
+        s.drag(90);
+        assert_eq!(s.offset, 0, "never past the current page");
+        s.drag(-200);
+        assert_eq!(s.offset, -100, "never past the neighbour");
+        s.drag(10);
+        s.release(1000, true, 200);
+        assert!(s.committed());
+        assert!(s.step(1100) && s.offset < -46 && s.offset > -100);
+        assert!(!s.step(1200));
+        assert_eq!(s.offset, -100);
+
+        let mut s = Slide::start(1, 100, 0, 0);
+        s.drag(20);
+        assert!(s.step(0), "live while the finger is down");
+        s.release(0, false, 200);
+        assert!(!s.committed());
+        assert!(!s.step(500));
+        assert_eq!(s.offset, 0);
     }
 
     #[test]

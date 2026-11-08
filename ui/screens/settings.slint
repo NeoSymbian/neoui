@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Settings: grouped root list (default), and the sub-pages "connectivity", "display", "about".
 import { Theme } from "../theme.slint";
+import { NeoList } from "../components/scroll.slint";
 import { ListRow, SectionHeader } from "../components/lists.slint";
 import { Slider, Card } from "../components/controls.slint";
 
@@ -83,7 +84,7 @@ export component SettingsScreen inherits Rectangle {
     in-out property <bool> dark: true;
     in-out property <float> brightness: 0.62;
 
-    if view == "": Flickable {
+    if view == "": NeoList {
         VerticalLayout {
             SectionHeader { text: "Connections"; }
             SettingRow {
@@ -163,7 +164,7 @@ export component SettingsScreen inherits Rectangle {
         }
     }
 
-    if view == "connectivity": Flickable {
+    if view == "connectivity": NeoList {
         VerticalLayout {
             SectionHeader { text: "Wireless"; }
             ListRow {
@@ -205,7 +206,7 @@ export component SettingsScreen inherits Rectangle {
         }
     }
 
-    if view == "display": Flickable {
+    if view == "display": NeoList {
         VerticalLayout {
             SectionHeader { text: "Brightness"; }
             HorizontalLayout {
@@ -245,7 +246,7 @@ export component SettingsScreen inherits Rectangle {
         }
     }
 
-    if view == "about": Flickable {
+    if view == "about": NeoList {
         VerticalLayout {
             padding: Theme.margin;
             spacing: 12 * Theme.dp;

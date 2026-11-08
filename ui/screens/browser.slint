@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Browser: start page with shortcuts (default), a page view ("page").
 import { Theme } from "../theme.slint";
+import { NeoList } from "../components/scroll.slint";
 import { Glyph } from "../components/frame.slint";
 import { Card } from "../components/controls.slint";
 
@@ -143,7 +144,7 @@ export component BrowserScreen inherits Rectangle {
     }
 
     // A rendered page (a simple mock: our own project page)
-    if view == "page": Flickable {
+    if view == "page": NeoList {
         y: Theme.field-h + 16 * Theme.dp;
         height: parent.height - self.y;
         Rectangle {

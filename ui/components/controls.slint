@@ -189,7 +189,7 @@ export component PageDots inherits HorizontalLayout {
         height: 7 * Theme.dp;
         border-radius: self.height / 2;
         background: i == current ? Theme.text : #ffffff55;
-        animate width { duration: Theme.fast; }
+        animate width { duration: Theme.instant ? 0ms : Theme.fast; }
     }
 }
 

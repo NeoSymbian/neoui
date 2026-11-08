@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // The app menu: a scrolling grid, 3 columns in portrait and 4 in landscape (Belle's menu, 135 dp rows).
 import { Theme } from "../theme.slint";
+import { NeoList } from "../components/scroll.slint";
 
 export struct App { name: string, key: string, icon: image }
 
@@ -28,7 +29,7 @@ export component MenuScreen inherits Rectangle {
     property <int> cols: self.width > self.height ? 4 : 3;
     property <length> cell-w: self.width / cols;
     property <int> rows: Math.ceil(Apps.all.length / cols);
-    Flickable {
+    NeoList {
         content-height: 12 * Theme.dp + rows * Theme.app-row-h;
         for app[i] in Apps.all: Rectangle {
             x: Math.mod(i, cols) * cell-w;

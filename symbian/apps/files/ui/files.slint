@@ -8,8 +8,9 @@ import { Theme } from "../../../../ui/theme.slint";
 import { Card, Button, OptionsMenu } from "../../../../ui/components/controls.slint";
 import { ListRow } from "../../../../ui/components/lists.slint";
 import { Glyph } from "../../../../ui/components/frame.slint";
+import { NeoList, Scroll } from "../../../../ui/components/scroll.slint";
 
-export { Theme }
+export { Theme, Scroll }
 
 export struct DriveRow { label: string, detail: string, used: float, rom: bool }
 export struct FileRow { name: string, detail: string, kind: string }
@@ -49,7 +50,7 @@ export component FilesApp inherits Window {
         }
     }
 
-    if view == "drives": Flickable {
+    if view == "drives": NeoList {
         VerticalLayout {
             alignment: start;
             padding: Theme.margin;
@@ -123,7 +124,7 @@ export component FilesApp inherits Window {
             overflow: elide;
         }
 
-        Flickable {
+        NeoList {
             vertical-stretch: 1;
             VerticalLayout {
                 alignment: start;
@@ -153,7 +154,7 @@ export component FilesApp inherits Window {
             overflow: elide;
         }
 
-        Flickable {
+        NeoList {
             vertical-stretch: 1;
             VerticalLayout {
                 alignment: start;

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Messages: conversation list (default) and a thread ("thread").
 import { Theme } from "../theme.slint";
+import { NeoList } from "../components/scroll.slint";
 import { Data } from "../data.slint";
 import { SearchField } from "../components/controls.slint";
 import { ListRow } from "../components/lists.slint";
@@ -8,7 +9,7 @@ import { Glyph } from "../components/frame.slint";
 
 export component MessagesScreen inherits Rectangle {
     in-out property <string> view;
-    if view == "": Flickable {
+    if view == "": NeoList {
         VerticalLayout {
             padding-top: 8 * Theme.dp;
             HorizontalLayout {
@@ -35,7 +36,7 @@ export component MessagesScreen inherits Rectangle {
     }
 
     if view == "thread": Rectangle {
-        Flickable {
+        NeoList {
             height: parent.height - 64 * Theme.dp;
             y: 0;
             VerticalLayout {

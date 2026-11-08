@@ -32,6 +32,8 @@ pub struct Perf {
     // frames composed from snapshots, no Slint render (smooth-ui S2)
     layers: u32,
     layer: Stat,
+    // frames that scrolled a list by shifting its pixels (smooth-ui S2d)
+    shifts: u32,
 }
 
 /// A point in time on the fast counter.
@@ -51,6 +53,7 @@ impl Perf {
             px: 0,
             layers: 0,
             layer: Stat::default(),
+            shifts: 0,
         }
     }
 
@@ -95,6 +98,11 @@ impl Perf {
         }
     }
 
+    /// Count frames whose render scrolled a list by shifting it (smooth-ui S2d).
+    pub fn shifts(&mut self, n: u32) {
+        self.shifts += n;
+    }
+
     /// Log a window that activity stopped in the middle of (call on every wake-up).
     pub fn idle(&mut self) {
         let now = time::millis();
@@ -107,7 +115,7 @@ impl Perf {
         let n = u64::from(self.frames.max(1));
         dprintln!(
             "neoui: perf {} frames/{} ms: render avg {} max {} us, copy avg {} max {} us, app avg {} max {} us, {} px, \
-             {} layer frames avg {} max {} us",
+             {} layer frames avg {} max {} us, {} shifted",
             self.frames,
             now - self.started_ms,
             self.render.sum_us / n,
@@ -119,7 +127,8 @@ impl Perf {
             self.px,
             self.layers,
             self.layer.sum_us / u64::from(self.layers.max(1)),
-            self.layer.max_us
+            self.layer.max_us,
+            self.shifts
         );
         let hz = self.hz;
         *self = Self {
@@ -132,6 +141,7 @@ impl Perf {
             px: 0,
             layers: 0,
             layer: Stat::default(),
+            shifts: 0,
         };
     }
 }
