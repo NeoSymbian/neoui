@@ -80,6 +80,12 @@ fn main() -> i32 {
     let mut old = vec![0u32; w * h];
     let mut rows = (vec![0u32; w], vec![0u32; w]);
     ui.set_server_transitions(true);
+    // which kernel, ROM and neoui this is: in the log of every run, and in Settings -> About phone
+    let build = neoapp::build::lines();
+    for line in &build {
+        dprintln!("neoui: build {}", line);
+    }
+    ui.set_build_info(&build);
 
     let t0 = time::millis();
     let mut perf = perf::Perf::new();

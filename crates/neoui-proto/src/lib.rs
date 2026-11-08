@@ -7,6 +7,9 @@ extern crate alloc;
 pub mod ipc;
 pub mod recents;
 
+/// This neoui build: "neoui <commit>[+dirty] <UTC time>, e32-rs <commit>" (build.rs).
+pub const BUILD: &str = env!("NEOUI_BUILD");
+
 /// An axis-aligned rectangle in physical pixels. Empty when `w == 0 || h == 0`.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Rect {

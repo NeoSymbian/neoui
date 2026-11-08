@@ -10,6 +10,7 @@ pub mod layer;
 
 use alloc::boxed::Box;
 use alloc::rc::Rc;
+use alloc::string::String;
 use alloc::vec::Vec;
 use core::cell::RefCell;
 use core::time::Duration;
@@ -128,6 +129,13 @@ impl Renderer {
     }
 
     /// Show or hide the system keyboard over the bottom of the body.
+    /// Which build is running, one line per part (kernel, user-side ROM, neoui): Settings -> About phone.
+    pub fn set_build_info(&mut self, lines: &[String]) {
+        let model: Vec<slint::SharedString> = lines.iter().map(|l| l.as_str().into()).collect();
+        self.ui
+            .set_build_info(Rc::new(slint::VecModel::from(model)).into());
+    }
+
     /// The UI server animates screen changes itself, from snapshots (smooth-ui S2): Slint switches screens at once.
     pub fn set_server_transitions(&mut self, on: bool) {
         self.ui.set_server_transitions(on);

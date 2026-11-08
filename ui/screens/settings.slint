@@ -75,6 +75,8 @@ component SettingRow inherits Rectangle {
 export component SettingsScreen inherits Rectangle {
     in-out property <string> view;
     in-out property <bool> wifi: true;
+    // in: which build is running, one line each for the kernel, the user-side ROM and neoui (the UI server reads them)
+    in property <[string]> build;
     in-out property <bool> bluetooth: false;
     in-out property <bool> data: true;
     in-out property <bool> airplane: false;
@@ -247,6 +249,7 @@ export component SettingsScreen inherits Rectangle {
         VerticalLayout {
             padding: Theme.margin;
             spacing: 12 * Theme.dp;
+            alignment: start;
             Card {
                 height: 132 * Theme.dp;
                 VerticalLayout {
@@ -274,7 +277,7 @@ export component SettingsScreen inherits Rectangle {
                 }
             }
 
-            for kv in [["Model", "Pixel 3a XL (bonito)"], ["Kernel", "EKA2, AArch64 ILP32"], ["User side", "Symbian^3 (2010), ARMv5TE"], ["UI", "neoui (Rust + Slint)"], ["Build", "2026-11-06"]]: HorizontalLayout {
+            for kv in [["Model", "Pixel 3a XL (bonito)"], ["Kernel", "EKA2, AArch64 ILP32"], ["User side", "Symbian^3 (2010), ARMv5TE"], ["UI", "neoui (Rust + Slint)"]]: HorizontalLayout {
                 height: 40 * Theme.dp;
                 padding-left: 4 * Theme.dp;
                 padding-right: 4 * Theme.dp;
@@ -292,6 +295,19 @@ export component SettingsScreen inherits Rectangle {
                     font-size: Theme.font-body;
                     vertical-alignment: center;
                 }
+            }
+
+            Text {
+                text: "Build";
+                color: Theme.text-dim;
+                font-size: Theme.font-label;
+            }
+
+            for line in (build.length > 0 ? build : ["—"]): Text {
+                text: line;
+                color: Theme.text;
+                font-size: Theme.font-label;
+                wrap: word-wrap;
             }
         }
     }

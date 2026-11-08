@@ -2653,6 +2653,7 @@ name = "neoui-symbian"
 version = "0.1.0"
 dependencies = [
  "e32",
+ "neoapp",
  "neoui-proto",
  "neoui-render",
 ]

@@ -40,7 +40,7 @@ const POLL_US: i32 = 500_000;
 const KEEP_LINES: usize = 500;
 
 /// The action buttons, in order.
-const ACTIONS: [&str; 4] = ["Log", "Last boot", "Save", "Console"];
+const ACTIONS: [&str; 5] = ["Log", "Last boot", "Build", "Save", "Console"];
 
 fn main() -> i32 {
     match run() {
@@ -167,6 +167,8 @@ impl Lines {
 enum View {
     Live,
     LastBoot,
+    /// which kernel, ROM and neoui run, and the A/B slots
+    Build,
 }
 
 struct State {
@@ -176,6 +178,8 @@ struct State {
     last: Lines,
     status: String,
     slots: String,
+    // neoapp::build::lines(): kernel, ROM, neoui
+    build: Vec<String>,
 }
 
 impl State {
@@ -229,6 +233,10 @@ impl State {
                 }
                 let path = format!(r"E:\logs\{name}-{stamp}.txt");
                 let file = File::replace(&fs, &path, 0)?;
+                // which build wrote it, then the log
+                let mut head = self.build.join("\n");
+                head.push_str("\n\n");
+                file.write(head.as_bytes())?;
                 file.write(&bytes)?;
                 names.push(path);
             }
@@ -292,6 +300,7 @@ fn run() -> Result<(), i32> {
         last: Lines::new(),
         status: String::new(),
         slots: slot_info(),
+        build: neoapp::build::lines(),
     };
     st.poll();
     if st.status.is_empty() {
@@ -341,12 +350,21 @@ fn run() -> Result<(), i32> {
                                 st.view = View::LastBoot;
                                 st.load_last();
                             }
-                            2 => st.save(),
-                            3 => st.toggle_console(),
+                            2 => {
+                                st.view = View::Build;
+                                st.slots = slot_info();
+                                st.status = String::from("build");
+                            }
+                            3 => st.save(),
+                            4 => st.toggle_console(),
                             _ => {}
                         }
                     }
-                    ui.set_current(if st.view == View::Live { 0 } else { 1 });
+                    ui.set_current(match st.view {
+                        View::Live => 0,
+                        View::LastBoot => 1,
+                        View::Build => 2,
+                    });
                     show(&ui, &model, &st, rows);
                     app.draw()?;
                 }
@@ -362,6 +380,12 @@ fn show(ui: &DevApp, model: &VecModel<SharedString>, st: &State, rows: usize) {
     let lines = match st.view {
         View::Live => st.live.tail(rows),
         View::LastBoot => st.last.tail(rows),
+        View::Build => st
+            .build
+            .iter()
+            .map(String::as_str)
+            .chain([st.slots.as_str()])
+            .collect(),
     };
     for y in 0..rows.min(model.row_count()) {
         let text = SharedString::from(lines.get(y).copied().unwrap_or(""));

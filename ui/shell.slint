@@ -53,6 +53,8 @@ export component Shell inherits Window {
     in-out property <string> origin: "home";
     in-out property <bool> options-open;
     in-out property <bool> shade-open;
+    // in: which build is running (kernel, user-side ROM, neoui), for Settings -> About phone
+    in property <[string]> build-info;
     // in: the UI server draws the screen-change fade itself from snapshots (smooth-ui S2); Slint switches at once
     in property <bool> server-transitions;
     changed server-transitions => {
@@ -210,6 +212,7 @@ export component Shell inherits Window {
             active: screen == "settings";
             SettingsScreen {
                 view <=> root.view;
+                build: root.build-info;
             }
         }
 

@@ -18,6 +18,8 @@ test = false
 neoui-render = { path = "../crates/neoui-render" }
 neoui-proto = { path = "../crates/neoui-proto" }
 e32 = { workspace = true }
+# build info (neoapp::build): the kernel's and the ROM's stamps, shared with Dev tools
+neoapp = { workspace = true }
 
 [workspace]
 members = ["apps/clock", "apps/term", "apps/files", "apps/devtools", "neoapp"]
