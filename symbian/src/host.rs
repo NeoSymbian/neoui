@@ -86,6 +86,8 @@ pub struct Host {
     pub blits: Vec<Rect>,
     /// Show the foreground app's whole surface on the next compose (it just came back).
     pub refresh: bool,
+    /// An app asked for a restart or power-off (`proto::POWER`); the main loop carries it out.
+    pub power: Option<i32>,
 }
 
 impl Host {
@@ -99,6 +101,7 @@ impl Host {
             next_session: 1,
             blits: Vec::new(),
             refresh: false,
+            power: None,
         }
     }
 
@@ -292,6 +295,11 @@ impl Service for Host {
             }
             proto::NAV => {
                 app.nav = m.int(0) & (proto::NAV_BACK | proto::NAV_OPTIONS);
+                m.complete(0);
+            }
+            proto::POWER => {
+                dprintln!("neoui: power {} asked by {}", m.int(0), app.key);
+                self.power = Some(m.int(0));
                 m.complete(0);
             }
             proto::NEXT_EVENT => match app.queue.pop_front() {

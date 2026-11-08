@@ -40,7 +40,9 @@ const POLL_US: i32 = 500_000;
 const KEEP_LINES: usize = 500;
 
 /// The action buttons, in order.
-const ACTIONS: [&str; 5] = ["Log", "Last boot", "Build", "Save", "Console"];
+const ACTIONS: [&str; 6] = ["Log", "Last boot", "Build", "Save", "Console", "Power"];
+/// "Power" swaps the row for these (the UI server carries them out, as its Power menu does: proto::POWER).
+const POWER_ACTIONS: [&str; 4] = ["Restart", "Power off", "Fastboot", "Back"];
 
 fn main() -> i32 {
     match run() {
@@ -282,8 +284,12 @@ fn run() -> Result<(), i32> {
     ui.set_cell_h(cell_h);
     ui.set_pad(pad);
     ui.set_bar_h(bar_h);
-    let actions: Vec<SharedString> = ACTIONS.iter().map(|a| SharedString::from(*a)).collect();
-    ui.set_actions(ModelRc::from(Rc::new(VecModel::from(actions))));
+    let set_actions = |ui: &DevApp, names: &[&str]| {
+        let actions: Vec<SharedString> = names.iter().map(|a| SharedString::from(*a)).collect();
+        ui.set_actions(ModelRc::from(Rc::new(VecModel::from(actions))));
+    };
+    set_actions(&ui, &ACTIONS);
+    let mut power_row = false;
     let model = Rc::new(VecModel::from(
         (0..rows).map(|_| SharedString::new()).collect::<Vec<_>>(),
     ));
@@ -340,6 +346,24 @@ fn run() -> Result<(), i32> {
                     app.dispatch_touch(touch);
                     let picked: Vec<i32> = pressed.borrow_mut().drain(..).collect();
                     for i in picked {
+                        if power_row {
+                            let action = match i {
+                                0 => Some(proto::POWER_RESTART),
+                                1 => Some(proto::POWER_OFF),
+                                2 => Some(proto::POWER_FASTBOOT),
+                                _ => None,
+                            };
+                            if let Some(a) = action {
+                                let mut args = TIpcArgs::new();
+                                args.int(0, a);
+                                let r = app.server.send_receive(proto::POWER, &args);
+                                st.status = format!("power {}: {:?}", POWER_ACTIONS[i as usize], r);
+                                dprintln!("devtools: {}", st.status);
+                            }
+                            power_row = false;
+                            set_actions(&ui, &ACTIONS);
+                            continue;
+                        }
                         match i {
                             0 => {
                                 st.view = View::Live;
@@ -357,6 +381,10 @@ fn run() -> Result<(), i32> {
                             }
                             3 => st.save(),
                             4 => st.toggle_console(),
+                            5 => {
+                                power_row = true;
+                                set_actions(&ui, &POWER_ACTIONS);
+                            }
                             _ => {}
                         }
                     }

@@ -11,6 +11,7 @@
 
 extern crate alloc;
 
+mod clock;
 mod host;
 mod perf;
 
@@ -39,6 +40,10 @@ const FRAME_US: u64 = 16_667;
 const IDLE_US: u64 = 1_000_000;
 /// A screen change's fade (ui/theme.slint `open`, Belle's app start).
 const TRANSITION_MS: u32 = 250;
+/// How long Power is held before the Power menu opens (H3a).
+const POWER_HOLD_MS: u64 = 1000;
+/// `EStdKeyDevice0` (`e32keys.h`): the Pixel's Power key (kernel `a64_keys.cpp`).
+const SCAN_POWER: i32 = 0xa4;
 
 fn now_ms() -> u64 {
     time::millis()
@@ -110,7 +115,10 @@ fn main() -> i32 {
     let mut keyboard_shown = false;
     let mut nav_shown = 0;
     let mut running_shown: Vec<&'static str> = Vec::new();
-    let mut clock_minute = u32::MAX;
+    let mut clock_shown = (u32::MAX, u32::MAX);
+    let mut keeper = clock::Keeper::boot();
+    // when Power went down, while it is held
+    let mut power_down_at: Option<u64> = None;
     // a refused HAL query must not freeze the clock below, which would hold every frame back
     let tick_us = match time::tick_period_us() {
         0 => 1000,
@@ -132,7 +140,11 @@ fn main() -> i32 {
         let mut due = false;
         let mut transition: Option<Transition> = None;
         loop {
-            let wait = if due || transition.is_some() || ui.has_active_animations() {
+            let wait = if due
+                || transition.is_some()
+                || ui.has_active_animations()
+                || power_down_at.is_some()
+            {
                 next_frame.saturating_sub(now_us())
             } else {
                 IDLE_US
@@ -151,6 +163,13 @@ fn main() -> i32 {
                     while let Some(ev) = next {
                         input.set(hook.next());
                         match ev {
+                            // Power is the system's: held, it opens the Power menu (below)
+                            Ok(ev)
+                                if matches!(ev.i_type, raw::EKEY_DOWN | raw::EKEY_UP)
+                                    && ev.scan_code() == SCAN_POWER =>
+                            {
+                                power_down_at = (ev.i_type == raw::EKEY_DOWN).then(time::millis);
+                            }
                             Ok(ev) => evs.extend(to_input(&ev)),
                             Err(e) => {
                                 dprintln!("neoui: input failed ({})", e);
@@ -274,9 +293,27 @@ fn main() -> i32 {
                 );
                 nav_shown = want_nav;
             }
+            if power_down_at.is_some_and(|t| ms.saturating_sub(t) >= POWER_HOLD_MS) {
+                power_down_at = None;
+                dprintln!("neoui: power menu");
+                ui.set_power_menu(true);
+            }
+            let mut power = host.power.take();
+            for a in ui.take_power() {
+                ui.set_power_menu(false);
+                if a >= 0 {
+                    power = Some(a);
+                }
+            }
+            if let Some(a) = power {
+                clock::power(a, &mut keeper);
+            }
             let t = time::now();
-            if t.minute != clock_minute {
-                clock_minute = t.minute;
+            if (t.hour, t.minute) != clock_shown {
+                if t.minute != clock_shown.1 {
+                    keeper.check(); // once a minute: did someone set the time?
+                }
+                clock_shown = (t.hour, t.minute);
                 let text = format!("{:02}:{:02}", t.hour, t.minute);
                 dprintln!("neoui: clock {}", text);
                 ui.set_clock(&text);

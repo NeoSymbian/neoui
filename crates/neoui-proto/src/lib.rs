@@ -4,6 +4,7 @@
 
 extern crate alloc;
 
+pub mod clock;
 pub mod ipc;
 pub mod recents;
 

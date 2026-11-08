@@ -67,6 +67,7 @@ pub struct Renderer {
     typed: Rc<RefCell<Vec<u32>>>,
     nav: Rc<RefCell<Vec<i32>>>,
     closed: Rc<RefCell<Vec<alloc::string::String>>>,
+    power: Rc<RefCell<Vec<i32>>>,
 }
 
 impl Renderer {
@@ -91,12 +92,16 @@ impl Renderer {
         let closed: Rc<RefCell<Vec<alloc::string::String>>> = Rc::default();
         let sink = closed.clone();
         ui.on_close_app(move |k| sink.borrow_mut().push(k.as_str().into()));
+        let power: Rc<RefCell<Vec<i32>>> = Rc::default();
+        let sink = power.clone();
+        ui.on_power(move |a| sink.borrow_mut().push(a));
         Ok(Self {
             window,
             ui,
             typed,
             nav,
             closed,
+            power,
         })
     }
 
@@ -176,6 +181,16 @@ impl Renderer {
     /// Apps the switcher's × asked to close since the last call.
     pub fn take_closed(&mut self) -> Vec<alloc::string::String> {
         core::mem::take(&mut *self.closed.borrow_mut())
+    }
+
+    /// Show or hide the Power menu (the UI server opens it when Power is held).
+    pub fn set_power_menu(&mut self, open: bool) {
+        self.ui.set_power_open(open);
+    }
+
+    /// What the Power menu chose since the last call: 2 = power off, 0 = restart, -1 = dismissed.
+    pub fn take_power(&mut self) -> Vec<i32> {
+        core::mem::take(&mut *self.power.borrow_mut())
     }
 
     /// The status bar's time text, e.g. "09:41".

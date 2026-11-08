@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // The Clock app (NEOCLOCK.EXE): live time from Symbian's clock, drawn by its own process into the surface the UI
 // server shows in the shell's body. Reuses the design's tokens and digits so it looks like the rest of the shell.
+// "Set time" opens steppers for the date, time and time zone; Save sets Symbian's clock (the UI server keeps it
+// across restarts, neoui-proto clock.rs).
 import "../../../../ui/fonts/Inter-VariableFont.ttf";
 import { Theme } from "../../../../ui/theme.slint";
-import { BigClock } from "../../../../ui/components/controls.slint";
+import { BigClock, Button } from "../../../../ui/components/controls.slint";
 
 export { Theme }
 
@@ -13,10 +15,24 @@ export component ClockApp inherits Window {
     in property <int> seconds;
     in property <string> date;
     in-out property <int> taps;
+    in property <bool> editing;
+    in property <[string]> labels;
+    in property <[string]> values;
+    callback edit();
+    callback adjust(int, int);
+    callback save();
+    callback cancel();
     default-font-family: "Inter";
     background: Theme.bg;
 
-    VerticalLayout {
+    // below the controls, so the buttons get their own taps
+    TouchArea {
+        clicked => {
+            root.taps += 1;
+        }
+    }
+
+    if !root.editing: VerticalLayout {
         alignment: center;
         spacing: 14 * Theme.dp;
         HorizontalLayout {
@@ -48,11 +64,80 @@ export component ClockApp inherits Window {
             font-size: 12 * Theme.dp;
             horizontal-alignment: center;
         }
+
+        HorizontalLayout {
+            alignment: center;
+            padding-top: 24 * Theme.dp;
+            Button {
+                text: "Set time";
+                primary: false;
+                clicked => {
+                    root.edit();
+                }
+            }
+        }
     }
 
-    TouchArea {
-        clicked => {
-            root.taps += 1;
+    if root.editing: VerticalLayout {
+        alignment: center;
+        spacing: 8 * Theme.dp;
+        padding: Theme.margin;
+        for label[i] in root.labels: HorizontalLayout {
+            spacing: 12 * Theme.dp;
+            Text {
+                text: label;
+                width: 80 * Theme.dp;
+                color: Theme.text-dim;
+                font-size: Theme.font-body;
+                vertical-alignment: center;
+            }
+
+            Button {
+                text: "−";
+                primary: false;
+                width: 64 * Theme.dp;
+                clicked => {
+                    root.adjust(i, -1);
+                }
+            }
+
+            Text {
+                text: root.values[i];
+                color: Theme.text;
+                font-size: Theme.font-title;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+            }
+
+            Button {
+                text: "+";
+                primary: false;
+                width: 64 * Theme.dp;
+                clicked => {
+                    root.adjust(i, 1);
+                }
+            }
+        }
+
+        HorizontalLayout {
+            alignment: center;
+            spacing: 16 * Theme.dp;
+            padding-top: 16 * Theme.dp;
+            Button {
+                text: "Cancel";
+                primary: false;
+                clicked => {
+                    root.cancel();
+                }
+            }
+
+            Button {
+                text: "Save";
+                clicked => {
+                    root.save();
+                }
+            }
         }
     }
 }

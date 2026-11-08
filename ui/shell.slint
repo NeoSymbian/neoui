@@ -11,6 +11,7 @@ import { StatusBar, Toolbar } from "components/frame.slint";
 import { OptionsMenu } from "components/controls.slint";
 import { Shade } from "components/shade.slint";
 import { Keyboard } from "components/keyboard.slint";
+import { PowerMenu } from "components/powermenu.slint";
 import { HomeScreen } from "screens/home.slint";
 import { MenuScreen } from "screens/menu.slint";
 import { PhoneScreen } from "screens/phone.slint";
@@ -87,6 +88,10 @@ export component Shell inherits Window {
     // in: the apps the UI server keeps running, most recent first (R10); out: the switcher's close button
     in property <[string]> running;
     callback close-app(string);
+    // in: the Power menu, opened by the UI server when Power is held (H3a); out: what it chose (2 = power off,
+    // 0 = restart, -1 = dismissed)
+    in property <bool> power-open;
+    callback power(int);
     // in: the status bar's time, from the system clock (the default is the design's mock time)
     in property <string> clock: "10:24";
 
@@ -293,5 +298,12 @@ export component Shell inherits Window {
         open: shade-open;
         dismissed => { root.shade-open = false; }
         open-app(a) => { root.open(a); }
+    }
+
+    PowerMenu {
+        width: root.width;
+        height: root.height;
+        open: power-open;
+        chosen(a) => { root.power(a); }
     }
 }

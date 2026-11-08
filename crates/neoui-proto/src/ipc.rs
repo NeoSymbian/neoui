@@ -28,6 +28,12 @@ pub const KEYBOARD: i32 = 5;
 pub const NAV: i32 = 6;
 pub const NAV_BACK: i32 = 1;
 pub const NAV_OPTIONS: i32 = 2;
+/// `[action: POWER_RESTART | POWER_FASTBOOT | POWER_OFF]` → 0: the server saves the clock, finalises the drives
+/// and asks the kernel (NeoSymbian H3a), as the Power menu does. Nothing comes back when that works.
+pub const POWER: i32 = 7;
+pub const POWER_RESTART: i32 = 0;
+pub const POWER_FASTBOOT: i32 = 1;
+pub const POWER_OFF: i32 = 2;
 
 /// Encoded size of an [`AppEvent`].
 pub const EVENT_LEN: usize = 16;

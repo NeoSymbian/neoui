@@ -1,21 +1,25 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //! The Clock app (`NEOCLOCK.EXE`, NeoSymbian R6): a separate Symbian process started by the UI server. It connects
 //! to `NeoUi` ([`neoapp`]), renders `ui/clock.slint` into its surface, ticks once a second from Symbian's clock, and
-//! exits on `Quit`.
+//! exits on `Quit`. "Set time" sets Symbian's clock and time zone by hand; the UI server keeps them across restarts.
 #![no_std]
 
 extern crate alloc;
 
 use alloc::format;
+use alloc::rc::Rc;
+use alloc::vec::Vec;
+use core::cell::RefCell;
 use core::pin::pin;
 use e32::ipc::TIpcArgs;
 use e32::rt::{self, Either};
 use e32::sys::TPtr8;
 use e32::{dprintln, time};
 use neoapp::App;
+use neoui_proto::clock::{self, Local};
 use neoui_proto::ipc::{self as proto, AppEvent};
 use neoui_proto::{InputEvent, TouchPhase};
-use slint::ComponentHandle;
+use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 
 slint::include_modules!();
 
@@ -61,6 +65,7 @@ fn run() -> Result<(), i32> {
     let ui = ClockApp::new().map_err(|_| -2)?;
     ui.global::<Theme>().set_dp(app.dp);
     ui.show().map_err(|_| -2)?;
+    set_up_editing(&ui);
 
     let mut shown_second = u32::MAX;
     // In the background (R10) the clock neither ticks nor draws.
@@ -137,4 +142,70 @@ fn set_time(ui: &ClockApp, t: &time::DateTime) {
         )
         .into(),
     );
+}
+
+fn strings(items: impl Iterator<Item = SharedString>) -> ModelRc<SharedString> {
+    ModelRc::new(VecModel::from(items.collect::<Vec<_>>()))
+}
+
+fn show_fields(ui: &ClockApp, l: &Local) {
+    ui.set_values(strings((0..clock::FIELDS.len()).map(|i| l.show(i).into())));
+}
+
+/// "Set time": steppers start at the clock's local time and zone; Save sets both (needs WriteDeviceData, which ROM
+/// EXEs have).
+fn set_up_editing(ui: &ClockApp) {
+    ui.set_labels(strings(
+        clock::FIELDS.iter().map(|f| SharedString::from(*f)),
+    ));
+    let edit = Rc::new(RefCell::new(Local {
+        year: 2026,
+        month: 1,
+        day: 1,
+        hour: 0,
+        minute: 0,
+        tz: 0,
+    }));
+    let (weak, e) = (ui.as_weak(), edit.clone());
+    ui.on_edit(move || {
+        let now = time::now();
+        let (_, tz) = time::utc_now();
+        let l = Local {
+            year: now.year,
+            month: now.month,
+            day: now.day,
+            hour: now.hour,
+            minute: now.minute,
+            tz,
+        };
+        *e.borrow_mut() = l;
+        if let Some(ui) = weak.upgrade() {
+            show_fields(&ui, &l);
+            ui.set_editing(true);
+        }
+    });
+    let (weak, e) = (ui.as_weak(), edit.clone());
+    ui.on_adjust(move |field, delta| {
+        e.borrow_mut().adjust(field as usize, delta);
+        if let Some(ui) = weak.upgrade() {
+            show_fields(&ui, &e.borrow());
+        }
+    });
+    let (weak, e) = (ui.as_weak(), edit);
+    ui.on_save(move || {
+        let l = *e.borrow();
+        match time::set_utc_and_offset(l.to_unix(), l.tz) {
+            Ok(()) => dprintln!("clock: set {} UTC, offset {} s", l.to_unix(), l.tz),
+            Err(err) => dprintln!("clock: set failed ({})", err),
+        }
+        if let Some(ui) = weak.upgrade() {
+            ui.set_editing(false);
+        }
+    });
+    let weak = ui.as_weak();
+    ui.on_cancel(move || {
+        if let Some(ui) = weak.upgrade() {
+            ui.set_editing(false);
+        }
+    });
 }

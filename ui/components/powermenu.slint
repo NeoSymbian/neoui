@@ -1,0 +1,64 @@
+// SPDX-License-Identifier: Apache-2.0
+// The Power menu (NeoSymbian H3a): the UI server opens it when Power is held for a second. Power off and Restart go
+// back to the server (`chosen`), which saves the clock, finalises the drives and asks the kernel.
+// Geometry (crates/neoui-render/tests/power.rs mirrors it): a 280 dp card in the middle of the screen, its three
+// buttons 60 dp apart, the middle one (Restart) on the screen's centre line.
+import { Theme } from "../theme.slint";
+import { Button } from "controls.slint";
+
+export component PowerMenu inherits Rectangle {
+    in property <bool> open;
+    // 2 = power off, 0 = restart, -1 = dismissed
+    callback chosen(int);
+    visible: open;
+    background: #000000b0;
+
+    TouchArea {
+        clicked => {
+            root.chosen(-1);
+        }
+    }
+
+    Rectangle {
+        width: 280 * Theme.dp;
+        height: 220 * Theme.dp;
+        x: (root.width - self.width) / 2;
+        y: (root.height - self.height) / 2;
+        background: Theme.bg-raised;
+        border-radius: Theme.radius;
+        // swallow taps between the buttons
+        TouchArea { }
+
+        Button {
+            text: "Power off";
+            tint: #c0392b;
+            x: 20 * Theme.dp;
+            width: parent.width - 40 * Theme.dp;
+            y: parent.height / 2 - 60 * Theme.dp - self.height / 2;
+            clicked => {
+                root.chosen(2);
+            }
+        }
+
+        Button {
+            text: "Restart";
+            x: 20 * Theme.dp;
+            width: parent.width - 40 * Theme.dp;
+            y: parent.height / 2 - self.height / 2;
+            clicked => {
+                root.chosen(0);
+            }
+        }
+
+        Button {
+            text: "Cancel";
+            primary: false;
+            x: 20 * Theme.dp;
+            width: parent.width - 40 * Theme.dp;
+            y: parent.height / 2 + 60 * Theme.dp - self.height / 2;
+            clicked => {
+                root.chosen(-1);
+            }
+        }
+    }
+}
