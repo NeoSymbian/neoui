@@ -2429,6 +2429,11 @@ dependencies = [
 ]
 
 [[package]]
+name = "modem-ipc"
+version = "0.1.0"
+source = "git+https://github.com/NeoSymbian/telephony?rev=6649c73110941ccca679dd2ac39a6e9d0a81a44b#6649c73110941ccca679dd2ac39a6e9d0a81a44b"
+
+[[package]]
 name = "moxcms"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2653,6 +2658,7 @@ name = "neoui-symbian"
 version = "0.1.0"
 dependencies = [
  "e32",
+ "modem-ipc",
  "neoapp",
  "neoui-proto",
  "neoui-render",

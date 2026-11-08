@@ -98,6 +98,15 @@ export component Shell inherits Window {
     callback power(int);
     // in: the status bar's time, from the system clock (the default is the design's mock time)
     in property <string> clock: "10:24";
+    // in: the modem (telephony C5, from MODEMD's NeoModem server): signal bars (-1 = no modem), operator, technology,
+    // and the call shown by the Phone screen; out: what the Phone screen asked ("dial" + number, "answer", "hangup")
+    in property <int> bars: -1;
+    in property <string> operator;
+    in property <string> rat;
+    in property <string> call-state;
+    in property <string> call-number;
+    in property <bool> call-incoming;
+    callback phone-action(string, string);
 
     public function open(app: string) {
         root.origin = root.screen == "menu" ? "menu" : "home";
@@ -154,6 +163,10 @@ export component Shell inherits Window {
             active: screen == "phone";
             PhoneScreen {
                 view <=> root.view;
+                call-state: root.call-state;
+                call-number: root.call-number;
+                call-incoming: root.call-incoming;
+                action(a, n) => { root.phone-action(a, n); }
             }
         }
 
@@ -249,6 +262,9 @@ export component Shell inherits Window {
     StatusBar {
         y: 0;
         time: clock;
+        bars: root.bars;
+        operator: root.operator;
+        rat: root.rat;
         title: screen-title(screen, view);
         tapped => {
             root.shade-open = !root.shade-open;

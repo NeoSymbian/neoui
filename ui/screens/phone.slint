@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-// Phone: dialer (default), call log ("log"), in-call ("call").
+// Phone: dialer (default), call log ("log"), in-call ("call"). The call comes from the modem (telephony C5): the UI
+// server sets call-state / call-number / call-incoming and acts on `action` ("dial" + number, "answer", "hangup").
 import { Theme } from "../theme.slint";
 import { NeoList } from "../components/scroll.slint";
 import { Data } from "../data.slint";
@@ -45,6 +46,11 @@ export component PhoneScreen inherits Rectangle {
     in-out property <string> number: "";
     in-out property <bool> muted;
     in-out property <bool> speaker;
+    // in: the modem's call: "" (none), "Calling…", "Ringing", "Incoming call", "Connected", "Call ended"
+    in property <string> call-state;
+    in property <string> call-number;
+    in property <bool> call-incoming;
+    callback action(string, string);
     property <int> tab: view == "log" ? 1 : 0;
     TabBar {
         y: 0;
@@ -98,7 +104,10 @@ export component PhoneScreen inherits Rectangle {
                     size: 68 * Theme.dp;
                     fill: Theme.ok;
                     clicked => {
-                        root.view = "call";
+                        if (root.number != "") {
+                            root.action("dial", root.number);
+                            root.view = "call";
+                        }
                     }
                 }
 
@@ -151,7 +160,7 @@ export component PhoneScreen inherits Rectangle {
             }
 
             Text {
-                text: number == "" ? "Ava Lindqvist" : number;
+                text: call-number != "" ? call-number : number == "" ? "Ava Lindqvist" : number;
                 color: Theme.text;
                 font-size: Theme.font-title * 1.3;
                 font-weight: 600;
@@ -159,7 +168,7 @@ export component PhoneScreen inherits Rectangle {
             }
 
             Text {
-                text: "00:42";
+                text: call-state != "" ? call-state : "00:42";
                 color: Theme.text-secondary;
                 font-size: Theme.font-body;
                 horizontal-alignment: center;
@@ -192,12 +201,22 @@ export component PhoneScreen inherits Rectangle {
             Rectangle { height: 18 * Theme.dp; }
 
             HorizontalLayout {
-                alignment: center;
+                alignment: space-around;
+                if call-incoming && call-state == "Incoming call": RoundButton {
+                    icon: @image-url("../icons/sys/call.svg");
+                    size: 68 * Theme.dp;
+                    fill: Theme.ok;
+                    clicked => {
+                        root.action("answer", "");
+                    }
+                }
+
                 RoundButton {
                     icon: @image-url("../icons/sys/end_call.svg");
                     size: 68 * Theme.dp;
                     fill: Theme.danger;
                     clicked => {
+                        root.action("hangup", "");
                         root.view = "";
                         root.number = "";
                     }

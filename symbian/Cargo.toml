@@ -20,6 +20,8 @@ neoui-proto = { path = "../crates/neoui-proto" }
 e32 = { workspace = true }
 # build info (neoapp::build): the kernel's and the ROM's stamps, shared with Dev tools
 neoapp = { workspace = true }
+# NeoSymbian/telephony: the NeoModem server's contract (MODEMD.EXE; Apache-2.0)
+modem-ipc = { git = "https://github.com/NeoSymbian/telephony", rev = "6649c73110941ccca679dd2ac39a6e9d0a81a44b" }
 
 [workspace]
 members = ["apps/clock", "apps/term", "apps/files", "apps/devtools", "neoapp"]

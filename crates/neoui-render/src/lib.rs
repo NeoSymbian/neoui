@@ -72,6 +72,7 @@ pub struct Renderer {
     nav: Rc<RefCell<Vec<i32>>>,
     closed: Rc<RefCell<Vec<alloc::string::String>>>,
     power: Rc<RefCell<Vec<i32>>>,
+    phone: Rc<RefCell<Vec<(String, String)>>>,
     /// lists scrolled by shifting pixels (smooth-ui S2d), and how many frames did so
     scrolling: Scrolling,
     shifts: u32,
@@ -132,6 +133,12 @@ impl Renderer {
         let power: Rc<RefCell<Vec<i32>>> = Rc::default();
         let sink = power.clone();
         ui.on_power(move |a| sink.borrow_mut().push(a));
+        let phone: Rc<RefCell<Vec<(String, String)>>> = Rc::default();
+        let sink = phone.clone();
+        ui.on_phone_action(move |a, n| {
+            sink.borrow_mut()
+                .push((a.as_str().into(), n.as_str().into()))
+        });
         Ok(Self {
             window,
             ui,
@@ -139,6 +146,7 @@ impl Renderer {
             nav,
             closed,
             power,
+            phone,
             scrolling: Scrolling::default(),
             shifts: 0,
         })
@@ -255,6 +263,32 @@ impl Renderer {
     /// The status bar's time text, e.g. "09:41".
     pub fn set_clock(&mut self, text: &str) {
         self.ui.set_clock(text.into());
+    }
+
+    /// The status bar's network (telephony C5): `bars` 0..=4, or -1 without a modem; the operator's name; the
+    /// technology ("LTE", "3G", "2G" or "").
+    pub fn set_network(&mut self, bars: i32, operator: &str, rat: &str) {
+        self.ui.set_bars(bars);
+        self.ui.set_operator(operator.into());
+        self.ui.set_rat(rat.into());
+    }
+
+    /// The Phone screen's call: its state text ("" = none), the other side's number, and whether it came in.
+    pub fn set_call(&mut self, state: &str, number: &str, incoming: bool) {
+        self.ui.set_call_state(state.into());
+        self.ui.set_call_number(number.into());
+        self.ui.set_call_incoming(incoming);
+    }
+
+    /// Bring up the Phone screen's call view (an incoming call).
+    pub fn show_call(&mut self) {
+        self.ui.invoke_open("phone".into());
+        self.ui.set_view("call".into());
+    }
+
+    /// What the Phone screen asked since the last call: ("dial", number), ("answer", ""), ("hangup", "").
+    pub fn take_phone(&mut self) -> Vec<(String, String)> {
+        core::mem::take(&mut *self.phone.borrow_mut())
     }
 
     pub fn render(&mut self, buf: &mut [u32], stride_px: usize) -> Damage {

@@ -14,6 +14,7 @@ extern crate alloc;
 mod clock;
 mod host;
 mod perf;
+mod phone;
 
 use alloc::format;
 use alloc::vec;
@@ -111,6 +112,7 @@ fn main() -> i32 {
         e32::sys::ui::hal_function(1, 0x4e06, core::ptr::null_mut(), core::ptr::null_mut())
     };
     dprintln!("neoui: boot OK -> {}", boot_ok);
+    let mut phone = phone::Phone::start();
     // the shell's design unit (theme.slint: min(w, h) / 360), in 1/256 px
     let dp256 = (w.min(h) * 256 / 360) as u32;
     let mut host = Host::new(ui.body(), dp256, ui.keyboard_h());
@@ -391,6 +393,7 @@ fn main() -> i32 {
             if let Some(a) = power {
                 clock::power(a, &mut keeper);
             }
+            phone.poll(&mut ui, time::millis());
             let t = time::now();
             if (t.hour, t.minute) != clock_shown {
                 if t.minute != clock_shown.1 {

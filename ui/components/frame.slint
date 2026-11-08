@@ -13,12 +13,17 @@ export component StatusBar inherits Rectangle {
     in property <string> title;
     in property <bool> shade-open;
     in property <string> time: "10:24";
+    // the modem (telephony C5): bars 0..4, -1 = no modem (the plain signal icon); the operator shows where the title
+    // is empty (home), the radio technology ("LTE", "3G", "2G") before the bars
+    in property <int> bars: -1;
+    in property <string> operator;
+    in property <string> rat;
     callback tapped;
     height: Theme.status-h;
     background: Theme.bg;
     Text {
         x: Theme.margin;
-        text: title;
+        text: title != "" ? title : operator;
         color: Theme.text;
         font-size: Theme.font-status;
         font-weight: 600;
@@ -29,8 +34,35 @@ export component StatusBar inherits Rectangle {
         alignment: end;
         padding-right: Theme.margin;
         spacing: 6 * Theme.dp;
+        if bars >= 0 && rat != "": Text {
+            text: rat;
+            color: Theme.text;
+            font-size: Theme.font-status * 0.8;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+        if bars >= 0: HorizontalLayout {
+            spacing: 1.5 * Theme.dp;
+            alignment: center;
+            for i in 4: VerticalLayout {
+                alignment: end;
+                Rectangle {
+                    width: 3 * Theme.dp;
+                    height: Theme.status-icon * (i + 1) / 4;
+                    border-radius: 1 * Theme.dp;
+                    background: i < bars ? Theme.text : Theme.text-dim;
+                    opacity: i < bars ? 1 : 0.4;
+                }
+            }
+        }
+        if bars < 0: VerticalLayout {
+            alignment: center;
+            Glyph {
+                source: @image-url("../icons/sys/signal.svg");
+                size: Theme.status-icon;
+            }
+        }
         for icon in [
-            @image-url("../icons/sys/signal.svg"),
             @image-url("../icons/sys/wifi.svg"),
             @image-url("../icons/sys/battery.svg")
         ]: VerticalLayout {
