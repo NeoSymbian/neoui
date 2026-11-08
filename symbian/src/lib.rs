@@ -17,7 +17,9 @@ mod perf;
 use alloc::format;
 use alloc::vec;
 use alloc::vec::Vec;
-use core::pin::pin;
+use core::future::Future;
+use core::pin::{Pin, pin};
+use core::task::{Context, Poll, Waker};
 use e32::display::Display;
 use e32::event::{EventHook, TRawEvent, raw};
 use e32::rt::{self, Either};
@@ -25,15 +27,15 @@ use e32::server::{self, Server};
 use e32::{dprintln, time};
 use host::Host;
 use neoui_proto::ipc::{self as proto, AppEvent};
-use neoui_proto::{Damage, InputEvent, Rect, TouchPhase};
+use neoui_proto::{Damage, InputEvent, Rect, TouchPhase, coalesce_moves, next_deadline};
 use neoui_render::Renderer;
 
 e32::main!(main);
 
-/// Frame interval while an animation runs.
-const FRAME_US: i32 = 33_000;
+/// Frame period (60 fps): frames start on a 16.7 ms grid while there is something to draw (smooth-ui S1).
+const FRAME_US: u64 = 16_667;
 /// Wake-up interval otherwise (also how often a vanished app process is noticed).
-const IDLE_US: i32 = 1_000_000;
+const IDLE_US: u64 = 1_000_000;
 
 fn now_ms() -> u64 {
     time::millis()
@@ -95,6 +97,12 @@ fn main() -> i32 {
     let mut nav_shown = 0;
     let mut running_shown: Vec<&'static str> = Vec::new();
     let mut clock_minute = u32::MAX;
+    // a refused HAL query must not freeze the clock below, which would hold every frame back
+    let tick_us = match time::tick_period_us() {
+        0 => 1000,
+        us => u64::from(us),
+    };
+    let now_us = || u64::from(time::ticks()) * tick_us;
 
     rt::block_on(async {
         // Both stay outstanding across wake-ups, so no input event or message is lost to a cancel.
@@ -103,71 +111,90 @@ fn main() -> i32 {
         let mut screen = ui.screen();
         let mut down_at = None;
         let mut to_app = false;
+        // the press of the last release, for the frame that shows it (one frame may show several taps)
+        let mut tap_end = None;
+        // the next frame's start, and whether something waits for it
+        let mut next_frame = 0u64;
+        let mut due = false;
         loop {
-            let tick = if ui.has_active_animations() {
-                FRAME_US
+            let wait = if due || ui.has_active_animations() {
+                next_frame.saturating_sub(now_us())
             } else {
                 IDLE_US
             };
-            let mut tap_end = false;
             match rt::select(
                 rt::select(input.as_mut(), receive.as_mut()),
-                time::delay(tick),
+                time::delay(wait as i32),
             )
             .await
             {
                 Either::Left(Either::Left(ev)) => {
-                    input.set(hook.next());
-                    let ev = match ev {
-                        Ok(ev) => ev,
-                        Err(e) => {
-                            dprintln!("neoui: input failed ({})", e);
-                            return e;
+                    // Take every event already queued and merge the moves: a drag costs one render per frame, not
+                    // one per move, and the kernel's queue doesn't fill up and drop releases (smooth-ui S1).
+                    let mut evs = Vec::new();
+                    let mut next = Some(ev);
+                    while let Some(ev) = next {
+                        input.set(hook.next());
+                        match ev {
+                            Ok(ev) => evs.extend(to_input(&ev)),
+                            Err(e) => {
+                                dprintln!("neoui: input failed ({})", e);
+                                return e;
+                            }
                         }
-                    };
-                    let Some(event) = to_input(&ev) else { continue };
-                    let app_on_screen = host.front().is_some();
-                    match event {
-                        InputEvent::Touch { id, x, y, phase } => {
-                            let body = host.body;
-                            if phase == TouchPhase::Down {
-                                down_at = Some((x, y));
-                                // A touch belongs to the app from press to release if it starts in its body.
-                                to_app = app_on_screen && contains(&host.app_area(), x, y);
-                            }
-                            if phase == TouchPhase::Up {
-                                dprintln!("neoui: tap {},{}", x, y);
-                                tap_end = true;
-                            }
-                            if to_app {
-                                let (x, y) = (x - body.x, y - body.y);
-                                host.send(AppEvent::Input(InputEvent::Touch { id, x, y, phase }));
-                            } else {
-                                ui.dispatch(event);
-                                // the system keyboard types into the app like a hardware key
-                                for code in ui.take_typed() {
-                                    host.send(AppEvent::Input(InputEvent::Key {
-                                        code,
-                                        down: true,
+                        next = poll_now(input.as_mut());
+                    }
+                    coalesce_moves(&mut evs);
+                    for event in evs {
+                        let app_on_screen = host.front().is_some();
+                        match event {
+                            InputEvent::Touch { id, x, y, phase } => {
+                                let body = host.body;
+                                if phase == TouchPhase::Down {
+                                    down_at = Some((x, y));
+                                    // A touch belongs to the app from press to release if it starts in its body.
+                                    to_app = app_on_screen && contains(&host.app_area(), x, y);
+                                }
+                                if phase == TouchPhase::Up {
+                                    let down = down_at.take();
+                                    dprintln!("neoui: tap {},{} down {:?}", x, y, down);
+                                    tap_end = Some(down);
+                                }
+                                if to_app {
+                                    let (x, y) = (x - body.x, y - body.y);
+                                    host.send(AppEvent::Input(InputEvent::Touch {
+                                        id,
+                                        x,
+                                        y,
+                                        phase,
                                     }));
-                                }
-                                for b in ui.take_nav() {
-                                    host.send(if b == proto::NAV_BACK {
-                                        AppEvent::Back
-                                    } else {
-                                        AppEvent::Options
-                                    });
-                                }
-                                for key in ui.take_closed() {
-                                    dprintln!("neoui: app {} closed", key);
-                                    host.close(&key, time::millis());
+                                } else {
+                                    ui.dispatch(event);
+                                    // the system keyboard types into the app like a hardware key
+                                    for code in ui.take_typed() {
+                                        host.send(AppEvent::Input(InputEvent::Key {
+                                            code,
+                                            down: true,
+                                        }));
+                                    }
+                                    for b in ui.take_nav() {
+                                        host.send(if b == proto::NAV_BACK {
+                                            AppEvent::Back
+                                        } else {
+                                            AppEvent::Options
+                                        });
+                                    }
+                                    for key in ui.take_closed() {
+                                        dprintln!("neoui: app {} closed", key);
+                                        host.close(&key, time::millis());
+                                    }
                                 }
                             }
+                            InputEvent::Key { .. } if app_on_screen => {
+                                host.send(AppEvent::Input(event))
+                            }
+                            InputEvent::Key { .. } => ui.dispatch(event),
                         }
-                        InputEvent::Key { .. } if app_on_screen => {
-                            host.send(AppEvent::Input(event))
-                        }
-                        InputEvent::Key { .. } => ui.dispatch(event),
                     }
                 }
                 Either::Left(Either::Right(msg)) => {
@@ -184,6 +211,14 @@ fn main() -> i32 {
                 }
                 Either::Right(()) => {}
             }
+            // Draw at the next frame's start, with everything that came in until then.
+            let frame_at = now_us();
+            if frame_at < next_frame {
+                due = true;
+                continue;
+            }
+            next_frame = next_deadline(next_frame, frame_at, FRAME_US);
+            due = false;
 
             // App lifecycle: the shell's screen decides which app is in front; the others keep running (R10).
             let mut repaint_all = false;
@@ -240,10 +275,21 @@ fn main() -> i32 {
             let app_px = compose(&mut host, &damage, &display);
             perf.frame(render_us, copy_us, perf.since(&m), px + app_px);
             perf.idle();
-            if tap_end {
-                dprintln!("neoui: tap from {:?} redrew {} px", down_at.take(), px);
+            if let Some(down) = tap_end.take() {
+                dprintln!("neoui: tap from {:?} redrew {} px", down, px);
             }
         }
+    })
+}
+
+/// The future's output if it is ready without waiting. Two polls: an event request is made by the first and, when the
+/// kernel had an event queued, is already complete at the second (`RequestEvent` delivers at once). That completion's
+/// signal is left for `block_on`, which only polls once more for it.
+fn poll_now<F: Future>(mut f: Pin<&mut F>) -> Option<F::Output> {
+    let mut cx = Context::from_waker(Waker::noop());
+    (0..2).find_map(|_| match f.as_mut().poll(&mut cx) {
+        Poll::Ready(v) => Some(v),
+        Poll::Pending => None,
     })
 }
 

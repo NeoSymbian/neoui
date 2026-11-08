@@ -133,6 +133,31 @@ pub enum InputEvent {
     Key { code: u32, down: bool },
 }
 
+/// Fold each run of touch moves of one finger into its last move; presses, releases and keys are kept, in order.
+/// (One render per batch of input, not per event: smooth-ui S1.)
+pub fn coalesce_moves(evs: &mut alloc::vec::Vec<InputEvent>) {
+    use InputEvent::Touch;
+    evs.dedup_by(|later, earlier| {
+        let run = matches!(
+            (&*earlier, &*later),
+            (Touch { id: a, phase: TouchPhase::Move, .. }, Touch { id: b, phase: TouchPhase::Move, .. }) if a == b
+        );
+        if run {
+            *earlier = *later;
+        }
+        run
+    });
+}
+
+/// The next frame deadline after `now`: the first `last + k * period` (k ≥ 1) past `now`, so an overrun frame skips
+/// the deadlines it missed instead of queueing frames. `last` itself while `now` is still before it.
+pub fn next_deadline(last: u64, now: u64, period: u64) -> u64 {
+    if now < last {
+        return last;
+    }
+    last + ((now - last) / period + 1) * period
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct SurfaceId(pub u32);
 
@@ -186,6 +211,57 @@ mod tests {
             &[Rect::new(0, 0, 15, 15), Rect::new(100, 100, 1, 1)]
         );
         assert_eq!(d.bounds(), Rect::new(0, 0, 101, 101));
+    }
+
+    fn touch(id: u8, x: i32, phase: TouchPhase) -> InputEvent {
+        InputEvent::Touch { id, x, y: 0, phase }
+    }
+
+    #[test]
+    fn coalesce_keeps_the_last_move_of_a_run() {
+        use TouchPhase::*;
+        let key = InputEvent::Key {
+            code: 'a' as u32,
+            down: true,
+        };
+        let mut evs = alloc::vec![
+            touch(0, 1, Down),
+            touch(0, 2, Move),
+            touch(0, 3, Move),
+            touch(0, 4, Move),
+            key,
+            touch(0, 5, Move),
+            touch(1, 6, Move),
+            touch(0, 7, Move),
+            touch(0, 8, Up),
+            touch(0, 9, Down),
+            touch(0, 10, Up),
+        ];
+        coalesce_moves(&mut evs);
+        assert_eq!(
+            evs,
+            [
+                touch(0, 1, Down),
+                touch(0, 4, Move),
+                key,
+                touch(0, 5, Move),
+                touch(1, 6, Move),
+                touch(0, 7, Move),
+                touch(0, 8, Up),
+                touch(0, 9, Down),
+                touch(0, 10, Up),
+            ]
+        );
+    }
+
+    #[test]
+    fn deadlines_skip_missed_frames() {
+        assert_eq!(next_deadline(0, 0, 16), 16); // first frame
+        assert_eq!(next_deadline(100, 105, 16), 116); // on time
+        assert_eq!(next_deadline(100, 116, 16), 132); // exactly at the next one
+        assert_eq!(next_deadline(100, 120, 16), 132); // overran by one period
+        assert_eq!(next_deadline(100, 150, 16), 164); // overran by three
+        assert_eq!(next_deadline(100, 40, 16), 100); // still before `last` (timer early): keep it
     }
 
     #[test]
