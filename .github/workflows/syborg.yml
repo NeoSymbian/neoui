@@ -66,26 +66,27 @@ jobs:
         run: |
           export SCREEN=539x1079
           . ../neoui/symbian/taps.sh
-          tap 270 1000; wait_s 3
-          tap 449 530; wait_s 8
-          tap 270 500; wait_s 3
-          tap 88 1033; wait_s 5
-          tap 449 735; wait_s 12
-          kb_type dir; wait_s 5
-          type_text neotest; wait_s 25
-          tap 88 1033; wait_s 5
-          tap 89 735; wait_s 10
-          tap 270 315; wait_s 4; tap 270 250; wait_s 4; tap 270 142; wait_s 5
-          tap 88 1033; wait_s 4; tap 270 250; wait_s 4; tap 270 142; wait_s 4
-          for i in 1 2 3 4; do tap 88 1033; wait_s 3; done
-          tap 270 135; wait_s 4; tap 452 1033; wait_s 3; tap 270 756; wait_s 4
-          kb_type neo; wait_s 4
-          tap 452 1033; wait_s 3; tap 270 924; wait_s 3; tap 270 142; wait_s 4; tap 430 553; wait_s 4
-          tap 88 1033; wait_s 3; tap 88 1033; wait_s 5
-          tap 449 735; wait_s 5; tap 88 1033; wait_s 4
-          tap 270 1000; wait_s 4
-          for i in 1 2 3; do tap 227 88; wait_s 6; done
-          MON_GAP=0.3 MONITOR="$M" SECS=390 ./boot.sh
+          tap 270 1000
+          tap 449 530; expect "clock: surface"
+          tap 270 500; expect "clock: touch"
+          tap 88 1033; expect "clock: visible false"
+          tap 449 735; expect "term| Copyright"; wait_s 1
+          kb_type dir; expect "term| Directory of C:"
+          type_text neotest; expect "passed, 0 failed"
+          tap 88 1033
+          tap 89 735; expect "files: drives"
+          tap 270 315; expect "files: list"; tap 270 250; expect "files: list"; tap 270 142; expect "files: list"
+          tap 88 1033; expect "files: list"; tap 270 250; expect "files: list"; tap 270 142; expect "files: view"
+          for i in 1 2 3; do tap 88 1033; expect "files: list"; done
+          tap 88 1033; expect "files: drives"
+          tap 270 135; expect "files: list"; tap 452 1033; tap 270 756
+          kb_type neo; expect "files: mkdir"
+          tap 452 1033; tap 270 924; tap 270 142; tap 430 553; expect "files: delete"
+          tap 88 1033; expect "files: drives"; tap 88 1033
+          tap 449 735; tap 88 1033
+          tap 270 1000
+          for i in 1 2 3; do tap 227 88; expect "exited (type 0"; done
+          MON_GAP=0.1 MONITOR="$M" SECS=300 ./boot.sh
 
       - name: Check the output
         working-directory: build
