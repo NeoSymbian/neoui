@@ -73,4 +73,7 @@ export global Theme {
     out property <duration> close: 300ms;
     out property <duration> popup: 250ms;
     out property <duration> page: 350ms;
+    // set by Shell.server-transitions: the UI server animates screen changes from snapshots (smooth-ui S2), so the
+    // screens switch at once here
+    in-out property <bool> instant: false;
 }

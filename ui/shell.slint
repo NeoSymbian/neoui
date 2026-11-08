@@ -32,10 +32,10 @@ component Slot inherits Rectangle {
     in property <bool> active;
     visible: self.opacity > 0.01;
     opacity: active ? 1 : 0;
-    animate opacity { duration: Theme.open; easing: ease-out-quad; }
+    animate opacity { duration: Theme.instant ? 0ms : Theme.open; easing: ease-out-quad; }
     // the content sits 16 dp lower while hidden and rises into place
     property <length> lift: active ? 0 : 16 * Theme.dp;
-    animate lift { duration: Theme.open; easing: ease-out-quad; }
+    animate lift { duration: Theme.instant ? 0ms : Theme.open; easing: ease-out-quad; }
     Rectangle {
         y: lift;
         width: parent.width;
@@ -53,6 +53,11 @@ export component Shell inherits Window {
     in-out property <string> origin: "home";
     in-out property <bool> options-open;
     in-out property <bool> shade-open;
+    // in: the UI server draws the screen-change fade itself from snapshots (smooth-ui S2); Slint switches at once
+    in property <bool> server-transitions;
+    changed server-transitions => {
+        Theme.instant = self.server-transitions;
+    }
 
     // 1 dp = min(width, height) / 360 (the Belle reference screen is 360x640)
     property <length> dp: min(self.width, self.height) / 360;

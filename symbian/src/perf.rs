@@ -29,6 +29,9 @@ pub struct Perf {
     copy: Stat,
     app: Stat,
     px: u64,
+    // frames composed from snapshots, no Slint render (smooth-ui S2)
+    layers: u32,
+    layer: Stat,
 }
 
 /// A point in time on the fast counter.
@@ -46,6 +49,8 @@ impl Perf {
             copy: Stat::default(),
             app: Stat::default(),
             px: 0,
+            layers: 0,
+            layer: Stat::default(),
         }
     }
 
@@ -64,7 +69,7 @@ impl Perf {
             return;
         }
         let now = time::millis();
-        if self.frames == 0 {
+        if self.frames + self.layers == 0 {
             self.started_ms = now;
         }
         self.frames += 1;
@@ -77,18 +82,32 @@ impl Perf {
         }
     }
 
+    /// Count a frame composed from snapshots (smooth-ui S2): `us` to blend and copy it to the screen.
+    pub fn layer(&mut self, us: u32) {
+        let now = time::millis();
+        if self.frames + self.layers == 0 {
+            self.started_ms = now;
+        }
+        self.layers += 1;
+        self.layer.add(us);
+        if now.saturating_sub(self.started_ms) >= WINDOW_MS {
+            self.flush(now);
+        }
+    }
+
     /// Log a window that activity stopped in the middle of (call on every wake-up).
     pub fn idle(&mut self) {
         let now = time::millis();
-        if self.frames > 0 && now.saturating_sub(self.started_ms) >= WINDOW_MS {
+        if self.frames + self.layers > 0 && now.saturating_sub(self.started_ms) >= WINDOW_MS {
             self.flush(now);
         }
     }
 
     fn flush(&mut self, now: u64) {
-        let n = u64::from(self.frames);
+        let n = u64::from(self.frames.max(1));
         dprintln!(
-            "neoui: perf {} frames/{} ms: render avg {} max {} us, copy avg {} max {} us, app avg {} max {} us, {} px",
+            "neoui: perf {} frames/{} ms: render avg {} max {} us, copy avg {} max {} us, app avg {} max {} us, {} px, \
+             {} layer frames avg {} max {} us",
             self.frames,
             now - self.started_ms,
             self.render.sum_us / n,
@@ -97,7 +116,10 @@ impl Perf {
             self.copy.max_us,
             self.app.sum_us / n,
             self.app.max_us,
-            self.px
+            self.px,
+            self.layers,
+            self.layer.sum_us / u64::from(self.layers.max(1)),
+            self.layer.max_us
         );
         let hz = self.hz;
         *self = Self {
@@ -108,6 +130,8 @@ impl Perf {
             copy: Stat::default(),
             app: Stat::default(),
             px: 0,
+            layers: 0,
+            layer: Stat::default(),
         };
     }
 }

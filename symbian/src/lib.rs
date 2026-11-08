@@ -29,6 +29,7 @@ use host::Host;
 use neoui_proto::ipc::{self as proto, AppEvent};
 use neoui_proto::{Damage, InputEvent, Rect, TouchPhase, coalesce_moves, next_deadline};
 use neoui_render::Renderer;
+use neoui_render::layer::{self, Transition};
 
 e32::main!(main);
 
@@ -36,6 +37,8 @@ e32::main!(main);
 const FRAME_US: u64 = 16_667;
 /// Wake-up interval otherwise (also how often a vanished app process is noticed).
 const IDLE_US: u64 = 1_000_000;
+/// A screen change's fade (ui/theme.slint `open`, Belle's app start).
+const TRANSITION_MS: u32 = 250;
 
 fn now_ms() -> u64 {
     time::millis()
@@ -71,11 +74,16 @@ fn main() -> i32 {
             return e;
         }
     };
+    // the shell frame Slint renders into; the screen before a change, which a transition fades out (smooth-ui S2b);
+    // two rows to compose a transition frame in
     let mut frame = vec![0u32; w * h];
+    let mut old = vec![0u32; w * h];
+    let mut rows = (vec![0u32; w], vec![0u32; w]);
+    ui.set_server_transitions(true);
 
     let t0 = time::millis();
     let mut perf = perf::Perf::new();
-    let (px, _, render_us, copy_us) = present(&mut ui, &mut frame, &display, &perf);
+    let (px, _, render_us, copy_us) = present(&mut ui, &mut frame, &display, &perf, true);
     dprintln!(
         "neoui: launcher shown ({} px drawn in {} ms: render {} us, copy {} us)",
         px,
@@ -116,8 +124,9 @@ fn main() -> i32 {
         // the next frame's start, and whether something waits for it
         let mut next_frame = 0u64;
         let mut due = false;
+        let mut transition: Option<Transition> = None;
         loop {
-            let wait = if due || ui.has_active_animations() {
+            let wait = if due || transition.is_some() || ui.has_active_animations() {
                 next_frame.saturating_sub(now_us())
             } else {
                 IDLE_US
@@ -232,6 +241,9 @@ fn main() -> i32 {
             let now = ui.screen();
             if now != screen {
                 dprintln!("neoui: screen {}", now);
+                // what is on screen now (the old app with it, before set_screen hides it) fades out
+                snapshot(&host, &frame, &mut old, w);
+                transition = Some(Transition::new(ms, TRANSITION_MS));
                 // The body depends on the screen (app screens have a toolbar): take it before an app is shown.
                 host.body = ui.body();
                 host.set_screen(&now, ms);
@@ -264,16 +276,32 @@ fn main() -> i32 {
                 ui.set_clock(&text);
             }
 
+            let fading = transition.is_some();
             let (px, damage, render_us, mut copy_us) =
-                present(&mut ui, &mut frame, &display, &perf);
-            if repaint_all {
-                let m = perf.mark();
-                display.blit(&frame, w, 0, 0, w, h);
-                copy_us += perf.since(&m);
+                present(&mut ui, &mut frame, &display, &perf, !fading);
+            match transition.and_then(|t| t.progress(time::millis())) {
+                Some(e) => {
+                    perf.frame(render_us, 0, 0, px);
+                    let m = perf.mark();
+                    fade(&old, &frame, &host, e, (w, h), &mut rows, &display);
+                    perf.layer(perf.since(&m));
+                }
+                None => {
+                    if transition.take().is_some() {
+                        // the fade is over: the new screen as it is, the app's surface whole
+                        repaint_all = true;
+                        host.refresh = true;
+                    }
+                    if repaint_all {
+                        let m = perf.mark();
+                        display.blit(&frame, w, 0, 0, w, h);
+                        copy_us += perf.since(&m);
+                    }
+                    let m = perf.mark();
+                    let app_px = compose(&mut host, &damage, &display);
+                    perf.frame(render_us, copy_us, perf.since(&m), px + app_px);
+                }
             }
-            let m = perf.mark();
-            let app_px = compose(&mut host, &damage, &display);
-            perf.frame(render_us, copy_us, perf.since(&m), px + app_px);
             perf.idle();
             if let Some(down) = tap_end.take() {
                 dprintln!("neoui: tap from {:?} redrew {} px", down, px);
@@ -291,6 +319,70 @@ fn poll_now<F: Future>(mut f: Pin<&mut F>) -> Option<F::Output> {
         Poll::Ready(v) => Some(v),
         Poll::Pending => None,
     })
+}
+
+/// The front app's surface: its pixels (`body.w` per row) and the screen rectangle they show in.
+fn front_surface(host: &Host) -> Option<(&[u32], usize, Rect)> {
+    let body = host.body;
+    let surface = host.front()?.surface.as_ref()?;
+    // SAFETY: the chunk is `body.w * body.h * 4` bytes, committed at creation and mapped here; the app only writes
+    // pixels.
+    let src = unsafe {
+        core::slice::from_raw_parts(
+            surface.base().cast::<u32>(),
+            body.w as usize * body.h as usize,
+        )
+    };
+    Some((src, body.w as usize, host.app_area()))
+}
+
+/// Put row `y` of the front app's surface (if it shows on that row) into the screen row `row`.
+fn app_row(app: Option<(&[u32], usize, Rect)>, y: usize, row: &mut [u32]) {
+    let Some((src, stride, area)) = app else {
+        return;
+    };
+    let (ax, ay) = (area.x.max(0) as usize, area.y.max(0) as usize);
+    if y >= ay && y < ay + area.h as usize {
+        let n = area.w as usize;
+        row[ax..ax + n].copy_from_slice(&src[(y - ay) * stride..][..n]);
+    }
+}
+
+/// The screen as it is: the shell frame with the front app's surface over its body (smooth-ui S2b).
+fn snapshot(host: &Host, frame: &[u32], old: &mut [u32], w: usize) {
+    old.copy_from_slice(frame);
+    let app = front_surface(host);
+    for (y, row) in old.chunks_exact_mut(w).enumerate() {
+        app_row(app, y, row);
+    }
+}
+
+/// One frame of a screen change (smooth-ui S2b), written to the screen row by row: the old screen fades out while
+/// the new one (the shell frame with the front app over its body) fades in, its body rising 16 dp into place, as the
+/// shell's `Slot` did. `e` is the eased progress, 0..=256.
+fn fade(
+    old: &[u32],
+    frame: &[u32],
+    host: &Host,
+    e: u32,
+    (w, h): (usize, usize),
+    (new, out): &mut (Vec<u32>, Vec<u32>),
+    display: &Display,
+) {
+    let (by, bh) = (host.body.y.max(0) as usize, host.body.h as usize);
+    let lift = w.min(h) * 16 / 360 * (256 - e as usize) / 256;
+    let app = front_surface(host);
+    for y in 0..h {
+        let sy = if y >= by && y < by + bh {
+            y.saturating_sub(lift).max(by)
+        } else {
+            y
+        };
+        new.copy_from_slice(&frame[sy * w..][..w]);
+        app_row(app, sy, new);
+        layer::blend_row(out, &old[y * w..][..w], new, e);
+        display.blit_to(out, w, (0, 0, w, 1), (0, y));
+    }
 }
 
 fn contains(r: &Rect, x: i32, y: i32) -> bool {
@@ -336,13 +428,14 @@ fn compose(host: &mut Host, shell_damage: &Damage, display: &Display) -> usize {
     px
 }
 
-/// Render what changed and copy it to the screen; returns the pixels copied, the damage, and the render and copy times
-/// (µs).
+/// Render what changed and copy it to the screen (unless a transition composes the screen); returns the pixels
+/// rendered, the damage, and the render and copy times (µs).
 fn present(
     ui: &mut Renderer,
     frame: &mut [u32],
     display: &Display,
     perf: &perf::Perf,
+    to_screen: bool,
 ) -> (usize, Damage, u32, u32) {
     let m = perf.mark();
     let damage: Damage = ui.render(frame, display.width);
@@ -353,7 +446,9 @@ fn present(
         .iter()
         .map(|r| {
             let (x, y) = (r.x.max(0) as usize, r.y.max(0) as usize);
-            display.blit(frame, display.width, x, y, r.w as usize, r.h as usize);
+            if to_screen {
+                display.blit(frame, display.width, x, y, r.w as usize, r.h as usize);
+            }
             r.w as usize * r.h as usize
         })
         .sum();

@@ -6,6 +6,8 @@
 
 extern crate alloc;
 
+pub mod layer;
+
 use alloc::boxed::Box;
 use alloc::rc::Rc;
 use alloc::vec::Vec;
@@ -126,6 +128,11 @@ impl Renderer {
     }
 
     /// Show or hide the system keyboard over the bottom of the body.
+    /// The UI server animates screen changes itself, from snapshots (smooth-ui S2): Slint switches screens at once.
+    pub fn set_server_transitions(&mut self, on: bool) {
+        self.ui.set_server_transitions(on);
+    }
+
     pub fn set_keyboard(&mut self, open: bool) {
         self.ui.set_keyboard_open(open);
     }
