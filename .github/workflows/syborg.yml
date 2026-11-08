@@ -32,7 +32,7 @@ jobs:
           cargo clippy --workspace --release --target armv5te-none-eabi -Zbuild-std=core,alloc,compiler_builtins -- -D warnings
           cargo arm --workspace
           mkdir -p ../../build/rust
-          cp target/armv5te-none-eabi/release/{libneoui_symbian,libneoclock,libneoterm,libneofiles}.a exes.txt ../../build/rust/
+          cp target/armv5te-none-eabi/release/{libneoui_symbian,libneoclock,libneoterm,libneofiles,libneodevtools}.a exes.txt ../../build/rust/
 
       # NEOTEST.EXE (e32-rs's on-device tests), so ESHELL in the Terminal app has a 2010-style text program to run
       - name: e32-rs neotest

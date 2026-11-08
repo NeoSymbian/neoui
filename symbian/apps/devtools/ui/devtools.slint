@@ -1,0 +1,70 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// The Dev tools app (NEODEV.EXE): a status line, a row of actions, and the tail of a kernel log in the
+// Terminal's look (dark ground, Ubuntu Mono).
+import "../../../../ui/fonts/UbuntuMono-Regular.ttf";
+import { Theme } from "../../../../ui/theme.slint";
+
+export { Theme }
+
+export component DevApp inherits Window {
+    in property <string> status;
+    in property <[string]> rows;
+    in property <[string]> actions;
+    in property <int> current: 0;
+    in property <length> cell-h;
+    in property <length> font-px;
+    in property <length> pad;
+    in property <length> bar-h;
+    callback action(int);
+    background: #07090c;
+
+    Text {
+        x: root.pad;
+        y: root.pad;
+        width: root.width - 2 * root.pad;
+        height: root.bar-h * 0.6;
+        text: root.status;
+        color: Theme.text-secondary;
+        font-size: 13 * Theme.dp;
+        overflow: elide;
+        vertical-alignment: center;
+    }
+
+    HorizontalLayout {
+        x: root.pad;
+        y: root.pad + root.bar-h * 0.6;
+        width: root.width - 2 * root.pad;
+        height: root.bar-h;
+        spacing: 6 * Theme.dp;
+        padding-top: 4 * Theme.dp;
+        padding-bottom: 8 * Theme.dp;
+        for a[i] in root.actions: Rectangle {
+            border-radius: 7 * Theme.dp;
+            background: t.pressed ? Theme.pressed : i == root.current ? #2a3a2c : #1d2025;
+            Text {
+                text: a;
+                color: i == root.current ? #7ee787 : Theme.text-secondary;
+                font-size: 13 * Theme.dp;
+            }
+
+            t := TouchArea {
+                clicked => {
+                    root.action(i);
+                }
+            }
+        }
+    }
+
+    for row[i] in root.rows: Text {
+        x: root.pad;
+        y: root.pad + root.bar-h * 1.6 + i * root.cell-h;
+        width: root.width - 2 * root.pad;
+        height: root.cell-h;
+        text: row;
+        color: #d7dde5;
+        font-family: "Ubuntu Mono";
+        font-size: root.font-px;
+        overflow: clip;
+        vertical-alignment: center;
+    }
+}

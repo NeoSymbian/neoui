@@ -28,6 +28,7 @@ pub const APPS: &[(&str, &str)] = &[
     ("clock", "neoclock"),
     ("terminal", "neoterm"),
     ("files", "neofiles"),
+    ("devtools", "neodev"),
 ];
 
 /// Most apps kept running; starting one more asks the least recently used to quit.

@@ -4,3 +4,4 @@ SYSSTART.EXE   0xE0002001  libneoui_symbian.a
 NEOCLOCK.EXE   0xE0002002  libneoclock.a
 NEOTERM.EXE    0xE0002003  libneoterm.a
 NEOFILES.EXE   0xE0002004  libneofiles.a
+NEODEV.EXE     0xE0002005  libneodevtools.a

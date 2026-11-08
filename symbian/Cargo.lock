@@ -2597,6 +2597,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "neodevtools"
+version = "0.1.0"
+dependencies = [
+ "e32",
+ "neoapp",
+ "neoui-proto",
+ "slint",
+ "slint-build",
+]
+
+[[package]]
 name = "neofiles"
 version = "0.1.0"
 dependencies = [

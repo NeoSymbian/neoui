@@ -20,7 +20,7 @@ neoui-proto = { path = "../crates/neoui-proto" }
 e32 = { workspace = true }
 
 [workspace]
-members = ["apps/clock", "apps/term", "apps/files", "neoapp"]
+members = ["apps/clock", "apps/term", "apps/files", "apps/devtools", "neoapp"]
 
 [workspace.dependencies]
 # NeoSymbian/e32-rs: the Symbian user-side runtime (exec calls, heap, display, raw input, IPC, processes).
