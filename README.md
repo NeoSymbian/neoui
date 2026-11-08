@@ -92,7 +92,8 @@ The UI adapts to whatever the device reports: the display size comes from the HA
 (Syborg's pointer driver was fixed in the NeoSymbian adaptation fork to report exact pixels), and the layout follows
 the design's `dp` unit. The `syborg` CI job runs a phone-shaped, odd-sized screen (539x1079, half the Pixel's
 1079x2159 touch range): it opens the Apps menu, opens Clock, taps it and goes back (`symbian/taps.sh` builds the
-QEMU monitor script for any `SCREEN`), and checks the serial log and the screen. It publishes the screenshot and the
+QEMU monitor script for any `SCREEN`; each step waits for its line in the serial log, not a fixed time), and checks
+the serial log and the screen. It publishes the screenshot and the
 log, never the ROM (see the licence note below).
 
 ## Licence
