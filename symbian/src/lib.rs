@@ -119,6 +119,8 @@ fn main() -> i32 {
     let mut keeper = clock::Keeper::boot();
     // when Power went down, while it is held
     let mut power_down_at: Option<u64> = None;
+    // the Power menu covers the whole screen: no app surface over it, every touch to the shell
+    let mut power_menu = false;
     // a refused HAL query must not freeze the clock below, which would hold every frame back
     let tick_us = match time::tick_period_us() {
         0 => 1000,
@@ -187,7 +189,9 @@ fn main() -> i32 {
                                 if phase == TouchPhase::Down {
                                     down_at = Some((x, y));
                                     // A touch belongs to the app from press to release if it starts in its body.
-                                    to_app = app_on_screen && contains(&host.app_area(), x, y);
+                                    to_app = app_on_screen
+                                        && !power_menu
+                                        && contains(&host.app_area(), x, y);
                                 }
                                 if phase == TouchPhase::Up {
                                     let down = down_at.take();
@@ -297,10 +301,13 @@ fn main() -> i32 {
                 power_down_at = None;
                 dprintln!("neoui: power menu");
                 ui.set_power_menu(true);
+                power_menu = true;
             }
             let mut power = host.power.take();
             for a in ui.take_power() {
                 ui.set_power_menu(false);
+                power_menu = false;
+                host.refresh = true; // the app's surface again, whole
                 if a >= 0 {
                     power = Some(a);
                 }
@@ -341,7 +348,11 @@ fn main() -> i32 {
                         copy_us += perf.since(&m);
                     }
                     let m = perf.mark();
-                    let app_px = compose(&mut host, &damage, &display);
+                    let app_px = if power_menu {
+                        0
+                    } else {
+                        compose(&mut host, &damage, &display)
+                    };
                     perf.frame(render_us, copy_us, perf.since(&m), px + app_px);
                 }
             }
