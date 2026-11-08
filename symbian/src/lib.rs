@@ -81,6 +81,13 @@ fn main() -> i32 {
         render_us,
         copy_us
     );
+    // "this boot worked": the kernel marks the booted A/B slot successful, so ABL keeps it (NeoSymbian kernel
+    // ENeoHalBootOk, EHalGroupVariant 0x4e06; docs/filesystem.md FS5b). -5 (not supported) on boards without slots.
+    // SAFETY: the function takes no arguments; both pointers are ignored.
+    let boot_ok = unsafe {
+        e32::sys::ui::hal_function(1, 0x4e06, core::ptr::null_mut(), core::ptr::null_mut())
+    };
+    dprintln!("neoui: boot OK -> {}", boot_ok);
     // the shell's design unit (theme.slint: min(w, h) / 360), in 1/256 px
     let dp256 = (w.min(h) * 256 / 360) as u32;
     let mut host = Host::new(ui.body(), dp256, ui.keyboard_h());
