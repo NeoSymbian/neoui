@@ -79,10 +79,10 @@ fn main() -> i32 {
             return e;
         }
     };
-    // the shell frame Slint renders into; the screen before a change, which a transition fades out (smooth-ui S2b);
-    // two rows to compose a transition frame in
+    // the shell frame Slint renders into; the screen before a change, which a transition fades out (smooth-ui S2b:
+    // a whole screen, 9 MB on the Pixel, so it is held only while a fade runs); two rows to compose a fade frame in
     let mut frame = vec![0u32; w * h];
-    let mut old = vec![0u32; w * h];
+    let mut old: Vec<u32> = Vec::new();
     let mut rows = (vec![0u32; w], vec![0u32; w]);
     ui.set_server_transitions(true);
     // which kernel, ROM and neoui this is: in the log of every run, and in Settings -> About phone
@@ -270,9 +270,18 @@ fn main() -> i32 {
             let now = ui.screen();
             if now != screen {
                 dprintln!("neoui: screen {}", now);
-                // what is on screen now (the old app with it, before set_screen hides it) fades out
-                snapshot(&host, &frame, &mut old, w);
-                transition = Some(Transition::new(ms, TRANSITION_MS));
+                // what is on screen now (the old app with it, before set_screen hides it) fades out; when memory is
+                // short there is no fade, the new screen just appears (the Pixel's kernel has 87 MB of RAM for now)
+                if old.len() == w * h || old.try_reserve_exact(w * h).is_ok() {
+                    old.resize(w * h, 0);
+                    snapshot(&host, &frame, &mut old, w);
+                    transition = Some(Transition::new(ms, TRANSITION_MS));
+                } else {
+                    dprintln!(
+                        "neoui: no memory for a fade ({} bytes), switching at once",
+                        w * h * 4
+                    );
+                }
                 // The body depends on the screen (app screens have a toolbar): take it before an app is shown.
                 host.body = ui.body();
                 host.set_screen(&now, ms);
@@ -338,7 +347,8 @@ fn main() -> i32 {
                 }
                 None => {
                     if transition.take().is_some() {
-                        // the fade is over: the new screen as it is, the app's surface whole
+                        // the fade is over: the new screen as it is, the app's surface whole; the snapshot goes
+                        old = Vec::new();
                         repaint_all = true;
                         host.refresh = true;
                     }
