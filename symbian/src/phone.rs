@@ -103,7 +103,35 @@ impl Phone {
             s.call.number.as_str(),
             s.call.incoming,
         );
+        ui.set_call_audio(
+            s.audio.muted,
+            s.audio.speaker,
+            if s.audio.on {
+                s.audio.volume as i32
+            } else {
+                -1
+            },
+        );
         self.shown = Some(s);
+    }
+
+    /// A volume key (true = up): during a call it steps the call's volume (and is used up); else false.
+    pub fn volume_key(&mut self, up: bool) -> bool {
+        let Some(s) = self.shown else {
+            return false;
+        };
+        if !s.audio.on {
+            return false;
+        }
+        let v = if up {
+            (s.audio.volume + 1).min(10)
+        } else {
+            s.audio.volume.saturating_sub(1)
+        };
+        let r = self.request("volume", &alloc::format!("{v}"));
+        dprintln!("neoui: call volume {} -> {}", v, r);
+        self.last_poll = 0; // show it at once
+        true
     }
 
     fn status(&mut self) -> Option<Status> {
@@ -134,6 +162,22 @@ impl Phone {
                 op::DIAL
             }
             "answer" => op::ANSWER,
+            "mute" | "speaker" => {
+                args.int(0, (number == "1") as i32);
+                if action == "mute" {
+                    op::MUTE
+                } else {
+                    op::SPEAKER
+                }
+            }
+            "volume" => {
+                args.int(0, number.parse().unwrap_or(8));
+                op::VOLUME
+            }
+            "dtmf" => {
+                args.int(0, number.bytes().next().map_or(-1, i32::from));
+                op::DTMF
+            }
             _ => op::HANGUP,
         };
         session.send_receive(f, &args).unwrap_or_else(|e| e)

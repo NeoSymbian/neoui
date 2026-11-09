@@ -280,13 +280,21 @@ impl Renderer {
         self.ui.set_call_incoming(incoming);
     }
 
+    /// The call's audio (telephony C6): the Mute and Speaker buttons' state, and the volume step 0..=10 (-1 hides it).
+    pub fn set_call_audio(&mut self, muted: bool, speaker: bool, volume: i32) {
+        self.ui.set_call_muted(muted);
+        self.ui.set_call_speaker(speaker);
+        self.ui.set_call_volume(volume);
+    }
+
     /// Bring up the Phone screen's call view (an incoming call).
     pub fn show_call(&mut self) {
         self.ui.invoke_open("phone".into());
         self.ui.set_view("call".into());
     }
 
-    /// What the Phone screen asked since the last call: ("dial", number), ("answer", ""), ("hangup", "").
+    /// What the Phone screen asked since the last call: ("dial", number), ("answer", ""), ("hangup", ""),
+    /// ("mute" | "speaker", "1" | "0"), ("dtmf", key).
     pub fn take_phone(&mut self) -> Vec<(String, String)> {
         core::mem::take(&mut *self.phone.borrow_mut())
     }
