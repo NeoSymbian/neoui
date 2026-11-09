@@ -136,7 +136,7 @@ impl Phone {
             "answer" => op::ANSWER,
             _ => op::HANGUP,
         };
-        session.send_receive(f, &args).map_or_else(|e| e, |r| r)
+        session.send_receive(f, &args).unwrap_or_else(|e| e)
     }
 }
 
