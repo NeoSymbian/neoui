@@ -205,6 +205,14 @@ impl Host {
         }
     }
 
+    /// Sends `e` to app `key` (queued until it asks for events); false when it is not running (or leaving).
+    pub fn post(&mut self, key: &str, e: AppEvent) -> bool {
+        self.apps
+            .find_mut(|a| a.key == key && a.quit_at.is_none())
+            .map(|app| app.send(e))
+            .is_some()
+    }
+
     /// Input and claimed toolbar buttons go to the foreground app.
     pub fn send(&mut self, e: AppEvent) {
         let Some(key) = self.front else { return };

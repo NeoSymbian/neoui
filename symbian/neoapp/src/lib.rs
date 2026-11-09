@@ -28,6 +28,16 @@ use slint::platform::software_renderer::{
 use slint::platform::{Key, Platform, PointerEventButton, WindowAdapter, WindowEvent};
 use slint::{LogicalPosition, PhysicalSize, PlatformError, SharedString};
 
+/// Days from 0000-01-01 (Symbian's `TTime` zero) to 1970-01-01.
+const TTIME_UNIX_DAYS: i64 = 719_540;
+
+/// Wall-clock UTC now, in Unix milliseconds (for timers that must keep counting while an app is closed or across a
+/// reboot; `e32::time::millis` restarts at every boot).
+pub fn wall_ms() -> i64 {
+    let (us, _) = e32::sys::time_now();
+    us.div_euclid(1000) - TTIME_UNIX_DAYS * 86_400_000
+}
+
 /// XRGB8888 as the frame buffer wants it (same as neoui-render's pixel type).
 #[derive(Clone, Copy)]
 #[repr(transparent)]

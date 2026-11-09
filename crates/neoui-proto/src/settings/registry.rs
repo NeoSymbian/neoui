@@ -7,7 +7,7 @@
 //! settings binding table too. Keys an app keeps under its own namespace (`clock.*`) need no row: they are allowed,
 //! limited only by the value size limits, and only that app may write them.
 
-use super::key::{Key, Setting};
+use super::key::{Bytes, Key, Setting};
 use super::{Value, ValueType};
 
 /// Who may write a registered key.
@@ -169,6 +169,18 @@ registry! {
         limit Limit::Range { min: 0, max: 255 }, owner Owner::Shell;
     /// 24-hour clock (else 12-hour).
     CLOCK_24H: bool = "clock.24h", default DefaultValue::Bool(true), limit Limit::None, owner Owner::Shell;
+    /// The Clock app's open page: 0 Clock, 1 Alarms, 2 World, 3 Timer, 4 Stopwatch.
+    CLOCK_TAB: i32 = "clock.tab", default DefaultValue::Int(0),
+        limit Limit::Range { min: 0, max: 4 }, owner Owner::App("clock");
+    /// The alarms (`clock::alarm::Alarms` blob; empty = none). The UI server's scheduler reads it too.
+    CLOCK_ALARMS: Bytes = "clock.alarms", default DefaultValue::Bytes(&[]), limit Limit::None, owner Owner::App("clock");
+    /// The world clocks (`clock::world::Cities` blob; empty = the default cities).
+    CLOCK_CITIES: Bytes = "clock.cities", default DefaultValue::Bytes(&[]), limit Limit::None, owner Owner::App("clock");
+    /// The countdown timer (`clock::timer::Timer` blob; empty = a new 5-minute timer).
+    CLOCK_TIMER: Bytes = "clock.timer", default DefaultValue::Bytes(&[]), limit Limit::None, owner Owner::App("clock");
+    /// The stopwatch (`clock::stopwatch::Stopwatch` blob; empty = reset).
+    CLOCK_STOPWATCH: Bytes = "clock.stopwatch", default DefaultValue::Bytes(&[]), limit Limit::None,
+        owner Owner::App("clock");
 }
 
 #[cfg(test)]

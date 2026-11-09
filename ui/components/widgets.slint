@@ -1,0 +1,68 @@
+// SPDX-License-Identifier: Apache-2.0
+// Home screen widgets, drawn by the shell from data (docs/neoui-shell.md, Part 4: data first, app-drawn later).
+// The clock widget is the first; the widget catalogue and home layout of Part 3/4 will place these.
+import { Theme } from "../theme.slint";
+import { Now } from "../now.slint";
+import { BigClock } from "controls.slint";
+import { Glyph } from "frame.slint";
+
+// The live clock: time, date and the next alarm. Tap: the Clock app.
+export component ClockWidget inherits Rectangle {
+    in property <length> digit-h: 66 * Theme.dp;
+    callback clicked;
+    height: layout.preferred-height;
+
+    layout := VerticalLayout {
+        spacing: 8 * Theme.dp;
+        alignment: start;
+        HorizontalLayout {
+            alignment: start;
+            spacing: 8 * Theme.dp;
+            BigClock {
+                hours: Now.hours;
+                minutes: Now.minutes;
+                lead-zero: Now.h24;
+                digit-h: root.digit-h;
+            }
+
+            if Now.am-pm != "": VerticalLayout {
+                alignment: end;
+                padding-bottom: root.digit-h * 0.08;
+                Text {
+                    text: Now.am-pm;
+                    color: Theme.text-secondary;
+                    font-size: root.digit-h * 0.3;
+                }
+            }
+        }
+
+        Text {
+            text: Now.date;
+            color: Theme.text-secondary;
+            font-size: Theme.font-body * 1.05;
+        }
+
+        if Now.next-alarm != "": HorizontalLayout {
+            alignment: start;
+            spacing: 6 * Theme.dp;
+            Glyph {
+                source: @image-url("../icons/sys/alarm.svg");
+                size: Theme.font-body;
+                colorize: Theme.text-dim;
+            }
+
+            Text {
+                text: Now.next-alarm;
+                color: Theme.text-dim;
+                font-size: Theme.font-label;
+                vertical-alignment: center;
+            }
+        }
+    }
+
+    TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}

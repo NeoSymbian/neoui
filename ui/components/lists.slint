@@ -75,6 +75,8 @@ export component ListRow inherits Rectangle {
     in property <bool> unread;
     in property <bool> divider: true;
     callback clicked;
+    // the trailing switch was flipped by a tap (`switch-on` holds the new state)
+    callback switch-toggled(bool);
     height: subtitle == "" ? Theme.list-row-h : Theme.list-row-double-h;
     background: touch.pressed ? Theme.pressed : transparent;
     touch := TouchArea {
@@ -143,6 +145,9 @@ export component ListRow inherits Rectangle {
             alignment: center;
             Switch {
                 on <=> root.switch-on;
+                toggled(on) => {
+                    root.switch-toggled(on);
+                }
             }
         }
         if chevron: VerticalLayout {

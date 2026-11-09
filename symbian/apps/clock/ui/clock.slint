@@ -1,143 +1,50 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// The Clock app (NEOCLOCK.EXE): live time from Symbian's clock, drawn by its own process into the surface the UI
-// server shows in the shell's body. Reuses the design's tokens and digits so it looks like the rest of the shell.
-// "Set time" opens steppers for the date, time and time zone; Save sets Symbian's clock (the UI server keeps it
-// across restarts, neoui-proto clock.rs).
+// The Clock app (NEOCLOCK.EXE): five tabs (Clock, Alarms, World, Timer, Stopwatch) and the sub-views that open over
+// them (Set time, the alarm editor, the city catalogue, a ringing alarm). Drawn by its own process into the surface
+// the UI server shows in the shell's body; it reuses the design's tokens, digits and components.
+//
+// State lives in the `ClockState` global (state.slint), filled by src/pages/*.rs; each page is one file in pages/.
 import "../../../../ui/fonts/Inter-VariableFont.ttf";
 import { Theme } from "../../../../ui/theme.slint";
-import { BigClock, Button } from "../../../../ui/components/controls.slint";
+import { TabBar } from "../../../../ui/components/controls.slint";
+import { ClockState } from "state.slint";
+import { FacePage } from "pages/face.slint";
+import { SetTimePage } from "pages/set_time.slint";
+import { AlarmsPage, AlarmEditor } from "pages/alarms.slint";
+import { WorldPage, CityPicker } from "pages/world.slint";
+import { TimerPage } from "pages/timer.slint";
+import { StopwatchPage } from "pages/stopwatch.slint";
+import { RingingPage } from "pages/ringing.slint";
 
-export { Theme }
+export { Theme, ClockState }
 
 export component ClockApp inherits Window {
-    in property <int> hours;
-    in property <int> minutes;
-    in property <int> seconds;
-    in property <string> date;
-    in-out property <int> taps;
-    in property <bool> editing;
-    in property <[string]> labels;
-    in property <[string]> values;
-    callback edit();
-    callback adjust(int, int);
-    callback save();
-    callback cancel();
     default-font-family: "Inter";
     background: Theme.bg;
 
-    // below the controls, so the buttons get their own taps
-    TouchArea {
-        clicked => {
-            root.taps += 1;
+    tabs := TabBar {
+        y: 0;
+        tabs: ["Clock", "Alarms", "World", "Timer", "Stopwatch"];
+        current: ClockState.tab;
+        font-size: 12.5 * Theme.dp;
+        tab-clicked(i) => {
+            ClockState.tab-chosen(i);
         }
     }
 
-    if !root.editing: VerticalLayout {
-        alignment: center;
-        spacing: 14 * Theme.dp;
-        HorizontalLayout {
-            alignment: center;
-            BigClock {
-                hours: root.hours;
-                minutes: root.minutes;
-                digit-h: 88 * Theme.dp;
-            }
-        }
-
-        Text {
-            text: (root.seconds < 10 ? ":0" : ":") + root.seconds;
-            color: Theme.text-dim;
-            font-size: 26 * Theme.dp;
-            horizontal-alignment: center;
-        }
-
-        Text {
-            text: root.date;
-            color: Theme.text;
-            font-size: 18 * Theme.dp;
-            horizontal-alignment: center;
-        }
-
-        Text {
-            text: root.taps == 0 ? "NEOCLOCK.EXE · its own process" : "tapped " + root.taps + "×";
-            color: Theme.text-dim;
-            font-size: 12 * Theme.dp;
-            horizontal-alignment: center;
-        }
-
-        HorizontalLayout {
-            alignment: center;
-            padding-top: 24 * Theme.dp;
-            Button {
-                text: "Set time";
-                primary: false;
-                clicked => {
-                    root.edit();
-                }
-            }
-        }
+    Rectangle {
+        y: tabs.height;
+        height: root.height - tabs.height;
+        if ClockState.tab == 0: FacePage { }
+        if ClockState.tab == 1: AlarmsPage { }
+        if ClockState.tab == 2: WorldPage { }
+        if ClockState.tab == 3: TimerPage { }
+        if ClockState.tab == 4: StopwatchPage { }
     }
 
-    if root.editing: VerticalLayout {
-        alignment: center;
-        spacing: 8 * Theme.dp;
-        padding: Theme.margin;
-        for label[i] in root.labels: HorizontalLayout {
-            spacing: 12 * Theme.dp;
-            Text {
-                text: label;
-                width: 80 * Theme.dp;
-                color: Theme.text-dim;
-                font-size: Theme.font-body;
-                vertical-alignment: center;
-            }
-
-            Button {
-                text: "−";
-                primary: false;
-                width: 64 * Theme.dp;
-                clicked => {
-                    root.adjust(i, -1);
-                }
-            }
-
-            Text {
-                text: root.values[i];
-                color: Theme.text;
-                font-size: Theme.font-title;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-                horizontal-stretch: 1;
-            }
-
-            Button {
-                text: "+";
-                primary: false;
-                width: 64 * Theme.dp;
-                clicked => {
-                    root.adjust(i, 1);
-                }
-            }
-        }
-
-        HorizontalLayout {
-            alignment: center;
-            spacing: 16 * Theme.dp;
-            padding-top: 16 * Theme.dp;
-            Button {
-                text: "Cancel";
-                primary: false;
-                clicked => {
-                    root.cancel();
-                }
-            }
-
-            Button {
-                text: "Save";
-                clicked => {
-                    root.save();
-                }
-            }
-        }
-    }
+    // sub-views cover the tabs (Back or Cancel closes them)
+    if ClockState.view == "set-time": SetTimePage { }
+    if ClockState.view == "alarm": AlarmEditor { }
+    if ClockState.view == "cities": CityPicker { }
+    if ClockState.view == "ringing": RingingPage { }
 }

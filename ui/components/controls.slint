@@ -100,6 +100,8 @@ export component SearchField inherits Rectangle {
 export component TabBar inherits Rectangle {
     in property <[string]> tabs;
     in-out property <int> current;
+    // smaller for many tabs (the Clock app's five)
+    in property <length> font-size: Theme.font-body * 0.95;
     callback tab-clicked(int);  // a tap (not a binding change) picked tab i
     height: Theme.tab-h;
     HorizontalLayout {
@@ -109,7 +111,7 @@ export component TabBar inherits Rectangle {
             Text {
                 text: t;
                 color: i == current ? Theme.text : Theme.text-dim;
-                font-size: Theme.font-body * 0.95;
+                font-size: root.font-size;
                 font-weight: i == current ? 700 : 500;
             }
 
@@ -252,6 +254,8 @@ export component BigClock inherits HorizontalLayout {
     in property <int> hours;
     in property <int> minutes;
     in property <length> digit-h: 64 * Theme.dp;
+    // false: a single hour digit before 10 ("7:30", the 12-hour style)
+    in property <bool> lead-zero: true;
     property <[image]> d: [
         @image-url("../icons/digits/d0.svg"), @image-url("../icons/digits/d1.svg"),
         @image-url("../icons/digits/d2.svg"), @image-url("../icons/digits/d3.svg"),
@@ -261,7 +265,9 @@ export component BigClock inherits HorizontalLayout {
     ];
     spacing: digit-h * 0.07;
     height: digit-h;
-    for i in [Math.floor(hours / 10), Math.mod(hours, 10), -1, Math.floor(minutes / 10), Math.mod(minutes, 10)]: Image {
+    for i in (lead-zero || hours >= 10
+        ? [Math.floor(hours / 10), Math.mod(hours, 10), -1, Math.floor(minutes / 10), Math.mod(minutes, 10)]
+        : [Math.mod(hours, 10), -1, Math.floor(minutes / 10), Math.mod(minutes, 10)]): Image {
         width: i < 0 ? digit-h * 6 / 24 : digit-h * 14 / 24;
         height: digit-h;
         source: i < 0 ? @image-url("../icons/digits/colon.svg") : d[i];

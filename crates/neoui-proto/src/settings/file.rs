@@ -136,7 +136,7 @@ mod tests {
         let mut s = Store::new();
         let _ = s.set(keys::RADIO_WIFI, false);
         let _ = s.set(keys::DISPLAY_BRIGHTNESS, 42);
-        let _ = s.set_raw("clock.alarms", Value::Bytes(vec![7; 100]));
+        let _ = s.set_raw("clock.scratch", Value::Bytes(vec![7; 100]));
         s
     }
 
@@ -149,7 +149,7 @@ mod tests {
         assert_eq!(loaded.store.get(keys::RADIO_WIFI), Ok(false));
         assert_eq!(loaded.store.get(keys::DISPLAY_BRIGHTNESS), Ok(42));
         assert_eq!(
-            loaded.store.get_raw("clock.alarms"),
+            loaded.store.get_raw("clock.scratch"),
             Ok(Value::Bytes(vec![7; 100]))
         );
         assert_eq!(loaded.store.seq(), 0, "loading is not a change");

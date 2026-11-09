@@ -1,0 +1,87 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// "Set time" (sub-view): a stepper per field (date, time, zone) in fixed columns, so every row's buttons line up
+// whatever the value's width; Cancel (or Back) leaves it unchanged, Save sets Symbian's clock.
+import { Theme } from "../../../../../ui/theme.slint";
+import { Button } from "../../../../../ui/components/controls.slint";
+import { ClockState } from "../state.slint";
+
+export component SetTimePage inherits Rectangle {
+    background: Theme.bg;
+    property <length> label-w: 72 * Theme.dp;
+    property <length> step-w: 56 * Theme.dp;
+    VerticalLayout {
+        alignment: center;
+        spacing: 8 * Theme.dp;
+        padding: Theme.margin;
+        Text {
+            text: "Set time";
+            color: Theme.text;
+            font-size: Theme.font-title;
+            font-weight: 600;
+            horizontal-alignment: center;
+        }
+
+        Rectangle { height: 8 * Theme.dp; }
+
+        for field[i] in ClockState.fields: HorizontalLayout {
+            spacing: 8 * Theme.dp;
+            height: 52 * Theme.dp;
+            Text {
+                text: field;
+                width: root.label-w;
+                color: Theme.text-dim;
+                font-size: Theme.font-body;
+                vertical-alignment: center;
+            }
+
+            Button {
+                text: "−";
+                primary: false;
+                width: root.step-w;
+                clicked => {
+                    ClockState.adjust(i, -1);
+                }
+            }
+
+            Text {
+                text: ClockState.values[i];
+                horizontal-stretch: 1;
+                min-width: 0;
+                color: Theme.text;
+                font-size: Theme.font-title;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+
+            Button {
+                text: "+";
+                primary: false;
+                width: root.step-w;
+                clicked => {
+                    ClockState.adjust(i, 1);
+                }
+            }
+        }
+
+        HorizontalLayout {
+            alignment: center;
+            spacing: 16 * Theme.dp;
+            padding-top: 16 * Theme.dp;
+            Button {
+                text: "Cancel";
+                primary: false;
+                clicked => {
+                    ClockState.close();
+                }
+            }
+
+            Button {
+                text: "Save";
+                clicked => {
+                    ClockState.save-time();
+                }
+            }
+        }
+    }
+}

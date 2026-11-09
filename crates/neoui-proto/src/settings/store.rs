@@ -217,13 +217,13 @@ mod tests {
     #[test]
     fn unregistered_keys_hold_any_type_within_size_limits() {
         let mut s = Store::new();
-        assert_eq!(s.get_raw("clock.alarms"), Err(Error::NotFound));
+        assert_eq!(s.get_raw("clock.scratch"), Err(Error::NotFound));
         assert_eq!(
-            s.set_raw("clock.alarms", Value::Bytes(alloc::vec![1, 2])),
+            s.set_raw("clock.scratch", Value::Bytes(alloc::vec![1, 2])),
             Ok(Changed::Yes)
         );
         assert_eq!(
-            s.get_raw("clock.alarms"),
+            s.get_raw("clock.scratch"),
             Ok(Value::Bytes(alloc::vec![1, 2]))
         );
         let long = Value::Str("x".repeat(super::super::value::STR_MAX + 1));

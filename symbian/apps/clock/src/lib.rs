@@ -1,14 +1,20 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! The Clock app (`NEOCLOCK.EXE`, NeoSymbian R6): a separate Symbian process started by the UI server. It connects
-//! to `NeoUi` ([`neoapp`]), renders `ui/clock.slint` into its surface, ticks once a second from Symbian's clock, and
-//! exits on `Quit`. "Set time" sets Symbian's clock and time zone by hand; the UI server keeps them across restarts.
+//! The Clock app (`NEOCLOCK.EXE`, NeoSymbian R6): a separate Symbian process the UI server starts. Five pages
+//! (Clock, Alarms, World, Timer, Stopwatch) and their sub-views, drawn with Slint into the surface `NeoUi` hands
+//! over ([`neoapp`]). The state of every page is kept in the settings store ([`state`]), so it survives the app
+//! closing and the phone restarting; alarms ring from the UI server even while the app is closed.
+//!
+//! - [`state`]: the model and its persistence
+//! - [`pages`]: one module per page (callbacks in, properties out)
+//! - this file: connecting, and the event loop (input, Back, settings changes, alarms, ticking)
 #![no_std]
 
 extern crate alloc;
 
-use alloc::format;
+mod pages;
+mod state;
+
 use alloc::rc::Rc;
-use alloc::vec::Vec;
 use core::cell::RefCell;
 use core::pin::pin;
 use e32::ipc::TIpcArgs;
@@ -16,39 +22,20 @@ use e32::rt::{self, Either};
 use e32::sys::TPtr8;
 use e32::{dprintln, time};
 use neoapp::App;
-use neoui_proto::clock::{self, Local};
 use neoui_proto::ipc::{self as proto, AppEvent};
-use neoui_proto::settings::keys;
 use neoui_proto::{InputEvent, TouchPhase};
-use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
+use pages::{Ctx, Now};
+use slint::ComponentHandle;
+use state::{Model, View};
 
 slint::include_modules!();
 
 e32::main!(main);
 
-const MONTHS: [&str; 12] = [
-    "January",
-    "February",
-    "March",
-    "April",
-    "May",
-    "June",
-    "July",
-    "August",
-    "September",
-    "October",
-    "November",
-    "December",
-];
-const DAYS: [&str; 7] = [
-    "Monday",
-    "Tuesday",
-    "Wednesday",
-    "Thursday",
-    "Friday",
-    "Saturday",
-    "Sunday",
-];
+/// How often the face is redrawn: on each new second.
+const TICK_US: i32 = 250_000;
+/// While the stopwatch runs on screen: hundredths move.
+const FAST_TICK_US: i32 = 50_000;
 
 fn main() -> i32 {
     match run() {
@@ -66,16 +53,24 @@ fn run() -> Result<(), i32> {
     let ui = ClockApp::new().map_err(|_| -2)?;
     ui.global::<Theme>().set_dp(app.dp);
     ui.show().map_err(|_| -2)?;
-    set_up_editing(&ui);
-    // the 24-hour setting (docs/neoui-shell.md, Part 1): read now and again whenever it changes
+    // the 24-hour setting and the alarms can change outside the app (Settings, the UI server after an alarm)
     if let Err(e) = app.watch_settings("clock.") {
         dprintln!("clock: cannot watch settings ({})", e);
     }
-    let mut h24 = clock_24h(&app);
+    let model = Model::load(&app);
+    let ctx = Rc::new(Ctx {
+        app,
+        ui: ui.as_weak(),
+        model: RefCell::new(model),
+    });
+    pages::bind(&ctx, &ui);
+    ctx.show(&Now::read());
+    ctx.app.draw()?;
 
-    let mut shown_second = u32::MAX;
     // In the background (R10) the clock neither ticks nor draws.
     let mut visible = true;
+    let mut fast = false;
+    let mut shown_second = u32::MAX;
     rt::block_on(async {
         loop {
             let mut ev = [0u8; proto::EVENT_LEN];
@@ -84,21 +79,26 @@ fn run() -> Result<(), i32> {
                 let mut args = TIpcArgs::new();
                 args.des8(0, &mut des);
                 // One NEXT_EVENT stays outstanding while the clock ticks.
-                let mut next = pin!(app.server.send(proto::NEXT_EVENT, &args));
+                let mut next = pin!(ctx.app.server.send(proto::NEXT_EVENT, &args));
                 loop {
-                    let now = time::now();
-                    if visible && now.second != shown_second {
-                        shown_second = now.second;
-                        set_time(&ui, &now, h24);
-                        dprintln!(
-                            "clock: tick {:02}:{:02}:{:02}",
-                            now.hour,
-                            now.minute,
-                            now.second
-                        );
-                        app.draw()?;
+                    if visible {
+                        let now = Now::read();
+                        if fast || now.second != shown_second {
+                            if now.second != shown_second {
+                                dprintln!(
+                                    "clock: tick {:02}:{:02}:{:02}",
+                                    now.local.hour,
+                                    now.local.minute,
+                                    now.second
+                                );
+                            }
+                            shown_second = now.second;
+                            fast = ctx.tick(&now);
+                            ctx.app.draw()?;
+                        }
                     }
-                    match rt::select(next.as_mut(), time::delay(250_000)).await {
+                    let wait = if fast { FAST_TICK_US } else { TICK_US };
+                    match rt::select(next.as_mut(), time::delay(wait)).await {
                         Either::Left(r) => break r,
                         Either::Right(()) => {}
                     }
@@ -110,15 +110,33 @@ fn run() -> Result<(), i32> {
                     dprintln!("clock: quit");
                     return Ok(());
                 }
-                Some(AppEvent::Settings { seq }) => {
-                    h24 = clock_24h(&app);
-                    dprintln!("clock: settings changed ({}): 24-hour {}", seq, h24);
-                    shown_second = u32::MAX; // redraw with the new format
-                }
                 Some(AppEvent::Visible(v)) => {
                     dprintln!("clock: visible {}", v);
                     visible = v;
                     shown_second = u32::MAX; // redraw at once when shown again
+                }
+                Some(AppEvent::Settings { seq }) => {
+                    ctx.model.borrow_mut().reload_shared(&ctx.app);
+                    dprintln!(
+                        "clock: settings changed ({}): 24-hour {}",
+                        seq,
+                        ctx.model.borrow().h24
+                    );
+                    ctx.show(&Now::read());
+                    ctx.app.draw()?;
+                }
+                Some(AppEvent::Alarm { id }) => {
+                    pages::ring(&ctx, id);
+                    ctx.app.draw()?;
+                }
+                Some(AppEvent::Back) => {
+                    // claimed only while a sub-view is open: Back closes it, as Cancel does (Dismiss when ringing)
+                    if ctx.model.borrow().view == View::Ringing {
+                        ui.global::<ClockState>().invoke_dismiss();
+                    } else {
+                        ctx.open(View::None);
+                    }
+                    ctx.app.draw()?;
                 }
                 Some(AppEvent::Input(input)) => {
                     if let InputEvent::Touch {
@@ -130,103 +148,11 @@ fn run() -> Result<(), i32> {
                     {
                         dprintln!("clock: touch {},{}", x, y);
                     }
-                    app.dispatch_touch(input);
-                    app.draw()?;
+                    ctx.app.dispatch_touch(input);
+                    ctx.app.draw()?;
                 }
                 _ => {}
             }
         }
     })
-}
-
-/// Whether the clock shows 24-hour time; the default when the setting can't be read (an older UI server).
-fn clock_24h(app: &App) -> bool {
-    app.setting(keys::CLOCK_24H).unwrap_or_else(|e| {
-        dprintln!("clock: cannot read clock.24h ({})", e);
-        true
-    })
-}
-
-/// Shows `t`; on a 12-hour clock the hours run 12, 1, ..., 11.
-fn set_time(ui: &ClockApp, t: &time::DateTime, h24: bool) {
-    let hours = if h24 { t.hour } else { (t.hour + 11) % 12 + 1 };
-    ui.set_hours(hours as i32);
-    ui.set_minutes(t.minute as i32);
-    ui.set_seconds(t.second as i32);
-    ui.set_date(
-        format!(
-            "{}, {} {} {}",
-            DAYS[t.weekday as usize % 7],
-            t.day,
-            MONTHS[(t.month as usize + 11) % 12],
-            t.year
-        )
-        .into(),
-    );
-}
-
-fn strings(items: impl Iterator<Item = SharedString>) -> ModelRc<SharedString> {
-    ModelRc::new(VecModel::from(items.collect::<Vec<_>>()))
-}
-
-fn show_fields(ui: &ClockApp, l: &Local) {
-    ui.set_values(strings((0..clock::FIELDS.len()).map(|i| l.show(i).into())));
-}
-
-/// "Set time": steppers start at the clock's local time and zone; Save sets both (needs WriteDeviceData, which ROM
-/// EXEs have).
-fn set_up_editing(ui: &ClockApp) {
-    ui.set_labels(strings(
-        clock::FIELDS.iter().map(|f| SharedString::from(*f)),
-    ));
-    let edit = Rc::new(RefCell::new(Local {
-        year: 2026,
-        month: 1,
-        day: 1,
-        hour: 0,
-        minute: 0,
-        tz: 0,
-    }));
-    let (weak, e) = (ui.as_weak(), edit.clone());
-    ui.on_edit(move || {
-        let now = time::now();
-        let (_, tz) = time::utc_now();
-        let l = Local {
-            year: now.year,
-            month: now.month,
-            day: now.day,
-            hour: now.hour,
-            minute: now.minute,
-            tz,
-        };
-        *e.borrow_mut() = l;
-        if let Some(ui) = weak.upgrade() {
-            show_fields(&ui, &l);
-            ui.set_editing(true);
-        }
-    });
-    let (weak, e) = (ui.as_weak(), edit.clone());
-    ui.on_adjust(move |field, delta| {
-        e.borrow_mut().adjust(field as usize, delta);
-        if let Some(ui) = weak.upgrade() {
-            show_fields(&ui, &e.borrow());
-        }
-    });
-    let (weak, e) = (ui.as_weak(), edit);
-    ui.on_save(move || {
-        let l = *e.borrow();
-        match time::set_utc_and_offset(l.to_unix(), l.tz) {
-            Ok(()) => dprintln!("clock: set {} UTC, offset {} s", l.to_unix(), l.tz),
-            Err(err) => dprintln!("clock: set failed ({})", err),
-        }
-        if let Some(ui) = weak.upgrade() {
-            ui.set_editing(false);
-        }
-    });
-    let weak = ui.as_weak();
-    ui.on_cancel(move || {
-        if let Some(ui) = weak.upgrade() {
-            ui.set_editing(false);
-        }
-    });
 }

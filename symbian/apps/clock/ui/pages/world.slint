@@ -1,0 +1,77 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// The World tab: the time in each chosen city against local time; tap a city to remove it. "+ Add city" opens the
+// catalogue (sub-view "cities").
+import { Theme } from "../../../../../ui/theme.slint";
+import { Button } from "../../../../../ui/components/controls.slint";
+import { ListRow } from "../../../../../ui/components/lists.slint";
+import { NeoList } from "../../../../../ui/components/scroll.slint";
+import { ClockState } from "../state.slint";
+
+export component WorldPage inherits Rectangle {
+    NeoList {
+        height: parent.height - add.height;
+        VerticalLayout {
+            alignment: start;
+            if ClockState.cities.length == 0: Text {
+                height: 120 * Theme.dp;
+                text: "No cities";
+                color: Theme.text-dim;
+                font-size: Theme.font-body;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+            for c[i] in ClockState.cities: ListRow {
+                title: c.name;
+                subtitle: c.day + " · " + c.difference;
+                value: c.time;
+                clicked => {
+                    ClockState.remove-city(i);
+                }
+            }
+        }
+    }
+
+    add := HorizontalLayout {
+        y: parent.height - self.height;
+        height: 72 * Theme.dp;
+        alignment: center;
+        padding: 12 * Theme.dp;
+        Button {
+            text: ClockState.cities-full ? "City list is full" : "+ Add city";
+            primary: !ClockState.cities-full;
+            clicked => {
+                if (!ClockState.cities-full) {
+                    ClockState.add-city();
+                }
+            }
+        }
+    }
+}
+
+export component CityPicker inherits Rectangle {
+    background: Theme.bg;
+    VerticalLayout {
+        Text {
+            height: Theme.title-h;
+            text: "Add a city";
+            color: Theme.text;
+            font-size: Theme.font-title;
+            font-weight: 600;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+
+        NeoList {
+            VerticalLayout {
+                alignment: start;
+                for c[i] in ClockState.catalogue: ListRow {
+                    title: c.name;
+                    value: c.added ? "Added" : c.offset;
+                    clicked => {
+                        ClockState.pick-city(i);
+                    }
+                }
+            }
+        }
+    }
+}

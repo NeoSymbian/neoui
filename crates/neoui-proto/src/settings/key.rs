@@ -111,7 +111,7 @@ impl Setting for Bytes {
 }
 
 /// A typed handle to a setting. Global keys live in [`super::keys`]; an app declares its own the same way
-/// (`const ALARMS: Key<Bytes> = Key::new("clock.alarms");`).
+/// (`const SORT: Key<i32> = Key::new("files.sort");`).
 pub struct Key<T: Setting> {
     name: &'static str,
     _type: PhantomData<fn() -> T>,

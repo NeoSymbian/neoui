@@ -16,6 +16,7 @@ use alloc::vec::Vec;
 use core::cell::RefCell;
 use core::time::Duration;
 
+use neoui_proto::clock::face::Face;
 use neoui_proto::settings::Value;
 use neoui_proto::{Damage, InputEvent, Rect, ScrollPlan, Scrolling, TouchPhase};
 use slint::platform::software_renderer::{
@@ -301,6 +302,18 @@ impl Renderer {
             .collect()
     }
 
+    /// The clock face the shell shows (the home clock widget): the time, the date and the next alarm.
+    pub fn set_now(&mut self, face: &Face) {
+        let now = self.ui.global::<Now>();
+        // both are at most 59 / 23
+        now.set_hours(face.hours as i32);
+        now.set_minutes(face.minutes as i32);
+        now.set_h24(face.h24);
+        now.set_am_pm(face.am_pm.into());
+        now.set_date(face.date.as_str().into());
+        now.set_next_alarm(face.next_alarm.as_str().into());
+    }
+
     /// The status bar's time text, e.g. "09:41".
     pub fn set_clock(&mut self, text: &str) {
         self.ui.set_clock(text.into());
@@ -432,6 +445,12 @@ impl Renderer {
             }
         };
         self.window.dispatch_event(event);
+    }
+
+    /// Cancels the touch in progress: whatever it pressed lets go without a click (the UI server took the gesture
+    /// over, e.g. its own home page slide).
+    pub fn cancel_touch(&mut self) {
+        self.window.dispatch_event(WindowEvent::PointerExited);
     }
 
     /// Frames that scrolled a list by shifting its pixels since the last call (smooth-ui S2d).

@@ -1,0 +1,89 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Everything the Clock app's pages show and every action they report, in one global: the Rust side
+// (src/pages/*.rs) fills the properties and handles the callbacks; the pages (pages/*.slint) only draw and forward.
+
+export struct AlarmRow { id: int, time: string, days: string, label: string, on: bool }
+export struct CityRow { name: string, time: string, day: string, difference: string }
+export struct CatalogueRow { name: string, offset: string, added: bool }
+export struct LapRow { number: int, lap: string, total: string }
+
+export global ClockState {
+    // Navigation: the open tab (0 Clock, 1 Alarms, 2 World, 3 Timer, 4 Stopwatch) and an open sub-view over it
+    // ("" none, "set-time", "alarm", "cities", "ringing").
+    in-out property <int> tab;
+    in property <string> view;
+    callback tab-chosen(int);
+    // Back, Cancel or a close button: leave the sub-view.
+    callback close();
+
+    // Clock face
+    in property <int> hours;
+    in property <int> minutes;
+    in property <int> seconds;
+    in property <bool> h24: true;
+    in property <string> am-pm;
+    in property <string> date;
+    in property <string> next-alarm;
+    callback set-time();
+
+    // Set time
+    in property <[string]> fields;
+    in property <[string]> values;
+    callback adjust(int, int);
+    callback save-time();
+
+    // Alarms
+    in property <[AlarmRow]> alarms;
+    in property <bool> alarms-full;
+    callback add-alarm();
+    callback edit-alarm(int);
+    callback alarm-switched(int, bool);
+
+    // Alarm editor (sub-view "alarm")
+    in property <bool> edit-new;
+    in property <int> edit-hour;
+    in property <int> edit-minute;
+    in property <string> edit-am-pm;
+    in property <[bool]> edit-days;
+    in property <string> edit-label;
+    in property <string> edit-repeat;
+    callback edit-step(int, int);
+    callback edit-day(int);
+    callback edit-label-next();
+    callback save-alarm();
+    callback delete-alarm();
+
+    // World clocks, and the catalogue (sub-view "cities")
+    in property <[CityRow]> cities;
+    in property <[CatalogueRow]> catalogue;
+    in property <bool> cities-full;
+    callback add-city();
+    callback remove-city(int);
+    callback pick-city(int);
+
+    // Timer: 0 idle, 1 running, 2 paused, 3 done
+    in property <string> timer-text;
+    in property <int> timer-phase;
+    in property <float> timer-progress;
+    in property <[string]> timer-presets;
+    callback timer-preset(int);
+    callback timer-step(int);
+    callback timer-start();
+    callback timer-pause();
+    callback timer-reset();
+
+    // Stopwatch
+    in property <string> stopwatch-text;
+    in property <bool> stopwatch-running;
+    in property <bool> stopwatch-started;
+    in property <[LapRow]> laps;
+    callback stopwatch-toggle();
+    callback stopwatch-lap();
+    callback stopwatch-reset();
+
+    // Ringing (sub-view "ringing")
+    in property <string> ringing-time;
+    in property <string> ringing-label;
+    callback dismiss();
+    callback snooze();
+}

@@ -386,7 +386,7 @@ mod tests {
             Err(Error::Denied)
         );
         assert_eq!(
-            s.set_raw(Caller::App("clock"), "clock.alarms", Value::Int(3), 0),
+            s.set_raw(Caller::App("clock"), "clock.scratch", Value::Int(3), 0),
             Ok(Changed::Yes)
         );
     }
@@ -398,7 +398,7 @@ mod tests {
         s.watch(2, "radio.").expect("valid");
         s.watch(3, "").expect("valid");
         let _ = s.set(Caller::Shell, keys::CLOCK_24H, false, 0);
-        let _ = s.set_raw(Caller::Shell, "clock.alarms", Value::Int(1), 0);
+        let _ = s.set_raw(Caller::Shell, "clock.scratch", Value::Int(1), 0);
         let (sessions, seq) = s.take_notifications();
         assert_eq!(sessions, [1, 3]);
         assert_eq!(seq, 2);
