@@ -15,6 +15,7 @@ mod clock;
 mod host;
 mod perf;
 mod phone;
+mod settings;
 
 use alloc::format;
 use alloc::vec;
@@ -29,6 +30,7 @@ use e32::server::{self, Server};
 use e32::{dprintln, time};
 use host::Host;
 use neoui_proto::ipc::{self as proto, AppEvent};
+use neoui_proto::settings::keys;
 use neoui_proto::{Damage, InputEvent, Rect, TouchPhase, coalesce_moves, next_deadline};
 use neoui_render::layer::{self, Slide, Transition};
 use neoui_render::{HOME_PAGES, Renderer};
@@ -91,6 +93,9 @@ fn main() -> i32 {
     let mut old: Vec<u32> = Vec::new();
     let mut rows = (vec![0u32; w], vec![0u32; w]);
     ui.set_server_transitions(true);
+    // the settings (docs/neoui-shell.md, Part 1), shown before the first frame
+    let settings = settings::open();
+    let mut mirror = settings::UiMirror::new(&mut ui, &settings);
     // which kernel, ROM and neoui this is: in the log of every run, and in Settings -> About phone
     let build = neoapp::build::lines();
     for line in &build {
@@ -118,11 +123,11 @@ fn main() -> i32 {
     let mut phone = phone::Phone::start();
     // the shell's design unit (theme.slint: min(w, h) / 360), in 1/256 px
     let dp256 = (w.min(h) * 256 / 360) as u32;
-    let mut host = Host::new(ui.body(), dp256, ui.keyboard_h());
+    let mut host = Host::new(ui.body(), dp256, ui.keyboard_h(), settings);
     let mut keyboard_shown = false;
     let mut nav_shown = 0;
     let mut running_shown: Vec<&'static str> = Vec::new();
-    let mut clock_shown = (u32::MAX, u32::MAX);
+    let mut clock_shown = (u32::MAX, u32::MAX, true);
     let mut keeper = clock::Keeper::boot();
     // when Power went down, while it is held
     let mut power_down_at: Option<u64> = None;
@@ -398,16 +403,21 @@ fn main() -> i32 {
                 }
             }
             if let Some(a) = power {
+                settings::log_save(host.settings.flush());
                 clock::power(a, &mut keeper);
             }
             phone.poll(&mut ui, time::millis());
+            mirror.sync(&mut ui, &mut host.settings, ms);
+            host.deliver_settings();
+            settings::log_save(host.settings.tick(ms));
             let t = time::now();
-            if (t.hour, t.minute) != clock_shown {
+            let h24 = host.settings.get(keys::CLOCK_24H).unwrap_or(true);
+            if (t.hour, t.minute, h24) != clock_shown {
                 if t.minute != clock_shown.1 {
                     keeper.check(); // once a minute: did someone set the time?
                 }
-                clock_shown = (t.hour, t.minute);
-                let text = format!("{:02}:{:02}", t.hour, t.minute);
+                clock_shown = (t.hour, t.minute, h24);
+                let text = clock_text(t.hour, t.minute, h24);
                 dprintln!("neoui: clock {}", text);
                 ui.set_clock(&text);
             }
@@ -480,6 +490,15 @@ fn main() -> i32 {
             }
         }
     })
+}
+
+/// The status bar's time: `09:41` on a 24-hour clock, `9:41` on a 12-hour one (no AM/PM: the bar is narrow).
+fn clock_text(hour: u32, minute: u32, h24: bool) -> alloc::string::String {
+    if h24 {
+        format!("{:02}:{:02}", hour, minute)
+    } else {
+        format!("{}:{:02}", (hour + 11) % 12 + 1, minute)
+    }
 }
 
 /// The future's output if it is ready without waiting. Two polls: an event request is made by the first and, when the

@@ -7,6 +7,7 @@
 extern crate alloc;
 
 pub mod layer;
+mod settings;
 
 use alloc::boxed::Box;
 use alloc::rc::Rc;
@@ -15,6 +16,7 @@ use alloc::vec::Vec;
 use core::cell::RefCell;
 use core::time::Duration;
 
+use neoui_proto::settings::Value;
 use neoui_proto::{Damage, InputEvent, Rect, ScrollPlan, Scrolling, TouchPhase};
 use slint::platform::software_renderer::{
     LineBufferProvider, MinimalSoftwareWindow, PremultipliedRgbaColor, RepaintBufferType,
@@ -73,6 +75,8 @@ pub struct Renderer {
     closed: Rc<RefCell<Vec<alloc::string::String>>>,
     power: Rc<RefCell<Vec<i32>>>,
     phone: Rc<RefCell<Vec<(String, String)>>>,
+    /// keys of settings edited in the UI since the last `take_setting_edits` (`SystemSettings.edited`)
+    edited: Rc<RefCell<Vec<String>>>,
     /// lists scrolled by shifting pixels (smooth-ui S2d), and how many frames did so
     scrolling: Scrolling,
     shifts: u32,
@@ -139,6 +143,10 @@ impl Renderer {
             sink.borrow_mut()
                 .push((a.as_str().into(), n.as_str().into()))
         });
+        let edited: Rc<RefCell<Vec<String>>> = Rc::default();
+        let sink = edited.clone();
+        ui.global::<SystemSettings>()
+            .on_edited(move |k| sink.borrow_mut().push(k.as_str().into()));
         Ok(Self {
             window,
             ui,
@@ -147,6 +155,7 @@ impl Renderer {
             closed,
             power,
             phone,
+            edited,
             scrolling: Scrolling::default(),
             shifts: 0,
         })
@@ -258,6 +267,38 @@ impl Renderer {
     /// What the Power menu chose since the last call: 2 = power off, 0 = restart, -1 = dismissed.
     pub fn take_power(&mut self) -> Vec<i32> {
         core::mem::take(&mut *self.power.borrow_mut())
+    }
+
+    /// The registry keys of the settings the shell shows, for the UI server to fill at boot with
+    /// [`Renderer::apply_setting`].
+    pub fn shown_settings() -> impl Iterator<Item = &'static str> {
+        settings::BINDINGS.iter().map(|b| b.key)
+    }
+
+    /// Shows a setting's value (from the UI server's store). False when the shell doesn't show `key` or `value` has
+    /// another type than the key's.
+    pub fn apply_setting(&mut self, key: &str, value: &Value) -> bool {
+        let global = self.ui.global::<SystemSettings>();
+        settings::binding(key).is_some_and(|b| (b.write)(&global, value))
+    }
+
+    /// The UI's current value of a shown setting.
+    pub fn setting(&self, key: &str) -> Option<Value> {
+        let global = self.ui.global::<SystemSettings>();
+        settings::binding(key).map(|b| (b.read)(&global))
+    }
+
+    /// The settings edited in the UI since the last call, each once, with their current values. Applying a value
+    /// with [`Renderer::apply_setting`] reports it here too; storing it again changes nothing.
+    pub fn take_setting_edits(&mut self) -> Vec<(&'static str, Value)> {
+        let mut keys = core::mem::take(&mut *self.edited.borrow_mut());
+        keys.sort_unstable();
+        keys.dedup();
+        let global = self.ui.global::<SystemSettings>();
+        keys.iter()
+            .filter_map(|k| settings::binding(k))
+            .map(|b| (b.key, (b.read)(&global)))
+            .collect()
     }
 
     /// The status bar's time text, e.g. "09:41".

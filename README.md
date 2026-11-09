@@ -26,10 +26,12 @@ Mac the buffer is just shown in a window.
 | `crates/neoui-host` | Mac/Linux desktop host: winit + softbuffer, mouse as touch |
 | `snapshots/` | PNGs written by the snapshot tests |
 | `crates/neoui-term` | `#![no_std]` text console model: the grid, cursor and control characters of a Symbian console window |
-| `crates/neoui-proto` `ipc` | The app ↔ UI server protocol: `GEOMETRY`, `SURFACE`, `DAMAGE`, `NEXT_EVENT`, 16-byte events |
+| `crates/neoui-proto` `ipc` | The app ↔ UI server protocol: `GEOMETRY`, `SURFACE`, `DAMAGE`, `NEXT_EVENT`, `SETTING_GET`/`SET`/`WATCH`, 16-byte events |
+| `crates/neoui-proto` `settings` | The settings system (pure, host-tested): typed keys, the registry of system settings, the store, the versioned file format, access rules, the service with save delay and change subscriptions |
+| `crates/neoui-render` `settings` + `ui/system-settings.slint` | The shell's view of the settings: the `SystemSettings` global and the binding table between it and the store |
 | `symbian/` | The launcher as a Symbian EXE (`SYSSTART.EXE`, GPL-3.0): its own workspace, built for `armv5te-none-eabi` with [e32-rs](https://github.com/NeoSymbian/e32-rs) |
 
-Planned: a settings store, a notification service, editable home pages and widgets; the design is
+Settings store: done (Part 1). Planned: a notification service, editable home pages and widgets; the design is
 [neoui-shell.md](https://github.com/NeoSymbian/docs/blob/main/neoui-shell.md).
 
 The renderer takes its time from a caller-supplied millisecond clock and owns

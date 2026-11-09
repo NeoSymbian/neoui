@@ -18,6 +18,7 @@ use e32::{dprintln, time};
 use neoapp::App;
 use neoui_proto::clock::{self, Local};
 use neoui_proto::ipc::{self as proto, AppEvent};
+use neoui_proto::settings::keys;
 use neoui_proto::{InputEvent, TouchPhase};
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 
@@ -66,6 +67,11 @@ fn run() -> Result<(), i32> {
     ui.global::<Theme>().set_dp(app.dp);
     ui.show().map_err(|_| -2)?;
     set_up_editing(&ui);
+    // the 24-hour setting (docs/neoui-shell.md, Part 1): read now and again whenever it changes
+    if let Err(e) = app.watch_settings("clock.") {
+        dprintln!("clock: cannot watch settings ({})", e);
+    }
+    let mut h24 = clock_24h(&app);
 
     let mut shown_second = u32::MAX;
     // In the background (R10) the clock neither ticks nor draws.
@@ -83,7 +89,7 @@ fn run() -> Result<(), i32> {
                     let now = time::now();
                     if visible && now.second != shown_second {
                         shown_second = now.second;
-                        set_time(&ui, &now);
+                        set_time(&ui, &now, h24);
                         dprintln!(
                             "clock: tick {:02}:{:02}:{:02}",
                             now.hour,
@@ -103,6 +109,11 @@ fn run() -> Result<(), i32> {
                 Some(AppEvent::Quit) => {
                     dprintln!("clock: quit");
                     return Ok(());
+                }
+                Some(AppEvent::Settings { seq }) => {
+                    h24 = clock_24h(&app);
+                    dprintln!("clock: settings changed ({}): 24-hour {}", seq, h24);
+                    shown_second = u32::MAX; // redraw with the new format
                 }
                 Some(AppEvent::Visible(v)) => {
                     dprintln!("clock: visible {}", v);
@@ -128,8 +139,18 @@ fn run() -> Result<(), i32> {
     })
 }
 
-fn set_time(ui: &ClockApp, t: &time::DateTime) {
-    ui.set_hours(t.hour as i32);
+/// Whether the clock shows 24-hour time; the default when the setting can't be read (an older UI server).
+fn clock_24h(app: &App) -> bool {
+    app.setting(keys::CLOCK_24H).unwrap_or_else(|e| {
+        dprintln!("clock: cannot read clock.24h ({})", e);
+        true
+    })
+}
+
+/// Shows `t`; on a 12-hour clock the hours run 12, 1, ..., 11.
+fn set_time(ui: &ClockApp, t: &time::DateTime, h24: bool) {
+    let hours = if h24 { t.hour } else { (t.hour + 11) % 12 + 1 };
+    ui.set_hours(hours as i32);
     ui.set_minutes(t.minute as i32);
     ui.set_seconds(t.second as i32);
     ui.set_date(

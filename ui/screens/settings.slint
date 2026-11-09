@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Settings: grouped root list (default), and the sub-pages "connectivity", "display", "about".
+import { SystemSettings } from "../system-settings.slint";
 import { Theme } from "../theme.slint";
 import { NeoList } from "../components/scroll.slint";
 import { ListRow, SectionHeader } from "../components/lists.slint";
@@ -75,14 +76,13 @@ component SettingRow inherits Rectangle {
 
 export component SettingsScreen inherits Rectangle {
     in-out property <string> view;
-    in-out property <bool> wifi: true;
     // in: which build is running, one line each for the kernel, the user-side ROM and neoui (the UI server reads them)
     in property <[string]> build;
-    in-out property <bool> bluetooth: false;
-    in-out property <bool> data: true;
-    in-out property <bool> airplane: false;
-    in-out property <bool> dark: true;
-    in-out property <float> brightness: 0.62;
+    // the switches below show and edit the system settings (SystemSettings, kept by the UI server)
+    property <bool> wifi: SystemSettings.wifi;
+    property <bool> bluetooth: SystemSettings.bluetooth;
+    property <bool> data: SystemSettings.mobile-data;
+    property <bool> dark: SystemSettings.dark;
 
     if view == "": NeoList {
         VerticalLayout {
@@ -173,7 +173,7 @@ export component SettingsScreen inherits Rectangle {
                 has-icon: true;
                 icon: @image-url("../icons/sys/wifi.svg");
                 has-switch: true;
-                switch-on <=> root.wifi;
+                switch-on <=> SystemSettings.wifi;
             }
 
             ListRow {
@@ -182,7 +182,7 @@ export component SettingsScreen inherits Rectangle {
                 has-icon: true;
                 icon: @image-url("../icons/sys/bluetooth.svg");
                 has-switch: true;
-                switch-on <=> root.bluetooth;
+                switch-on <=> SystemSettings.bluetooth;
             }
 
             SectionHeader { text: "Mobile"; }
@@ -192,7 +192,7 @@ export component SettingsScreen inherits Rectangle {
                 has-icon: true;
                 icon: @image-url("../icons/sys/data.svg");
                 has-switch: true;
-                switch-on <=> root.data;
+                switch-on <=> SystemSettings.mobile-data;
             }
 
             ListRow {
@@ -200,7 +200,7 @@ export component SettingsScreen inherits Rectangle {
                 has-icon: true;
                 icon: @image-url("../icons/sys/lock.svg");
                 has-switch: true;
-                switch-on <=> root.airplane;
+                switch-on <=> SystemSettings.airplane;
                 divider: false;
             }
         }
@@ -214,7 +214,7 @@ export component SettingsScreen inherits Rectangle {
                 padding-right: Theme.margin + 8 * Theme.dp;
                 height: 56 * Theme.dp;
                 Slider {
-                    value <=> root.brightness;
+                    value <=> SystemSettings.brightness;
                 }
             }
 
@@ -224,7 +224,15 @@ export component SettingsScreen inherits Rectangle {
                 has-icon: true;
                 icon: @image-url("../icons/sys/theme.svg");
                 has-switch: true;
-                switch-on <=> root.dark;
+                switch-on <=> SystemSettings.dark;
+            }
+
+            ListRow {
+                title: "24-hour time";
+                has-icon: true;
+                icon: @image-url("../icons/sys/stopwatch.svg");
+                has-switch: true;
+                switch-on <=> SystemSettings.clock-24h;
             }
 
             ListRow {
