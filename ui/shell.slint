@@ -106,6 +106,9 @@ export component Shell inherits Window {
     in property <string> call-state;
     in property <string> call-number;
     in property <bool> call-incoming;
+    in property <bool> call-muted;
+    in property <bool> call-speaker;
+    in property <int> call-volume: -1;
     callback phone-action(string, string);
 
     public function open(app: string) {
@@ -166,6 +169,9 @@ export component Shell inherits Window {
                 call-state: root.call-state;
                 call-number: root.call-number;
                 call-incoming: root.call-incoming;
+                muted: root.call-muted;
+                speaker: root.call-speaker;
+                call-volume: root.call-volume;
                 action(a, n) => { root.phone-action(a, n); }
             }
         }

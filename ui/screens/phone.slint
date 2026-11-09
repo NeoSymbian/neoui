@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Phone: dialer (default), call log ("log"), in-call ("call"). The call comes from the modem (telephony C5): the UI
-// server sets call-state / call-number / call-incoming and acts on `action` ("dial" + number, "answer", "hangup").
+// server sets call-state / call-number / call-incoming (+ muted / speaker / call-volume, C6) and acts on `action`
+// ("dial" + number, "answer", "hangup", "mute"/"speaker" + "1"/"0", "dtmf" + key).
 import { Theme } from "../theme.slint";
 import { NeoList } from "../components/scroll.slint";
 import { Data } from "../data.slint";
@@ -44,8 +45,12 @@ component Key inherits Rectangle {
 export component PhoneScreen inherits Rectangle {
     in-out property <string> view;
     in-out property <string> number: "";
-    in-out property <bool> muted;
-    in-out property <bool> speaker;
+    // in: the call's audio (telephony C6, from NeoModem): the buttons show what the phone does, not a guess
+    in property <bool> muted;
+    in property <bool> speaker;
+    // the volume step 0..10 while a call's audio runs, else -1
+    in property <int> call-volume: -1;
+    property <bool> pad;
     // in: the modem's call: "" (none), "Calling…", "Ringing", "Incoming call", "Connected", "Call ended"
     in property <string> call-state;
     in property <string> call-number;
@@ -150,7 +155,7 @@ export component PhoneScreen inherits Rectangle {
             padding: 24 * Theme.dp;
             padding-top: 48 * Theme.dp;
             spacing: 12 * Theme.dp;
-            HorizontalLayout {
+            if !pad: HorizontalLayout {
                 alignment: center;
                 Avatar {
                     initials: number == "" ? "AL" : "#";
@@ -168,10 +173,25 @@ export component PhoneScreen inherits Rectangle {
             }
 
             Text {
-                text: call-state != "" ? call-state : "00:42";
+                text: (call-state != "" ? call-state : "00:42") + (call-volume >= 0 ? "  ·  Volume " + call-volume : "");
                 color: Theme.text-secondary;
                 font-size: Theme.font-body;
                 horizontal-alignment: center;
+            }
+
+            // in-call keypad: each key sends its tone to the other side (DTMF)
+            if pad: VerticalLayout {
+                spacing: 4 * Theme.dp;
+                for row in [["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"], ["*", "0", "#"]]: HorizontalLayout {
+                    spacing: 8 * Theme.dp;
+                    for d in row: Key {
+                        digit: d;
+                        letters: "";
+                        pressed(c) => {
+                            root.action("dtmf", c);
+                        }
+                    }
+                }
             }
 
             Rectangle { vertical-stretch: 1; }
@@ -182,19 +202,21 @@ export component PhoneScreen inherits Rectangle {
                     icon: muted ? @image-url("../icons/sys/mic_off.svg") : @image-url("../icons/sys/mic.svg");
                     label: "Mute";
                     active: muted;
-                    clicked => { root.muted = !root.muted; }
+                    clicked => { root.action("mute", muted ? "0" : "1"); }
                 }
 
                 RoundButton {
                     icon: @image-url("../icons/sys/keypad.svg");
                     label: "Keypad";
+                    active: pad;
+                    clicked => { root.pad = !root.pad; }
                 }
 
                 RoundButton {
                     icon: @image-url("../icons/sys/speaker.svg");
                     label: "Speaker";
                     active: speaker;
-                    clicked => { root.speaker = !root.speaker; }
+                    clicked => { root.action("speaker", speaker ? "0" : "1"); }
                 }
             }
 
@@ -219,6 +241,7 @@ export component PhoneScreen inherits Rectangle {
                         root.action("hangup", "");
                         root.view = "";
                         root.number = "";
+                        root.pad = false;
                     }
                 }
             }

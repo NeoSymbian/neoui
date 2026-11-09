@@ -47,6 +47,9 @@ const SWIPE_MS: u32 = 250;
 const POWER_HOLD_MS: u64 = 1000;
 /// `EStdKeyDevice0` (`e32keys.h`): the Pixel's Power key (kernel `a64_keys.cpp`).
 const SCAN_POWER: i32 = 0xa4;
+/// `EStdKeyIncVolume` / `EStdKeyDecVolume`: during a call they set its volume (telephony C6)
+const SCAN_VOL_UP: i32 = 0xa2;
+const SCAN_VOL_DOWN: i32 = 0xa3;
 
 fn now_ms() -> u64 {
     time::millis()
@@ -183,6 +186,10 @@ fn main() -> i32 {
                             {
                                 power_down_at = (ev.i_type == raw::EKEY_DOWN).then(time::millis);
                             }
+                            Ok(ev)
+                                if ev.i_type == raw::EKEY_DOWN
+                                    && matches!(ev.scan_code(), SCAN_VOL_UP | SCAN_VOL_DOWN)
+                                    && phone.volume_key(ev.scan_code() == SCAN_VOL_UP) => {}
                             Ok(ev) => evs.extend(to_input(&ev)),
                             Err(e) => {
                                 dprintln!("neoui: input failed ({})", e);
