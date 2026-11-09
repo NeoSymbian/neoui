@@ -252,6 +252,12 @@ GLYPHS = {
     "data": [
         ("p", "M8 19.5V4.5M4.6 7.9 8 4.5l3.4 3.4M16 4.5v15M12.6 16.1l3.4 3.4 3.4-3.4")
     ],
+    # an old candybar phone: the "Old apps" launcher entry (2010 Symbian programs through the legacy bridge)
+    "legacy": [
+        ("p", "M8 3.5h8a1.5 1.5 0 0 1 1.5 1.5v14a1.5 1.5 0 0 1-1.5 1.5H8a1.5 1.5 0 0 1-1.5-1.5V5A1.5 1.5 0 0 1 8 3.5z"),
+        ("p", "M9 6.2h6v4.6H9z"),
+        *[("d", (x, y, 0.8)) for y in (14, 16.7) for x in (9.6, 12, 14.4)],
+    ],
 }
 
 GLYPHS["menu"] = GLYPHS["apps"]  # the "all apps" tile in the home dock
@@ -270,6 +276,7 @@ APPS = {  # name -> tile base colour (the tile is lit from the top)
     "calendar": "#e5484d",
     "music": "#e04e9b",
     "photos": "#14a37f",
+    "legacy": "#4f6b8a",
 }
 
 
