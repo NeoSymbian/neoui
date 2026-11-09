@@ -54,7 +54,7 @@ jobs:
       # whatever the device reports. The path is the design's contract, in screen pixels: Apps in the dock
       # (270,1000); Clock in the menu (449,530); a tap inside the Clock app (270,500); Back in the toolbar (88,1033).
       # Then the Terminal app: Apps (270,1000), Terminal (449,735), `dir` on the system keyboard (R6c), `neotest` on
-      # hardware keys, Back. Then Files (R8), from the menu (89,735): Z: card (270,315) -> Sys (row 1, y 250) -> Bin
+      # hardware keys, Back. Then Files (R8), from the menu (89,735): Z: card (270,315) -> Sys (row 2, y 358: private, Resource, Sys, System) -> Bin
       # (row 0, y 142), Back -> Data (row 1) -> estart.txt (row 0) in the viewer, Back x4 to the drives; C: card
       # (270,135) -> Options (452,1033) -> New folder (270,756) -> `neo` on the keyboard; Options -> Delete (270,924)
       # -> the neo row (row 0) -> Delete in the dialog (430,553); Back x2 (C:\ -> drives -> the app closes).
@@ -75,7 +75,7 @@ jobs:
           type_text neotest; expect "passed, 0 failed"
           tap 88 1033
           tap 89 735; expect "files: drives"
-          tap 270 315; expect "files: list"; tap 270 250; expect "files: list"; tap 270 142; expect "files: list"
+          tap 270 315; expect "files: list"; tap 270 358; expect "files: list"; tap 270 142; expect "files: list"
           tap 88 1033; expect "files: list"; tap 270 250; expect "files: list"; tap 270 142; expect "files: view"
           for i in 1 2 3; do tap 88 1033; expect "files: list"; done
           tap 88 1033; expect "files: drives"
@@ -156,6 +156,31 @@ jobs:
           print(f"fb.ppm: 539x1079, {len(colours)} sampled colours")
           PY
 
+      # P2 (legacy apps): "Old apps" in the menu (270,930) starts LEGACY.EXE (NeoSymbian/build apps/legacy), which runs
+      # the stock 2010 window server as a guest in a shared buffer (graphics fork: scnew.cpp, WSTOP.CPP, EVENT.CPP) and
+      # the Symbian Foundation's MiniGUI grid.exe in it; a tap in its window reaches it as a raw pointer event. grid
+      # draws for 3 s and exits, and LEGACY with it.
+      - name: Boot again; Old apps (a 2010 window-server program inside neoui)
+        working-directory: build
+        run: |
+          cp out/serial.log out/serial-main.log
+          export SCREEN=539x1079
+          . ../neoui/symbian/taps.sh
+          tap 270 1000
+          tap 270 930; expect "create grid"
+          tap 200 300; expect "legacy: raw"
+          expect "neoui: app legacy exited"
+          MON_GAP=0.1 MONITOR="$M" SECS=120 ./boot.sh
+          s=out/serial.log
+          grep -a 'neoui: app legacy started' $s
+          grep -a '\[proc\] create EWSRV.EXE' $s
+          grep -aE 'legacy: guest wserv 539x1079 up, surface 539x[0-9]+' $s
+          grep -a '\[proc\] create grid.exe' $s
+          grep -aE 'legacy: raw 10 [0-9]+ [0-9]+' $s
+          grep -a 'legacy: closing' $s
+          grep -a 'neoui: app legacy exited (type 0, reason 0)' $s
+          ! grep -aq 'K::Fault\|Kern::Fault\|\[EKERN\] panic\|rust panic' $s
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -163,3 +188,4 @@ jobs:
           path: |
             build/out/fb.png
             build/out/serial.log
+            build/out/serial-main.log
