@@ -29,6 +29,9 @@ Mac the buffer is just shown in a window.
 | `crates/neoui-proto` `ipc` | The app ↔ UI server protocol: `GEOMETRY`, `SURFACE`, `DAMAGE`, `NEXT_EVENT`, 16-byte events |
 | `symbian/` | The launcher as a Symbian EXE (`SYSSTART.EXE`, GPL-3.0): its own workspace, built for `armv5te-none-eabi` with [e32-rs](https://github.com/NeoSymbian/e32-rs) |
 
+Planned: a settings store, a notification service, editable home pages and widgets; the design is
+[neoui-shell.md](https://github.com/NeoSymbian/docs/blob/main/neoui-shell.md).
+
 The renderer takes its time from a caller-supplied millisecond clock and owns
 no thread, file or OS handle. Glyphs are rendered to signed distance fields at
 build time (`slint-build` `sdf-fonts`), so text scales to any size without font
