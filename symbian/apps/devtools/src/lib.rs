@@ -3,6 +3,8 @@
 //! saved to `E:\logs\`, the on-screen kernel console switched on and off, and the A/B slot state. Everything goes
 //! through the kernel's `EHalGroupVariant` functions (docs/rust-integration.md "Dev tools"); boards without them
 //! (Syborg) answer -5 and the app says so. It is a ROM EXE, so it holds ReadDeviceData / WriteDeviceData.
+//! "Audio" asks the NeoModem server (MODEMD) for its audio test: the mic looped back to the loudspeaker or the
+//! earpiece, no call needed; the live log shows each step (telephony C6).
 #![no_std]
 
 extern crate alloc;
@@ -15,7 +17,7 @@ use alloc::vec::Vec;
 use core::cell::RefCell;
 use core::pin::pin;
 use e32::fs::{File, Fs};
-use e32::ipc::TIpcArgs;
+use e32::ipc::{Session, TIpcArgs, TVersion};
 use e32::rt::{self, Either};
 use e32::sys::TPtr8;
 use e32::{dprintln, time};
@@ -40,9 +42,46 @@ const POLL_US: i32 = 500_000;
 const KEEP_LINES: usize = 500;
 
 /// The action buttons, in order.
-const ACTIONS: [&str; 6] = ["Log", "Last boot", "Build", "Save", "Console", "Power"];
+const ACTIONS: [&str; 7] = [
+    "Log",
+    "Last boot",
+    "Build",
+    "Save",
+    "Console",
+    "Audio",
+    "Power",
+];
 /// "Power" swaps the row for these (the UI server carries them out, as its Power menu does: proto::POWER).
 const POWER_ACTIONS: [&str; 4] = ["Restart", "Power off", "Fastboot", "Back"];
+/// "Audio" swaps the row for these: modem_ipc::op::AUDIO_TEST 1, 2, 0.
+const AUDIO_ACTIONS: [&str; 4] = ["Speaker", "Earpiece", "Stop", "Back"];
+
+/// Which action row is shown.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Row {
+    Main,
+    Power,
+    Audio,
+}
+
+/// NeoModem's audio test: 1 loudspeaker, 2 earpiece, 0 stop. Its result, or why there is none.
+fn audio_test(what: i32) -> i32 {
+    let (major, minor, build) = modem_ipc::VERSION;
+    let v = TVersion {
+        major: major as u8,
+        minor: minor as u8,
+        build: build as u16,
+    };
+    let session = match Session::connect(modem_ipc::NAME, v) {
+        Ok(s) => s,
+        Err(e) => return e, // no MODEMD in this ROM, or not up yet
+    };
+    let mut args = TIpcArgs::new();
+    args.int(0, what);
+    session
+        .send_receive(modem_ipc::op::AUDIO_TEST, &args)
+        .unwrap_or_else(|e| e)
+}
 
 fn main() -> i32 {
     match run() {
@@ -289,7 +328,7 @@ fn run() -> Result<(), i32> {
         ui.set_actions(ModelRc::from(Rc::new(VecModel::from(actions))));
     };
     set_actions(&ui, &ACTIONS);
-    let mut power_row = false;
+    let mut row = Row::Main;
     let model = Rc::new(VecModel::from(
         (0..rows).map(|_| SharedString::new()).collect::<Vec<_>>(),
     ));
@@ -346,7 +385,33 @@ fn run() -> Result<(), i32> {
                     app.dispatch_touch(touch);
                     let picked: Vec<i32> = pressed.borrow_mut().drain(..).collect();
                     for i in picked {
-                        if power_row {
+                        if row == Row::Audio {
+                            if (0..3).contains(&i) {
+                                let what = [1, 2, 0][i as usize];
+                                let r = audio_test(what);
+                                st.status = match (what, r) {
+                                    (0, 0) => String::from("audio test stopped"),
+                                    (_, 0) => format!(
+                                        "audio test: {} - talk into the mic",
+                                        AUDIO_ACTIONS[i as usize]
+                                    ),
+                                    (_, -14) => {
+                                        String::from("audio test: busy (a call, or a test running)")
+                                    }
+                                    (_, -18) => {
+                                        String::from("audio test: the audio DSP is not up yet")
+                                    }
+                                    (_, e) => format!("audio test: no NeoModem / failed ({e})"),
+                                };
+                                st.view = View::Live; // the log shows each step ([modemd] apr: ...)
+                                dprintln!("devtools: {}", st.status);
+                            } else {
+                                row = Row::Main;
+                                set_actions(&ui, &ACTIONS);
+                            }
+                            continue;
+                        }
+                        if row == Row::Power {
                             let action = match i {
                                 0 => Some(proto::POWER_RESTART),
                                 1 => Some(proto::POWER_OFF),
@@ -360,7 +425,7 @@ fn run() -> Result<(), i32> {
                                 st.status = format!("power {}: {:?}", POWER_ACTIONS[i as usize], r);
                                 dprintln!("devtools: {}", st.status);
                             }
-                            power_row = false;
+                            row = Row::Main;
                             set_actions(&ui, &ACTIONS);
                             continue;
                         }
@@ -382,7 +447,14 @@ fn run() -> Result<(), i32> {
                             3 => st.save(),
                             4 => st.toggle_console(),
                             5 => {
-                                power_row = true;
+                                row = Row::Audio;
+                                set_actions(&ui, &AUDIO_ACTIONS);
+                                st.status = String::from(
+                                    "audio test: the mic looped back to the loudspeaker or the earpiece",
+                                );
+                            }
+                            6 => {
+                                row = Row::Power;
                                 set_actions(&ui, &POWER_ACTIONS);
                             }
                             _ => {}

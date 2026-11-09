@@ -21,7 +21,7 @@ e32 = { workspace = true }
 # build info (neoapp::build): the kernel's and the ROM's stamps, shared with Dev tools
 neoapp = { workspace = true }
 # NeoSymbian/telephony: the NeoModem server's contract (MODEMD.EXE; Apache-2.0)
-modem-ipc = { git = "https://github.com/NeoSymbian/telephony", rev = "b3d18a2f24d5f6b8725896fc992bd34fd2b510cb" }
+modem-ipc = { workspace = true }
 
 [workspace]
 members = ["apps/clock", "apps/term", "apps/files", "apps/devtools", "neoapp"]
@@ -33,6 +33,7 @@ neoui-proto = { path = "../crates/neoui-proto" }
 slint = { version = "=1.18.1", default-features = false, features = ["compat-1-2", "unsafe-single-threaded", "libm", "renderer-software"] }
 slint-build = { version = "=1.18.1", features = ["sdf-fonts"] }
 neoapp = { path = "neoapp" }
+modem-ipc = { git = "https://github.com/NeoSymbian/telephony", rev = "1bbe3521f9b04c4501ed9ac199b8f55b6be38ee2" }
 neoui-term = { path = "../crates/neoui-term" }
 neoui-files = { path = "../crates/neoui-files" }
 

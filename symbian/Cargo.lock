@@ -2431,7 +2431,7 @@ dependencies = [
 [[package]]
 name = "modem-ipc"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/telephony?rev=b3d18a2f24d5f6b8725896fc992bd34fd2b510cb#b3d18a2f24d5f6b8725896fc992bd34fd2b510cb"
+source = "git+https://github.com/NeoSymbian/telephony?rev=1bbe3521f9b04c4501ed9ac199b8f55b6be38ee2#1bbe3521f9b04c4501ed9ac199b8f55b6be38ee2"
 
 [[package]]
 name = "moxcms"
@@ -2606,6 +2606,7 @@ name = "neodevtools"
 version = "0.1.0"
 dependencies = [
  "e32",
+ "modem-ipc",
  "neoapp",
  "neoui-proto",
  "slint",
