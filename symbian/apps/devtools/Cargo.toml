@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # The Dev tools app (NEODEV.EXE): the kernel log live and from the previous boot, saved to E:\logs, the on-screen
-# kernel console, the A/B slot state (NeoSymbian kernel HAL calls, docs/rust-integration.md "Dev tools").
+# kernel console, the A/B slot state, the audio test (NeoSymbian kernel HAL calls, docs/rust-integration.md "Dev tools").
 [package]
 name = "neodevtools"
 description = "neoui's Dev tools app: kernel logs, console overlay, slot state (NeoSymbian)"
@@ -18,6 +18,7 @@ e32.workspace = true
 neoui-proto.workspace = true
 slint.workspace = true
 neoapp.workspace = true
+modem-ipc.workspace = true
 
 [build-dependencies]
 slint-build.workspace = true

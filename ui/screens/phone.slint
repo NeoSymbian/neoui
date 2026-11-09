@@ -51,6 +51,12 @@ export component PhoneScreen inherits Rectangle {
     // the volume step 0..10 while a call's audio runs, else -1
     in property <int> call-volume: -1;
     property <bool> pad;
+    // the in-call keypad closes with the call view
+    changed view => {
+        if (root.view != "call") {
+            root.pad = false;
+        }
+    }
     // in: the modem's call: "" (none), "Calling…", "Ringing", "Incoming call", "Connected", "Call ended"
     in property <string> call-state;
     in property <string> call-number;
@@ -112,6 +118,7 @@ export component PhoneScreen inherits Rectangle {
                         if (root.number != "") {
                             root.action("dial", root.number);
                             root.view = "call";
+                            root.number = "";
                         }
                     }
                 }
@@ -140,10 +147,6 @@ export component PhoneScreen inherits Rectangle {
                 value: c.when;
                 avatar: c.initials;
                 avatar-tint: c.tint;
-                clicked => {
-                    root.number = c.name;
-                    root.view = "call";
-                }
             }
         }
     }
@@ -158,14 +161,14 @@ export component PhoneScreen inherits Rectangle {
             if !pad: HorizontalLayout {
                 alignment: center;
                 Avatar {
-                    initials: number == "" ? "AL" : "#";
+                    initials: "#";
                     tint: Theme.accent;
                     size: Theme.avatar-large;
                 }
             }
 
             Text {
-                text: call-number != "" ? call-number : number == "" ? "Ava Lindqvist" : number;
+                text: call-number;
                 color: Theme.text;
                 font-size: Theme.font-title * 1.3;
                 font-weight: 600;
@@ -173,7 +176,7 @@ export component PhoneScreen inherits Rectangle {
             }
 
             Text {
-                text: (call-state != "" ? call-state : "00:42") + (call-volume >= 0 ? "  ·  Volume " + call-volume : "");
+                text: (call-state != "" ? call-state : "Calling…") + (call-volume >= 0 ? "  ·  Volume " + call-volume : "");
                 color: Theme.text-secondary;
                 font-size: Theme.font-body;
                 horizontal-alignment: center;
@@ -237,11 +240,9 @@ export component PhoneScreen inherits Rectangle {
                     icon: @image-url("../icons/sys/end_call.svg");
                     size: 68 * Theme.dp;
                     fill: Theme.danger;
+                    // the view closes when the modem says the call is over (phone.rs), not on a guess
                     clicked => {
                         root.action("hangup", "");
-                        root.view = "";
-                        root.number = "";
-                        root.pad = false;
                     }
                 }
             }

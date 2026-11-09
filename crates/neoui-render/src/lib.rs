@@ -287,6 +287,13 @@ impl Renderer {
         self.ui.set_call_volume(volume);
     }
 
+    /// Leave the Phone screen's call view for the dial pad (the call ended or never started); elsewhere nothing.
+    pub fn close_call(&mut self) {
+        if self.ui.get_view() == "call" {
+            self.ui.set_view("".into());
+        }
+    }
+
     /// Bring up the Phone screen's call view (an incoming call).
     pub fn show_call(&mut self) {
         self.ui.invoke_open("phone".into());

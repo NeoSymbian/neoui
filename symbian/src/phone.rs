@@ -19,8 +19,16 @@ pub struct Phone {
     session: Option<Session>,
     present: bool,
     last_poll: u64,
+    /// the last Status shown (the modem's word: the screen keeps no call state of its own)
     shown: Option<Status>,
+    /// the call view closes then (ms): 2 s after the call ended or the dial failed
+    close_at: Option<u64>,
+    /// the volume step last sent: the keys step from it, not from a status up to a second old
+    volume: Option<u8>,
 }
+
+/// How long "Call ended" / "Call failed" stays before the dial pad comes back.
+const CLOSE_MS: u64 = 2000;
 
 impl Phone {
     /// Start MODEMD; a ROM without it gives a phone-less shell.
@@ -41,6 +49,8 @@ impl Phone {
             present,
             last_poll: 0,
             shown: None,
+            close_at: None,
+            volume: None,
         }
     }
 
@@ -62,11 +72,23 @@ impl Phone {
         if !self.present {
             return;
         }
+        if self.close_at.is_some_and(|t| now_ms >= t) {
+            self.close_at = None;
+            ui.close_call();
+        }
         let mut acted = false;
         for (action, number) in ui.take_phone() {
             acted = true;
             let r = self.request(&action, &number);
             dprintln!("neoui: phone {} -> {}", action, r);
+            match action.as_str() {
+                "dial" if r != 0 => {
+                    ui.set_call("Call failed", &number, false);
+                    self.close_at = Some(now_ms + CLOSE_MS);
+                }
+                "hangup" if r != 0 => self.close_at = Some(now_ms), // no call to end: just close the view
+                _ => {}
+            }
         }
         if !acted && now_ms.saturating_sub(self.last_poll) < POLL_MS {
             return;
@@ -78,6 +100,11 @@ impl Phone {
         if self.shown == Some(s) {
             return;
         }
+        let over = |x: &Status| matches!(x.call.state, call::NONE | call::END);
+        if over(&s) && self.shown.as_ref().is_some_and(|x| !over(x)) {
+            self.close_at = Some(now_ms + CLOSE_MS); // "Call ended" for a moment, then the dial pad
+        }
+        self.volume = None;
         let ringing = |x: &Status| x.call.incoming && x.call.state == call::INCOMING;
         if ringing(&s) && !self.shown.as_ref().is_some_and(ringing) {
             ui.show_call();
@@ -123,11 +150,13 @@ impl Phone {
         if !s.audio.on {
             return false;
         }
+        let now = self.volume.unwrap_or(s.audio.volume);
         let v = if up {
-            (s.audio.volume + 1).min(10)
+            (now + 1).min(10)
         } else {
-            s.audio.volume.saturating_sub(1)
+            now.saturating_sub(1)
         };
+        self.volume = Some(v);
         let r = self.request("volume", &alloc::format!("{v}"));
         dprintln!("neoui: call volume {} -> {}", v, r);
         self.last_poll = 0; // show it at once
@@ -191,7 +220,8 @@ fn state_text(state: u8, incoming: bool) -> &'static str {
         call::ALERTING => "Ringing",
         call::CONVERSATION => "Connected",
         call::HOLD => "On hold",
-        call::DISCONNECTING | call::END => "Call ended",
+        call::DISCONNECTING => "Ending…",
+        call::END => "Call ended",
         _ if incoming => "Incoming…", // setup: the modem refuses an answer until "incoming"
         _ => "Calling…",
     }
