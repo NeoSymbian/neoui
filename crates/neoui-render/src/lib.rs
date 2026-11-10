@@ -319,6 +319,37 @@ impl Renderer {
         self.ui.set_clock(text.into());
     }
 
+    /// Shares the latest observation with the status bar and Battery settings page.
+    pub fn set_battery(
+        &mut self,
+        sample: &neoui_proto::battery::Snapshot,
+        history: &neoui_proto::battery::History,
+        storage_error: bool,
+    ) {
+        self.ui
+            .set_battery_percent(sample.percent().map_or(-1, |p| p as i32));
+        self.ui.set_battery_text(sample.percent_text().into());
+        self.ui.set_battery_charging(sample.charging());
+        self.ui.set_battery_connected(sample.usb_connected());
+        self.ui.set_battery_full(sample.full_on_usb());
+        self.ui.set_battery_voltage(sample.voltage_text().into());
+        self.ui.set_battery_state(sample.charge_text().into());
+        self.ui.set_battery_usb(sample.usb_text().into());
+        self.ui.set_battery_storage(
+            if storage_error {
+                "History unavailable or could not be saved; live readings remain available"
+            } else {
+                "History is saved every five minutes and before normal restart or shutdown"
+            }
+            .into(),
+        );
+        let now = history.points().back().map_or(0, |p| p.utc);
+        self.ui
+            .set_battery_history(slint::ModelRc::new(slint::VecModel::from(
+                history.bars(now),
+            )));
+    }
+
     /// The status bar's network (telephony C5): `bars` 0..=4, or -1 without a modem; the operator's name; the
     /// technology ("LTE", "3G", "2G" or "").
     pub fn set_network(&mut self, bars: i32, operator: &str, rat: &str) {
