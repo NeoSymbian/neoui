@@ -218,21 +218,27 @@ impl Phone {
             ui.show_call();
         }
         self.volume = None;
-        let registered = matches!(s.reg, reg::HOME | reg::ROAMING);
-        let technology = match s.rat {
-            rat::LTE => "LTE",
-            rat::UMTS => "3G",
-            rat::GSM => "2G",
-            _ => "",
-        };
-        let network = if s.airplane && !s.radio_online {
-            "Airplane mode"
-        } else if s.modem == modem::RECOVERING {
-            "Recovering…"
-        } else if registered {
-            s.operator.as_str()
+        // Registration and RAT survive a failed stop/recovery in MODEMD's cached protocol status. They describe
+        // the previous radio session until the currently available modem confirms that it is online again.
+        let registered =
+            s.modem == modem::ONLINE && s.radio_online && matches!(s.reg, reg::HOME | reg::ROAMING);
+        let technology = if registered {
+            match s.rat {
+                rat::LTE => "LTE",
+                rat::UMTS => "3G",
+                rat::GSM => "2G",
+                _ => "",
+            }
         } else {
-            "No service"
+            ""
+        };
+        let network = match s.modem {
+            modem::FAILED => "No service",
+            modem::RECOVERING => "Recovering…",
+            modem::BOOTING => "Starting modem…",
+            _ if s.airplane && !s.radio_online => "Airplane mode",
+            _ if registered => s.operator.as_str(),
+            _ => "No service",
         };
         ui.set_network(
             if registered { s.bars as i32 } else { 0 },
