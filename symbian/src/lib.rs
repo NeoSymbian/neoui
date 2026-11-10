@@ -200,14 +200,14 @@ fn main() -> i32 {
                                         (ev.i_type == raw::EKEY_DOWN).then(time::millis);
                                 }
                             }
-                            Ok(ev) if phone.screen_off() => {
-                                // Keep the AP and power-key polling running; discard touch/other keys while blanked.
-                                let _ = ev;
-                            }
                             Ok(ev)
                                 if ev.i_type == raw::EKEY_DOWN
                                     && matches!(ev.scan_code(), SCAN_VOL_UP | SCAN_VOL_DOWN)
                                     && phone.volume_key(ev.scan_code() == SCAN_VOL_UP) => {}
+                            Ok(ev) if phone.screen_off() => {
+                                // Power and in-call volume keys remain usable; discard touch/other keys while blanked.
+                                let _ = ev;
+                            }
                             Ok(ev) => evs.extend(to_input(&ev)),
                             Err(e) => {
                                 dprintln!("neoui: input failed ({})", e);
