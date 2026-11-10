@@ -7,6 +7,8 @@
 extern crate alloc;
 
 pub mod build;
+pub mod hal;
+pub mod sys;
 
 use alloc::boxed::Box;
 use alloc::rc::Rc;

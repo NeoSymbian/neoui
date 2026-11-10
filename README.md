@@ -93,6 +93,16 @@ our terminal. The grid (`crates/neoui-term`, host-tested) follows the stock cons
 destructive backspace, tabs, scrolling. Keys come from the keyboard and from the extra-keys bar. `dir` and
 `neotest` run in it on Syborg. Apps share their plumbing (connect, surface, Slint platform) in `symbian/neoapp`.
 
+**Dev tools (`NEODEV.EXE`, `symbian/apps/devtools`): the phone as a developer sees it.** Five tabs: Home (uptime,
+memory, CPU, storage, processes, devices, modem, kernel), Devices, Console (the kernel log, live or the last boot's,
+filtered by tag), Procs (processes and their threads) and More (Settings read-only, Tools: save logs, kernel
+console, power; About). Devices lists every component of a phone with its state, from the kernel's device registry
+(HAL `0x4e19`, `A64_DEVICE` in the arm64 baseport), the app's own probes (HAL values, NeoModem, the drives) and
+the kernel log; "Run checks" tests what can be tested without side effects, and each device opens a view with its
+live values, its log lines and its tests (touch grid, display colours, storage speed, audio loopback). The pure
+parts (registry lines, merging, log tags, stats) are host-tested in `neoui-proto::devtools`; the HAL and system
+calls are in `neoapp::hal` and `neoapp::sys`.
+
 The UI adapts to whatever the device reports: the display size comes from the HAL, touches are raw screen pixels
 (Syborg's pointer driver was fixed in the NeoSymbian adaptation fork to report exact pixels), and the layout follows
 the design's `dp` unit. The `syborg` CI job runs a phone-shaped, odd-sized screen (539x1079, half the Pixel's

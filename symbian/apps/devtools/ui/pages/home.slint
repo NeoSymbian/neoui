@@ -1,0 +1,57 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Home: the system at a glance (cards, two per row; tap one for its page) and every page of the app.
+import { Theme } from "../../../../../ui/theme.slint";
+import { ListRow, SectionHeader } from "../../../../../ui/components/lists.slint";
+import { NeoList } from "../../../../../ui/components/scroll.slint";
+import { DevState } from "../state.slint";
+import { StatCardView } from "../widgets.slint";
+
+export component HomePage inherits Rectangle {
+    NeoList {
+        VerticalLayout {
+            alignment: start;
+            padding-left: Theme.margin;
+            padding-right: Theme.margin;
+            padding-top: 10 * Theme.dp;
+            spacing: 10 * Theme.dp;
+            Text {
+                text: DevState.headline;
+                color: Theme.text-secondary;
+                font-size: Theme.font-status;
+                overflow: elide;
+            }
+
+            for i in Math.floor((DevState.cards.length + 1) / 2): HorizontalLayout {
+                spacing: 10 * Theme.dp;
+                StatCardView {
+                    width: (root.width - 2 * Theme.margin - 10 * Theme.dp) / 2;
+                    card: DevState.cards[i * 2];
+                    clicked => {
+                        DevState.open(DevState.cards[i * 2].target);
+                    }
+                }
+
+                if i * 2 + 1 < DevState.cards.length: StatCardView {
+                    width: (root.width - 2 * Theme.margin - 10 * Theme.dp) / 2;
+                    card: DevState.cards[i * 2 + 1];
+                    clicked => {
+                        DevState.open(DevState.cards[i * 2 + 1].target);
+                    }
+                }
+            }
+
+            SectionHeader {
+                text: "Pages";
+            }
+
+            for p in DevState.pages: ListRow {
+                title: p.title;
+                subtitle: p.sub;
+                chevron: true;
+                clicked => {
+                    DevState.open(p.value);
+                }
+            }
+        }
+    }
+}

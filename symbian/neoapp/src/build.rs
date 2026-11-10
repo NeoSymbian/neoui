@@ -8,11 +8,7 @@ use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 use e32::fs::{self, File, Fs};
-use e32::sys::TPtr8;
 
-/// `EHalGroupVariant` function: "kernel <commit>[+dirty] <UTC time> <board>" into a TDes8 (kernel a64_variant.cpp).
-const BUILD_INFO: i32 = 0x4e0a;
-const GROUP_VARIANT: i32 = 1;
 const ROM_FILE: &str = r"Z:\Resource\NeoSymbian\build.txt";
 
 /// Kernel, ROM and neoui, in that order; a part that can't be read says why.
@@ -21,19 +17,8 @@ pub fn lines() -> Vec<String> {
 }
 
 fn kernel() -> String {
-    let mut buf = [0u8; 160];
-    let mut des = TPtr8::new(&mut buf);
-    let des_ptr: *mut u8 = (&mut des as *mut TPtr8).cast();
-    // SAFETY: the kernel writes into the TDes8, which lives across the call; a2 is unused.
-    let r = unsafe {
-        e32::sys::ui::hal_function(GROUP_VARIANT, BUILD_INFO, des_ptr, core::ptr::null_mut())
-    };
-    if r < 0 {
-        // the 2010 kernel on Syborg has no NeoSymbian HAL functions
-        return format!("kernel: no build info ({r})");
-    }
-    let n = des.len();
-    String::from_utf8_lossy(&buf[..n]).into_owned()
+    // the 2010 kernel on Syborg has no NeoSymbian HAL functions
+    crate::hal::build_info().unwrap_or_else(|r| format!("kernel: no build info ({r})"))
 }
 
 fn rom() -> String {

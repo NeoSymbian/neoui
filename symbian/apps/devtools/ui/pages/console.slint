@@ -1,0 +1,106 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Console: the kernel log in the Terminal's look. The Rust side fills exactly the rows that fit (`console-rows`), so
+// thousands of lines cost one screenful; a vertical drag scrolls by whole rows, Follow keeps the newest in view.
+import { Theme } from "../../../../../ui/theme.slint";
+import { DevState } from "../state.slint";
+import { Chip, Level } from "../widgets.slint";
+
+export component ConsolePage inherits Rectangle {
+    background: Level.ground;
+
+    bar := VerticalLayout {
+        y: 0;
+        padding: 8 * Theme.dp;
+        spacing: 6 * Theme.dp;
+        HorizontalLayout {
+            spacing: 6 * Theme.dp;
+            alignment: start;
+            Chip {
+                text: DevState.console-last ? "Last boot" : "Live";
+                on: !DevState.console-last;
+                clicked => {
+                    DevState.console-source-toggled();
+                }
+            }
+
+            Chip {
+                text: "Follow";
+                on: DevState.console-follow;
+                clicked => {
+                    DevState.console-follow-toggled();
+                }
+            }
+
+            Chip {
+                text: "Clear";
+                clicked => {
+                    DevState.console-clear();
+                }
+            }
+
+            Chip {
+                text: "Save";
+                clicked => {
+                    DevState.console-save();
+                }
+            }
+        }
+
+        Flickable {
+            height: 32 * Theme.dp;
+            content-width: tags.preferred-width;
+            tags := HorizontalLayout {
+                spacing: 6 * Theme.dp;
+                alignment: start;
+                for t[i] in DevState.console-tags: Chip {
+                    text: t;
+                    on: i == DevState.console-tag;
+                    clicked => {
+                        DevState.console-tag-chosen(i);
+                    }
+                }
+            }
+        }
+
+        Text {
+            text: DevState.console-status;
+            color: Theme.text-dim;
+            font-size: Theme.font-status * 0.9;
+            overflow: elide;
+        }
+    }
+
+    lines := Rectangle {
+        y: bar.preferred-height;
+        height: parent.height - self.y;
+        clip: true;
+        for row[i] in DevState.console-rows: Text {
+            x: 8 * Theme.dp;
+            y: i * DevState.cell-h;
+            width: parent.width - 16 * Theme.dp;
+            height: DevState.cell-h;
+            text: row;
+            color: #d7dde5;
+            font-family: "Ubuntu Mono";
+            font-size: DevState.mono-px;
+            overflow: clip;
+            vertical-alignment: center;
+        }
+
+        property <int> applied;  // rows of the current drag already scrolled
+        TouchArea {
+            pointer-event(e) => {
+                if (e.kind == PointerEventKind.down) {
+                    lines.applied = 0;
+                }
+            }
+            moved => {
+                // whole rows dragged so far, minus the ones already scrolled: down = older lines
+                if (Math.round((self.mouse-y - self.pressed-y) / DevState.cell-h) != lines.applied) {
+                    DevState.console-scroll(Math.round((self.mouse-y - self.pressed-y) / DevState.cell-h) - lines.applied);
+                    lines.applied = Math.round((self.mouse-y - self.pressed-y) / DevState.cell-h);
+                }
+            }
+        }
+    }
+}

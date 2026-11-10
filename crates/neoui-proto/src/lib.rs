@@ -5,6 +5,7 @@
 extern crate alloc;
 
 pub mod clock;
+pub mod devtools;
 pub mod ipc;
 pub mod recents;
 pub mod settings;

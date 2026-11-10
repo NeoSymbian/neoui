@@ -1,0 +1,65 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Procs: every process, then (ProcPage) one process's facts and its threads. Read-only.
+import { Theme } from "../../../../../ui/theme.slint";
+import { ListRow, SectionHeader } from "../../../../../ui/components/lists.slint";
+import { NeoList } from "../../../../../ui/components/scroll.slint";
+import { DevState } from "../state.slint";
+import { FactRow, PageTitle } from "../widgets.slint";
+
+export component ProcsPage inherits Rectangle {
+    head := Text {
+        y: 0;
+        x: Theme.margin + 4 * Theme.dp;
+        height: 40 * Theme.dp;
+        width: parent.width - 2 * Theme.margin;
+        text: DevState.procs-summary;
+        color: Theme.text-secondary;
+        font-size: Theme.font-status;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+
+    NeoList {
+        y: head.height;
+        height: parent.height - head.height;
+        VerticalLayout {
+            alignment: start;
+            for p[i] in DevState.procs: ListRow {
+                title: p.title;
+                subtitle: p.sub;
+                value: p.value;
+                chevron: true;
+                clicked => {
+                    DevState.proc-chosen(i);
+                }
+            }
+        }
+    }
+}
+
+export component ProcPage inherits Rectangle {
+    background: Theme.bg;
+    title := PageTitle {
+        y: 0;
+        title: DevState.proc-name;
+    }
+
+    NeoList {
+        y: title.height;
+        height: parent.height - title.height;
+        VerticalLayout {
+            alignment: start;
+            for f in DevState.proc-facts: FactRow {
+                fact: f;
+            }
+            SectionHeader {
+                text: "Threads";
+            }
+            for t in DevState.threads: ListRow {
+                title: t.title;
+                subtitle: t.sub;
+                value: t.value;
+            }
+        }
+    }
+}

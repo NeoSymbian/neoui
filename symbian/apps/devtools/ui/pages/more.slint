@@ -1,0 +1,164 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// More: the pages that are not tabs (Settings, Tools, About), and those pages. Settings lists every registered key
+// read-only; Tools keeps only the essentials (save the logs, the console overlay, power); About says which build runs.
+import { Theme } from "../../../../../ui/theme.slint";
+import { Button } from "../../../../../ui/components/controls.slint";
+import { ListRow, SectionHeader } from "../../../../../ui/components/lists.slint";
+import { NeoList } from "../../../../../ui/components/scroll.slint";
+import { DevState } from "../state.slint";
+import { FactRow, PageTitle } from "../widgets.slint";
+
+export component MorePage inherits Rectangle {
+    NeoList {
+        VerticalLayout {
+            alignment: start;
+            ListRow {
+                title: "Settings";
+                subtitle: DevState.settings-summary;
+                chevron: true;
+                clicked => {
+                    DevState.open("settings");
+                }
+            }
+
+            ListRow {
+                title: "Tools";
+                subtitle: "Save logs, kernel console, power";
+                chevron: true;
+                clicked => {
+                    DevState.open("tools");
+                }
+            }
+
+            ListRow {
+                title: "About";
+                subtitle: "Kernel, ROM and neoui builds; the board";
+                chevron: true;
+                clicked => {
+                    DevState.open("about");
+                }
+            }
+        }
+    }
+}
+
+export component SettingsPage inherits Rectangle {
+    background: Theme.bg;
+    title := PageTitle {
+        y: 0;
+        title: "Settings";
+    }
+
+    NeoList {
+        y: title.height;
+        height: parent.height - title.height;
+        VerticalLayout {
+            alignment: start;
+            Text {
+                x: Theme.margin;
+                height: 36 * Theme.dp;
+                text: DevState.settings-summary;
+                color: Theme.text-dim;
+                font-size: Theme.font-status;
+                vertical-alignment: center;
+            }
+
+            for s in DevState.settings: ListRow {
+                title: s.title;
+                subtitle: s.sub;
+                value: s.value;
+            }
+        }
+    }
+}
+
+export component ToolsPage inherits Rectangle {
+    background: Theme.bg;
+    title := PageTitle {
+        y: 0;
+        title: "Tools";
+    }
+
+    NeoList {
+        y: title.height;
+        height: parent.height - title.height;
+        VerticalLayout {
+            alignment: start;
+            ListRow {
+                title: "Save logs";
+                subtitle: "This boot's and the last boot's kernel log, to E:\\logs (C:\\logs without E:)";
+                clicked => {
+                    DevState.save-logs();
+                }
+            }
+
+            ListRow {
+                title: "Kernel console on screen";
+                subtitle: "The kernel log drawn over the display";
+                has-switch: true;
+                switch-on: DevState.console-on;
+                switch-toggled(on) => {
+                    DevState.console-toggled(on);
+                }
+            }
+
+            SectionHeader {
+                text: "Power";
+            }
+
+            for p[i] in ["Restart", "Restart to fastboot", "Power off"]: ListRow {
+                title: p;
+                clicked => {
+                    DevState.power(i);
+                }
+            }
+
+            if DevState.confirm >= 0: HorizontalLayout {
+                padding: Theme.margin;
+                spacing: 10 * Theme.dp;
+                Button {
+                    text: "Cancel";
+                    primary: false;
+                    clicked => {
+                        DevState.power-cancelled();
+                    }
+                }
+
+                Button {
+                    text: DevState.confirm == 0 ? "Restart now" : DevState.confirm == 1 ? "To fastboot now" : "Power off now";
+                    tint: Theme.danger;
+                    clicked => {
+                        DevState.power-confirmed();
+                    }
+                }
+            }
+
+            if DevState.tools-status != "": Text {
+                x: Theme.margin;
+                text: DevState.tools-status;
+                color: Theme.text-secondary;
+                font-size: Theme.font-label;
+                wrap: word-wrap;
+            }
+        }
+    }
+}
+
+export component AboutPage inherits Rectangle {
+    background: Theme.bg;
+    title := PageTitle {
+        y: 0;
+        title: "About";
+    }
+
+    NeoList {
+        y: title.height;
+        height: parent.height - title.height;
+        VerticalLayout {
+            alignment: start;
+            for f in DevState.about: FactRow {
+                fact: f;
+            }
+        }
+    }
+}
