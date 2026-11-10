@@ -22,13 +22,15 @@ use neoui_proto::Rect;
 use neoui_proto::ipc::{self as proto, AppEvent};
 use neoui_proto::recents::Recents;
 
-/// Screen keys that are separate processes, and their EXEs.
+/// Screen keys that are separate processes: their EXEs and command lines.
 // shortcut: a fixed table; a registry of installed apps comes with app installation.
-pub const APPS: &[(&str, &str)] = &[
-    ("clock", "neoclock"),
-    ("terminal", "neoterm"),
-    ("files", "neofiles"),
-    ("devtools", "neodev"),
+pub const APPS: &[(&str, &str, &str)] = &[
+    ("clock", "neoclock", ""),
+    ("terminal", "neoterm", ""),
+    ("files", "neofiles", ""),
+    ("devtools", "neodev", ""),
+    // a 2010 Symbian GUI program through the guest window server (build's apps/legacy/legacy.cpp)
+    ("legacy", "legacy", "grid"),
 ];
 
 /// Most apps kept running; starting one more asks the least recently used to quit.
@@ -125,7 +127,10 @@ impl Host {
 
     /// The shell moved to `screen`: hide the app that was in front, and show (or start) the one for `screen`.
     pub fn set_screen(&mut self, screen: &str, now_ms: u64) {
-        let key = APPS.iter().find(|(k, _)| *k == screen).map(|(k, _)| *k);
+        let key = APPS
+            .iter()
+            .find(|(k, _, _)| *k == screen)
+            .map(|(k, _, _)| *k);
         if self.front == key {
             return;
         }
@@ -158,8 +163,11 @@ impl Host {
     }
 
     fn launch(&mut self, key: &'static str) {
-        let exe = APPS.iter().find(|(k, _)| *k == key).map_or("", |(_, e)| *e);
-        match Process::spawn(exe, "") {
+        let (exe, args) = APPS
+            .iter()
+            .find(|(k, _, _)| *k == key)
+            .map_or(("", ""), |(_, e, a)| (*e, *a));
+        match Process::spawn(exe, args) {
             Ok(process) => {
                 process.resume();
                 dprintln!("neoui: app {} started", key);
