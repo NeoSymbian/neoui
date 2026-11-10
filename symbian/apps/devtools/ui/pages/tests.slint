@@ -1,0 +1,58 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Full-screen hardware tests a device's view opens. Back ends them.
+// - TouchTest: a grid; each cell lights once a finger crosses it, and the last point is shown.
+// - DisplayTest: one colour over the whole screen; a tap shows the next.
+import { Theme } from "../../../../../ui/theme.slint";
+import { DevState } from "../state.slint";
+
+export component TouchTest inherits Rectangle {
+    background: #000000;
+    for c[i] in DevState.touch-cells: Rectangle {
+        x: mod(i, DevState.touch-cols) * root.width / DevState.touch-cols;
+        y: Math.floor(i / DevState.touch-cols) * root.height / DevState.touch-rows;
+        width: root.width / DevState.touch-cols;
+        height: root.height / DevState.touch-rows;
+        background: c ? Theme.ok.with-alpha(0.55) : transparent;
+        border-width: max(1px, Theme.dp / 2);
+        border-color: Theme.hairline;
+    }
+
+    Text {
+        width: parent.width - 2 * Theme.margin;
+        x: Theme.margin;
+        text: DevState.touch-text;
+        color: Theme.text;
+        font-size: Theme.font-body;
+        horizontal-alignment: center;
+        wrap: word-wrap;
+    }
+
+    TouchArea {
+        pointer-event(e) => {
+            if (e.kind == PointerEventKind.down) {
+                DevState.touched(self.mouse-x, self.mouse-y, self.width, self.height);
+            }
+        }
+        moved => {
+            DevState.touched(self.mouse-x, self.mouse-y, self.width, self.height);
+        }
+    }
+}
+
+export component DisplayTest inherits Rectangle {
+    background: DevState.fill;
+    Text {
+        y: parent.height - 80 * Theme.dp;
+        width: parent.width;
+        text: DevState.fill-name + " · tap for the next colour";
+        color: DevState.fill == #ffffff || DevState.fill == #00ff00 ? #000000 : #ffffff;
+        font-size: Theme.font-body;
+        horizontal-alignment: center;
+    }
+
+    TouchArea {
+        clicked => {
+            DevState.fill-next();
+        }
+    }
+}

@@ -1,0 +1,212 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// The Alarms tab: one row per alarm (tap to edit, switch to turn on or off) and "+ Add alarm"; the editor
+// (sub-view "alarm") sets the time, the days and a label.
+import { Theme } from "../../../../../ui/theme.slint";
+import { Button } from "../../../../../ui/components/controls.slint";
+import { ListRow } from "../../../../../ui/components/lists.slint";
+import { NeoList } from "../../../../../ui/components/scroll.slint";
+import { ClockState } from "../state.slint";
+
+export component AlarmsPage inherits Rectangle {
+    NeoList {
+        height: parent.height - add.height;
+        VerticalLayout {
+            alignment: start;
+            if ClockState.alarms.length == 0: Text {
+                height: 120 * Theme.dp;
+                text: "No alarms";
+                color: Theme.text-dim;
+                font-size: Theme.font-body;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+            for a in ClockState.alarms: ListRow {
+                title: a.time;
+                subtitle: a.label + " · " + a.days;
+                has-switch: true;
+                switch-on: a.on;
+                clicked => {
+                    ClockState.edit-alarm(a.id);
+                }
+                switch-toggled(on) => {
+                    ClockState.alarm-switched(a.id, on);
+                }
+            }
+        }
+    }
+
+    add := HorizontalLayout {
+        y: parent.height - self.height;
+        height: 72 * Theme.dp;
+        alignment: center;
+        padding: 12 * Theme.dp;
+        Button {
+            text: ClockState.alarms-full ? "Alarm list is full" : "+ Add alarm";
+            primary: !ClockState.alarms-full;
+            clicked => {
+                if (!ClockState.alarms-full) {
+                    ClockState.add-alarm();
+                }
+            }
+        }
+    }
+}
+
+// One day chip of the editor: M T W T F S S.
+component DayChip inherits Rectangle {
+    in property <string> letter;
+    in property <bool> on;
+    callback toggled;
+    width: 40 * Theme.dp;
+    height: 40 * Theme.dp;
+    border-radius: self.height / 2;
+    background: on ? Theme.accent : Theme.field;
+    Text {
+        text: letter;
+        color: Theme.text;
+        font-size: Theme.font-body;
+        font-weight: 600;
+    }
+
+    TouchArea {
+        clicked => {
+            root.toggled();
+        }
+    }
+}
+
+// A large value with − and + steppers above and below.
+component Stepper inherits VerticalLayout {
+    in property <string> text;
+    callback step(int);
+    spacing: 4 * Theme.dp;
+    alignment: center;
+    Button {
+        text: "+";
+        primary: false;
+        clicked => {
+            root.step(1);
+        }
+    }
+
+    Text {
+        text: root.text;
+        color: Theme.text;
+        font-size: 48 * Theme.dp;
+        horizontal-alignment: center;
+    }
+
+    Button {
+        text: "−";
+        primary: false;
+        clicked => {
+            root.step(-1);
+        }
+    }
+}
+
+export component AlarmEditor inherits Rectangle {
+    background: Theme.bg;
+    VerticalLayout {
+        alignment: center;
+        spacing: 14 * Theme.dp;
+        padding: Theme.margin;
+        Text {
+            text: ClockState.edit-new ? "New alarm" : "Edit alarm";
+            color: Theme.text;
+            font-size: Theme.font-title;
+            font-weight: 600;
+            horizontal-alignment: center;
+        }
+
+        HorizontalLayout {
+            alignment: center;
+            spacing: 12 * Theme.dp;
+            Stepper {
+                text: ClockState.h24 ? (ClockState.edit-hour < 10 ? "0" : "") + ClockState.edit-hour : ClockState.edit-hour;
+                step(d) => {
+                    ClockState.edit-step(0, d);
+                }
+            }
+
+            Text {
+                text: ":";
+                color: Theme.text;
+                font-size: 48 * Theme.dp;
+                vertical-alignment: center;
+            }
+
+            Stepper {
+                text: (ClockState.edit-minute < 10 ? "0" : "") + ClockState.edit-minute;
+                step(d) => {
+                    ClockState.edit-step(1, d);
+                }
+            }
+
+            if ClockState.edit-am-pm != "": Text {
+                text: ClockState.edit-am-pm;
+                color: Theme.text-secondary;
+                font-size: 22 * Theme.dp;
+                vertical-alignment: center;
+            }
+        }
+
+        HorizontalLayout {
+            alignment: center;
+            spacing: 6 * Theme.dp;
+            for letter[i] in ["M", "T", "W", "T", "F", "S", "S"]: DayChip {
+                letter: letter;
+                on: ClockState.edit-days[i];
+                toggled => {
+                    ClockState.edit-day(i);
+                }
+            }
+        }
+
+        Text {
+            text: ClockState.edit-repeat;
+            color: Theme.text-dim;
+            font-size: Theme.font-label;
+            horizontal-alignment: center;
+        }
+
+        HorizontalLayout {
+            alignment: center;
+            Button {
+                text: "Label: " + ClockState.edit-label;
+                primary: false;
+                clicked => {
+                    ClockState.edit-label-next();
+                }
+            }
+        }
+
+        HorizontalLayout {
+            alignment: center;
+            spacing: 12 * Theme.dp;
+            padding-top: 8 * Theme.dp;
+            if !ClockState.edit-new: Button {
+                text: "Delete";
+                primary: false;
+                tint: Theme.danger;
+                clicked => {
+                    ClockState.delete-alarm();
+                }
+            }
+            Button {
+                text: "Cancel";
+                primary: false;
+                clicked => {
+                    ClockState.close();
+                }
+            }
+
+            Button {
+                text: "Save";
+                clicked => {
+                    ClockState.save-alarm();
+                }
+            }
+        }
+    }
+}

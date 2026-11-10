@@ -1,0 +1,262 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Dev tools' own small parts: state colours, the Home card, a device row, chips, a sub-view title and monospace
+// log lines. Everything else comes from the shell's components (ui/components).
+import { Theme } from "../../../../ui/theme.slint";
+import { DevState, StatCard, DeviceRow, Fact } from "state.slint";
+
+// Colours of a state level (DeviceRow.level): ok, partial, neutral, no driver, problem.
+export global Level {
+    out property <color> amber: #e0a526;
+    out property <color> none: #454a52;
+    out property <color> ground: #07090c;  // the console's dark ground
+    pure public function color(level: int) -> color {
+        if (level == 0) { return Theme.ok; }
+        if (level == 1) { return self.amber; }
+        if (level == 3) { return self.none; }
+        if (level == 4) { return Theme.danger; }
+        return Theme.text-dim;
+    }
+}
+
+export component Dot inherits Rectangle {
+    in property <int> level;
+    width: 10 * Theme.dp;
+    height: self.width;
+    border-radius: self.width / 2;
+    background: Level.color(level);
+}
+
+// A sub-view's title row, with the state as a coloured word on the right when given.
+export component PageTitle inherits Rectangle {
+    in property <string> title;
+    in property <string> state;
+    in property <int> level: 2;
+    height: Theme.title-h;
+    Text {
+        x: Theme.margin + 4 * Theme.dp;
+        width: parent.width - 2 * Theme.margin - 110 * Theme.dp;
+        text: root.title;
+        color: Theme.text;
+        font-size: Theme.font-title;
+        font-weight: 600;
+        overflow: elide;
+        vertical-alignment: center;
+    }
+
+    if root.state != "": HorizontalLayout {
+        x: parent.width - self.width - Theme.margin - 4 * Theme.dp;
+        width: self.preferred-width;
+        spacing: 6 * Theme.dp;
+        alignment: end;
+        Dot {
+            y: (parent.height - self.height) / 2;
+            level: root.level;
+        }
+
+        Text {
+            text: root.state;
+            color: Level.color(root.level);
+            font-size: Theme.font-label;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+    }
+
+    Rectangle {
+        y: parent.height - self.height;
+        height: max(1px, Theme.dp / 2);
+        background: Theme.hairline;
+    }
+}
+
+export component StatCardView inherits Rectangle {
+    in property <StatCard> card;
+    callback clicked;
+    min-height: 104 * Theme.dp;
+    border-radius: Theme.radius;
+    background: t.pressed ? Theme.pressed : Theme.card;
+    border-width: 1px;
+    border-color: Theme.card-border;
+    VerticalLayout {
+        padding: 12 * Theme.dp;
+        spacing: 2 * Theme.dp;
+        Text {
+            text: root.card.title.to-uppercase();
+            color: Theme.text-dim;
+            font-size: Theme.font-status * 0.85;
+            font-weight: 600;
+        }
+
+        Text {
+            text: root.card.value;
+            color: root.card.level == 4 ? Theme.danger : Theme.text;
+            font-size: Theme.font-title;
+            font-weight: 700;
+            overflow: elide;
+        }
+
+        Text {
+            text: root.card.sub;
+            color: Theme.text-secondary;
+            font-size: Theme.font-status * 0.9;
+            overflow: elide;
+        }
+
+        if root.card.bars.length > 0: HorizontalLayout {
+            height: 22 * Theme.dp;
+            spacing: 1px;
+            for b in root.card.bars: Rectangle {
+                Rectangle {
+                    y: parent.height * (1 - b);
+                    height: parent.height * b;
+                    background: Level.color(root.card.level == 4 ? 4 : root.card.level == 1 ? 1 : 0).with-alpha(0.75);
+                }
+            }
+        }
+    }
+
+    t := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+export component DeviceRowView inherits Rectangle {
+    in property <DeviceRow> device;
+    callback clicked;
+    height: 60 * Theme.dp;
+    background: t.pressed ? Theme.pressed : transparent;
+    Dot {
+        x: Theme.margin + 6 * Theme.dp;
+        y: 16 * Theme.dp;
+        level: root.device.level;
+    }
+
+    Text {
+        x: Theme.margin + 26 * Theme.dp;
+        y: 8 * Theme.dp;
+        width: parent.width - self.x - 104 * Theme.dp;
+        text: root.device.name;
+        color: root.device.level == 3 ? Theme.text-dim : Theme.text;
+        font-size: Theme.font-body;
+        overflow: elide;
+    }
+
+    Text {
+        x: Theme.margin + 26 * Theme.dp;
+        y: 32 * Theme.dp;
+        width: parent.width - self.x - Theme.margin;
+        text: root.device.detail;
+        color: Theme.text-dim;
+        font-size: Theme.font-status * 0.92;
+        overflow: elide;
+    }
+
+    VerticalLayout {
+        x: parent.width - self.width - Theme.margin;
+        y: 8 * Theme.dp;
+        width: 96 * Theme.dp;
+        Text {
+            // Inter has no check marks: words
+            text: root.device.check == "pass" ? "Check passed" : root.device.check == "fail" ? "Check failed" : root.device.state;
+            color: root.device.check == "fail" ? Theme.danger : root.device.check == "pass" ? Theme.ok : Level.color(root.device.level);
+            font-size: Theme.font-label * 0.92;
+            font-weight: 600;
+            horizontal-alignment: right;
+        }
+    }
+
+    Rectangle {
+        x: Theme.margin + 26 * Theme.dp;
+        y: parent.height - self.height;
+        height: max(1px, Theme.dp / 2);
+        background: Theme.hairline;
+    }
+
+    t := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+export component FactRow inherits Rectangle {
+    in property <Fact> fact;
+    height: max(40 * Theme.dp, value.preferred-height + 16 * Theme.dp);
+    Text {
+        x: Theme.margin + 4 * Theme.dp;
+        y: 10 * Theme.dp;
+        width: 110 * Theme.dp;
+        text: root.fact.key;
+        color: Theme.text-dim;
+        font-size: Theme.font-label;
+    }
+
+    value := Text {
+        x: Theme.margin + 120 * Theme.dp;
+        y: 10 * Theme.dp;
+        width: parent.width - self.x - Theme.margin;
+        text: root.fact.value;
+        color: Theme.text;
+        font-size: Theme.font-label;
+        wrap: word-wrap;
+    }
+
+    Rectangle {
+        x: Theme.margin;
+        y: parent.height - self.height;
+        height: max(1px, Theme.dp / 2);
+        background: Theme.hairline;
+    }
+}
+
+// A pill-shaped toggle or action.
+export component Chip inherits Rectangle {
+    in property <string> text;
+    in property <bool> on;
+    callback clicked;
+    height: 32 * Theme.dp;
+    min-width: label.preferred-width + 24 * Theme.dp;
+    border-radius: self.height / 2;
+    background: t.pressed ? Theme.pressed : root.on ? #1f3a2a : Theme.field;
+    border-width: 1px;
+    border-color: root.on ? Theme.ok.with-alpha(0.6) : Theme.card-border;
+    label := Text {
+        text: root.text;
+        color: root.on ? #7ee787 : Theme.text-secondary;
+        font-size: Theme.font-status;
+        font-weight: 600;
+    }
+
+    t := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// Log lines in the Terminal's look.
+export component MonoLines inherits Rectangle {
+    in property <[string]> lines;
+    background: Level.ground;
+    border-radius: Theme.radius-small;
+    height: max(40 * Theme.dp, root.lines.length * DevState.cell-h + 16 * Theme.dp);
+    if root.lines.length == 0: Text {
+        text: "no log lines from this part";
+        color: Theme.text-dim;
+        font-size: Theme.font-status;
+    }
+    for l[i] in root.lines: Text {
+        x: 8 * Theme.dp;
+        y: 8 * Theme.dp + i * DevState.cell-h;
+        width: parent.width - 16 * Theme.dp;
+        height: DevState.cell-h;
+        text: l;
+        color: #d7dde5;
+        font-family: "Ubuntu Mono";
+        font-size: DevState.mono-px;
+        overflow: clip;
+        vertical-alignment: center;
+    }
+}

@@ -2,7 +2,8 @@
 // Home: widget pages you swipe between (Belle's home screens), page dots, and a dock.
 import { Theme } from "../theme.slint";
 import { Data } from "../data.slint";
-import { BigClock, Card, PageDots } from "../components/controls.slint";
+import { Card, PageDots } from "../components/controls.slint";
+import { ClockWidget } from "../components/widgets.slint";
 import { Avatar } from "../components/lists.slint";
 import { Glyph } from "../components/frame.slint";
 
@@ -137,207 +138,193 @@ export component HomeScreen inherits Rectangle {
     background: @linear-gradient(180deg, #0c1424 0%, #05070b 55%, #000000 100%);
     clip: true;
 
-    // Pages, side by side; swipe left/right moves between them
-    Rectangle {
-        x: -page * page-w + drag;
-        animate x { duration: Theme.instant ? 0ms : Theme.page; easing: ease-out-quad; }
-        width: 3 * page-w;
+    // Pages, side by side. A sideways swipe moves between them; taps still reach the widgets and cards on the
+    // pages (a TouchArea over the strip used to take every touch). On the device the UI server slides the pages
+    // itself (smooth-ui S2c) and cancels Slint's touch when it takes over.
+    swipe := SwipeGestureHandler {
+        y: 0;
         height: root.strip-h;
+        handle-swipe-left: root.page < 2;
+        handle-swipe-right: root.page > 0;
+        moved => {
+            if (!Theme.instant) {
+                root.drag = (self.current-position.x - self.pressed-position.x) * 0.6;
+            }
+        }
+        swiped => {
+            if (self.current-position.x - self.pressed-position.x < -60 * Theme.dp && root.page < 2) {
+                root.page += 1;
+            } else if (self.current-position.x - self.pressed-position.x > 60 * Theme.dp && root.page > 0) {
+                root.page -= 1;
+            }
+            root.drag = 0;
+        }
+        cancelled => {
+            root.drag = 0;
+        }
 
-        // Page 0: clock, agenda, favourites, music (landscape: two columns, below)
-        if root.width <= root.height: Rectangle {
-            x: 0;
-            width: page-w;
-            VerticalLayout {
-                padding: pad;
-                padding-top: 22 * Theme.dp;
-                spacing: 14 * Theme.dp;
-                alignment: start;
-                BigClock {
-                    hours: 10;
-                    minutes: 24;
-                    digit-h: 66 * Theme.dp;
+        Rectangle {
+            x: -page * page-w + drag;
+            animate x { duration: Theme.instant ? 0ms : Theme.page; easing: ease-out-quad; }
+            width: 3 * page-w;
+            height: root.strip-h;
+
+            // Page 0: clock, agenda, favourites, music (landscape: two columns, below)
+            if root.width <= root.height: Rectangle {
+                x: 0;
+                width: page-w;
+                VerticalLayout {
+                    padding: pad;
+                    padding-top: 22 * Theme.dp;
+                    spacing: 14 * Theme.dp;
                     alignment: start;
-                }
+                    ClockWidget {
+                        clicked => { root.open-app("clock"); }
+                    }
 
-                Text {
-                    text: "Friday, 6 November";
-                    color: Theme.text-secondary;
-                    font-size: Theme.font-body * 1.05;
-                }
+                    Rectangle { height: 4 * Theme.dp; }
 
-                Rectangle { height: 4 * Theme.dp; }
+                    AgendaCard { }
 
-                AgendaCard { }
-
-                Card {
-                    height: 96 * Theme.dp;
-                    HorizontalLayout {
-                        padding: 12 * Theme.dp;
-                        alignment: space-around;
-                        for p in Data.people: VerticalLayout {
-                            visible: p.favourite;
-                            width: p.favourite ? 64 * Theme.dp : 0;
-                            spacing: 6 * Theme.dp;
-                            alignment: center;
-                            HorizontalLayout {
+                    Card {
+                        height: 96 * Theme.dp;
+                        HorizontalLayout {
+                            padding: 12 * Theme.dp;
+                            alignment: space-around;
+                            for p in Data.people: VerticalLayout {
+                                visible: p.favourite;
+                                width: p.favourite ? 64 * Theme.dp : 0;
+                                spacing: 6 * Theme.dp;
                                 alignment: center;
-                                Avatar {
-                                    initials: p.initials;
-                                    tint: p.tint;
-                                    size: 48 * Theme.dp;
+                                HorizontalLayout {
+                                    alignment: center;
+                                    Avatar {
+                                        initials: p.initials;
+                                        tint: p.tint;
+                                        size: 48 * Theme.dp;
+                                    }
+                                }
+
+                                Text {
+                                    text: p.name;
+                                    color: Theme.text-secondary;
+                                    font-size: Theme.font-status * 0.92;
+                                    horizontal-alignment: center;
+                                    overflow: elide;
+                                }
+                            }
+                        }
+                    }
+
+                    MusicCard { }
+                }
+            }
+
+            if root.width > root.height: Rectangle {
+                x: 0;
+                width: page-w;
+                HorizontalLayout {
+                    padding: pad;
+                    spacing: 2 * pad;
+                    VerticalLayout {
+                        alignment: center;
+                        ClockWidget {
+                            clicked => { root.open-app("clock"); }
+                        }
+                    }
+
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 10 * Theme.dp;
+                        horizontal-stretch: 1;
+                        AgendaCard { }
+                    }
+                }
+            }
+
+            // Page 1: shortcuts
+            Rectangle {
+                x: page-w;
+                width: page-w;
+                for app[i] in [
+                    { name: "Calendar", key: "calendar", icon: @image-url("../icons/apps/calendar.svg") },
+                    { name: "Clock", key: "clock", icon: @image-url("../icons/apps/clock.svg") },
+                    { name: "Photos", key: "photos", icon: @image-url("../icons/apps/photos.svg") },
+                    { name: "Music", key: "music", icon: @image-url("../icons/apps/music.svg") },
+                    { name: "Files", key: "files", icon: @image-url("../icons/apps/files.svg") },
+                    { name: "Settings", key: "settings", icon: @image-url("../icons/apps/settings.svg") },
+                    { name: "Contacts", key: "contacts", icon: @image-url("../icons/apps/contacts.svg") },
+                    { name: "Terminal", key: "terminal", icon: @image-url("../icons/apps/terminal.svg") },
+                ]: Rectangle {
+                    x: pad + Math.mod(i, 4) * (page-w - 2 * pad) / 4;
+                    y: 28 * Theme.dp + Math.floor(i / 4) * 104 * Theme.dp;
+                    width: (page-w - 2 * pad) / 4;
+                    height: 100 * Theme.dp;
+                    Image {
+                        y: 0;
+                        width: 58 * Theme.dp;
+                        height: self.width;
+                        source: app.icon;
+                    }
+
+                    Text {
+                        y: 66 * Theme.dp;
+                        width: parent.width;
+                        text: app.name;
+                        color: Theme.text-secondary;
+                        font-size: Theme.font-status * 0.95;
+                        horizontal-alignment: center;
+                    }
+
+                    TouchArea {
+                        clicked => {
+                            root.open-app(app.key);
+                        }
+                    }
+                }
+            }
+
+            // Page 2: world clocks
+            Rectangle {
+                x: 2 * page-w;
+                width: page-w;
+                VerticalLayout {
+                    padding: pad;
+                    padding-top: 28 * Theme.dp;
+                    spacing: 12 * Theme.dp;
+                    alignment: start;
+                    for c in Data.cities: Card {
+                        height: 64 * Theme.dp;
+                        HorizontalLayout {
+                            padding-left: Theme.card-pad;
+                            padding-right: Theme.card-pad;
+                            VerticalLayout {
+                                alignment: center;
+                                horizontal-stretch: 1;
+                                Text {
+                                    text: c.name;
+                                    color: Theme.text;
+                                    font-size: Theme.font-body;
+                                    font-weight: 600;
+                                }
+
+                                Text {
+                                    text: c.offset;
+                                    color: Theme.text-dim;
+                                    font-size: Theme.font-label;
                                 }
                             }
 
                             Text {
-                                text: p.name;
-                                color: Theme.text-secondary;
-                                font-size: Theme.font-status * 0.92;
-                                horizontal-alignment: center;
-                                overflow: elide;
-                            }
-                        }
-                    }
-                }
-
-                MusicCard { }
-            }
-        }
-
-        if root.width > root.height: Rectangle {
-            x: 0;
-            width: page-w;
-            HorizontalLayout {
-                padding: pad;
-                spacing: 2 * pad;
-                VerticalLayout {
-                    alignment: center;
-                    BigClock {
-                        hours: 10;
-                        minutes: 24;
-                        digit-h: 66 * Theme.dp;
-                        alignment: start;
-                    }
-
-                    Text {
-                        text: "Friday, 6 November";
-                        color: Theme.text-secondary;
-                        font-size: Theme.font-body * 1.05;
-                    }
-                }
-
-                VerticalLayout {
-                    alignment: center;
-                    spacing: 10 * Theme.dp;
-                    horizontal-stretch: 1;
-                    AgendaCard { }
-                }
-            }
-        }
-
-        // Page 1: shortcuts
-        Rectangle {
-            x: page-w;
-            width: page-w;
-            for app[i] in [
-                { name: "Calendar", key: "calendar", icon: @image-url("../icons/apps/calendar.svg") },
-                { name: "Clock", key: "clock", icon: @image-url("../icons/apps/clock.svg") },
-                { name: "Photos", key: "photos", icon: @image-url("../icons/apps/photos.svg") },
-                { name: "Music", key: "music", icon: @image-url("../icons/apps/music.svg") },
-                { name: "Files", key: "files", icon: @image-url("../icons/apps/files.svg") },
-                { name: "Settings", key: "settings", icon: @image-url("../icons/apps/settings.svg") },
-                { name: "Contacts", key: "contacts", icon: @image-url("../icons/apps/contacts.svg") },
-                { name: "Terminal", key: "terminal", icon: @image-url("../icons/apps/terminal.svg") },
-            ]: Rectangle {
-                x: pad + Math.mod(i, 4) * (page-w - 2 * pad) / 4;
-                y: 28 * Theme.dp + Math.floor(i / 4) * 104 * Theme.dp;
-                width: (page-w - 2 * pad) / 4;
-                height: 100 * Theme.dp;
-                Image {
-                    y: 0;
-                    width: 58 * Theme.dp;
-                    height: self.width;
-                    source: app.icon;
-                }
-
-                Text {
-                    y: 66 * Theme.dp;
-                    width: parent.width;
-                    text: app.name;
-                    color: Theme.text-secondary;
-                    font-size: Theme.font-status * 0.95;
-                    horizontal-alignment: center;
-                }
-
-                TouchArea {
-                    clicked => {
-                        root.open-app(app.key);
-                    }
-                }
-            }
-        }
-
-        // Page 2: world clocks
-        Rectangle {
-            x: 2 * page-w;
-            width: page-w;
-            VerticalLayout {
-                padding: pad;
-                padding-top: 28 * Theme.dp;
-                spacing: 12 * Theme.dp;
-                alignment: start;
-                for c in Data.cities: Card {
-                    height: 64 * Theme.dp;
-                    HorizontalLayout {
-                        padding-left: Theme.card-pad;
-                        padding-right: Theme.card-pad;
-                        VerticalLayout {
-                            alignment: center;
-                            horizontal-stretch: 1;
-                            Text {
-                                text: c.name;
+                                text: c.time;
                                 color: Theme.text;
-                                font-size: Theme.font-body;
-                                font-weight: 600;
+                                font-size: Theme.font-title * 1.3;
+                                font-weight: 300;
+                                vertical-alignment: center;
                             }
-
-                            Text {
-                                text: c.offset;
-                                color: Theme.text-dim;
-                                font-size: Theme.font-label;
-                            }
-                        }
-
-                        Text {
-                            text: c.time;
-                            color: Theme.text;
-                            font-size: Theme.font-title * 1.3;
-                            font-weight: 300;
-                            vertical-alignment: center;
                         }
                     }
                 }
-            }
-        }
-    }
-
-    swipe := TouchArea {
-        height: root.strip-h;
-        y: 0;
-        property <length> start-x;
-        pointer-event(e) => {
-            if (e.kind == PointerEventKind.down) {
-                self.start-x = self.mouse-x;
-            } else if (e.kind == PointerEventKind.move && self.pressed && !Theme.instant) {
-                // with server transitions the UI server slides the pages itself (smooth-ui S2c)
-                root.drag = (self.mouse-x - self.start-x) * 0.6;
-            } else if (e.kind == PointerEventKind.up) {
-                if (self.mouse-x - self.start-x < -60 * Theme.dp && root.page < 2) {
-                    root.page += 1;
-                } else if (self.mouse-x - self.start-x > 60 * Theme.dp && root.page > 0) {
-                    root.page -= 1;
-                }
-                root.drag = 0;
             }
         }
     }

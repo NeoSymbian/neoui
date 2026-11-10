@@ -1,0 +1,57 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// A ringing alarm (sub-view "ringing", opened by the UI server's `AppEvent::Alarm`): its time and label, Snooze
+// (5 minutes) and Dismiss.
+import { Theme } from "../../../../../ui/theme.slint";
+import { Button } from "../../../../../ui/components/controls.slint";
+import { Glyph } from "../../../../../ui/components/frame.slint";
+import { ClockState } from "../state.slint";
+
+export component RingingPage inherits Rectangle {
+    background: #0b1a33;
+    VerticalLayout {
+        alignment: center;
+        spacing: 18 * Theme.dp;
+        HorizontalLayout {
+            alignment: center;
+            Glyph {
+                source: @image-url("../../../../../ui/icons/sys/alarm.svg");
+                size: 56 * Theme.dp;
+                colorize: Theme.accent;
+            }
+        }
+
+        Text {
+            text: ClockState.ringing-time;
+            color: Theme.text;
+            font-size: 64 * Theme.dp;
+            horizontal-alignment: center;
+        }
+
+        Text {
+            text: ClockState.ringing-label;
+            color: Theme.text-secondary;
+            font-size: Theme.font-title;
+            horizontal-alignment: center;
+        }
+
+        HorizontalLayout {
+            alignment: center;
+            spacing: 20 * Theme.dp;
+            padding-top: 24 * Theme.dp;
+            Button {
+                text: "Snooze 5 min";
+                primary: false;
+                clicked => {
+                    ClockState.snooze();
+                }
+            }
+
+            Button {
+                text: "Dismiss";
+                clicked => {
+                    ClockState.dismiss();
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,121 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Everything the Dev tools pages show and every action they take, in one global the Rust side fills
+// (src/pages/*.rs). Pages read from it; the app's model is the only state.
+
+// A Home card: a headline value, a line under it, and an optional bar graph (0..1 heights, oldest first). A tap
+// opens page `target` ("" = none).
+export struct StatCard {
+    title: string,
+    target: string,
+    value: string,
+    sub: string,
+    bars: [float],
+    level: int,
+}
+
+// A label and its value (device facts, process facts, About).
+export struct Fact {
+    key: string,
+    value: string,
+}
+
+// A Devices row. level: 0 ok, 1 partial, 2 off / starting / unknown, 3 no driver, 4 problem.
+// check: "" not run, "pass", "fail", "skip".
+export struct DeviceRow {
+    name: string,
+    group: string,
+    first: bool,
+    state: string,
+    level: int,
+    detail: string,
+    source: string,
+    check: string,
+}
+
+// A list row: a title, a line under it, a value on the right.
+export struct Row {
+    title: string,
+    sub: string,
+    value: string,
+}
+
+export global DevState {
+    // navigation: tab 0 Home, 1 Devices, 2 Console, 3 Procs, 4 More; view = the sub-view covering the tabs ("" none)
+    in property <int> tab;
+    in property <string> view;
+    callback tab-chosen(int);
+    callback open(string);  // a page from Home or More: "devices", "console", "procs", "settings", "tools", "about"
+
+    // Home
+    in property <string> headline;
+    in property <[StatCard]> cards;
+    in property <[Row]> pages;  // title = the page's name, value = its key for open()
+
+    // Devices
+    in property <[DeviceRow]> devices;
+    in property <string> devices-summary;
+    in property <string> devices-note;
+    in property <bool> checking;
+    callback device-chosen(int);
+    callback run-checks();
+
+    // a device's own view
+    in property <string> dev-name;
+    in property <string> dev-state;
+    in property <int> dev-level;
+    in property <[Fact]> dev-facts;
+    in property <[string]> dev-actions;
+    in property <string> dev-result;
+    in property <[string]> dev-log;
+    callback dev-action(int);
+
+    // Console
+    in property <[string]> console-rows;
+    in property <[string]> console-tags;  // "All" first
+    in property <int> console-tag;
+    in property <bool> console-follow: true;
+    in property <bool> console-last;
+    in property <string> console-status;
+    in property <length> cell-h: 14px;
+    in property <length> mono-px: 11px;
+    callback console-tag-chosen(int);
+    callback console-follow-toggled();
+    callback console-source-toggled();
+    callback console-clear();
+    callback console-save();
+    callback console-scroll(int);  // rows: > 0 = towards older lines
+
+    // Procs
+    in property <string> procs-summary;
+    in property <[Row]> procs;
+    callback proc-chosen(int);
+    in property <string> proc-name;
+    in property <[Fact]> proc-facts;
+    in property <[Row]> threads;
+
+    // More: Settings, Tools, About
+    in property <[Row]> settings;
+    in property <string> settings-summary;
+    in property <bool> console-on;
+    in property <string> tools-status;
+    in property <int> confirm: -1;  // the power action waiting for a confirm: 0 restart, 1 fastboot, 2 power off
+    callback save-logs();
+    callback console-toggled(bool);
+    callback modem-retry();
+    callback power(int);
+    callback power-confirmed();
+    callback power-cancelled();
+    in property <[Fact]> about;
+
+    // the touch test: a grid of cells, lit once touched
+    in property <int> touch-cols: 6;
+    in property <int> touch-rows: 12;
+    in property <[bool]> touch-cells;
+    in property <string> touch-text;
+    callback touched(length, length, length, length);  // x, y, and the area's width and height
+
+    // the display test: one colour fills the screen; a tap shows the next
+    in property <color> fill: #ff0000;
+    in property <string> fill-name;
+    callback fill-next();
+}

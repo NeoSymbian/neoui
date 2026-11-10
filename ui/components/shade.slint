@@ -5,6 +5,7 @@ import { Data } from "../data.slint";
 import { Glyph } from "frame.slint";
 import { ListRow } from "lists.slint";
 import { Slider } from "controls.slint";
+import { SystemSettings } from "../system-settings.slint";
 
 component Toggle inherits Rectangle {
     in property <image> icon;
@@ -49,8 +50,6 @@ export component Shade inherits Rectangle {
     in property <int> missed;
     in property <bool> active-call;
     callback return-call;
-    in property <bool> silent;
-    callback silent-changed(bool);
     visible: self.opacity > 0.01;
     opacity: open ? 1 : 0;
     animate opacity { duration: Theme.popup; easing: ease-out-quad; }
@@ -81,25 +80,25 @@ export component Shade inherits Rectangle {
                 Toggle {
                     icon: @image-url("../icons/sys/wifi.svg");
                     label: "Wi-Fi";
-                    on: true;
+                    on <=> SystemSettings.wifi;
                 }
 
                 Toggle {
                     icon: @image-url("../icons/sys/bluetooth.svg");
                     label: "Bluetooth";
+                    on <=> SystemSettings.bluetooth;
                 }
 
                 Toggle {
                     icon: @image-url("../icons/sys/data.svg");
                     label: "Mobile data";
-                    on: true;
+                    on <=> SystemSettings.mobile-data;
                 }
 
                 Toggle {
                     icon: @image-url("../icons/sys/silent.svg");
                     label: "Silent";
-                    on: root.silent;
-                    toggled(on) => { root.silent-changed(on); }
+                    on <=> SystemSettings.silent;
                 }
             }
 
@@ -117,7 +116,7 @@ export component Shade inherits Rectangle {
                 }
 
                 Slider {
-                    value: 0.62;
+                    value <=> SystemSettings.brightness;
                 }
             }
 

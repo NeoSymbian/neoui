@@ -2,13 +2,17 @@
 //! The app ↔ UI server protocol (NeoSymbian R6). An app process connects to the Symbian IPC server [`SERVER`],
 //! asks for its [`GEOMETRY`] and its drawing [`SURFACE`] (a shared chunk, `width * height` XRGB8888 pixels, stride =
 //! width), draws, reports [`DAMAGE`], and keeps one [`NEXT_EVENT`] request outstanding for input and quit.
+//!
+//! Since 1.1 an app also reads, writes and watches settings ([`SETTING_GET`], [`SETTING_SET`], [`SETTING_WATCH`],
+//! [`AppEvent::Settings`]; the model is [`crate::settings`]). Since 1.2 the server wakes the Clock app for a due
+//! alarm ([`AppEvent::Alarm`]).
 
 use crate::{InputEvent, TouchPhase};
 
 /// The server's name (no leading `!`: that needs ProtServ).
 pub const SERVER: &str = "NeoUi";
 /// Protocol version (major, minor); a connect with another major is refused.
-pub const VERSION: (u8, u8) = (1, 0);
+pub const VERSION: (u8, u8) = (1, 2);
 
 /// `[Des8 out: GEOMETRY_LEN bytes = width, height, dp × 256 (u32 LE)]` → 0. `dp` is the shell's design unit in
 /// pixels (`min(screen w, h) / 360`), so apps size things like the shell does.
@@ -34,6 +38,17 @@ pub const POWER: i32 = 7;
 pub const POWER_RESTART: i32 = 0;
 pub const POWER_FASTBOOT: i32 = 1;
 pub const POWER_OFF: i32 = 2;
+/// `[Des8 key, Des8 out value]` → the value's encoded length, the value written into argument 1
+/// ([`crate::settings::Value`] encoding, at most [`crate::settings::value::ENCODED_MAX`] bytes). Fails with the
+/// [`crate::settings::Error`] mapping: `KErrNotFound` for a key with no value and no default, `KErrArgument` for an
+/// invalid key, `KErrOverflow` when the buffer is too short.
+pub const SETTING_GET: i32 = 8;
+/// `[Des8 key, Des8 value]` → 0. Fails with `KErrPermissionDenied` for a key the app may not write
+/// ([`crate::settings::access`]), `KErrArgument`/`KErrTooBig` for an invalid key or value.
+pub const SETTING_SET: i32 = 9;
+/// `[Des8 prefix]` → 0: send [`AppEvent::Settings`] when a key starting with `prefix` changes (empty: any key). At
+/// most [`crate::settings::service::WATCHES_MAX`] prefixes per session (`KErrOverflow`).
+pub const SETTING_WATCH: i32 = 10;
 
 /// Encoded size of an [`AppEvent`].
 pub const EVENT_LEN: usize = 16;
@@ -51,6 +66,11 @@ pub enum AppEvent {
     Options,
     /// The app went to the background (false) or came back (true); it keeps running either way (R10).
     Visible(bool),
+    /// A watched setting changed ([`SETTING_WATCH`]); the app reads the keys it cares about again. `seq` is the
+    /// store's change counter, for logs.
+    Settings { seq: u32 },
+    /// Alarm `id` (`crate::clock::alarm`) is due: the server brought the Clock app to the front to ring it.
+    Alarm { id: u16 },
 }
 
 const KIND_TOUCH: u32 = 1;
@@ -59,6 +79,8 @@ const KIND_QUIT: u32 = 3;
 const KIND_BACK: u32 = 4;
 const KIND_OPTIONS: u32 = 5;
 const KIND_VISIBLE: u32 = 6;
+const KIND_SETTINGS: u32 = 7;
+const KIND_ALARM: u32 = 8;
 
 impl AppEvent {
     /// `[kind, a, b, c]` as little-endian u32s: touch = (phase | id << 8, x, y), key = (down, code, 0).
@@ -77,6 +99,8 @@ impl AppEvent {
             AppEvent::Back => [KIND_BACK, 0, 0, 0],
             AppEvent::Options => [KIND_OPTIONS, 0, 0, 0],
             AppEvent::Visible(v) => [KIND_VISIBLE, v as u32, 0, 0],
+            AppEvent::Settings { seq } => [KIND_SETTINGS, seq, 0, 0],
+            AppEvent::Alarm { id } => [KIND_ALARM, u32::from(id), 0, 0],
         };
         let mut out = [0u8; EVENT_LEN];
         for (i, v) in w.iter().enumerate() {
@@ -107,6 +131,10 @@ impl AppEvent {
             KIND_BACK => AppEvent::Back,
             KIND_OPTIONS => AppEvent::Options,
             KIND_VISIBLE => AppEvent::Visible(w(1) != 0),
+            KIND_SETTINGS => AppEvent::Settings { seq: w(1) },
+            KIND_ALARM => AppEvent::Alarm {
+                id: u16::try_from(w(1)).ok()?,
+            },
             _ => return None,
         })
     }
@@ -134,6 +162,10 @@ mod tests {
             AppEvent::Options,
             AppEvent::Visible(true),
             AppEvent::Visible(false),
+            AppEvent::Settings { seq: 0 },
+            AppEvent::Settings { seq: u32::MAX },
+            AppEvent::Alarm { id: 0 },
+            AppEvent::Alarm { id: u16::MAX },
         ];
         for e in all {
             assert_eq!(AppEvent::decode(&e.encode()), Some(e));

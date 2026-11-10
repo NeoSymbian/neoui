@@ -12,11 +12,12 @@
 extern crate alloc;
 
 mod clock;
+mod clockwork;
 mod host;
 mod perf;
 mod phone;
+mod settings;
 
-use alloc::format;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::future::Future;
@@ -91,6 +92,9 @@ fn main() -> i32 {
     let mut old: Vec<u32> = Vec::new();
     let mut rows = (vec![0u32; w], vec![0u32; w]);
     ui.set_server_transitions(true);
+    // the settings (docs/neoui-shell.md, Part 1), shown before the first frame
+    let settings = settings::open();
+    let mut mirror = settings::UiMirror::new(&mut ui, &settings);
     // which kernel, ROM and neoui this is: in the log of every run, and in Settings -> About phone
     let build = neoapp::build::lines();
     for line in &build {
@@ -118,12 +122,11 @@ fn main() -> i32 {
     let mut phone = phone::Phone::start();
     // the shell's design unit (theme.slint: min(w, h) / 360), in 1/256 px
     let dp256 = (w.min(h) * 256 / 360) as u32;
-    let mut host = Host::new(ui.body(), dp256, ui.keyboard_h());
+    let mut host = Host::new(ui.body(), dp256, ui.keyboard_h(), settings);
     let mut keyboard_shown = false;
     let mut nav_shown = 0;
     let mut running_shown: Vec<&'static str> = Vec::new();
-    let mut clock_shown = (u32::MAX, u32::MAX);
-    let mut keeper = clock::Keeper::boot();
+    let mut clockwork = clockwork::Clockwork::boot();
     // when Power went down, while it is held
     let mut power_down_at: Option<u64> = None;
     // the Power menu covers the whole screen: no app surface over it, every touch to the shell
@@ -197,14 +200,14 @@ fn main() -> i32 {
                                         (ev.i_type == raw::EKEY_DOWN).then(time::millis);
                                 }
                             }
-                            Ok(ev)
-                                if ev.i_type == raw::EKEY_DOWN
-                                    && matches!(ev.scan_code(), SCAN_VOL_UP | SCAN_VOL_DOWN)
-                                    && phone.volume_key(ev.scan_code() == SCAN_VOL_UP) => {}
                             Ok(ev) if phone.screen_off() => {
                                 // Keep the AP and power-key polling running; discard touch/other keys while blanked.
                                 let _ = ev;
                             }
+                            Ok(ev)
+                                if ev.i_type == raw::EKEY_DOWN
+                                    && matches!(ev.scan_code(), SCAN_VOL_UP | SCAN_VOL_DOWN)
+                                    && phone.volume_key(ev.scan_code() == SCAN_VOL_UP) => {}
                             Ok(ev) => evs.extend(to_input(&ev)),
                             Err(e) => {
                                 dprintln!("neoui: input failed ({})", e);
@@ -273,16 +276,11 @@ fn main() -> i32 {
                                         && (old.len() == w * h
                                             || old.try_reserve_exact(w * h).is_ok())
                                     {
-                                        // Slint lets go where it was pressed (no page change, no tap), the screen
-                                        // as it is becomes the current page's layer, and Slint draws the neighbour
-                                        // once into the frame (below); from here the server only copies
-                                        let (_, y0) = down_at.unwrap_or((x0, y));
-                                        ui.dispatch(InputEvent::Touch {
-                                            id,
-                                            x: x0,
-                                            y: y0,
-                                            phase: TouchPhase::Up,
-                                        });
+                                        // Slint's touch is cancelled (no page change, no tap on the widget it
+                                        // went down on), the screen as it is becomes the current page's layer,
+                                        // and Slint draws the neighbour once into the frame (below); from here
+                                        // the server only copies
+                                        ui.cancel_touch();
                                         old.resize(w * h, 0);
                                         snapshot(&host, &frame, &mut old, w);
                                         ui.set_home_page(to);
@@ -439,18 +437,14 @@ fn main() -> i32 {
                 }
             }
             if let Some(a) = power {
-                clock::power(a, &mut keeper);
+                settings::log_save(host.settings.flush());
+                clockwork.power(a);
             }
-            let t = time::now();
-            if (t.hour, t.minute) != clock_shown {
-                if t.minute != clock_shown.1 {
-                    keeper.check(); // once a minute: did someone set the time?
-                }
-                clock_shown = (t.hour, t.minute);
-                let text = format!("{:02}:{:02}", t.hour, t.minute);
-                dprintln!("neoui: clock {}", text);
-                ui.set_clock(&text);
-            }
+            mirror.sync(&mut ui, &mut host.settings, ms);
+            phone.sync_settings(&host.settings, ms);
+            host.deliver_settings();
+            settings::log_save(host.settings.tick(ms));
+            clockwork.frame(&mut ui, &mut host, ms);
 
             let fading = transition.is_some() || swipe.is_some();
             let (px, damage, render_us, mut copy_us) =

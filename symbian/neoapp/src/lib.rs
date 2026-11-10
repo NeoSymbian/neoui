@@ -7,16 +7,21 @@
 extern crate alloc;
 
 pub mod build;
+pub mod hal;
+pub mod sys;
 
 use alloc::boxed::Box;
 use alloc::rc::Rc;
+use alloc::vec;
 use core::cell::RefCell;
 use core::time::Duration;
 use e32::chunk::Chunk;
 use e32::ipc::{Session, TIpcArgs, TVersion};
-use e32::sys::TPtr8;
+use e32::sys::{TPtr8, TPtrC8};
 use e32::time;
 use neoui_proto::ipc as proto;
+use neoui_proto::settings::value::ENCODED_MAX;
+use neoui_proto::settings::{Key as SettingKey, Setting, Value, kerr};
 use neoui_proto::{InputEvent, Rect, ScrollPlan, Scrolling, TouchPhase};
 use slint::platform::software_renderer::{
     LineBufferProvider, MinimalSoftwareWindow, PremultipliedRgbaColor, RepaintBufferType,
@@ -24,6 +29,16 @@ use slint::platform::software_renderer::{
 };
 use slint::platform::{Key, Platform, PointerEventButton, WindowAdapter, WindowEvent};
 use slint::{LogicalPosition, PhysicalSize, PlatformError, SharedString};
+
+/// Days from 0000-01-01 (Symbian's `TTime` zero) to 1970-01-01.
+const TTIME_UNIX_DAYS: i64 = 719_540;
+
+/// Wall-clock UTC now, in Unix milliseconds (for timers that must keep counting while an app is closed or across a
+/// reboot; `e32::time::millis` restarts at every boot).
+pub fn wall_ms() -> i64 {
+    let (us, _) = e32::sys::time_now();
+    us.div_euclid(1000) - TTIME_UNIX_DAYS * 86_400_000
+}
 
 /// XRGB8888 as the frame buffer wants it (same as neoui-render's pixel type).
 #[derive(Clone, Copy)]
@@ -196,6 +211,69 @@ impl App {
         self.server
             .send_receive(proto::KEYBOARD, &args)
             .map(|h| h as u32)
+    }
+
+    /// A setting's effective value: stored, else its registered default (`proto::SETTING_GET`).
+    ///
+    /// # Errors
+    /// The server's: `KErrNotFound` for a key with no value and no default, `KErrArgument` for an invalid key or a
+    /// stored value of another type than `T`.
+    pub fn setting<T: Setting>(&self, key: SettingKey<T>) -> Result<T, i32> {
+        T::from_value(self.setting_raw(key.name())?).ok_or(kerr::ARGUMENT)
+    }
+
+    /// A setting by name, untyped (for keys only known at run time).
+    ///
+    /// # Errors
+    /// As [`App::setting`].
+    pub fn setting_raw(&self, name: &str) -> Result<Value, i32> {
+        let name = TPtrC8::new(name.as_bytes());
+        let mut buf = vec![0u8; ENCODED_MAX];
+        let len = {
+            let mut out = TPtr8::new(&mut buf);
+            let mut args = TIpcArgs::new();
+            args.desc8(0, &name).des8(1, &mut out);
+            self.server.send_receive(proto::SETTING_GET, &args)?;
+            out.len()
+        };
+        Value::decode(&buf[..len]).map_err(|e| e.to_symbian())
+    }
+
+    /// Writes a setting (`proto::SETTING_SET`). An app may write keys in its own namespace (`clock.*`) only.
+    ///
+    /// # Errors
+    /// The server's: `KErrPermissionDenied` for a key the app may not write, `KErrArgument`/`KErrTooBig` for an
+    /// invalid key or value.
+    pub fn set_setting<T: Setting>(&self, key: SettingKey<T>, value: T) -> Result<(), i32> {
+        self.set_setting_raw(key.name(), &value.into_value())
+    }
+
+    /// Writes a setting by name, untyped.
+    ///
+    /// # Errors
+    /// As [`App::set_setting`].
+    pub fn set_setting_raw(&self, name: &str, value: &Value) -> Result<(), i32> {
+        let encoded = value.to_bytes();
+        let (name, value) = (TPtrC8::new(name.as_bytes()), TPtrC8::new(&encoded));
+        let mut args = TIpcArgs::new();
+        args.desc8(0, &name).desc8(1, &value);
+        self.server
+            .send_receive(proto::SETTING_SET, &args)
+            .map(drop)
+    }
+
+    /// Asks for `AppEvent::Settings` whenever a key starting with `prefix` changes (`""`: any key;
+    /// `proto::SETTING_WATCH`).
+    ///
+    /// # Errors
+    /// The server's: `KErrArgument` for an invalid prefix, `KErrOverflow` past the per-app limit.
+    pub fn watch_settings(&self, prefix: &str) -> Result<(), i32> {
+        let prefix = TPtrC8::new(prefix.as_bytes());
+        let mut args = TIpcArgs::new();
+        args.desc8(0, &prefix);
+        self.server
+            .send_receive(proto::SETTING_WATCH, &args)
+            .map(drop)
     }
 
     /// Take over the toolbar's Back and/or Options: the server then sends `AppEvent::Back` / `AppEvent::Options`.

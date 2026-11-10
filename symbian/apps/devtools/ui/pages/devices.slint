@@ -1,0 +1,123 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Devices: every component of the phone by section, its state and where that came from; "Run checks" tests the ones
+// that can be tested without side effects. A row opens the device's own view (DevicePage).
+import { Theme } from "../../../../../ui/theme.slint";
+import { Button } from "../../../../../ui/components/controls.slint";
+import { SectionHeader } from "../../../../../ui/components/lists.slint";
+import { NeoList } from "../../../../../ui/components/scroll.slint";
+import { DevState } from "../state.slint";
+import { DeviceRowView, FactRow, MonoLines, PageTitle } from "../widgets.slint";
+
+export component DevicesPage inherits Rectangle {
+    top := Rectangle {
+        y: 0;
+        height: 64 * Theme.dp;
+        Text {
+            x: Theme.margin + 4 * Theme.dp;
+            y: 10 * Theme.dp;
+            width: parent.width - self.x - 150 * Theme.dp;
+            text: DevState.devices-summary;
+            color: Theme.text;
+            font-size: Theme.font-label;
+            font-weight: 600;
+            overflow: elide;
+        }
+
+        Text {
+            x: Theme.margin + 4 * Theme.dp;
+            y: 34 * Theme.dp;
+            width: parent.width - self.x - 150 * Theme.dp;
+            text: DevState.devices-note;
+            color: Theme.text-dim;
+            font-size: Theme.font-status * 0.9;
+            overflow: elide;
+        }
+
+        Button {
+            x: parent.width - self.width - Theme.margin;
+            y: (parent.height - self.height) / 2;
+            width: 132 * Theme.dp;
+            text: DevState.checking ? "Checking" : "Run checks";
+            primary: !DevState.checking;
+            clicked => {
+                if (!DevState.checking) {
+                    DevState.run-checks();
+                }
+            }
+        }
+    }
+
+    NeoList {
+        y: top.height;
+        height: parent.height - top.height;
+        VerticalLayout {
+            alignment: start;
+            for d[i] in DevState.devices: VerticalLayout {
+                if d.first: SectionHeader {
+                    text: d.group;
+                }
+                DeviceRowView {
+                    device: d;
+                    clicked => {
+                        DevState.device-chosen(i);
+                    }
+                }
+            }
+        }
+    }
+}
+
+// One device: what is known about it, its tests, and its own log lines.
+export component DevicePage inherits Rectangle {
+    background: Theme.bg;
+    title := PageTitle {
+        y: 0;
+        title: DevState.dev-name;
+        state: DevState.dev-state;
+        level: DevState.dev-level;
+    }
+
+    NeoList {
+        y: title.height;
+        height: parent.height - title.height;
+        VerticalLayout {
+            alignment: start;
+            padding-bottom: 16 * Theme.dp;
+            for f in DevState.dev-facts: FactRow {
+                fact: f;
+            }
+            if DevState.dev-actions.length > 0: SectionHeader {
+                text: "Tests";
+            }
+            for a[i] in DevState.dev-actions: HorizontalLayout {
+                padding-left: Theme.margin;
+                padding-right: Theme.margin;
+                padding-top: 6 * Theme.dp;
+                Button {
+                    text: a;
+                    primary: false;
+                    clicked => {
+                        DevState.dev-action(i);
+                    }
+                }
+            }
+            if DevState.dev-result != "": Text {
+                x: Theme.margin;
+                text: DevState.dev-result;
+                color: Theme.text-secondary;
+                font-size: Theme.font-label;
+                wrap: word-wrap;
+            }
+            SectionHeader {
+                text: "Log";
+            }
+            HorizontalLayout {
+                padding-left: Theme.margin;
+                padding-right: Theme.margin;
+                MonoLines {
+                    lines: DevState.dev-log;
+                }
+            }
+        }
+    }
+}

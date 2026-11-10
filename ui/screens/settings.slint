@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Settings: grouped root list (default), and the sub-pages "connectivity", "display", "about".
+import { SystemSettings } from "../system-settings.slint";
 import { Theme } from "../theme.slint";
 import { NeoList } from "../components/scroll.slint";
 import { ListRow, SectionHeader } from "../components/lists.slint";
@@ -75,20 +76,19 @@ component SettingRow inherits Rectangle {
 
 export component SettingsScreen inherits Rectangle {
     in-out property <string> view;
-    in-out property <bool> wifi: true;
     // in: which build is running, one line each for the kernel, the user-side ROM and neoui (the UI server reads them)
     in property <[string]> build;
-    in-out property <bool> bluetooth: false;
-    in-out property <bool> data: true;
-    in-out property <bool> airplane: false;
+    // The store remains the source of truth for requested settings; C7 adds confirmed radio state.
+    property <bool> wifi: SystemSettings.wifi;
+    property <bool> bluetooth: SystemSettings.bluetooth;
+    property <bool> data: SystemSettings.mobile-data;
+    property <bool> dark: SystemSettings.dark;
+    property <bool> airplane: SystemSettings.airplane;
     in property <bool> radio-online;
-    in property <int> ring-volume: 8;
-    in property <bool> silent;
-    in property <bool> vibrate: true;
+    property <int> ring-volume: SystemSettings.ring-volume;
+    property <bool> silent: SystemSettings.silent;
+    property <bool> vibrate: SystemSettings.vibrate;
     in property <string> phone-feedback;
-    callback phone-action(string, string);
-    in-out property <bool> dark: true;
-    in-out property <float> brightness: 0.62;
 
     if view == "": NeoList {
         VerticalLayout {
@@ -180,7 +180,7 @@ export component SettingsScreen inherits Rectangle {
                 has-icon: true;
                 icon: @image-url("../icons/sys/wifi.svg");
                 has-switch: true;
-                switch-on <=> root.wifi;
+                switch-on <=> SystemSettings.wifi;
             }
 
             ListRow {
@@ -189,7 +189,7 @@ export component SettingsScreen inherits Rectangle {
                 has-icon: true;
                 icon: @image-url("../icons/sys/bluetooth.svg");
                 has-switch: true;
-                switch-on <=> root.bluetooth;
+                switch-on <=> SystemSettings.bluetooth;
             }
 
             SectionHeader { text: "Mobile"; }
@@ -199,7 +199,7 @@ export component SettingsScreen inherits Rectangle {
                 has-icon: true;
                 icon: @image-url("../icons/sys/data.svg");
                 has-switch: true;
-                switch-on <=> root.data;
+                switch-on <=> SystemSettings.mobile-data;
             }
 
             ListRow {
@@ -208,8 +208,7 @@ export component SettingsScreen inherits Rectangle {
                 has-icon: true;
                 icon: @image-url("../icons/sys/lock.svg");
                 has-switch: true;
-                switch-on <=> root.airplane;
-                switch-toggled(on) => { root.phone-action("airplane", on ? "1" : "0"); }
+                switch-on <=> SystemSettings.airplane;
                 divider: false;
             }
         }
@@ -222,14 +221,12 @@ export component SettingsScreen inherits Rectangle {
                 title: "Silent";
                 subtitle: "Mute the built-in ringtone";
                 has-switch: true;
-                switch-on: root.silent;
-                switch-toggled(on) => { root.phone-action("silent", on ? "1" : "0"); }
+                switch-on <=> SystemSettings.silent;
             }
             ListRow {
                 title: "Vibrate";
                 has-switch: true;
-                switch-on: root.vibrate;
-                switch-toggled(on) => { root.phone-action("vibrate", on ? "1" : "0"); }
+                switch-on <=> SystemSettings.vibrate;
             }
             ListRow {
                 title: "Ring volume";
@@ -240,8 +237,8 @@ export component SettingsScreen inherits Rectangle {
                 padding-left: Theme.margin;
                 padding-right: Theme.margin;
                 spacing: 12 * Theme.dp;
-                Button { text: "Quieter"; clicked => { root.phone-action("ring-volume", max(0, root.ring-volume - 1)); } }
-                Button { text: "Louder"; clicked => { root.phone-action("ring-volume", min(10, root.ring-volume + 1)); } }
+                Button { text: "Quieter"; clicked => { SystemSettings.ring-volume = max(0, root.ring-volume - 1); } }
+                Button { text: "Louder"; clicked => { SystemSettings.ring-volume = min(10, root.ring-volume + 1); } }
             }
             if phone-feedback != "": ListRow { title: phone-feedback; }
         }
@@ -255,7 +252,7 @@ export component SettingsScreen inherits Rectangle {
                 padding-right: Theme.margin + 8 * Theme.dp;
                 height: 56 * Theme.dp;
                 Slider {
-                    value <=> root.brightness;
+                    value <=> SystemSettings.brightness;
                 }
             }
 
@@ -265,7 +262,15 @@ export component SettingsScreen inherits Rectangle {
                 has-icon: true;
                 icon: @image-url("../icons/sys/theme.svg");
                 has-switch: true;
-                switch-on <=> root.dark;
+                switch-on <=> SystemSettings.dark;
+            }
+
+            ListRow {
+                title: "24-hour time";
+                has-icon: true;
+                icon: @image-url("../icons/sys/stopwatch.svg");
+                has-switch: true;
+                switch-on <=> SystemSettings.clock-24h;
             }
 
             ListRow {

@@ -1,89 +1,56 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! The Dev tools app (`NEODEV.EXE`): the NeoSymbian kernel's own log, followed live and from the previous boot,
-//! saved to `E:\logs\`, the on-screen kernel console switched on and off, and the A/B slot state. Everything goes
-//! through the kernel's `EHalGroupVariant` functions (docs/rust-integration.md "Dev tools"); boards without them
-//! (Syborg) answer -5 and the app says so. It is a ROM EXE, so it holds ReadDeviceData / WriteDeviceData.
-//! "Audio" asks the NeoModem server (MODEMD) for its audio test: the mic looped back to the loudspeaker or the
-//! earpiece, no call needed; the live log shows each step (telephony C6).
+//! The Dev tools app (`NEODEV.EXE`): the phone as a developer sees it. Five tabs (Home, Devices, Console, Procs,
+//! More) and their sub-views, drawn with Slint into the surface `NeoUi` hands over ([`neoapp`]).
+//!
+//! - Devices: every component, its driver and live state, from the kernel's device registry (HAL 0x4e19), the
+//!   app's own probes and the kernel log ([`neoui_proto::devtools::device`]), with checks and tests per device.
+//! - Console: the kernel log, live or from the previous boot, filtered by tag.
+//! - Procs, Settings, Tools, About: processes and threads, every setting, the essential tools, the builds.
+//!
+//! It is a ROM EXE, so it holds the capabilities the kernel's calls need (ReadDeviceData, WriteDeviceData, CommDD).
+//! Boards without a call (Syborg's 2010 kernel) answer -5, and the pages say so.
+//!
+//! - [`state`]: the model
+//! - [`probe`]: reading and testing the hardware
+//! - [`pages`]: one module per page (callbacks in, properties out)
+//! - this file: connecting, and the event loop (input, Back, refreshing as time passes)
 #![no_std]
 
 extern crate alloc;
 
-use alloc::collections::VecDeque;
-use alloc::format;
+mod pages;
+mod probe;
+mod state;
+
 use alloc::rc::Rc;
-use alloc::string::String;
-use alloc::vec::Vec;
 use core::cell::RefCell;
 use core::pin::pin;
-use e32::fs::{File, Fs};
-use e32::ipc::{Session, TIpcArgs, TVersion};
+use e32::ipc::TIpcArgs;
 use e32::rt::{self, Either};
 use e32::sys::TPtr8;
 use e32::{dprintln, time};
 use neoapp::App;
 use neoui_proto::InputEvent;
 use neoui_proto::ipc::{self as proto, AppEvent};
-use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
+use pages::Ctx;
+use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
+use state::{Model, Tab, View};
 
 slint::include_modules!();
 
 e32::main!(main);
 
-const GROUP_VARIANT: i32 = 1;
-const LOG_READ: i32 = 0x4e00;
-const LAST_LOG_READ: i32 = 0x4e01;
-const CONSOLE_SET: i32 = 0x4e02;
-const CONSOLE_GET: i32 = 0x4e03;
-const SLOT_INFO: i32 = 0x4e09;
-/// How often the live log is read.
-const POLL_US: i32 = 500_000;
-/// Lines kept for the screen (the saved files have everything the kernel kept).
-const KEEP_LINES: usize = 500;
-
-/// The action buttons, in order.
-const ACTIONS: [&str; 7] = [
-    "Log",
-    "Last boot",
-    "Build",
-    "Save",
-    "Console",
-    "Audio",
-    "Power",
-];
-/// "Power" swaps the row for these (the UI server carries them out, as its Power menu does: proto::POWER).
-const POWER_ACTIONS: [&str; 4] = ["Restart", "Power off", "Fastboot", "Back"];
-/// "Audio" swaps the row for these: modem_ipc::op::AUDIO_TEST 1, 2, 0.
-const AUDIO_ACTIONS: [&str; 5] = ["Speaker", "Earpiece", "Stop", "Retry", "Back"];
-
-/// Which action row is shown.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Row {
-    Main,
-    Power,
-    Audio,
-}
-
-/// NeoModem's audio test: 1 loudspeaker, 2 earpiece, 0 stop. Its result, or why there is none.
-fn audio_test(what: i32) -> i32 {
-    modem_request(modem_ipc::op::AUDIO_TEST, what)
-}
-
-fn modem_request(operation: i32, argument: i32) -> i32 {
-    let (major, minor, build) = modem_ipc::VERSION;
-    let v = TVersion {
-        major: major as u8,
-        minor: minor as u8,
-        build: build as u16,
-    };
-    let session = match Session::connect(modem_ipc::NAME, v) {
-        Ok(s) => s,
-        Err(e) => return e, // no MODEMD in this ROM, or not up yet
-    };
-    let mut args = TIpcArgs::new();
-    args.int(0, argument);
-    session.send_receive(operation, &args).unwrap_or_else(|e| e)
-}
+/// How often the loop wakes: the log is read each time.
+const TICK_US: i32 = 500_000;
+/// While an animation runs.
+const FRAME_US: i32 = 16_000;
+/// Memory, processes and the CPU load.
+const STATS_MS: u64 = 1_000;
+/// The probes and the kernel's device registry.
+const DEVICES_MS: u64 = 2_000;
+/// The Console's text size and the space above its rows (chips, tags, status) and below (the tab bar), in dp.
+const MONO_DP: f32 = 11.5;
+const CONSOLE_CHROME_DP: f32 = 112.0 + 46.0;
 
 fn main() -> i32 {
     match run() {
@@ -92,219 +59,6 @@ fn main() -> i32 {
             dprintln!("devtools: failed {}", e);
             e
         }
-    }
-}
-
-/// One HAL call that fills a descriptor (`a2`, or `a1` when `cursor` is None); the bytes the kernel wrote.
-fn hal_read(function: i32, cursor: Option<&mut u32>, buf: &mut [u8]) -> Result<usize, i32> {
-    let mut des = TPtr8::new(buf);
-    let des_ptr: *mut u8 = (&mut des as *mut TPtr8).cast();
-    // SAFETY: the kernel functions take a TUint32* cursor and/or a TDes8*; both live across the call.
-    let r = unsafe {
-        match cursor {
-            Some(c) => {
-                e32::sys::ui::hal_function(GROUP_VARIANT, function, (c as *mut u32).cast(), des_ptr)
-            }
-            None => {
-                e32::sys::ui::hal_function(GROUP_VARIANT, function, des_ptr, core::ptr::null_mut())
-            }
-        }
-    };
-    if r < 0 { Err(r) } else { Ok(des.len()) }
-}
-
-/// Everything a log function returns from `*cursor` on (1 KB per call), the cursor left after it.
-fn read_log(function: i32, cursor: &mut u32, out: &mut Vec<u8>) -> Result<(), i32> {
-    let mut buf = [0u8; 1024];
-    loop {
-        let n = hal_read(function, Some(cursor), &mut buf)?;
-        if n == 0 {
-            return Ok(());
-        }
-        out.extend_from_slice(&buf[..n]);
-    }
-}
-
-fn console_shown() -> Result<bool, i32> {
-    let mut on: i32 = 0;
-    // SAFETY: the kernel writes one TInt through a1.
-    let r = unsafe {
-        e32::sys::ui::hal_function(
-            GROUP_VARIANT,
-            CONSOLE_GET,
-            (&mut on as *mut i32).cast(),
-            core::ptr::null_mut(),
-        )
-    };
-    if r < 0 { Err(r) } else { Ok(on != 0) }
-}
-
-fn set_console(on: bool) -> i32 {
-    // SAFETY: a1 is the value itself (1 on, 0 off).
-    unsafe {
-        e32::sys::ui::hal_function(
-            GROUP_VARIANT,
-            CONSOLE_SET,
-            on as usize as *mut u8,
-            core::ptr::null_mut(),
-        )
-    }
-}
-
-fn slot_info() -> String {
-    let mut buf = [0u8; 400];
-    match hal_read(SLOT_INFO, None, &mut buf) {
-        Ok(n) => String::from_utf8_lossy(&buf[..n]).into_owned(),
-        Err(e) => format!("slots: not on this board ({e})"),
-    }
-}
-
-/// Bytes of log text as screen lines (CR dropped, a partial last line kept for the next chunk).
-struct Lines {
-    lines: VecDeque<String>,
-    partial: String,
-}
-
-impl Lines {
-    fn new() -> Self {
-        Self {
-            lines: VecDeque::new(),
-            partial: String::new(),
-        }
-    }
-
-    fn clear(&mut self) {
-        self.lines.clear();
-        self.partial.clear();
-    }
-
-    fn push(&mut self, bytes: &[u8]) {
-        for &b in bytes {
-            match b {
-                b'\n' => {
-                    let line = core::mem::take(&mut self.partial);
-                    self.lines.push_back(line);
-                    if self.lines.len() > KEEP_LINES {
-                        self.lines.pop_front();
-                    }
-                }
-                b'\r' => {}
-                b if b.is_ascii() => self.partial.push(b as char),
-                _ => self.partial.push('?'),
-            }
-        }
-    }
-
-    /// The last `rows` lines (the partial one included), top first.
-    fn tail(&self, rows: usize) -> Vec<&str> {
-        let mut all: Vec<&str> = self.lines.iter().map(String::as_str).collect();
-        if !self.partial.is_empty() {
-            all.push(&self.partial);
-        }
-        let skip = all.len().saturating_sub(rows);
-        all.split_off(skip)
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum View {
-    Live,
-    LastBoot,
-    /// which kernel, ROM and neoui run, and the A/B slots
-    Build,
-}
-
-struct State {
-    view: View,
-    live: Lines,
-    live_cursor: u32,
-    last: Lines,
-    status: String,
-    slots: String,
-    // neoapp::build::lines(): kernel, ROM, neoui
-    build: Vec<String>,
-}
-
-impl State {
-    /// New live log text since the last poll; true if any.
-    fn poll(&mut self) -> bool {
-        let mut bytes = Vec::new();
-        match read_log(LOG_READ, &mut self.live_cursor, &mut bytes) {
-            Ok(()) => {
-                self.live.push(&bytes);
-                !bytes.is_empty()
-            }
-            Err(e) => {
-                self.status = format!("kernel log: not on this board ({e})");
-                false
-            }
-        }
-    }
-
-    fn load_last(&mut self) {
-        let mut bytes = Vec::new();
-        let mut cursor = 0;
-        self.last.clear();
-        match read_log(LAST_LOG_READ, &mut cursor, &mut bytes) {
-            Ok(()) if bytes.is_empty() => {
-                self.status = String::from("no log kept from the previous boot")
-            }
-            Ok(()) => {
-                self.last.push(&bytes);
-                self.status = format!("previous boot: {} bytes", bytes.len());
-            }
-            Err(e) => self.status = format!("last boot log: not on this board ({e})"),
-        }
-    }
-
-    /// Both logs, whole, to E:\logs\kernel-<ms>.txt and lastlog-<ms>.txt.
-    fn save(&mut self) {
-        let stamp = time::millis();
-        let result = (|| -> Result<String, i32> {
-            let fs = Fs::connect()?;
-            match fs.mkdir(r"E:\logs\") {
-                Ok(()) | Err(-11) => {} // KErrAlreadyExists
-                Err(e) => return Err(e),
-            }
-            let mut names = Vec::new();
-            for (function, name) in [(LOG_READ, "kernel"), (LAST_LOG_READ, "lastlog")] {
-                let mut bytes = Vec::new();
-                let mut cursor = 0;
-                read_log(function, &mut cursor, &mut bytes)?;
-                if bytes.is_empty() {
-                    continue;
-                }
-                let path = format!(r"E:\logs\{name}-{stamp}.txt");
-                let file = File::replace(&fs, &path, 0)?;
-                // which build wrote it, then the log
-                let mut head = self.build.join("\n");
-                head.push_str("\n\n");
-                file.write(head.as_bytes())?;
-                file.write(&bytes)?;
-                names.push(path);
-            }
-            Ok(names.join(", "))
-        })();
-        self.status = match result {
-            Ok(names) if names.is_empty() => String::from("nothing to save"),
-            Ok(names) => format!("saved {names}"),
-            Err(e) => format!("save failed ({e})"),
-        };
-        dprintln!("devtools: {}", self.status);
-    }
-
-    fn toggle_console(&mut self) {
-        self.status = match console_shown() {
-            Ok(on) => {
-                let r = set_console(!on);
-                if r < 0 {
-                    format!("console: switch failed ({r})")
-                } else {
-                    format!("on-screen kernel console {}", if on { "off" } else { "on" })
-                }
-            }
-            Err(e) => format!("console: not on this board ({e})"),
-        };
     }
 }
 
@@ -317,46 +71,71 @@ fn run() -> Result<(), i32> {
     let ui = DevApp::new().map_err(|_| -2)?;
     let dp = app.dp;
     ui.global::<Theme>().set_dp(dp);
-    let font_px = round(11.5 * dp);
-    let cell_h = round(font_px * 1.25);
-    let (pad, bar_h) = (round(8.0 * dp), round(48.0 * dp));
-    let rows = ((app.height as f32 - 2.0 * pad - 1.6 * bar_h) / cell_h).max(1.0) as usize;
-    ui.set_font_px(font_px);
-    ui.set_cell_h(cell_h);
-    ui.set_pad(pad);
-    ui.set_bar_h(bar_h);
-    let set_actions = |ui: &DevApp, names: &[&str]| {
-        let actions: Vec<SharedString> = names.iter().map(|a| SharedString::from(*a)).collect();
-        ui.set_actions(ModelRc::from(Rc::new(VecModel::from(actions))));
-    };
-    set_actions(&ui, &ACTIONS);
-    let mut row = Row::Main;
-    let model = Rc::new(VecModel::from(
-        (0..rows).map(|_| SharedString::new()).collect::<Vec<_>>(),
+    let mono = round(MONO_DP * dp);
+    let cell = round(mono * 1.25);
+    let console_rows = ((app.height as f32 - CONSOLE_CHROME_DP * dp) / cell).max(1.0) as usize;
+    let state = ui.global::<DevState>();
+    state.set_mono_px(mono);
+    state.set_cell_h(cell);
+    let rows = Rc::new(VecModel::from(
+        (0..console_rows)
+            .map(|_| SharedString::new())
+            .collect::<alloc::vec::Vec<_>>(),
     ));
-    ui.set_rows(ModelRc::from(model.clone()));
-    let pressed: Rc<RefCell<VecDeque<i32>>> = Rc::default();
-    let queue = pressed.clone();
-    ui.on_action(move |i| queue.borrow_mut().push_back(i));
+    state.set_console_rows(ModelRc::from(rows.clone()));
     ui.show().map_err(|_| -2)?;
-
-    let mut st = State {
-        view: View::Live,
-        live: Lines::new(),
-        live_cursor: 0,
-        last: Lines::new(),
-        status: String::new(),
-        slots: slot_info(),
-        build: neoapp::build::lines(),
-    };
-    st.poll();
-    if st.status.is_empty() {
-        st.status = st.slots.clone();
+    if let Err(e) = app.watch_settings("") {
+        dprintln!("devtools: cannot watch settings ({})", e);
     }
-    show(&ui, &model, &st, rows);
-    app.draw()?;
-    dprintln!("devtools: {} rows; {}", rows, st.slots);
+    let mut model = Model::new(console_rows, (app.width, app.height));
+    model.cpus = neoapp::sys::cpus();
+    model.cpu_khz = neoapp::sys::cpu_max_khz();
+    let ctx = Rc::new(Ctx {
+        app,
+        ui: ui.as_weak(),
+        model: RefCell::new(model),
+        console_rows: rows,
+    });
+    pages::bind(&ctx, &ui);
+    ctx.refresh_log();
+    ctx.refresh_stats();
+    ctx.refresh_devices();
+    {
+        let m = ctx.model.borrow();
+        let kernel = m
+            .devices
+            .iter()
+            .filter(|d| d.source.label() == "kernel")
+            .count();
+        let probed = m
+            .devices
+            .iter()
+            .filter(|d| d.source.label() == "probe")
+            .count();
+        let logged = m
+            .devices
+            .iter()
+            .filter(|d| d.source.label() == "log")
+            .count();
+        dprintln!(
+            "devtools: devices {} (kernel {}, probe {}, log {}); procs {} threads {}; {} console rows; {}",
+            m.devices.len(),
+            kernel,
+            probed,
+            logged,
+            m.procs.len(),
+            m.threads.len(),
+            console_rows,
+            m.build.first().map_or("", alloc::string::String::as_str)
+        );
+    }
+    ctx.show();
+    ctx.app.draw()?;
 
+    // In the background (R10) the app neither refreshes nor draws; the log is still followed (cheap, and the
+    // kernel's ring would drop what it is not asked for).
+    let mut visible = true;
+    let (mut stats_at, mut devices_at) = (time::millis(), time::millis());
     rt::block_on(async {
         loop {
             let mut ev = [0u8; proto::EVENT_LEN];
@@ -364,14 +143,16 @@ fn run() -> Result<(), i32> {
                 let mut des = TPtr8::new(&mut ev);
                 let mut args = TIpcArgs::new();
                 args.des8(0, &mut des);
-                let mut next = pin!(app.server.send(proto::NEXT_EVENT, &args));
+                let mut next = pin!(ctx.app.server.send(proto::NEXT_EVENT, &args));
                 loop {
-                    match rt::select(next.as_mut(), time::delay(POLL_US)).await {
+                    // a running Slint animation (the tab underline) needs frames until it ends
+                    let animating = ctx.app.window.has_active_animations();
+                    let wait = if animating { FRAME_US } else { TICK_US };
+                    match rt::select(next.as_mut(), time::delay(wait)).await {
                         Either::Left(r) => break r,
                         Either::Right(()) => {
-                            if st.poll() && st.view == View::Live {
-                                show(&ui, &model, &st, rows);
-                                app.draw()?;
+                            if tick(&ctx, visible, &mut stats_at, &mut devices_at) || animating {
+                                ctx.app.draw()?;
                             }
                         }
                     }
@@ -383,100 +164,42 @@ fn run() -> Result<(), i32> {
                     dprintln!("devtools: quit");
                     return Ok(());
                 }
-                Some(AppEvent::Input(touch @ InputEvent::Touch { .. })) => {
-                    app.dispatch_touch(touch);
-                    let picked: Vec<i32> = pressed.borrow_mut().drain(..).collect();
-                    for i in picked {
-                        if row == Row::Audio {
-                            if (0..3).contains(&i) {
-                                let what = [1, 2, 0][i as usize];
-                                let r = audio_test(what);
-                                st.status = match (what, r) {
-                                    (0, 0) => String::from("audio test stopped"),
-                                    (_, 0) => format!(
-                                        "audio test: {} - talk into the mic",
-                                        AUDIO_ACTIONS[i as usize]
-                                    ),
-                                    (_, -14) => {
-                                        String::from("audio test: busy (a call, or a test running)")
-                                    }
-                                    (_, -18) => {
-                                        String::from("audio test: the audio DSP is not up yet")
-                                    }
-                                    (_, e) => format!("audio test: no NeoModem / failed ({e})"),
-                                };
-                                st.view = View::Live; // the log shows each step ([modemd] apr: ...)
-                                dprintln!("devtools: {}", st.status);
-                            } else if i == 3 {
-                                let r = modem_request(modem_ipc::op::RETRY, 0);
-                                st.status = if r == 0 {
-                                    String::from("modem recovery requested")
-                                } else {
-                                    format!("modem recovery failed ({r})")
-                                };
-                                st.view = View::Live;
-                            } else {
-                                row = Row::Main;
-                                set_actions(&ui, &ACTIONS);
-                            }
-                            continue;
-                        }
-                        if row == Row::Power {
-                            let action = match i {
-                                0 => Some(proto::POWER_RESTART),
-                                1 => Some(proto::POWER_OFF),
-                                2 => Some(proto::POWER_FASTBOOT),
-                                _ => None,
-                            };
-                            if let Some(a) = action {
-                                let mut args = TIpcArgs::new();
-                                args.int(0, a);
-                                let r = app.server.send_receive(proto::POWER, &args);
-                                st.status = format!("power {}: {:?}", POWER_ACTIONS[i as usize], r);
-                                dprintln!("devtools: {}", st.status);
-                            }
-                            row = Row::Main;
-                            set_actions(&ui, &ACTIONS);
-                            continue;
-                        }
-                        match i {
-                            0 => {
-                                st.view = View::Live;
-                                st.slots = slot_info();
-                                st.status = st.slots.clone();
-                            }
-                            1 => {
-                                st.view = View::LastBoot;
-                                st.load_last();
-                            }
-                            2 => {
-                                st.view = View::Build;
-                                st.slots = slot_info();
-                                st.status = String::from("build");
-                            }
-                            3 => st.save(),
-                            4 => st.toggle_console(),
-                            5 => {
-                                row = Row::Audio;
-                                set_actions(&ui, &AUDIO_ACTIONS);
-                                st.status = String::from(
-                                    "audio test: the mic looped back to the loudspeaker or the earpiece",
-                                );
-                            }
-                            6 => {
-                                row = Row::Power;
-                                set_actions(&ui, &POWER_ACTIONS);
-                            }
-                            _ => {}
-                        }
+                Some(AppEvent::Visible(v)) => {
+                    dprintln!("devtools: visible {}", v);
+                    visible = v;
+                    if v {
+                        (stats_at, devices_at) = (0, 0); // refresh at once
                     }
-                    ui.set_current(match st.view {
-                        View::Live => 0,
-                        View::LastBoot => 1,
-                        View::Build => 2,
-                    });
-                    show(&ui, &model, &st, rows);
-                    app.draw()?;
+                }
+                Some(AppEvent::Settings { .. }) => {
+                    if ctx.model.borrow().view == View::Settings {
+                        ctx.show();
+                        ctx.app.draw()?;
+                    }
+                }
+                Some(AppEvent::Back) => {
+                    // claimed only while a sub-view is open; a test returns to its device
+                    let back_to = match ctx.model.borrow().view {
+                        View::TouchTest | View::DisplayTest => View::Device,
+                        _ => View::None,
+                    };
+                    ctx.open(back_to);
+                    ctx.app.draw()?;
+                }
+                Some(AppEvent::Input(InputEvent::Key { code, down })) => {
+                    ctx.model.borrow_mut().last_key = Some((code, down));
+                    dprintln!(
+                        "devtools: key {:#x} {}",
+                        code,
+                        if down { "down" } else { "up" }
+                    );
+                    ctx.app.dispatch_key(code);
+                    ctx.show();
+                    ctx.app.draw()?;
+                }
+                Some(AppEvent::Input(input)) => {
+                    ctx.app.dispatch_touch(input);
+                    ctx.app.draw()?;
                 }
                 _ => {}
             }
@@ -484,23 +207,38 @@ fn run() -> Result<(), i32> {
     })
 }
 
-/// The status line and the tail of the shown log into the UI (changed rows only).
-fn show(ui: &DevApp, model: &VecModel<SharedString>, st: &State, rows: usize) {
-    ui.set_status(SharedString::from(st.status.as_str()));
-    let lines = match st.view {
-        View::Live => st.live.tail(rows),
-        View::LastBoot => st.last.tail(rows),
-        View::Build => st
-            .build
-            .iter()
-            .map(String::as_str)
-            .chain([st.slots.as_str()])
-            .collect(),
-    };
-    for y in 0..rows.min(model.row_count()) {
-        let text = SharedString::from(lines.get(y).copied().unwrap_or(""));
-        if model.row_data(y).as_ref() != Some(&text) {
-            model.set_row_data(y, text);
-        }
+/// As time passes: follow the log; while visible, refresh what the screen shows. True when something to draw changed.
+fn tick(ctx: &Ctx, visible: bool, stats_at: &mut u64, devices_at: &mut u64) -> bool {
+    let grew = ctx.refresh_log();
+    if grew {
+        pages::follow_new_lines(&mut ctx.model.borrow_mut());
     }
+    if !visible {
+        return false;
+    }
+    let now = time::millis();
+    let (tab, view) = {
+        let m = ctx.model.borrow();
+        (m.tab, m.view)
+    };
+    let mut changed = grew && matches!((tab, view), (Tab::Console, View::None) | (_, View::Device));
+    // Home shows everything; the other pages what they list
+    let wants_stats =
+        view == View::None && matches!(tab, Tab::Home | Tab::Procs) || view == View::Proc;
+    let wants_devices =
+        view == View::None && matches!(tab, Tab::Home | Tab::Devices) || view == View::Device;
+    if wants_stats && now.saturating_sub(*stats_at) >= STATS_MS {
+        *stats_at = now;
+        ctx.refresh_stats();
+        changed = true;
+    }
+    if wants_devices && now.saturating_sub(*devices_at) >= DEVICES_MS {
+        *devices_at = now;
+        ctx.refresh_devices();
+        changed = true;
+    }
+    if changed {
+        ctx.show();
+    }
+    changed
 }

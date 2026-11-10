@@ -1,0 +1,86 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// The Timer tab: the time left with a progress bar; presets and ±1 min / ±10 s while idle; Start, Pause, Resume,
+// Reset. It keeps counting while the app is closed (wall-clock based, saved in clock.timer).
+import { Theme } from "../../../../../ui/theme.slint";
+import { Button } from "../../../../../ui/components/controls.slint";
+import { ClockState } from "../state.slint";
+
+export component TimerPage inherits Rectangle {
+    property <bool> idle: ClockState.timer-phase == 0;
+    VerticalLayout {
+        alignment: center;
+        spacing: 16 * Theme.dp;
+        padding: Theme.margin;
+        Text {
+            text: ClockState.timer-phase == 3 ? "Time's up" : ClockState.timer-text;
+            color: ClockState.timer-phase == 3 ? Theme.accent : Theme.text;
+            font-size: 64 * Theme.dp;
+            horizontal-alignment: center;
+        }
+
+        HorizontalLayout {
+            padding-left: 24 * Theme.dp;
+            padding-right: 24 * Theme.dp;
+            Rectangle {
+                height: 6 * Theme.dp;
+                border-radius: self.height / 2;
+                background: Theme.field;
+                Rectangle {
+                    x: 0;
+                    width: parent.width * ClockState.timer-progress;
+                    border-radius: parent.border-radius;
+                    background: Theme.accent;
+                }
+            }
+        }
+
+        if idle: HorizontalLayout {
+            alignment: center;
+            spacing: 8 * Theme.dp;
+            for p[i] in ClockState.timer-presets: Button {
+                text: p;
+                primary: false;
+                clicked => {
+                    ClockState.timer-preset(i);
+                }
+            }
+        }
+
+        if idle: HorizontalLayout {
+            alignment: center;
+            spacing: 8 * Theme.dp;
+            for s in [-60, -10, 10, 60]: Button {
+                text: (s > 0 ? "+" : "−") + (Math.abs(s) == 60 ? "1 min" : "10 s");
+                primary: false;
+                clicked => {
+                    ClockState.timer-step(s);
+                }
+            }
+        }
+
+        HorizontalLayout {
+            alignment: center;
+            spacing: 16 * Theme.dp;
+            padding-top: 8 * Theme.dp;
+            if !idle: Button {
+                text: "Reset";
+                primary: false;
+                clicked => {
+                    ClockState.timer-reset();
+                }
+            }
+            if ClockState.timer-phase == 1: Button {
+                text: "Pause";
+                clicked => {
+                    ClockState.timer-pause();
+                }
+            }
+            if ClockState.timer-phase == 0 || ClockState.timer-phase == 2: Button {
+                text: ClockState.timer-phase == 0 ? "Start" : "Resume";
+                clicked => {
+                    ClockState.timer-start();
+                }
+            }
+        }
+    }
+}

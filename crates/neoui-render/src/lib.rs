@@ -7,6 +7,7 @@
 extern crate alloc;
 
 pub mod layer;
+mod settings;
 
 use alloc::boxed::Box;
 use alloc::rc::Rc;
@@ -15,6 +16,8 @@ use alloc::vec::Vec;
 use core::cell::RefCell;
 use core::time::Duration;
 
+use neoui_proto::clock::face::Face;
+use neoui_proto::settings::Value;
 use neoui_proto::{Damage, InputEvent, Rect, ScrollPlan, Scrolling, TouchPhase};
 use slint::platform::software_renderer::{
     LineBufferProvider, MinimalSoftwareWindow, PremultipliedRgbaColor, RepaintBufferType,
@@ -83,6 +86,8 @@ pub struct Renderer {
     closed: Rc<RefCell<Vec<alloc::string::String>>>,
     power: Rc<RefCell<Vec<i32>>>,
     phone: Rc<RefCell<Vec<(String, String)>>>,
+    /// keys of settings edited in the UI since the last `take_setting_edits` (`SystemSettings.edited`)
+    edited: Rc<RefCell<Vec<String>>>,
     /// lists scrolled by shifting pixels (smooth-ui S2d), and how many frames did so
     scrolling: Scrolling,
     shifts: u32,
@@ -149,6 +154,10 @@ impl Renderer {
             sink.borrow_mut()
                 .push((a.as_str().into(), n.as_str().into()))
         });
+        let edited: Rc<RefCell<Vec<String>>> = Rc::default();
+        let sink = edited.clone();
+        ui.global::<SystemSettings>()
+            .on_edited(move |k| sink.borrow_mut().push(k.as_str().into()));
         Ok(Self {
             window,
             ui,
@@ -157,6 +166,7 @@ impl Renderer {
             closed,
             power,
             phone,
+            edited,
             scrolling: Scrolling::default(),
             shifts: 0,
         })
@@ -270,6 +280,50 @@ impl Renderer {
         core::mem::take(&mut *self.power.borrow_mut())
     }
 
+    /// The registry keys of the settings the shell shows, for the UI server to fill at boot with
+    /// [`Renderer::apply_setting`].
+    pub fn shown_settings() -> impl Iterator<Item = &'static str> {
+        settings::BINDINGS.iter().map(|b| b.key)
+    }
+
+    /// Shows a setting's value (from the UI server's store). False when the shell doesn't show `key` or `value` has
+    /// another type than the key's.
+    pub fn apply_setting(&mut self, key: &str, value: &Value) -> bool {
+        let global = self.ui.global::<SystemSettings>();
+        settings::binding(key).is_some_and(|b| (b.write)(&global, value))
+    }
+
+    /// The UI's current value of a shown setting.
+    pub fn setting(&self, key: &str) -> Option<Value> {
+        let global = self.ui.global::<SystemSettings>();
+        settings::binding(key).map(|b| (b.read)(&global))
+    }
+
+    /// The settings edited in the UI since the last call, each once, with their current values. Applying a value
+    /// with [`Renderer::apply_setting`] reports it here too; storing it again changes nothing.
+    pub fn take_setting_edits(&mut self) -> Vec<(&'static str, Value)> {
+        let mut keys = core::mem::take(&mut *self.edited.borrow_mut());
+        keys.sort_unstable();
+        keys.dedup();
+        let global = self.ui.global::<SystemSettings>();
+        keys.iter()
+            .filter_map(|k| settings::binding(k))
+            .map(|b| (b.key, (b.read)(&global)))
+            .collect()
+    }
+
+    /// The clock face the shell shows (the home clock widget): the time, the date and the next alarm.
+    pub fn set_now(&mut self, face: &Face) {
+        let now = self.ui.global::<Now>();
+        // both are at most 59 / 23
+        now.set_hours(face.hours as i32);
+        now.set_minutes(face.minutes as i32);
+        now.set_h24(face.h24);
+        now.set_am_pm(face.am_pm.into());
+        now.set_date(face.date.as_str().into());
+        now.set_next_alarm(face.next_alarm.as_str().into());
+    }
+
     /// The status bar's time text, e.g. "09:41".
     pub fn set_clock(&mut self, text: &str) {
         self.ui.set_clock(text.into());
@@ -318,19 +372,9 @@ impl Renderer {
         self.ui.set_phone_feedback(feedback.into());
     }
 
-    pub fn set_phone_settings(
-        &mut self,
-        airplane: bool,
-        online: bool,
-        volume: u8,
-        silent: bool,
-        vibrate: bool,
-    ) {
-        self.ui.set_airplane(airplane);
+    /// Confirmed radio state. Requested radio/sound settings remain owned by SystemSettings.
+    pub fn set_phone_settings(&mut self, online: bool) {
         self.ui.set_radio_online(online);
-        self.ui.set_ring_volume(volume as i32);
-        self.ui.set_silent(silent);
-        self.ui.set_vibrate(vibrate);
     }
 
     pub fn set_sim(&mut self, pin: bool, blocked: bool, attempts: Option<u8>) {
@@ -451,6 +495,12 @@ impl Renderer {
             }
         };
         self.window.dispatch_event(event);
+    }
+
+    /// Cancels the touch in progress: whatever it pressed lets go without a click (the UI server took the gesture
+    /// over, e.g. its own home page slide).
+    pub fn cancel_touch(&mut self) {
+        self.window.dispatch_event(WindowEvent::PointerExited);
     }
 
     /// Frames that scrolled a list by shifting its pixels since the last call (smooth-ui S2d).

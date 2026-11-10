@@ -1,0 +1,16 @@
+// SPDX-License-Identifier: Apache-2.0
+// The time as the shell shows it (the home clock widget, and later the lock screen): set by the UI server whenever
+// the minute, the date, the 24-hour setting or the alarms change (neoui-render `Renderer::set_now`).
+
+export global Now {
+    // the hour as shown: 0-23, or 1-12 on a 12-hour clock
+    in property <int> hours: 10;
+    in property <int> minutes: 24;
+    in property <bool> h24: true;
+    // "AM"/"PM" on a 12-hour clock, else empty
+    in property <string> am-pm;
+    // "Monday, 9 November"
+    in property <string> date: "Friday, 6 November";
+    // the next alarm, "Tue 07:30"; empty when none is on
+    in property <string> next-alarm;
+}

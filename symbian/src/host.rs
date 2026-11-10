@@ -10,7 +10,9 @@
 //! (its surface is shown, it gets input and its keyboard/toolbar claims apply); the others are told they are hidden.
 //! They end when closed in the switcher, or when more than [`MAX_RUNNING`] run (the least recently used).
 
+use crate::settings::{self, Settings};
 use alloc::collections::VecDeque;
+use alloc::string::String;
 use alloc::vec::Vec;
 use core::ops::ControlFlow;
 use e32::chunk::Chunk;
@@ -21,6 +23,8 @@ use e32::sys::{TVersion, err};
 use neoui_proto::Rect;
 use neoui_proto::ipc::{self as proto, AppEvent};
 use neoui_proto::recents::Recents;
+use neoui_proto::settings::value::ENCODED_MAX;
+use neoui_proto::settings::{Caller, KEY_MAX, Value, kerr};
 
 /// Screen keys that are separate processes: their EXEs and command lines.
 // shortcut: a fixed table; a registry of installed apps comes with app installation.
@@ -90,10 +94,13 @@ pub struct Host {
     pub refresh: bool,
     /// An app asked for a restart or power-off (`proto::POWER`); the main loop carries it out.
     pub power: Option<i32>,
+    /// The settings store apps read, write and watch (`proto::SETTING_*`); the shell's own view syncs with it in
+    /// the main loop.
+    pub settings: Settings,
 }
 
 impl Host {
-    pub fn new(body: Rect, dp256: u32, keyboard_h: u32) -> Self {
+    pub fn new(body: Rect, dp256: u32, keyboard_h: u32, settings: Settings) -> Self {
         Self {
             body,
             dp256,
@@ -104,6 +111,17 @@ impl Host {
             blits: Vec::new(),
             refresh: false,
             power: None,
+            settings,
+        }
+    }
+
+    /// Tells each app watching a changed setting (`AppEvent::Settings`). Call once per frame.
+    pub fn deliver_settings(&mut self) {
+        let (sessions, seq) = self.settings.take_notifications();
+        for session in sessions {
+            if let Some(app) = self.apps.find_mut(|a| a.session == Some(session)) {
+                app.send(AppEvent::Settings { seq });
+            }
         }
     }
 
@@ -187,6 +205,14 @@ impl Host {
         }
     }
 
+    /// Sends `e` to app `key` (queued until it asks for events); false when it is not running (or leaving).
+    pub fn post(&mut self, key: &str, e: AppEvent) -> bool {
+        self.apps
+            .find_mut(|a| a.key == key && a.quit_at.is_none())
+            .map(|app| app.send(e))
+            .is_some()
+    }
+
     /// Input and claimed toolbar buttons go to the foreground app.
     pub fn send(&mut self, e: AppEvent) {
         let Some(key) = self.front else { return };
@@ -237,6 +263,50 @@ impl Host {
 fn deliver(m: Message, e: AppEvent) {
     let r = m.write8(0, &e.encode(), 0);
     m.complete(r.map_or_else(|e| e, |()| 0));
+}
+
+/// Reads descriptor argument `param` as text of at most `max` bytes.
+fn read_text(m: &Message, param: usize, max: usize) -> Result<String, i32> {
+    if m.des_len(param)? > max {
+        return Err(kerr::TOO_BIG);
+    }
+    String::from_utf8(m.read8_vec(param)?).map_err(|_| kerr::ARGUMENT)
+}
+
+/// `SETTING_GET [key, out value]` → the value's length.
+fn setting_get(settings: &Settings, m: &Message) -> Result<i32, i32> {
+    let key = read_text(m, 0, KEY_MAX)?;
+    let value = settings
+        .get_raw(&key)
+        .map_err(|e| e.to_symbian())?
+        .to_bytes();
+    if value.len() > m.des_max_len(1)? {
+        return Err(kerr::OVERFLOW);
+    }
+    m.write8(1, &value, 0)?;
+    // at most ENCODED_MAX bytes, so it fits
+    i32::try_from(value.len()).map_err(|_| kerr::OVERFLOW)
+}
+
+/// `SETTING_SET [key, value]` → 0.
+fn setting_set(settings: &mut Settings, app: &str, m: &Message) -> Result<i32, i32> {
+    let key = read_text(m, 0, KEY_MAX)?;
+    if m.des_len(1)? > ENCODED_MAX {
+        return Err(kerr::TOO_BIG);
+    }
+    let value = Value::decode(&m.read8_vec(1)?).map_err(|e| e.to_symbian())?;
+    settings::set(settings, Caller::App(app), &key, value, e32::time::millis())
+        .map(|_| 0)
+        .map_err(|e| e.to_symbian())
+}
+
+/// `SETTING_WATCH [prefix]` → 0.
+fn setting_watch(settings: &mut Settings, session: u32, m: &Message) -> Result<i32, i32> {
+    let prefix = read_text(m, 0, KEY_MAX)?;
+    settings
+        .watch(session, &prefix)
+        .map(|()| 0)
+        .map_err(|e| e.to_symbian())
 }
 
 impl Service for Host {
@@ -310,6 +380,18 @@ impl Service for Host {
                 self.power = Some(m.int(0));
                 m.complete(0);
             }
+            proto::SETTING_GET => {
+                let r = setting_get(&self.settings, &m);
+                m.complete(r.unwrap_or_else(|e| e));
+            }
+            proto::SETTING_SET => {
+                let r = setting_set(&mut self.settings, app.key, &m);
+                m.complete(r.unwrap_or_else(|e| e));
+            }
+            proto::SETTING_WATCH => {
+                let r = setting_watch(&mut self.settings, *id, &m);
+                m.complete(r.unwrap_or_else(|e| e));
+            }
             proto::NEXT_EVENT => match app.queue.pop_front() {
                 Some(e) => deliver(m, e),
                 None => app.waiting = Some(m),
@@ -319,6 +401,7 @@ impl Service for Host {
     }
 
     fn disconnect(&mut self, id: u32) -> ControlFlow<()> {
+        self.settings.drop_session(id);
         // Complete what the session still has outstanding before its disconnect completes.
         if let Some(m) = self
             .apps

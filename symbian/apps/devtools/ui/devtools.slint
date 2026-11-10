@@ -1,70 +1,54 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// The Dev tools app (NEODEV.EXE): a status line, a row of actions, and the tail of a kernel log in the
-// Terminal's look (dark ground, Ubuntu Mono).
+// The Dev tools app (NEODEV.EXE): five tabs at the bottom (Home, Devices, Console, Procs, More) and the sub-views
+// that open over them (a device, a process, Settings, Tools, About, the touch and display tests). Drawn by its own
+// process into the surface the UI server shows; it reuses the shell's tokens and components.
+//
+// State lives in the `DevState` global (state.slint), filled by src/pages/*.rs; each page is one file in pages/.
+import "../../../../ui/fonts/Inter-VariableFont.ttf";
 import "../../../../ui/fonts/UbuntuMono-Regular.ttf";
 import { Theme } from "../../../../ui/theme.slint";
+import { TabBar } from "../../../../ui/components/controls.slint";
+import { DevState } from "state.slint";
+import { HomePage } from "pages/home.slint";
+import { DevicesPage, DevicePage } from "pages/devices.slint";
+import { ConsolePage } from "pages/console.slint";
+import { ProcsPage, ProcPage } from "pages/procs.slint";
+import { MorePage, SettingsPage, ToolsPage, AboutPage } from "pages/more.slint";
+import { TouchTest, DisplayTest } from "pages/tests.slint";
 
-export { Theme }
+export { Theme, DevState }
 
 export component DevApp inherits Window {
-    in property <string> status;
-    in property <[string]> rows;
-    in property <[string]> actions;
-    in property <int> current: 0;
-    in property <length> cell-h;
-    in property <length> font-px;
-    in property <length> pad;
-    in property <length> bar-h;
-    callback action(int);
-    background: #07090c;
+    default-font-family: "Inter";
+    background: Theme.bg;
 
-    Text {
-        x: root.pad;
-        y: root.pad;
-        width: root.width - 2 * root.pad;
-        height: root.bar-h * 0.6;
-        text: root.status;
-        color: Theme.text-secondary;
-        font-size: 13 * Theme.dp;
-        overflow: elide;
-        vertical-alignment: center;
+    // only while no sub-view is open: a cover drawn on top would not stop taps reaching the rows under it
+    if DevState.view == "": Rectangle {
+        height: root.height - Theme.tab-h;
+        y: 0;
+        if DevState.tab == 0: HomePage { }
+        if DevState.tab == 1: DevicesPage { }
+        if DevState.tab == 2: ConsolePage { }
+        if DevState.tab == 3: ProcsPage { }
+        if DevState.tab == 4: MorePage { }
     }
 
-    HorizontalLayout {
-        x: root.pad;
-        y: root.pad + root.bar-h * 0.6;
-        width: root.width - 2 * root.pad;
-        height: root.bar-h;
-        spacing: 6 * Theme.dp;
-        padding-top: 4 * Theme.dp;
-        padding-bottom: 8 * Theme.dp;
-        for a[i] in root.actions: Rectangle {
-            border-radius: 7 * Theme.dp;
-            background: t.pressed ? Theme.pressed : i == root.current ? #2a3a2c : #1d2025;
-            Text {
-                text: a;
-                color: i == root.current ? #7ee787 : Theme.text-secondary;
-                font-size: 13 * Theme.dp;
-            }
-
-            t := TouchArea {
-                clicked => {
-                    root.action(i);
-                }
-            }
+    if DevState.view == "": TabBar {
+        y: root.height - self.height;
+        tabs: ["Home", "Devices", "Console", "Procs", "More"];
+        current: DevState.tab;
+        font-size: 12.5 * Theme.dp;
+        tab-clicked(i) => {
+            DevState.tab-chosen(i);
         }
     }
 
-    for row[i] in root.rows: Text {
-        x: root.pad;
-        y: root.pad + root.bar-h * 1.6 + i * root.cell-h;
-        width: root.width - 2 * root.pad;
-        height: root.cell-h;
-        text: row;
-        color: #d7dde5;
-        font-family: "Ubuntu Mono";
-        font-size: root.font-px;
-        overflow: clip;
-        vertical-alignment: center;
-    }
+    // sub-views cover the tabs (Back closes them)
+    if DevState.view == "device": DevicePage { }
+    if DevState.view == "proc": ProcPage { }
+    if DevState.view == "settings": SettingsPage { }
+    if DevState.view == "tools": ToolsPage { }
+    if DevState.view == "about": AboutPage { }
+    if DevState.view == "touch-test": TouchTest { }
+    if DevState.view == "display-test": DisplayTest { }
 }

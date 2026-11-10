@@ -26,10 +26,12 @@ Mac the buffer is just shown in a window.
 | `crates/neoui-host` | Mac/Linux desktop host: winit + softbuffer, mouse as touch |
 | `snapshots/` | PNGs written by the snapshot tests |
 | `crates/neoui-term` | `#![no_std]` text console model: the grid, cursor and control characters of a Symbian console window |
-| `crates/neoui-proto` `ipc` | The app ↔ UI server protocol: `GEOMETRY`, `SURFACE`, `DAMAGE`, `NEXT_EVENT`, 16-byte events |
+| `crates/neoui-proto` `ipc` | The app ↔ UI server protocol: `GEOMETRY`, `SURFACE`, `DAMAGE`, `NEXT_EVENT`, `SETTING_GET`/`SET`/`WATCH`, 16-byte events |
+| `crates/neoui-proto` `settings` | The settings system (pure, host-tested): typed keys, the registry of system settings, the store, the versioned file format, access rules, the service with save delay and change subscriptions |
+| `crates/neoui-render` `settings` + `ui/system-settings.slint` | The shell's view of the settings: the `SystemSettings` global and the binding table between it and the store |
 | `symbian/` | The launcher as a Symbian EXE (`SYSSTART.EXE`, GPL-3.0): its own workspace, built for `armv5te-none-eabi` with [e32-rs](https://github.com/NeoSymbian/e32-rs) |
 
-Planned: a settings store, a notification service, editable home pages and widgets; the design is
+Settings store: done (Part 1). Planned: a notification service, editable home pages and widgets; the design is
 [neoui-shell.md](https://github.com/NeoSymbian/docs/blob/main/neoui-shell.md).
 
 The renderer takes its time from a caller-supplied millisecond clock and owns
@@ -90,6 +92,16 @@ toolbar. Touches in the body go to the app; Back makes the server send `Quit`, a
 our terminal. The grid (`crates/neoui-term`, host-tested) follows the stock console's rules: newline mode, wrap,
 destructive backspace, tabs, scrolling. Keys come from the keyboard and from the extra-keys bar. `dir` and
 `neotest` run in it on Syborg. Apps share their plumbing (connect, surface, Slint platform) in `symbian/neoapp`.
+
+**Dev tools (`NEODEV.EXE`, `symbian/apps/devtools`): the phone as a developer sees it.** Five tabs: Home (uptime,
+memory, CPU, storage, processes, devices, modem, kernel), Devices, Console (the kernel log, live or the last boot's,
+filtered by tag), Procs (processes and their threads) and More (Settings read-only, Tools: save logs, kernel
+console, power; About). Devices lists every component of a phone with its state, from the kernel's device registry
+(HAL `0x4e19`, `A64_DEVICE` in the arm64 baseport), the app's own probes (HAL values, NeoModem, the drives) and
+the kernel log; "Run checks" tests what can be tested without side effects, and each device opens a view with its
+live values, its log lines and its tests (touch grid, display colours, storage speed, audio loopback). The pure
+parts (registry lines, merging, log tags, stats) are host-tested in `neoui-proto::devtools`; the HAL and system
+calls are in `neoapp::hal` and `neoapp::sys`.
 
 The UI adapts to whatever the device reports: the display size comes from the HAL, touches are raw screen pixels
 (Syborg's pointer driver was fixed in the NeoSymbian adaptation fork to report exact pixels), and the layout follows

@@ -9,6 +9,7 @@ use e32::ipc::{Session, TIpcArgs, TVersion};
 use e32::process::Process;
 use e32::sys::{TPtr8, TPtrC8};
 use modem_ipc::{Status, call, manage, modem, op, rat, reg, sim};
+use neoui_proto::settings::keys;
 use neoui_render::{CallView, Renderer};
 
 fn connect() -> Result<Session, i32> {
@@ -88,6 +89,8 @@ pub struct Phone {
     off: bool,
     /// A deliberate power-key wake stays awake for this call generation.
     woken_for: Option<(u32, u8)>,
+    preferences: Option<(u32, bool, modem_ipc::Ring)>,
+    preferences_retry_at: u64,
 }
 
 const CLOSE_MS: u64 = 2000;
@@ -115,6 +118,8 @@ impl Phone {
             volume: None,
             off: false,
             woken_for: None,
+            preferences: None,
+            preferences_retry_at: 0,
         }
     }
 
@@ -123,11 +128,51 @@ impl Phone {
         self.disconnected = status.is_none();
         if status.is_none() {
             self.session = None;
+            self.preferences = None;
         }
     }
 
     pub fn screen_off(&self) -> bool {
         self.off
+    }
+
+    /// The persisted shell store owns requested radio/sound preferences. MODEMD owns confirmation and recovery;
+    /// replay the stored request once per generation and after reconnect, without overwriting it with old status.
+    pub fn sync_settings(&mut self, settings: &crate::settings::Settings, now_ms: u64) {
+        let Some(status) = self.shown else {
+            return;
+        };
+        if status.modem == modem::FAILED || now_ms < self.preferences_retry_at {
+            return;
+        }
+        let airplane = settings.get(keys::RADIO_AIRPLANE).unwrap_or(false);
+        let ring = modem_ipc::Ring {
+            volume: settings
+                .get(keys::SOUND_RING_VOLUME)
+                .unwrap_or(8)
+                .clamp(0, 10) as u8,
+            silent: settings.get(keys::SOUND_SILENT).unwrap_or(false),
+            vibrate: settings.get(keys::SOUND_VIBRATE).unwrap_or(true),
+        };
+        let desired = (status.generation, airplane, ring);
+        if self.preferences == Some(desired) {
+            return;
+        }
+        let radio_result = self.request("airplane", if airplane { "1" } else { "0" });
+        let ring_result = self.session.as_ref().map_or(-18, |session| {
+            let mut args = TIpcArgs::new();
+            args.int(0, i32::from(ring.volume));
+            args.int(1, i32::from(ring.silent));
+            args.int(2, i32::from(ring.vibrate));
+            session
+                .send_receive(op::RING_SETTINGS, &args)
+                .unwrap_or_else(|e| e)
+        });
+        if radio_result == 0 && ring_result == 0 {
+            self.preferences = Some(desired);
+        } else {
+            self.preferences_retry_at = now_ms.saturating_add(1_000);
+        }
     }
 
     pub fn modal(&self) -> bool {
@@ -280,13 +325,7 @@ impl Phone {
             alloc::string::String::new()
         };
         ui.set_phone_feedback(s.pending, &feedback);
-        ui.set_phone_settings(
-            s.airplane,
-            s.radio_online,
-            s.ring.volume,
-            s.ring.silent,
-            s.ring.vibrate,
-        );
+        ui.set_phone_settings(s.radio_online);
         ui.set_sim(
             s.sim == sim::PIN_REQUIRED,
             s.sim == sim::BLOCKED,

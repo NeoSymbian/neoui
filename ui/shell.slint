@@ -7,6 +7,8 @@
 import "fonts/Inter-VariableFont.ttf";
 import "fonts/UbuntuMono-Regular.ttf";
 import { Theme } from "theme.slint";
+export { SystemSettings } from "system-settings.slint";
+export { Now } from "now.slint";
 export { Scroll } from "components/scroll.slint";
 import { StatusBar, Toolbar } from "components/frame.slint";
 import { OptionsMenu, Button } from "components/controls.slint";
@@ -114,11 +116,7 @@ export component Shell inherits Window {
     in property <bool> phone-pending;
     in property <string> phone-feedback;
     in property <int> missed-calls;
-    in-out property <bool> airplane;
     in property <bool> radio-online;
-    in property <int> ring-volume: 8;
-    in property <bool> silent;
-    in property <bool> vibrate: true;
     in property <bool> sim-pin-required;
     in property <bool> sim-blocked;
     in property <int> pin-attempts: -1;
@@ -261,13 +259,8 @@ export component Shell inherits Window {
             SettingsScreen {
                 view <=> root.view;
                 build: root.build-info;
-                airplane <=> root.airplane;
                 radio-online: root.radio-online;
-                ring-volume: root.ring-volume;
-                silent: root.silent;
-                vibrate: root.vibrate;
                 phone-feedback: root.phone-feedback;
-                phone-action(a, v) => { root.phone-action(a, v); }
             }
         }
 
@@ -351,8 +344,6 @@ export component Shell inherits Window {
         open: shade-open;
         missed: root.missed-calls;
         active-call: root.live-calls.length > 0;
-        silent: root.silent;
-        silent-changed(on) => { root.phone-action("silent", on ? "1" : "0"); }
         return-call => { root.open("phone"); root.view = "call"; }
         dismissed => { root.shade-open = false; }
         open-app(a) => { root.open(a); }

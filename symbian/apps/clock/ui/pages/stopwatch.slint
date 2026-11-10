@@ -1,0 +1,55 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// The Stopwatch tab: elapsed time to the hundredth, Start/Stop, Lap and Reset, and the laps (newest first). It keeps
+// running while the app is closed (wall-clock based, saved in clock.stopwatch).
+import { Theme } from "../../../../../ui/theme.slint";
+import { Button } from "../../../../../ui/components/controls.slint";
+import { ListRow } from "../../../../../ui/components/lists.slint";
+import { NeoList } from "../../../../../ui/components/scroll.slint";
+import { ClockState } from "../state.slint";
+
+export component StopwatchPage inherits Rectangle {
+    VerticalLayout {
+        padding-top: 32 * Theme.dp;
+        spacing: 20 * Theme.dp;
+        Text {
+            text: ClockState.stopwatch-text;
+            color: Theme.text;
+            font-size: 56 * Theme.dp;
+            horizontal-alignment: center;
+        }
+
+        HorizontalLayout {
+            alignment: center;
+            spacing: 16 * Theme.dp;
+            Button {
+                text: ClockState.stopwatch-running ? "Lap" : "Reset";
+                primary: false;
+                clicked => {
+                    if (ClockState.stopwatch-running) {
+                        ClockState.stopwatch-lap();
+                    } else {
+                        ClockState.stopwatch-reset();
+                    }
+                }
+            }
+
+            Button {
+                text: ClockState.stopwatch-running ? "Stop" : (ClockState.stopwatch-started ? "Resume" : "Start");
+                clicked => {
+                    ClockState.stopwatch-toggle();
+                }
+            }
+        }
+
+        NeoList {
+            VerticalLayout {
+                alignment: start;
+                for l in ClockState.laps: ListRow {
+                    title: "Lap " + l.number;
+                    subtitle: l.total;
+                    value: l.lap;
+                }
+            }
+        }
+    }
+}
