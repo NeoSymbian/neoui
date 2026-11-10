@@ -184,12 +184,21 @@ impl Phone {
         if !self.off {
             return;
         }
-        if self.set_screen(true) {
+        if self.set_screen(true, self.shown.map(|s| (s.generation, s.call.id))) {
             self.woken_for = self.shown.map(|s| (s.generation, s.call.id));
         }
     }
 
-    fn set_screen(&mut self, on: bool) -> bool {
+    fn set_screen(&mut self, on: bool, context: Option<(u32, u8)>) -> bool {
+        let started = e32::time::millis();
+        let (generation, call_id) = context.unwrap_or((0, 0));
+        dprintln!(
+            "neoui: display enter t={} on={} gen={} call={}",
+            started,
+            on,
+            generation,
+            call_id
+        );
         // EDisplayHalSetState = 20 in u32hal.h: a1 is a scalar TBool, not a pointer to storage.
         // SAFETY: group 4, function 20 accepts only scalar a1 and ignores the null a2.
         let r = unsafe {
@@ -197,9 +206,16 @@ impl Phone {
         };
         if r == 0 {
             self.off = !on;
-        } else {
-            dprintln!("neoui: display state {} failed ({})", on, r);
         }
+        dprintln!(
+            "neoui: display exit t={} on={} gen={} call={} result={} elapsed={}ms",
+            e32::time::millis(),
+            on,
+            generation,
+            call_id,
+            r,
+            e32::time::millis().saturating_sub(started)
+        );
         r == 0
     }
 
@@ -208,6 +224,7 @@ impl Phone {
             return;
         }
         if self.disconnected {
+            let context = self.shown.map(|s| (s.generation, s.call.id));
             self.disconnected = false;
             self.shown = None;
             self.close_at = None;
@@ -218,7 +235,7 @@ impl Phone {
             ui.set_network(0, "No service", "");
             ui.set_phone_feedback(false, "Modem connection lost");
             if self.off {
-                self.set_screen(true);
+                self.set_screen(true, context);
             }
         }
         if self.close_at.is_some_and(|t| now_ms >= t) {
@@ -341,11 +358,11 @@ impl Phone {
                 .any(|c| c.state == call::CONVERSATION);
         let key = (s.generation, s.call.id);
         if earpiece && self.woken_for != Some(key) && !self.off {
-            self.set_screen(false);
+            self.set_screen(false, Some(key));
         } else if !earpiece {
             self.woken_for = None;
             if self.off {
-                self.set_screen(true);
+                self.set_screen(true, Some(key));
             }
         }
         self.shown = Some(s);
