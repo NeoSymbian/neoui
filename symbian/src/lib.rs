@@ -139,6 +139,7 @@ fn main() -> i32 {
         // Both stay outstanding across wake-ups, so no input event or message is lost to a cancel.
         let mut input = pin!(hook.next());
         let mut receive = pin!(server.receive());
+        let mut modem_update = pin!(phone::Watch::new().next());
         let mut screen = ui.screen();
         let mut down_at = None;
         let mut to_app = false;
@@ -153,6 +154,7 @@ fn main() -> i32 {
         let mut home_press: Option<i32> = None;
         let mut swipe: Option<(Slide, i32)> = None;
         let mut swallow = false;
+        let mut phone_modal = false;
         let (slop, turn) = ((8 * dp256 / 256) as i32, (60 * dp256 / 256) as i32);
         loop {
             let wait = if due
@@ -167,7 +169,7 @@ fn main() -> i32 {
             };
             match rt::select(
                 rt::select(input.as_mut(), receive.as_mut()),
-                time::delay(wait as i32),
+                rt::select(modem_update.as_mut(), time::delay(wait as i32)),
             )
             .await
             {
@@ -184,12 +186,25 @@ fn main() -> i32 {
                                 if matches!(ev.i_type, raw::EKEY_DOWN | raw::EKEY_UP)
                                     && ev.scan_code() == SCAN_POWER =>
                             {
-                                power_down_at = (ev.i_type == raw::EKEY_DOWN).then(time::millis);
+                                if phone.screen_off() {
+                                    if ev.i_type == raw::EKEY_DOWN {
+                                        phone.wake_screen();
+                                        // A wake press must not also open the power menu.
+                                        power_down_at = None;
+                                    }
+                                } else {
+                                    power_down_at =
+                                        (ev.i_type == raw::EKEY_DOWN).then(time::millis);
+                                }
                             }
                             Ok(ev)
                                 if ev.i_type == raw::EKEY_DOWN
                                     && matches!(ev.scan_code(), SCAN_VOL_UP | SCAN_VOL_DOWN)
                                     && phone.volume_key(ev.scan_code() == SCAN_VOL_UP) => {}
+                            Ok(ev) if phone.screen_off() => {
+                                // Keep the AP and power-key polling running; discard touch/other keys while blanked.
+                                let _ = ev;
+                            }
                             Ok(ev) => evs.extend(to_input(&ev)),
                             Err(e) => {
                                 dprintln!("neoui: input failed ({})", e);
@@ -200,7 +215,7 @@ fn main() -> i32 {
                     }
                     coalesce_moves(&mut evs);
                     for event in evs {
-                        let app_on_screen = host.front().is_some();
+                        let app_on_screen = host.front().is_some() && !phone.modal();
                         match event {
                             InputEvent::Touch { id, x, y, phase } => {
                                 let body = host.body;
@@ -209,6 +224,7 @@ fn main() -> i32 {
                                     home_press = (screen == "home"
                                         && !app_on_screen
                                         && !power_menu
+                                        && !phone.modal()
                                         && transition.is_none()
                                         && !swallow
                                         && contains(&ui.home_strip(), x, y))
@@ -221,8 +237,11 @@ fn main() -> i32 {
                                 }
                                 if phase == TouchPhase::Up {
                                     let down = down_at.take();
-                                    dprintln!("neoui: tap {},{} down {:?}", x, y, down);
-                                    tap_end = Some(down);
+                                    // PIN keypad coordinates disclose the entered digits just as text would.
+                                    if !phone.modal() {
+                                        dprintln!("neoui: tap {},{} down {:?}", x, y, down);
+                                        tap_end = Some(down);
+                                    }
                                 }
                                 if swallow {
                                     swallow = phase != TouchPhase::Up;
@@ -323,7 +342,25 @@ fn main() -> i32 {
                         }
                     }
                 }
-                Either::Right(()) => {}
+                Either::Right(Either::Left((watch, status))) => {
+                    phone.observe(status);
+                    modem_update.set(watch.next());
+                }
+                Either::Right(Either::Right(())) => {}
+            }
+            // Apply modem navigation before the app lifecycle/compositor decides which surface is visible.
+            phone.poll(&mut ui, time::millis());
+            let modal = phone.modal();
+            let modal_changed = modal != phone_modal;
+            phone_modal = modal;
+            if modal {
+                transition = None;
+                swipe = None;
+                home_press = None;
+                to_app = false;
+            }
+            if modal_changed {
+                host.refresh = true;
             }
             // Draw at the next frame's start, with everything that came in until then.
             let frame_at = now_us();
@@ -335,7 +372,7 @@ fn main() -> i32 {
             due = false;
 
             // App lifecycle: the shell's screen decides which app is in front; the others keep running (R10).
-            let mut repaint_all = false;
+            let mut repaint_all = modal_changed;
             let ms = time::millis();
             for key in host.reap(ms) {
                 if ui.screen() == key {
@@ -369,12 +406,16 @@ fn main() -> i32 {
                 running_shown = running;
             }
 
-            let want_keyboard = host.front().is_some_and(|a| a.keyboard);
+            let want_keyboard = !phone_modal && host.front().is_some_and(|a| a.keyboard);
             if want_keyboard != keyboard_shown {
                 ui.set_keyboard(want_keyboard);
                 keyboard_shown = want_keyboard;
             }
-            let want_nav = host.front().map_or(0, |a| a.nav);
+            let want_nav = if phone_modal {
+                0
+            } else {
+                host.front().map_or(0, |a| a.nav)
+            };
             if want_nav != nav_shown {
                 ui.set_app_nav(
                     want_nav & proto::NAV_BACK != 0,
@@ -400,7 +441,6 @@ fn main() -> i32 {
             if let Some(a) = power {
                 clock::power(a, &mut keeper);
             }
-            phone.poll(&mut ui, time::millis());
             let t = time::now();
             if (t.hour, t.minute) != clock_shown {
                 if t.minute != clock_shown.1 {
@@ -466,7 +506,7 @@ fn main() -> i32 {
                         copy_us += perf.since(&m);
                     }
                     let m = perf.mark();
-                    let app_px = if power_menu {
+                    let app_px = if power_menu || phone_modal {
                         0
                     } else {
                         compose(&mut host, &damage, &display)

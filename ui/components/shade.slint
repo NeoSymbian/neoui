@@ -10,6 +10,7 @@ component Toggle inherits Rectangle {
     in property <image> icon;
     in property <string> label;
     in-out property <bool> on;
+    callback toggled(bool);
     height: 74 * Theme.dp;
     border-radius: Theme.radius;
     background: on ? Theme.accent : Theme.field;
@@ -36,6 +37,7 @@ component Toggle inherits Rectangle {
     TouchArea {
         clicked => {
             root.on = !root.on;
+            root.toggled(root.on);
         }
     }
 }
@@ -44,6 +46,11 @@ export component Shade inherits Rectangle {
     in property <bool> open;
     callback dismissed;
     callback open-app(string);
+    in property <int> missed;
+    in property <bool> active-call;
+    callback return-call;
+    in property <bool> silent;
+    callback silent-changed(bool);
     visible: self.opacity > 0.01;
     opacity: open ? 1 : 0;
     animate opacity { duration: Theme.popup; easing: ease-out-quad; }
@@ -91,6 +98,8 @@ export component Shade inherits Rectangle {
                 Toggle {
                     icon: @image-url("../icons/sys/silent.svg");
                     label: "Silent";
+                    on: root.silent;
+                    toggled(on) => { root.silent-changed(on); }
                 }
             }
 
@@ -120,9 +129,17 @@ export component Shade inherits Rectangle {
                 letter-spacing: 0.06 * Theme.font-status;
             }
 
-            ListRow {
-                title: "Missed call";
-                subtitle: Data.calls[0].name + " · " + Data.calls[0].when;
+            if active-call: ListRow {
+                title: "Call in progress";
+                subtitle: "Return to call controls";
+                icon: @image-url("../icons/sys/call.svg");
+                has-icon: true;
+                clicked => { root.return-call(); }
+            }
+
+            if missed > 0: ListRow {
+                title: missed == 1 ? "Missed call" : missed + " missed calls";
+                subtitle: "Since this phone session started";
                 icon: @image-url("../icons/sys/missed_call.svg");
                 has-icon: true;
                 icon-tint: Theme.danger;

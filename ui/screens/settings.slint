@@ -3,7 +3,7 @@
 import { Theme } from "../theme.slint";
 import { NeoList } from "../components/scroll.slint";
 import { ListRow, SectionHeader } from "../components/lists.slint";
-import { Slider, Card } from "../components/controls.slint";
+import { Slider, Card, Button } from "../components/controls.slint";
 
 component Tinted inherits Rectangle {
     in property <image> icon;
@@ -81,6 +81,12 @@ export component SettingsScreen inherits Rectangle {
     in-out property <bool> bluetooth: false;
     in-out property <bool> data: true;
     in-out property <bool> airplane: false;
+    in property <bool> radio-online;
+    in property <int> ring-volume: 8;
+    in property <bool> silent;
+    in property <bool> vibrate: true;
+    in property <string> phone-feedback;
+    callback phone-action(string, string);
     in-out property <bool> dark: true;
     in-out property <float> brightness: 0.62;
 
@@ -125,6 +131,7 @@ export component SettingsScreen inherits Rectangle {
                 value: "Ringing";
                 icon: @image-url("../icons/sys/volume.svg");
                 tint: #e5484d;
+                clicked => { root.view = "sounds"; }
             }
 
             SettingRow {
@@ -197,12 +204,46 @@ export component SettingsScreen inherits Rectangle {
 
             ListRow {
                 title: "Airplane mode";
+                subtitle: airplane ? (radio-online ? "Turning radio off…" : "Radio off") : (radio-online ? "Radio on" : "Waiting for radio");
                 has-icon: true;
                 icon: @image-url("../icons/sys/lock.svg");
                 has-switch: true;
                 switch-on <=> root.airplane;
+                switch-toggled(on) => { root.phone-action("airplane", on ? "1" : "0"); }
                 divider: false;
             }
+        }
+    }
+
+    if view == "sounds": NeoList {
+        VerticalLayout {
+            SectionHeader { text: "Incoming calls"; }
+            ListRow {
+                title: "Silent";
+                subtitle: "Mute the built-in ringtone";
+                has-switch: true;
+                switch-on: root.silent;
+                switch-toggled(on) => { root.phone-action("silent", on ? "1" : "0"); }
+            }
+            ListRow {
+                title: "Vibrate";
+                has-switch: true;
+                switch-on: root.vibrate;
+                switch-toggled(on) => { root.phone-action("vibrate", on ? "1" : "0"); }
+            }
+            ListRow {
+                title: "Ring volume";
+                value: root.ring-volume;
+                subtitle: "Built-in ringtone";
+            }
+            HorizontalLayout {
+                padding-left: Theme.margin;
+                padding-right: Theme.margin;
+                spacing: 12 * Theme.dp;
+                Button { text: "Quieter"; clicked => { root.phone-action("ring-volume", max(0, root.ring-volume - 1)); } }
+                Button { text: "Louder"; clicked => { root.phone-action("ring-volume", min(10, root.ring-volume + 1)); } }
+            }
+            if phone-feedback != "": ListRow { title: phone-feedback; }
         }
     }
 

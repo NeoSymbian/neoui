@@ -54,7 +54,7 @@ const ACTIONS: [&str; 7] = [
 /// "Power" swaps the row for these (the UI server carries them out, as its Power menu does: proto::POWER).
 const POWER_ACTIONS: [&str; 4] = ["Restart", "Power off", "Fastboot", "Back"];
 /// "Audio" swaps the row for these: modem_ipc::op::AUDIO_TEST 1, 2, 0.
-const AUDIO_ACTIONS: [&str; 4] = ["Speaker", "Earpiece", "Stop", "Back"];
+const AUDIO_ACTIONS: [&str; 5] = ["Speaker", "Earpiece", "Stop", "Retry", "Back"];
 
 /// Which action row is shown.
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -66,6 +66,10 @@ enum Row {
 
 /// NeoModem's audio test: 1 loudspeaker, 2 earpiece, 0 stop. Its result, or why there is none.
 fn audio_test(what: i32) -> i32 {
+    modem_request(modem_ipc::op::AUDIO_TEST, what)
+}
+
+fn modem_request(operation: i32, argument: i32) -> i32 {
     let (major, minor, build) = modem_ipc::VERSION;
     let v = TVersion {
         major: major as u8,
@@ -77,10 +81,8 @@ fn audio_test(what: i32) -> i32 {
         Err(e) => return e, // no MODEMD in this ROM, or not up yet
     };
     let mut args = TIpcArgs::new();
-    args.int(0, what);
-    session
-        .send_receive(modem_ipc::op::AUDIO_TEST, &args)
-        .unwrap_or_else(|e| e)
+    args.int(0, argument);
+    session.send_receive(operation, &args).unwrap_or_else(|e| e)
 }
 
 fn main() -> i32 {
@@ -405,6 +407,14 @@ fn run() -> Result<(), i32> {
                                 };
                                 st.view = View::Live; // the log shows each step ([modemd] apr: ...)
                                 dprintln!("devtools: {}", st.status);
+                            } else if i == 3 {
+                                let r = modem_request(modem_ipc::op::RETRY, 0);
+                                st.status = if r == 0 {
+                                    String::from("modem recovery requested")
+                                } else {
+                                    format!("modem recovery failed ({r})")
+                                };
+                                st.view = View::Live;
                             } else {
                                 row = Row::Main;
                                 set_actions(&ui, &ACTIONS);

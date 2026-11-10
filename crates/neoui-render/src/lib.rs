@@ -21,10 +21,20 @@ use slint::platform::software_renderer::{
     TargetPixel,
 };
 use slint::platform::{Platform, PointerEventButton, WindowAdapter, WindowEvent};
-use slint::{ComponentHandle, LogicalPosition, PhysicalSize, PlatformError};
+use slint::{ComponentHandle, LogicalPosition, Model, PhysicalSize, PlatformError};
 
 /// The home screen's page count (`ui/screens/home.slint`).
 pub const HOME_PAGES: i32 = 3;
+
+/// A live modem call projected into the platform-independent renderer.
+pub struct CallView<'a> {
+    pub id: u8,
+    pub number: &'a str,
+    pub state: &'a str,
+    pub incoming: bool,
+    pub held: bool,
+    pub waiting: bool,
+}
 
 slint::include_modules!();
 
@@ -287,9 +297,59 @@ impl Renderer {
         self.ui.set_call_volume(volume);
     }
 
+    pub fn set_calls(&mut self, calls: &[CallView<'_>]) {
+        let rows: Vec<LiveCall> = calls
+            .iter()
+            .map(|c| LiveCall {
+                id: c.id as i32,
+                number: c.number.into(),
+                state: c.state.into(),
+                incoming: c.incoming,
+                held: c.held,
+                waiting: c.waiting,
+            })
+            .collect();
+        self.ui
+            .set_live_calls(slint::ModelRc::from(Rc::new(slint::VecModel::from(rows))));
+    }
+
+    pub fn set_phone_feedback(&mut self, pending: bool, feedback: &str) {
+        self.ui.set_phone_pending(pending);
+        self.ui.set_phone_feedback(feedback.into());
+    }
+
+    pub fn set_phone_settings(
+        &mut self,
+        airplane: bool,
+        online: bool,
+        volume: u8,
+        silent: bool,
+        vibrate: bool,
+    ) {
+        self.ui.set_airplane(airplane);
+        self.ui.set_radio_online(online);
+        self.ui.set_ring_volume(volume as i32);
+        self.ui.set_silent(silent);
+        self.ui.set_vibrate(vibrate);
+    }
+
+    pub fn set_sim(&mut self, pin: bool, blocked: bool, attempts: Option<u8>) {
+        self.ui.set_sim_pin_required(pin);
+        self.ui.set_sim_blocked(blocked);
+        self.ui.set_pin_attempts(attempts.map_or(-1, i32::from));
+    }
+
+    pub fn set_phone_availability(&mut self, failed: bool, missed: u32) {
+        self.ui.set_modem_failed(failed);
+        self.ui.set_missed_calls(missed.min(i32::MAX as u32) as i32);
+    }
+
     /// Leave the Phone screen's call view for the dial pad (the call ended or never started); elsewhere nothing.
     pub fn close_call(&mut self) {
-        if self.ui.get_view() == "call" {
+        if self.ui.get_screen() == "phone"
+            && self.ui.get_view() == "call"
+            && self.ui.get_live_calls().row_count() == 0
+        {
             self.ui.set_view("".into());
         }
     }
