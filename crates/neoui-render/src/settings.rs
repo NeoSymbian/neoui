@@ -60,6 +60,11 @@ pub(crate) static BINDINGS: &[Binding] = &[
     bool_binding!(keys::SOUND_SILENT, get_silent, set_silent),
     bool_binding!(keys::SOUND_VIBRATE, get_vibrate, set_vibrate),
     bool_binding!(keys::DISPLAY_DARK, get_dark, set_dark),
+    bool_binding!(
+        keys::DEVELOPER_USB_DEBUGGING,
+        get_usb_debugging,
+        set_usb_debugging
+    ),
     Binding {
         key: key_name::<i32>(keys::DISPLAY_BRIGHTNESS),
         read: |g| Value::Int(brightness_to_store(g.get_brightness())),
