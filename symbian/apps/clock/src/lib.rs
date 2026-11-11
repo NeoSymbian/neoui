@@ -62,9 +62,10 @@ fn run() -> Result<(), i32> {
         app,
         ui: ui.as_weak(),
         model: RefCell::new(model),
+        analog: RefCell::default(),
     });
     pages::bind(&ctx, &ui);
-    ctx.show(&Now::read());
+    ctx.open(View::None); // shows everything, and claims Options (the Clock settings)
     ctx.draw()?;
 
     // In the background (R10) the clock neither ticks nor draws.
@@ -127,6 +128,16 @@ fn run() -> Result<(), i32> {
                 }
                 Some(AppEvent::Alarm { id }) => {
                     pages::ring(&ctx, id);
+                    ctx.draw()?;
+                }
+                Some(AppEvent::Options) => {
+                    // Options opens the Clock settings, or closes them
+                    let to = if ctx.model.borrow().view == View::Settings {
+                        View::None
+                    } else {
+                        View::Settings
+                    };
+                    ctx.open(to);
                     ctx.draw()?;
                 }
                 Some(AppEvent::Back) => {

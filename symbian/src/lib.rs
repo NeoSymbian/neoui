@@ -156,7 +156,8 @@ fn main() -> i32 {
     let mut brightness_sent = -1;
     // the Power menu covers the whole screen: no app surface over it, every touch to the shell
     let mut power_menu = false;
-    let mut overlay_shown = false; // the shade or the Options menu over the app (last frame)
+    let mut overlay_shown = false;
+    let mut front_shown = false; // the shell knows an app is in front // the shade or the Options menu over the app (last frame)
     // a refused HAL query must not freeze the clock below, which would hold every frame back
     let tick_us = match time::tick_period_us() {
         0 => 1000,
@@ -416,6 +417,11 @@ fn main() -> i32 {
             if want_keyboard != keyboard_shown {
                 ui.set_keyboard(want_keyboard);
                 keyboard_shown = want_keyboard;
+            }
+            let front = host.front().is_some();
+            if front != front_shown {
+                ui.set_app_front(front);
+                front_shown = front;
             }
             let want_nav = host.front().map_or(0, |a| a.nav);
             if want_nav != nav_shown {

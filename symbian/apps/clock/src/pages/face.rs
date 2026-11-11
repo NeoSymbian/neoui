@@ -6,7 +6,9 @@ use crate::ClockState;
 use crate::state::{Model, View};
 use alloc::rc::Rc;
 use neoui_proto::clock::Local;
+use neoui_proto::clock::analog::{self, Rgba};
 use neoui_proto::clock::face::Face;
+use slint::{Image, Rgba8Pixel, SharedPixelBuffer};
 
 pub fn bind(ctx: &Rc<Ctx>, s: &ClockState<'_>) {
     let c = ctx.clone();
@@ -35,4 +37,33 @@ pub fn show(s: &ClockState<'_>, m: &Model, now: &Now) {
     s.set_am_pm(face.am_pm.into());
     s.set_date(face.date.as_str().into());
     s.set_next_alarm(face.next_alarm.as_str().into());
+}
+
+/// The analog face's dial for one size and ink, drawn once (the hands change every second, the dial doesn't).
+#[derive(Default)]
+pub struct Analog {
+    dial: alloc::vec::Vec<Rgba>,
+    size: usize,
+    ink: [u8; 3],
+}
+
+/// The face at `(h, m, s)`: a copy of the dial with the hands over it.
+pub fn draw_analog(
+    a: &mut Analog,
+    size: usize,
+    t: (u32, u32, u32),
+    seconds: bool,
+    ink: [u8; 3],
+    accent: [u8; 3],
+) -> Image {
+    if a.size != size || a.ink != ink {
+        a.dial = alloc::vec![[0; 4]; size * size];
+        analog::dial(&mut a.dial, size, ink);
+        (a.size, a.ink) = (size, ink);
+    }
+    let mut buf = SharedPixelBuffer::<Rgba8Pixel>::new(size as u32, size as u32);
+    let (px, _) = buf.make_mut_bytes().as_chunks_mut::<4>();
+    px.copy_from_slice(&a.dial);
+    analog::hands(px, size, t, seconds, ink, accent);
+    Image::from_rgba8(buf)
 }

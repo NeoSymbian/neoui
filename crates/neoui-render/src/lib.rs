@@ -238,6 +238,11 @@ impl Renderer {
     }
 
     /// Whether the foreground app handles the toolbar's Back and Options itself.
+    /// An app process is in front (the shell hides its own mock of the screen and unclaimed toolbar buttons).
+    pub fn set_app_front(&mut self, front: bool) {
+        self.ui.set_app_front(front);
+    }
+
     pub fn set_app_nav(&mut self, back: bool, options: bool) {
         self.ui.set_app_back(back);
         self.ui.set_app_options(options);
@@ -260,10 +265,10 @@ impl Renderer {
         core::mem::take(&mut *self.closed.borrow_mut())
     }
 
-    /// Is a shell overlay open over the app area (the status shade or the Options menu)? The UI server neither
-    /// composes the app's surface over it nor gives it the touches meanwhile.
+    /// Is the status shade open over the app area? The UI server neither composes the app's surface over it nor
+    /// gives it the touches meanwhile. (The shell's Options menu never opens over an app: its Options is the app's.)
     pub fn overlay_open(&self) -> bool {
-        self.ui.get_shade_open() || self.ui.get_options_open()
+        self.ui.get_shade_open()
     }
 
     /// Show or hide the Power menu (the UI server opens it when Power is held).

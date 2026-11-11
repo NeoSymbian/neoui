@@ -7,6 +7,7 @@
 //! | [`saved`] | the clock across restarts: "UTC minus a reference clock" and the zone (`clock.dat`) |
 //! | [`local`] | the "Set time" editor ([`Local`]) and calendar helpers |
 //! | [`alarm`] | alarms: weekdays, next due, snooze, and their settings blob |
+//! | [`analog`] | the analog face drawn into pixels (dial once, hands each second) |
 //! | [`face`] | the face as text: 24/12-hour, the date line, the next alarm (home widget and the app) |
 //! | [`world`] | world clocks: the city catalogue, times there, and the saved list |
 //! | [`timer`] | the countdown timer's state machine |
@@ -14,6 +15,7 @@
 //! | [`wire`] | the small byte codec the settings blobs share |
 
 pub mod alarm;
+pub mod analog;
 pub mod face;
 pub mod local;
 pub mod saved;

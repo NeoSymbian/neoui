@@ -171,11 +171,19 @@ registry! {
     DISPLAY_TIMEOUT: i32 = "display.timeout", default DefaultValue::Int(60),
         limit Limit::Range { min: 0, max: 600 }, owner Owner::Shell;
     /// 24-hour clock (else 12-hour).
-    CLOCK_24H: bool = "clock.24h", default DefaultValue::Bool(true), limit Limit::None, owner Owner::Shell;
+    CLOCK_24H: bool = "clock.24h", default DefaultValue::Bool(true), limit Limit::None, owner Owner::App("clock");
     /// USB debugging (Developer options): fshell's USB serial port and the shell on it (`phone.py sh`), like
     /// Android's adb. The UI server turns the port on (kernel HAL 0x4e04) and supervises fshell.
     DEVELOPER_USB_DEBUGGING: bool = "developer.usb_debugging", default DefaultValue::Bool(false), limit Limit::None,
         owner Owner::Shell;
+    /// The Clock app's face: 0 digital, 1 analog (Clock settings).
+    CLOCK_FACE: i32 = "clock.face", default DefaultValue::Int(0),
+        limit Limit::Range { min: 0, max: 1 }, owner Owner::App("clock");
+    /// The Clock app shows the seconds (the seconds hand on the analog face).
+    CLOCK_SECONDS: bool = "clock.seconds", default DefaultValue::Bool(true), limit Limit::None,
+        owner Owner::App("clock");
+    /// The Clock app shows the date under the face.
+    CLOCK_DATE: bool = "clock.date", default DefaultValue::Bool(true), limit Limit::None, owner Owner::App("clock");
     /// The Clock app's open page: 0 Clock, 1 Alarms, 2 World, 3 Timer, 4 Stopwatch.
     CLOCK_TAB: i32 = "clock.tab", default DefaultValue::Int(0),
         limit Limit::Range { min: 0, max: 4 }, owner Owner::App("clock");

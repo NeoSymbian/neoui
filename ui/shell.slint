@@ -90,6 +90,9 @@ export component Shell inherits Window {
     // (1 = Back, 2 = Options) instead of acting (R8)
     in property <bool> app-back;
     in property <bool> app-options;
+    // in: an app process is in front: the shell's own mock of that screen stays hidden (an overlay shows over a dark
+    // body, not over a mock), and unclaimed toolbar buttons do nothing
+    in property <bool> app-front;
     callback app-nav(int);
     // in: the apps the UI server keeps running, most recent first (R10); out: the switcher's close button
     in property <[string]> running;
@@ -237,12 +240,12 @@ export component Shell inherits Window {
         }
 
         Slot {
-            active: screen == "clock";
+            active: screen == "clock" && !root.app-front;
             ClockScreen { }
         }
 
         Slot {
-            active: screen == "files";
+            active: screen == "files" && !root.app-front;
             FilesScreen {
                 view <=> root.view;
             }
@@ -263,7 +266,7 @@ export component Shell inherits Window {
         }
 
         Slot {
-            active: screen == "terminal";
+            active: screen == "terminal" && !root.app-front;
             TerminalScreen { }
         }
 
@@ -302,7 +305,7 @@ export component Shell inherits Window {
 
     if has-toolbar: Toolbar {
         y: root.height - Theme.toolbar-h;
-        has-action: screen == "messages" || screen == "contacts" || screen == "browser" || screen == "clock" || screen == "menu";
+        has-action: !root.app-front && (screen == "messages" || screen == "contacts" || screen == "browser" || screen == "clock" || screen == "menu");
         action-icon: screen == "contacts" ? @image-url("icons/sys/person_add.svg") : screen == "browser" ? @image-url("icons/sys/refresh.svg") : screen == "menu" ? @image-url("icons/sys/tabs.svg") : @image-url("icons/sys/add.svg");
         back => {
             if (root.app-back && !root.shade-open && !root.options-open) {
@@ -312,8 +315,11 @@ export component Shell inherits Window {
             }
         }
         options => {
-            if (root.app-options && !root.shade-open && !root.options-open) {
-                root.app-nav(2);
+            // an app in front owns Options (nothing when it didn't claim it); the shell's menu is for its own screens
+            if (root.app-front) {
+                if (root.app-options && !root.shade-open) {
+                    root.app-nav(2);
+                }
             } else {
                 root.options-open = !root.options-open;
             }

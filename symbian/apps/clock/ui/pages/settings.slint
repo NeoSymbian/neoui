@@ -1,0 +1,40 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Clock settings (sub-view "settings", the toolbar's Options): what the Clock tab shows. Back or Options closes it.
+import { Theme } from "../../../../../ui/theme.slint";
+import { ListRow, SectionHeader } from "../../../../../ui/components/lists.slint";
+import { ClockState } from "../state.slint";
+
+export component SettingsPage inherits Rectangle {
+    background: Theme.bg;
+    VerticalLayout {
+        alignment: start;
+        SectionHeader { text: "Clock face"; }
+        ListRow {
+            title: "Face";
+            value: ClockState.analog ? "Analog" : "Digital";
+            clicked => { ClockState.set-analog(!ClockState.analog); }
+        }
+
+        ListRow {
+            title: "Show seconds";
+            has-switch: true;
+            switch-on: ClockState.show-seconds;
+            switch-toggled(on) => { ClockState.set-seconds(on); }
+        }
+
+        ListRow {
+            title: "Show date";
+            has-switch: true;
+            switch-on: ClockState.show-date;
+            switch-toggled(on) => { ClockState.set-date(on); }
+        }
+
+        ListRow {
+            title: "24-hour time";
+            has-switch: true;
+            switch-on: ClockState.h24;
+            switch-toggled(on) => { ClockState.set-h24(on); }
+            divider: false;
+        }
+    }
+}
