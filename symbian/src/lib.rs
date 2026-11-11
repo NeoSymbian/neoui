@@ -17,6 +17,7 @@ mod host;
 mod perf;
 mod phone;
 mod settings;
+mod usb_debug;
 
 use alloc::vec;
 use alloc::vec::Vec;
@@ -30,6 +31,7 @@ use e32::server::{self, Server};
 use e32::{dprintln, time};
 use host::Host;
 use neoui_proto::ipc::{self as proto, AppEvent};
+use neoui_proto::settings::keys;
 use neoui_proto::{Damage, InputEvent, Rect, TouchPhase, coalesce_moves, next_deadline};
 use neoui_render::layer::{self, Slide, Transition};
 use neoui_render::{HOME_PAGES, Renderer};
@@ -120,6 +122,17 @@ fn main() -> i32 {
     };
     dprintln!("neoui: boot OK -> {}", boot_ok);
     let mut phone = phone::Phone::start();
+    // Settings -> Developer options -> USB debugging: fshell on a second USB port, on a worker thread (usb_debug.rs);
+    // the UI only tells it the switch
+    let usb_debugging =
+        |s: &settings::Settings| s.get(keys::DEVELOPER_USB_DEBUGGING).unwrap_or(false);
+    let mut usb_debug = match usb_debug::UsbDebug::start(usb_debugging(&settings)) {
+        Ok(worker) => Some(worker),
+        Err(e) => {
+            dprintln!("neoui: USB debugging unavailable ({})", e);
+            None
+        }
+    };
     // the shell's design unit (theme.slint: min(w, h) / 360), in 1/256 px
     let dp256 = (w.min(h) * 256 / 360) as u32;
     let mut host = Host::new(ui.body(), dp256, ui.keyboard_h(), settings);
@@ -401,6 +414,9 @@ fn main() -> i32 {
             }
             phone.poll(&mut ui, time::millis());
             mirror.sync(&mut ui, &mut host.settings, ms);
+            if let Some(worker) = usb_debug.as_mut() {
+                worker.set(usb_debugging(&host.settings));
+            }
             host.deliver_settings();
             settings::log_save(host.settings.tick(ms));
             clockwork.frame(&mut ui, &mut host, ms);

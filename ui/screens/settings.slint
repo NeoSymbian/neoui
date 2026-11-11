@@ -156,6 +156,14 @@ export component SettingsScreen inherits Rectangle {
             }
 
             SettingRow {
+                title: "Developer options";
+                value: SystemSettings.usb-debugging ? "USB debugging" : "Off";
+                icon: @image-url("../icons/sys/usb.svg");
+                tint: #5b6472;
+                clicked => { root.view = "developer"; }
+            }
+
+            SettingRow {
                 title: "About phone";
                 icon: @image-url("../icons/sys/info.svg");
                 tint: #5b6472;
@@ -201,6 +209,21 @@ export component SettingsScreen inherits Rectangle {
                 icon: @image-url("../icons/sys/lock.svg");
                 has-switch: true;
                 switch-on <=> SystemSettings.airplane;
+                divider: false;
+            }
+        }
+    }
+
+    if view == "developer": NeoList {
+        VerticalLayout {
+            SectionHeader { text: "Debugging"; }
+            ListRow {
+                title: "USB debugging";
+                subtitle: SystemSettings.usb-debugging ? "Shell on the second USB port (phone.py sh)" : "Off";
+                has-icon: true;
+                icon: @image-url("../icons/sys/usb.svg");
+                has-switch: true;
+                switch-on <=> SystemSettings.usb-debugging;
                 divider: false;
             }
         }
