@@ -80,6 +80,17 @@ pub(crate) static BINDINGS: &[Binding] = &[
         },
     },
     bool_binding!(keys::CLOCK_24H, get_clock_24h, set_clock_24h),
+    Binding {
+        key: key_name::<i32>(keys::DISPLAY_TIMEOUT),
+        read: |g| Value::Int(g.get_screen_timeout()),
+        write: |g, v| match v {
+            Value::Int(s) => {
+                g.set_screen_timeout(*s);
+                true
+            }
+            _ => false,
+        },
+    },
 ];
 
 /// The binding for `key`, if the shell shows it.

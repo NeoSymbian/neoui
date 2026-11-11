@@ -19,6 +19,8 @@ export global SystemSettings {
     // 0.0 to 1.0; stored as 0 to 255 (display.brightness)
     in-out property <float> brightness: 160 / 255;
     in-out property <bool> clock-24h: true;
+    // seconds before the screen turns off, 0 = never (display.timeout)
+    in-out property <int> screen-timeout: 60;
     in-out property <bool> usb-debugging: false;
 
     // A setting changed in the UI (its registry key); the server reads the property and stores it.
@@ -33,5 +35,6 @@ export global SystemSettings {
     changed dark => { edited("display.dark"); }
     changed brightness => { edited("display.brightness"); }
     changed clock-24h => { edited("clock.24h"); }
+    changed screen-timeout => { edited("display.timeout"); }
     changed usb-debugging => { edited("developer.usb_debugging"); }
 }

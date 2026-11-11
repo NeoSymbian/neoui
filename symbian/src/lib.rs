@@ -17,6 +17,7 @@ mod clockwork;
 mod host;
 mod perf;
 mod phone;
+mod screen;
 mod settings;
 mod usb_debug;
 
@@ -49,6 +50,11 @@ const TRANSITION_MS: u32 = 250;
 const SWIPE_MS: u32 = 250;
 /// How long Power is held before the Power menu opens (H3a).
 const POWER_HOLD_MS: u64 = 1000;
+/// `EHalGroupDisplay` and its `TDisplayHalFunction`s (`u32hal.h`): screen on/off and the panel's brightness (D2).
+const HAL_DISPLAY: i32 = 4;
+const DISPLAY_MAX_BRIGHTNESS: i32 = 12;
+const DISPLAY_SET_BRIGHTNESS: i32 = 13;
+const DISPLAY_SET_STATE: i32 = 20;
 /// `EStdKeyDevice0` (`e32keys.h`): the Pixel's Power key (kernel `a64_keys.cpp`).
 const SCAN_POWER: i32 = 0xa4;
 /// `EStdKeyIncVolume` / `EStdKeyDecVolume`: during a call they set its volume (telephony C6)
@@ -144,6 +150,10 @@ fn main() -> i32 {
     let mut battery = battery::Battery::boot();
     // when Power went down, while it is held
     let mut power_down_at: Option<u64> = None;
+    // the screen (screen.rs): off after display.timeout, by a short Power press; on by Power or a ringing call
+    let mut scr = screen::Screen::new(time::millis());
+    let panel_max = display_max_brightness();
+    let mut brightness_sent = -1;
     // the Power menu covers the whole screen: no app surface over it, every touch to the shell
     let mut power_menu = false;
     // a refused HAL query must not freeze the clock below, which would hold every frame back
@@ -173,10 +183,9 @@ fn main() -> i32 {
         let mut swallow = false;
         let (slop, turn) = ((8 * dp256 / 256) as i32, (60 * dp256 / 256) as i32);
         loop {
-            let wait = if due
-                || transition.is_some()
-                || swipe.is_some()
-                || ui.has_active_animations()
+            // a dark screen draws nothing: no frame pacing for animations or a pending draw
+            let wait = if scr.is_on()
+                && (due || transition.is_some() || swipe.is_some() || ui.has_active_animations())
                 || power_down_at.is_some()
             {
                 next_frame.saturating_sub(now_us())
@@ -202,13 +211,32 @@ fn main() -> i32 {
                                 if matches!(ev.i_type, raw::EKEY_DOWN | raw::EKEY_UP)
                                     && ev.scan_code() == SCAN_POWER =>
                             {
-                                power_down_at = (ev.i_type == raw::EKEY_DOWN).then(time::millis);
+                                let now = time::millis();
+                                let change = if ev.i_type == raw::EKEY_DOWN {
+                                    let c = scr.power_down(now);
+                                    // a press that woke the screen opens no Power menu
+                                    power_down_at = (!scr.press_woke()).then_some(now);
+                                    c
+                                } else {
+                                    let held = power_down_at
+                                        .take()
+                                        .map_or(POWER_HOLD_MS, |t| now.saturating_sub(t));
+                                    scr.power_up(held, POWER_HOLD_MS)
+                                };
+                                if let Some(c) = change {
+                                    set_screen(c, &mut host.refresh);
+                                }
                             }
                             Ok(ev)
                                 if ev.i_type == raw::EKEY_DOWN
                                     && matches!(ev.scan_code(), SCAN_VOL_UP | SCAN_VOL_DOWN)
                                     && phone.volume_key(ev.scan_code() == SCAN_VOL_UP) => {}
-                            Ok(ev) => evs.extend(to_input(&ev)),
+                            // a dark screen takes no touches or keys (the kernel's touchscreen sleeps too)
+                            Ok(ev) if scr.is_on() => {
+                                scr.activity(time::millis());
+                                evs.extend(to_input(&ev));
+                            }
+                            Ok(_) => {}
                             Err(e) => {
                                 dprintln!("neoui: input failed ({})", e);
                                 return e;
@@ -424,6 +452,33 @@ fn main() -> i32 {
             host.deliver_settings();
             settings::log_save(host.settings.tick(ms));
             clockwork.frame(&mut ui, &mut host, ms);
+            let woke = if phone.take_ring() {
+                scr.wake(ms)
+            } else {
+                None
+            };
+            // no panel (QEMU): the screen never times out (a blank UI would drop the CI's taps)
+            let timeout = if panel_max > 0 {
+                host.settings.get(keys::DISPLAY_TIMEOUT).unwrap_or(60)
+            } else {
+                0
+            };
+            if let Some(c) = woke.or_else(|| scr.tick(ms, timeout, phone.in_call() || power_menu)) {
+                set_screen(c, &mut host.refresh);
+            }
+            if panel_max > 0 && scr.is_on() {
+                let want = screen::panel_level(
+                    host.settings.get(keys::DISPLAY_BRIGHTNESS).unwrap_or(160),
+                    panel_max,
+                );
+                if want != brightness_sent {
+                    set_brightness(want);
+                    brightness_sent = want;
+                }
+            }
+            if !scr.is_on() {
+                continue; // nothing drawn while dark; the pollers above keep running
+            }
 
             let fading = transition.is_some() || swipe.is_some();
             let (px, damage, render_us, mut copy_us) =
@@ -707,5 +762,56 @@ fn key_char(scan: i32) -> Option<char> {
         0x30..=0x39 => char::from_u32(scan as u32),
         0x41..=0x5A => char::from_u32(scan as u32 + 0x20),
         _ => None,
+    }
+}
+
+/// The panel's highest brightness level (display HAL), or 0 when it has none (QEMU).
+fn display_max_brightness() -> i32 {
+    let mut max: i32 = 0;
+    // SAFETY: a1 is a valid i32 out-parameter for EDisplayHalMaxDisplayBrightness; a2 is unused.
+    let r = unsafe {
+        e32::sys::ui::hal_function(
+            HAL_DISPLAY,
+            DISPLAY_MAX_BRIGHTNESS,
+            (&mut max as *mut i32).cast(),
+            core::ptr::null_mut(),
+        )
+    };
+    dprintln!("neoui: panel brightness max {} ({})", max, r);
+    if r == 0 { max } else { 0 }
+}
+
+/// The panel's brightness, 0..=display_max_brightness() (EDisplayHalSetDisplayBrightness).
+fn set_brightness(level: i32) {
+    // SAFETY: the function takes the level by value in a1; a2 is unused.
+    let r = unsafe {
+        e32::sys::ui::hal_function(
+            HAL_DISPLAY,
+            DISPLAY_SET_BRIGHTNESS,
+            level as usize as *mut u8,
+            core::ptr::null_mut(),
+        )
+    };
+    if r != 0 {
+        dprintln!("neoui: brightness {} failed ({})", level, r);
+    }
+}
+
+/// Screen on or off (EDisplayHalSetState): the kernel sleeps or wakes the panel and the touchscreen. On wake the
+/// app's surface is composed again whole.
+fn set_screen(c: screen::Change, refresh: &mut bool) {
+    let on = c == screen::Change::On;
+    // SAFETY: the function takes the state by value in a1; a2 is unused.
+    let r = unsafe {
+        e32::sys::ui::hal_function(
+            HAL_DISPLAY,
+            DISPLAY_SET_STATE,
+            usize::from(on) as *mut u8,
+            core::ptr::null_mut(),
+        )
+    };
+    dprintln!("neoui: screen {} ({})", if on { "on" } else { "off" }, r);
+    if on {
+        *refresh = true;
     }
 }
