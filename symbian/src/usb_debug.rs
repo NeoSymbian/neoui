@@ -73,10 +73,8 @@ impl<B: Backend> Supervisor<B> {
     fn tick(&mut self, backend: &mut B, want: bool, now_ms: u64) -> Event {
         if want != self.on {
             self.on = want;
-            if !want {
-                if let Some(child) = self.child.take() {
-                    backend.kill(&child);
-                }
+            if !want && let Some(child) = self.child.take() {
+                backend.kill(&child);
             }
             self.missing = false;
             self.backoff_ms = BACKOFF_MIN_MS;

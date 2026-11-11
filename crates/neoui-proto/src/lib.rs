@@ -4,6 +4,7 @@
 
 extern crate alloc;
 
+pub mod battery;
 pub mod clock;
 pub mod devtools;
 pub mod ipc;

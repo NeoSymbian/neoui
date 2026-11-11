@@ -169,3 +169,10 @@ pub fn modem_state() -> Result<[u32; 4], i32> {
 pub fn adsp_state() -> Result<[u32; 4], i32> {
     read_words(func::ADSP_STATE)
 }
+
+/// Read-only PM660 battery observations. Per-field validity is preserved.
+pub fn battery() -> Result<neoui_proto::battery::Snapshot, i32> {
+    let mut buf = [0u8; neoui_proto::battery::Snapshot::SIZE];
+    let n = read_des(0x4e1a, None, &mut buf)?;
+    neoui_proto::battery::Snapshot::decode(&buf[..n]).ok_or(-20)
+}

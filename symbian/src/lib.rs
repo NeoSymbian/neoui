@@ -11,6 +11,7 @@
 
 extern crate alloc;
 
+mod battery;
 mod clock;
 mod clockwork;
 mod host;
@@ -140,6 +141,7 @@ fn main() -> i32 {
     let mut nav_shown = 0;
     let mut running_shown: Vec<&'static str> = Vec::new();
     let mut clockwork = clockwork::Clockwork::boot();
+    let mut battery = battery::Battery::boot();
     // when Power went down, while it is held
     let mut power_down_at: Option<u64> = None;
     // the Power menu covers the whole screen: no app surface over it, every touch to the shell
@@ -410,8 +412,10 @@ fn main() -> i32 {
             }
             if let Some(a) = power {
                 settings::log_save(host.settings.flush());
+                battery.save();
                 clockwork.power(a);
             }
+            battery.poll(&mut ui, time::millis());
             phone.poll(&mut ui, time::millis());
             mirror.sync(&mut ui, &mut host.settings, ms);
             if let Some(worker) = usb_debug.as_mut() {

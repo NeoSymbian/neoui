@@ -78,6 +78,12 @@ export component SettingsScreen inherits Rectangle {
     in-out property <string> view;
     // in: which build is running, one line each for the kernel, the user-side ROM and neoui (the UI server reads them)
     in property <[string]> build;
+    in property <string> battery-text: "--%";
+    in property <string> battery-voltage: "unknown";
+    in property <string> battery-state: "Unknown";
+    in property <string> battery-usb: "unknown";
+    in property <string> battery-storage;
+    in property <[float]> battery-history;
     // the switches below show and edit the system settings (SystemSettings, kept by the UI server)
     property <bool> wifi: SystemSettings.wifi;
     property <bool> bluetooth: SystemSettings.bluetooth;
@@ -129,7 +135,8 @@ export component SettingsScreen inherits Rectangle {
 
             SettingRow {
                 title: "Battery";
-                value: "82%";
+                value: battery-text;
+                clicked => { root.view = "battery"; }
                 icon: @image-url("../icons/sys/battery_saver.svg");
                 tint: #14a37f;
             }
@@ -341,6 +348,35 @@ export component SettingsScreen inherits Rectangle {
                 font-size: Theme.font-label;
                 wrap: word-wrap;
             }
+        }
+    }
+
+    if view == "battery": NeoList {
+        VerticalLayout {
+            spacing: 14 * Theme.dp;
+            padding: Theme.margin;
+            Text { text: battery-text; font-size: Theme.font-title * 2; color: Theme.text; }
+            Text { text: battery-state + " · USB " + battery-usb; font-size: Theme.font-body; color: Theme.text-secondary; wrap: word-wrap; }
+            Text { text: "Battery voltage: " + battery-voltage; font-size: Theme.font-label; color: Theme.text; }
+            Text { text: "Reported by the PMIC · battery profile unverified"; font-size: Theme.font-status; color: Theme.text-dim; wrap: word-wrap; }
+            SectionHeader { text: "Battery level · last 24 hours"; }
+            chart := Rectangle {
+                height: 180 * Theme.dp;
+                background: #151719;
+                for value[i] in battery-history: Rectangle {
+                    x: i / 1440 * chart.width;
+                    width: chart.width / 1440;
+                    height: value < 0 ? 0px : max(1px, value * (chart.height - 20 * Theme.dp));
+                    y: chart.height - self.height;
+                    background: #22b46a;
+                }
+            }
+            HorizontalLayout {
+                Text { text: "24 hours ago"; font-size: Theme.font-status; color: Theme.text-dim; }
+                Text { text: "Now"; horizontal-stretch: 1; horizontal-alignment: right; font-size: Theme.font-status; color: Theme.text-dim; }
+            }
+            Text { text: "0–100% · one sample per minute. Gaps mean no reading; history begins with real observations."; font-size: Theme.font-status; color: Theme.text-dim; wrap: word-wrap; }
+            Text { text: battery-storage; font-size: Theme.font-status; color: Theme.text-dim; wrap: word-wrap; }
         }
     }
 }
