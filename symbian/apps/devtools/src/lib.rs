@@ -30,8 +30,8 @@ use e32::rt::{self, Either};
 use e32::sys::TPtr8;
 use e32::{dprintln, time};
 use neoapp::App;
-use neoui_proto::InputEvent;
 use neoui_proto::ipc::{self as proto, AppEvent};
+use neoui_proto::{InputEvent, TouchPhase};
 use pages::Ctx;
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 use state::{Model, Tab, View};
@@ -130,11 +130,14 @@ fn run() -> Result<(), i32> {
         );
     }
     ctx.show();
-    ctx.app.draw()?;
+    ctx.draw()?;
 
     // In the background (R10) the app neither refreshes nor draws; the log is still followed (cheap, and the
     // kernel's ring would drop what it is not asked for).
     let mut visible = true;
+    // a finger is down: the periodic refresh waits, since replacing the list models under a press loses the drag
+    // (the Flickable takes it only after 8 px) and the list wouldn't scroll
+    let mut touching = false;
     let (mut stats_at, mut devices_at) = (time::millis(), time::millis());
     rt::block_on(async {
         loop {
@@ -151,8 +154,10 @@ fn run() -> Result<(), i32> {
                     match rt::select(next.as_mut(), time::delay(wait)).await {
                         Either::Left(r) => break r,
                         Either::Right(()) => {
-                            if tick(&ctx, visible, &mut stats_at, &mut devices_at) || animating {
-                                ctx.app.draw()?;
+                            // nor during a fling (Slint animates the list)
+                            let refresh = visible && !touching && !animating;
+                            if tick(&ctx, refresh, &mut stats_at, &mut devices_at) || animating {
+                                ctx.draw()?;
                             }
                         }
                     }
@@ -174,7 +179,7 @@ fn run() -> Result<(), i32> {
                 Some(AppEvent::Settings { .. }) => {
                     if ctx.model.borrow().view == View::Settings {
                         ctx.show();
-                        ctx.app.draw()?;
+                        ctx.draw()?;
                     }
                 }
                 Some(AppEvent::Back) => {
@@ -184,7 +189,7 @@ fn run() -> Result<(), i32> {
                         _ => View::None,
                     };
                     ctx.open(back_to);
-                    ctx.app.draw()?;
+                    ctx.draw()?;
                 }
                 Some(AppEvent::Input(InputEvent::Key { code, down })) => {
                     ctx.model.borrow_mut().last_key = Some((code, down));
@@ -195,11 +200,14 @@ fn run() -> Result<(), i32> {
                     );
                     ctx.app.dispatch_key(code);
                     ctx.show();
-                    ctx.app.draw()?;
+                    ctx.draw()?;
                 }
                 Some(AppEvent::Input(input)) => {
+                    if let InputEvent::Touch { phase, .. } = input {
+                        touching = phase != TouchPhase::Up;
+                    }
                     ctx.app.dispatch_touch(input);
-                    ctx.app.draw()?;
+                    ctx.draw()?;
                 }
                 _ => {}
             }
@@ -207,7 +215,7 @@ fn run() -> Result<(), i32> {
     })
 }
 
-/// As time passes: follow the log; while visible, refresh what the screen shows. True when something to draw changed.
+/// As time passes: follow the log; while `visible` (and not touched), refresh what the screen shows. True when something to draw changed.
 fn tick(ctx: &Ctx, visible: bool, stats_at: &mut u64, devices_at: &mut u64) -> bool {
     let grew = ctx.refresh_log();
     if grew {

@@ -65,7 +65,7 @@ fn run() -> Result<(), i32> {
     });
     pages::bind(&ctx, &ui);
     ctx.show(&Now::read());
-    ctx.app.draw()?;
+    ctx.draw()?;
 
     // In the background (R10) the clock neither ticks nor draws.
     let mut visible = true;
@@ -94,7 +94,7 @@ fn run() -> Result<(), i32> {
                             }
                             shown_second = now.second;
                             fast = ctx.tick(&now);
-                            ctx.app.draw()?;
+                            ctx.draw()?;
                         }
                     }
                     let wait = if fast { FAST_TICK_US } else { TICK_US };
@@ -123,11 +123,11 @@ fn run() -> Result<(), i32> {
                         ctx.model.borrow().h24
                     );
                     ctx.show(&Now::read());
-                    ctx.app.draw()?;
+                    ctx.draw()?;
                 }
                 Some(AppEvent::Alarm { id }) => {
                     pages::ring(&ctx, id);
-                    ctx.app.draw()?;
+                    ctx.draw()?;
                 }
                 Some(AppEvent::Back) => {
                     // claimed only while a sub-view is open: Back closes it, as Cancel does (Dismiss when ringing)
@@ -136,7 +136,7 @@ fn run() -> Result<(), i32> {
                     } else {
                         ctx.open(View::None);
                     }
-                    ctx.app.draw()?;
+                    ctx.draw()?;
                 }
                 Some(AppEvent::Input(input)) => {
                     if let InputEvent::Touch {
@@ -149,7 +149,7 @@ fn run() -> Result<(), i32> {
                         dprintln!("clock: touch {},{}", x, y);
                     }
                     ctx.app.dispatch_touch(input);
-                    ctx.app.draw()?;
+                    ctx.draw()?;
                 }
                 _ => {}
             }
