@@ -457,7 +457,12 @@ fn main() -> i32 {
             } else {
                 None
             };
-            let timeout = host.settings.get(keys::DISPLAY_TIMEOUT).unwrap_or(60);
+            // no panel (QEMU): the screen never times out (a blank UI would drop the CI's taps)
+            let timeout = if panel_max > 0 {
+                host.settings.get(keys::DISPLAY_TIMEOUT).unwrap_or(60)
+            } else {
+                0
+            };
             if let Some(c) = woke.or_else(|| scr.tick(ms, timeout, phone.in_call() || power_menu)) {
                 set_screen(c, &mut host.refresh);
             }
