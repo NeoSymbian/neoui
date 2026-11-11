@@ -25,6 +25,8 @@ pub struct Phone {
     close_at: Option<u64>,
     /// the volume step last sent: the keys step from it, not from a status up to a second old
     volume: Option<u8>,
+    /// a call started ringing since `take_ring` (the screen wakes for it)
+    rang: bool,
 }
 
 /// How long "Call ended" / "Call failed" stays before the dial pad comes back.
@@ -51,7 +53,20 @@ impl Phone {
             shown: None,
             close_at: None,
             volume: None,
+            rang: false,
         }
+    }
+
+    /// Did a call start ringing since the last call? (Once per call.)
+    pub fn take_ring(&mut self) -> bool {
+        core::mem::take(&mut self.rang)
+    }
+
+    /// A call is up (ringing, dialling or connected): the screen stays on.
+    pub fn in_call(&self) -> bool {
+        self.shown
+            .as_ref()
+            .is_some_and(|x| !matches!(x.call.state, call::NONE | call::END))
     }
 
     fn session(&mut self) -> Option<&Session> {
@@ -108,6 +123,7 @@ impl Phone {
         let ringing = |x: &Status| x.call.incoming && x.call.state == call::INCOMING;
         if ringing(&s) && !self.shown.as_ref().is_some_and(ringing) {
             ui.show_call();
+            self.rang = true;
         }
         let registered = matches!(s.reg, reg::HOME | reg::ROAMING);
         let tech = match s.rat {

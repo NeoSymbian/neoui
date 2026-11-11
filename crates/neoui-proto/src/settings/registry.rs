@@ -164,9 +164,12 @@ registry! {
     SOUND_VIBRATE: bool = "sound.vibrate", default DefaultValue::Bool(true), limit Limit::None, owner Owner::Shell;
     /// Dark theme.
     DISPLAY_DARK: bool = "display.dark", default DefaultValue::Bool(true), limit Limit::None, owner Owner::Shell;
-    /// Backlight level, 0 (dimmest) to 255.
+    /// Screen brightness, 0 (dimmest) to 255; the UI server sends it to the panel (display HAL, 0..1023).
     DISPLAY_BRIGHTNESS: i32 = "display.brightness", default DefaultValue::Int(160),
         limit Limit::Range { min: 0, max: 255 }, owner Owner::Shell;
+    /// Seconds without a touch before the screen turns off; 0 = never.
+    DISPLAY_TIMEOUT: i32 = "display.timeout", default DefaultValue::Int(60),
+        limit Limit::Range { min: 0, max: 600 }, owner Owner::Shell;
     /// 24-hour clock (else 12-hour).
     CLOCK_24H: bool = "clock.24h", default DefaultValue::Bool(true), limit Limit::None, owner Owner::Shell;
     /// USB debugging (Developer options): fshell's USB serial port and the shell on it (`phone.py sh`), like

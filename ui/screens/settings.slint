@@ -273,13 +273,22 @@ export component SettingsScreen inherits Rectangle {
                 chevron: true;
             }
 
+            // a tap steps through the choices (no picker widget yet)
             ListRow {
                 title: "Screen timeout";
-                value: "1 minute";
+                value: SystemSettings.screen-timeout == 0 ? "Never"
+                    : SystemSettings.screen-timeout < 60 ? "\{SystemSettings.screen-timeout} seconds"
+                    : SystemSettings.screen-timeout == 60 ? "1 minute"
+                    : "\{SystemSettings.screen-timeout / 60} minutes";
                 has-icon: true;
                 icon: @image-url("../icons/sys/stopwatch.svg");
-                chevron: true;
                 divider: false;
+                clicked => {
+                    SystemSettings.screen-timeout = SystemSettings.screen-timeout == 15 ? 30
+                        : SystemSettings.screen-timeout == 30 ? 60 : SystemSettings.screen-timeout == 60 ? 120
+                        : SystemSettings.screen-timeout == 120 ? 300 : SystemSettings.screen-timeout == 300 ? 600
+                        : SystemSettings.screen-timeout == 600 ? 0 : 15;
+                }
             }
         }
     }
