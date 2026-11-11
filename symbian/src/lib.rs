@@ -156,6 +156,7 @@ fn main() -> i32 {
     let mut brightness_sent = -1;
     // the Power menu covers the whole screen: no app surface over it, every touch to the shell
     let mut power_menu = false;
+    let mut overlay_shown = false; // the shade or the Options menu over the app (last frame)
     // a refused HAL query must not freeze the clock below, which would hold every frame back
     let tick_us = match time::tick_period_us() {
         0 => 1000,
@@ -263,6 +264,7 @@ fn main() -> i32 {
                                     // A touch belongs to the app from press to release if it starts in its body.
                                     to_app = app_on_screen
                                         && !power_menu
+                                        && !ui.overlay_open()
                                         && contains(&host.app_area(), x, y);
                                 }
                                 if phase == TouchPhase::Up {
@@ -423,6 +425,11 @@ fn main() -> i32 {
                 );
                 nav_shown = want_nav;
             }
+            let overlay = ui.overlay_open();
+            if overlay_shown && !overlay {
+                host.refresh = true; // the app's surface again, whole
+            }
+            overlay_shown = overlay;
             if power_down_at.is_some_and(|t| ms.saturating_sub(t) >= POWER_HOLD_MS) {
                 power_down_at = None;
                 dprintln!("neoui: power menu");
@@ -477,6 +484,7 @@ fn main() -> i32 {
                 }
             }
             if !scr.is_on() {
+                host.release_frames(); // apps go on (their frames aren't shown)
                 continue; // nothing drawn while dark; the pollers above keep running
             }
 
@@ -511,6 +519,7 @@ fn main() -> i32 {
                     swipe = None;
                     old = Vec::new();
                 }
+                host.release_frames();
                 perf.idle();
                 continue;
             }
@@ -534,7 +543,8 @@ fn main() -> i32 {
                         copy_us += perf.since(&m);
                     }
                     let m = perf.mark();
-                    let app_px = if power_menu {
+                    let app_px = if power_menu || ui.overlay_open() {
+                        host.blits.clear(); // the overlay covers the app; it is copied whole when it closes
                         0
                     } else {
                         compose(&mut host, &damage, &display)
@@ -542,6 +552,7 @@ fn main() -> i32 {
                     perf.frame(render_us, copy_us, perf.since(&m), px + app_px);
                 }
             }
+            host.release_frames(); // the app's frame is on screen: it may draw the next
             perf.idle();
             if let Some(down) = tap_end.take() {
                 dprintln!("neoui: tap from {:?} redrew {} px", down, px);

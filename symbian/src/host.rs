@@ -25,6 +25,7 @@ use neoui_proto::ipc::{self as proto, AppEvent};
 use neoui_proto::recents::Recents;
 use neoui_proto::settings::value::ENCODED_MAX;
 use neoui_proto::settings::{Caller, KEY_MAX, Value, kerr};
+use neoui_proto::{InputEvent, TouchPhase};
 
 /// Screen keys that are separate processes: their EXEs and command lines.
 // shortcut: a fixed table; a registry of installed apps comes with app installation.
@@ -65,7 +66,27 @@ impl App {
     fn send(&mut self, e: AppEvent) {
         match self.waiting.take() {
             Some(m) => deliver(m, e),
-            None => self.queue.push_back(e),
+            None => {
+                // a move replaces the queued move of the same finger: a slow app catches up with the finger instead
+                // of replaying its path
+                if let AppEvent::Input(InputEvent::Touch {
+                    id,
+                    phase: TouchPhase::Move,
+                    ..
+                }) = e
+                    && let Some(
+                        last @ AppEvent::Input(InputEvent::Touch {
+                            phase: TouchPhase::Move,
+                            ..
+                        }),
+                    ) = self.queue.back_mut()
+                    && matches!(last, AppEvent::Input(InputEvent::Touch { id: q, .. }) if *q == id)
+                {
+                    *last = e;
+                    return;
+                }
+                self.queue.push_back(e);
+            }
         }
     }
 
@@ -92,6 +113,9 @@ pub struct Host {
     pub blits: Vec<Rect>,
     /// Show the foreground app's whole surface on the next compose (it just came back).
     pub refresh: bool,
+    /// The foreground app's `DAMAGE` calls (with their session), answered once that frame is on screen
+    /// ([`Self::release_frames`]): the app doesn't draw over pixels the server hasn't copied yet.
+    frames: Vec<(u32, Message)>,
     /// An app asked for a restart or power-off (`proto::POWER`); the main loop carries it out.
     pub power: Option<i32>,
     /// The settings store apps read, write and watch (`proto::SETTING_*`); the shell's own view syncs with it in
@@ -110,8 +134,17 @@ impl Host {
             next_session: 1,
             blits: Vec::new(),
             refresh: false,
+            frames: Vec::new(),
             power: None,
             settings,
+        }
+    }
+
+    /// Answer the held `DAMAGE` calls: the frame they asked for is on screen (or won't be shown). Call once per server
+    /// frame after compose, and on every path that skips it.
+    pub fn release_frames(&mut self) {
+        for (_, m) in self.frames.drain(..) {
+            m.complete(0);
         }
     }
 
@@ -158,6 +191,7 @@ impl Host {
             app.send(AppEvent::Visible(false));
         }
         self.blits.clear();
+        self.release_frames();
         let Some(key) = key else { return };
         self.front = Some(key);
         if self.apps.touch(|a| a.key == key && a.quit_at.is_none()) {
@@ -363,8 +397,10 @@ impl Service for Host {
                         m.int(2) as u32,
                         m.int(3) as u32,
                     ));
+                    self.frames.push((*id, m)); // answered after compose
+                } else {
+                    m.complete(0);
                 }
-                m.complete(0);
             }
             proto::KEYBOARD => {
                 app.keyboard = m.int(0) != 0;
@@ -403,6 +439,11 @@ impl Service for Host {
     fn disconnect(&mut self, id: u32) -> ControlFlow<()> {
         self.settings.drop_session(id);
         // Complete what the session still has outstanding before its disconnect completes.
+        let (gone, kept): (Vec<_>, Vec<_>) = self.frames.drain(..).partition(|(s, _)| *s == id);
+        self.frames = kept;
+        for (_, m) in gone {
+            m.complete(err::KERR_CANCEL);
+        }
         if let Some(m) = self
             .apps
             .find_mut(|a| a.session == Some(id))

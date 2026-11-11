@@ -260,6 +260,12 @@ impl Renderer {
         core::mem::take(&mut *self.closed.borrow_mut())
     }
 
+    /// Is a shell overlay open over the app area (the status shade or the Options menu)? The UI server neither
+    /// composes the app's surface over it nor gives it the touches meanwhile.
+    pub fn overlay_open(&self) -> bool {
+        self.ui.get_shade_open() || self.ui.get_options_open()
+    }
+
     /// Show or hide the Power menu (the UI server opens it when Power is held).
     pub fn set_power_menu(&mut self, open: bool) {
         self.ui.set_power_open(open);

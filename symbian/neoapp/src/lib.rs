@@ -190,12 +190,18 @@ impl App {
                 }
                 ScrollPlan::Normal => r.render(px, self.width),
             };
-            for (o, s) in region.iter() {
+            // one DAMAGE per frame, the union: the server answers it once the frame is on screen, so the next render
+            // never writes pixels the server hasn't copied yet
+            let damage = region.iter().fold(None, |acc: Option<Rect>, (o, s)| {
+                let r = Rect::new(o.x, o.y, s.width, s.height);
+                Some(acc.map_or(r, |a| a.union(&r)))
+            });
+            if let Some(d) = damage {
                 let mut args = TIpcArgs::new();
-                args.int(0, o.x)
-                    .int(1, o.y)
-                    .int(2, s.width as i32)
-                    .int(3, s.height as i32);
+                args.int(0, d.x)
+                    .int(1, d.y)
+                    .int(2, d.w as i32)
+                    .int(3, d.h as i32);
                 if let Err(e) = self.server.send_receive(proto::DAMAGE, &args) {
                     result = Err(e);
                 }
