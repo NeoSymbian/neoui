@@ -139,6 +139,9 @@ export component Shell inherits Window {
     in property <bool> wifi-scanning;
     // the Wi-Fi page's refresh button (symbian/src/wifi.rs scans at once)
     callback wifi-refresh();
+    // Connect on a network's sheet (BSSID, password) and how that join is going (symbian/src/wifi.rs)
+    callback wifi-connect(string, string);
+    in property <string> wifi-message;
     // in: the modem (telephony C5, from MODEMD's NeoModem server): signal bars (-1 = no modem), operator, technology,
     // and the call shown by the Phone screen; out: what the Phone screen asked ("dial" + number, "answer", "hangup")
     in property <int> bars: -1;
@@ -294,6 +297,8 @@ export component Shell inherits Window {
                 wifi-hidden: root.wifi-hidden;
                 wifi-scanning: root.wifi-scanning;
                 wifi-refresh => { root.wifi-refresh(); }
+                wifi-connect(b, p) => { root.wifi-connect(b, p); }
+                wifi-message: root.wifi-message;
             }
         }
 

@@ -200,3 +200,74 @@ pub fn wifi_scan(rescan: bool) -> Result<neoui_proto::wifi::Scan, i32> {
     let n = des.len();
     neoui_proto::wifi::Scan::decode(&buf[..n]).ok_or(-20)
 }
+
+/// One Wi-Fi link operation (kernel HAL WlanLink 0x4e1f, docs wifi.md W4): a1 = the op, a2 = a TDes8 the kernel
+/// reads (join, send, key) or fills (status, recv). `buf` holds the input, or is the output's room.
+fn wifi_link(op: usize, buf: &mut [u8], input: bool) -> Result<usize, i32> {
+    let mut des = if input {
+        TPtr8::new_full(buf)
+    } else {
+        TPtr8::new(buf)
+    };
+    let des_ptr: *mut u8 = (&mut des as *mut TPtr8).cast();
+    // SAFETY: the kernel reads or writes the TDes8 within its length/max length; a1 is only a number.
+    let r = unsafe { hal_function(GROUP_VARIANT, 0x4e1f, op as *mut u8, des_ptr) };
+    if r < 0 { Err(r) } else { Ok(des.len()) }
+}
+
+/// Join the scanned network `bssid`, sending our RSN element (`wpa::RSN_IE`) in the Association Request.
+pub fn wifi_join(bssid: &[u8; 6], rsn: &[u8]) -> Result<(), i32> {
+    let mut b = alloc::vec::Vec::from(&bssid[..]);
+    b.extend_from_slice(rsn);
+    wifi_link(1, &mut b, true).map(drop)
+}
+
+/// Leave the network (or stop a join) and go back to scanning.
+pub fn wifi_leave() -> Result<(), i32> {
+    wifi_link(2, &mut [], true).map(drop)
+}
+
+/// The link's state.
+pub fn wifi_link_status() -> Result<neoui_proto::wifi::Link, i32> {
+    let mut buf = [0u8; neoui_proto::wifi::LINK_SIZE];
+    let n = wifi_link(3, &mut buf, false)?;
+    neoui_proto::wifi::Link::decode(&buf[..n]).ok_or(-20)
+}
+
+/// The next EAPOL frame from the AP (802.1X header onward) into `buf`: its length, or `None` if none is waiting.
+pub fn wifi_eapol_recv(buf: &mut [u8]) -> Result<Option<usize>, i32> {
+    match wifi_link(4, buf, false) {
+        Ok(n) => Ok(Some(n)),
+        Err(-18) => Ok(None), // KErrNotReady
+        Err(e) => Err(e),
+    }
+}
+
+/// Send one EAPOL frame to the AP; returns once the chip reported it sent.
+pub fn wifi_eapol_send(frame: &[u8]) -> Result<(), i32> {
+    let mut b = alloc::vec::Vec::from(frame);
+    wifi_link(5, &mut b, true).map(drop)
+}
+
+/// Install a CCMP key: the pairwise key, or the group key with its key index.
+pub fn wifi_install_key(group: bool, index: u8, key: &[u8; 16]) -> Result<(), i32> {
+    let mut b = [0u8; 18];
+    b[0] = u8::from(group);
+    b[1] = index;
+    b[2..].copy_from_slice(key);
+    wifi_link(6, &mut b, true).map(drop)
+}
+
+/// The handshake is done: let data through.
+pub fn wifi_authorize() -> Result<(), i32> {
+    wifi_link(7, &mut [], true).map(drop)
+}
+
+/// `buf.len()` (1..=256) bytes from the hardware random generator (kernel HAL Prng 0x4e23).
+pub fn random(buf: &mut [u8]) -> Result<(), i32> {
+    let mut des = TPtr8::new_full(buf);
+    let des_ptr: *mut u8 = (&mut des as *mut TPtr8).cast();
+    // SAFETY: the kernel fills the TDes8 to its current length.
+    let r = unsafe { hal_function(GROUP_VARIANT, 0x4e23, des_ptr, core::ptr::null_mut()) };
+    if r < 0 { Err(r) } else { Ok(()) }
+}

@@ -78,12 +78,15 @@ component SettingRow inherits Rectangle {
 }
 
 // The sheet a tapped Wi-Fi network opens (Android/iOS style): what the phone knows about it, the password and
-// Connect. Joining comes with Wi-Fi W4 (docs wifi.md); until then Connect says so instead of pretending.
+// Connect (Wi-Fi W4, docs wifi.md: symbian/src/wifi.rs joins and runs the WPA2 handshake).
 component WifiSheet inherits Rectangle {
     in property <WifiNet> net;
     // what was typed in the password field (for joining, Wi-Fi W4)
     in-out property <string> password;
+    // how the join is going ("Connecting…", "Connected", "Wrong password", ...), empty before Connect
+    in property <string> message;
     callback closed;
+    callback connect();
     property <bool> tried;
     background: #000000b0;
     TouchArea { clicked => { root.closed(); } }
@@ -114,10 +117,10 @@ component WifiSheet inherits Rectangle {
                 password: true;
                 autofocus: true;
                 text <=> root.password;
-                accepted => { root.tried = true; }
+                accepted => { root.tried = true; root.connect(); }
             }
-            if tried: Text {
-                text: "Connecting to networks is the next Wi-Fi step. The phone can already find this network.";
+            if tried && message != "": Text {
+                text: message;
                 font-size: Theme.font-status;
                 color: Theme.text-dim;
                 wrap: word-wrap;
@@ -125,7 +128,7 @@ component WifiSheet inherits Rectangle {
             HorizontalLayout {
                 spacing: 12 * Theme.dp;
                 Button { text: "Cancel"; primary: false; clicked => { root.closed(); } }
-                Button { text: "Connect"; clicked => { root.tried = true; } }
+                Button { text: "Connect"; clicked => { root.tried = true; root.connect(); } }
             }
         }
     }
@@ -147,6 +150,9 @@ export component SettingsScreen inherits Rectangle {
     in property <int> wifi-hidden;
     in property <bool> wifi-scanning;
     callback wifi-refresh();
+    // Connect on a network's sheet: its BSSID ("aa:bb:..") and the typed password
+    callback wifi-connect(string, string);
+    in property <string> wifi-message;
     // the network whose sheet is open: a copy, so a rescan that reorders the list can't swap it
     property <WifiNet> wifi-current;
     property <bool> wifi-sheet;
@@ -513,6 +519,8 @@ export component SettingsScreen inherits Rectangle {
             height: parent.height;
             net: wifi-current;
             password <=> root.wifi-password;
+            message: root.wifi-message;
+            connect => { root.wifi-connect(root.wifi-current.bssid, root.wifi-password); }
             closed => {
                 root.wifi-sheet = false;
                 root.wifi-password = "";

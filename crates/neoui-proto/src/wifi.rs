@@ -2,6 +2,7 @@
 //! Wi-Fi scan results from the kernel (HAL WlanScan 0x4e1e, kernel qcom_wcn3990.cpp; docs wifi.md W3):
 //! `{version 1, state, count, scans % 256}` then per network `{bssid 6, channel, dBm (i8), flags (1 secured),
 //! ssid length, ssid 32}`.
+//! The join's status (HAL WlanLink 0x4e1f, W4): [`Link`].
 use alloc::{format, string::String, vec::Vec};
 
 /// Where the radio is
@@ -26,6 +27,15 @@ pub struct Network {
 }
 
 impl Network {
+    /// The BSSID as "aa:bb:cc:dd:ee:ff" (how the UI names an access point)
+    pub fn bssid_text(&self) -> String {
+        let b = self.bssid;
+        format!(
+            "{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
+            b[0], b[1], b[2], b[3], b[4], b[5]
+        )
+    }
+
     /// 0..=4 bars, as phones draw them (-55 dBm and better is full)
     pub fn bars(&self) -> u8 {
         match self.dbm {
@@ -174,6 +184,139 @@ impl Scan {
     }
 }
 
+/// Where the join is (HAL WlanLink 0x4e1f op 3, docs wifi.md W4)
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum LinkState {
+    #[default]
+    Idle,
+    /// authenticating and associating
+    Joining,
+    /// associated: the key handshake runs
+    Handshake,
+    Connected,
+    /// the AP dropped us (deauth/disassoc `reason`) or stopped answering
+    Lost,
+    /// the join failed (`status` from the AP, else `reason` is the driver's)
+    Error,
+}
+
+/// The link status: `{version 1, state, aid, status, reason (u16 LE each), bssid 6, our MAC 6, rx data frames,
+/// rx ARP/IP frames (u32 LE each), AP RSN element length, the element (<= 64 bytes)}`
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Link {
+    pub state: LinkState,
+    pub aid: u16,
+    /// the 802.11 status code of a refused authentication or association
+    pub status: u16,
+    /// the 802.11 reason code of a deauthentication or disassociation
+    pub reason: u16,
+    pub bssid: [u8; 6],
+    pub mac: [u8; 6],
+    pub rx_data: u32,
+    pub rx_ip: u32,
+    /// the joined AP's RSN element (id, length, body), for the handshake
+    pub rsn: Vec<u8>,
+}
+
+pub const LINK_SIZE: usize = 29 + 64;
+
+impl Link {
+    pub fn decode(b: &[u8]) -> Option<Self> {
+        let (&[version, state], _) = b.split_first_chunk::<2>()?;
+        let u16_at = |i: usize| u16::from_le_bytes([b[i], b[i + 1]]);
+        let u32_at = |i: usize| u32::from_le_bytes(b[i..i + 4].try_into().unwrap());
+        if version != 1 || b.len() < 29 || b.len() != 29 + b[28] as usize || b[28] > 64 {
+            return None;
+        }
+        let state = match state {
+            0 => LinkState::Idle,
+            1 => LinkState::Joining,
+            2 => LinkState::Handshake,
+            3 => LinkState::Connected,
+            4 => LinkState::Lost,
+            5 => LinkState::Error,
+            _ => return None,
+        };
+        Some(Link {
+            state,
+            aid: u16_at(2),
+            status: u16_at(4),
+            reason: u16_at(6),
+            bssid: b[8..14].try_into().ok()?,
+            mac: b[14..20].try_into().ok()?,
+            rx_data: u32_at(20),
+            rx_ip: u32_at(24),
+            rsn: b[29..].to_vec(),
+        })
+    }
+
+    /// What the network sheet says about this join
+    pub fn message(&self) -> String {
+        match self.state {
+            LinkState::Idle => String::new(),
+            LinkState::Joining | LinkState::Handshake => String::from("Connecting…"),
+            LinkState::Connected => String::from("Connected"),
+            // 2 = previous authentication no longer valid, 15 = 4-way handshake timeout: the AP never accepted
+            // our message 2, which is what a wrong password looks like from the station
+            LinkState::Lost | LinkState::Error if matches!(self.reason, 2 | 15) => {
+                String::from("Wrong password")
+            }
+            LinkState::Lost => format!("Disconnected (reason {})", self.reason),
+            LinkState::Error if self.status != 0 => {
+                format!("Refused by the network (status {})", self.status)
+            }
+            LinkState::Error => format!("Could not connect ({})", self.reason),
+        }
+    }
+}
+
+/// Networks the phone joined before, newest first: SSID and PMK (the password's hash, never the password), kept by
+/// the UI server in its private directory. Encoding: per network `{ssid length, ssid, pmk 32}`.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Saved(pub Vec<(Vec<u8>, [u8; 32])>);
+
+impl Saved {
+    /// How many networks are remembered; the oldest is forgotten past this
+    pub const MAX: usize = 8;
+
+    pub fn decode(mut b: &[u8]) -> Self {
+        let mut v = Vec::new();
+        while let Some((&n, rest)) = b.split_first() {
+            let n = n as usize;
+            if n == 0 || n > 32 || rest.len() < n + 32 || v.len() == Self::MAX {
+                break; // a damaged tail is dropped, the networks before it kept
+            }
+            v.push((rest[..n].to_vec(), rest[n..n + 32].try_into().unwrap()));
+            b = &rest[n + 32..];
+        }
+        Saved(v)
+    }
+
+    pub fn encode(&self) -> Vec<u8> {
+        let mut b = Vec::new();
+        for (ssid, pmk) in &self.0 {
+            b.push(ssid.len() as u8);
+            b.extend_from_slice(ssid);
+            b.extend_from_slice(pmk);
+        }
+        b
+    }
+
+    pub fn pmk(&self, ssid: &[u8]) -> Option<[u8; 32]> {
+        self.0.iter().find(|(s, _)| s == ssid).map(|(_, p)| *p)
+    }
+
+    /// Remember (or refresh) a network as the newest
+    pub fn remember(&mut self, ssid: &[u8], pmk: [u8; 32]) {
+        if ssid.is_empty() || ssid.len() > 32 {
+            return;
+        }
+        self.0.retain(|(s, _)| s != ssid);
+        self.0.insert(0, (ssid.to_vec(), pmk));
+        self.0.truncate(Self::MAX);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -239,5 +382,77 @@ mod tests {
         b.extend(e);
         assert_eq!(Scan::decode(&b), None);
         assert_eq!(Scan::decode(&[1, 0, 0, 0]).unwrap().status(), "Off");
+    }
+
+    fn link(state: u8, status: u16, reason: u16, rsn: &[u8]) -> Vec<u8> {
+        let mut b = alloc::vec![1, state];
+        for v in [7u16, status, reason] {
+            b.extend_from_slice(&v.to_le_bytes());
+        }
+        b.extend_from_slice(&[1, 2, 3, 4, 5, 6, 2, 0x4e, 0, 0, 0, 1]);
+        b.extend_from_slice(&100u32.to_le_bytes());
+        b.extend_from_slice(&40u32.to_le_bytes());
+        b.push(rsn.len() as u8);
+        b.extend_from_slice(rsn);
+        b
+    }
+
+    #[test]
+    fn decodes_link() {
+        let l = Link::decode(&link(3, 0, 0, &[0x30, 2, 1, 0])).unwrap();
+        assert_eq!(
+            (l.state, l.aid, l.rx_data, l.rx_ip),
+            (LinkState::Connected, 7, 100, 40)
+        );
+        assert_eq!(
+            (l.bssid[5], l.mac[1], &l.rsn[..]),
+            (6, 0x4e, &[0x30, 2, 1, 0][..])
+        );
+        assert_eq!(l.message(), "Connected");
+        assert_eq!(
+            Link::decode(&link(4, 0, 15, &[])).unwrap().message(),
+            "Wrong password"
+        );
+        assert_eq!(
+            Link::decode(&link(4, 0, 3, &[])).unwrap().message(),
+            "Disconnected (reason 3)"
+        );
+        assert_eq!(
+            Link::decode(&link(5, 17, 0, &[])).unwrap().message(),
+            "Refused by the network (status 17)"
+        );
+        assert_eq!(
+            Link::decode(&link(1, 0, 0, &[])).unwrap().message(),
+            "Connecting…"
+        );
+        // a length that disagrees with the element, an unknown state, a short buffer
+        let mut b = link(3, 0, 0, &[0x30, 0]);
+        b[28] = 3;
+        assert_eq!(Link::decode(&b), None);
+        assert_eq!(Link::decode(&link(9, 0, 0, &[])), None);
+        assert_eq!(Link::decode(&[1, 0, 0]), None);
+    }
+
+    #[test]
+    fn saved_networks() {
+        let mut s = Saved::default();
+        s.remember(b"home", [1; 32]);
+        s.remember(b"cafe", [2; 32]);
+        s.remember(b"home", [3; 32]);
+        assert_eq!(s.0.len(), 2);
+        assert_eq!(
+            (s.pmk(b"home"), s.pmk(b"cafe"), s.pmk(b"x")),
+            (Some([3; 32]), Some([2; 32]), None)
+        );
+        let mut b = s.encode();
+        assert_eq!(Saved::decode(&b), s);
+        b.push(200); // a damaged tail
+        assert_eq!(Saved::decode(&b), s);
+        for i in 0..20u8 {
+            s.remember(&[b'n', i], [i; 32]);
+        }
+        assert_eq!((s.0.len(), &s.0[0].0[..]), (Saved::MAX, &[b'n', 19][..]));
+        s.remember(&[], [0; 32]);
+        assert_eq!(s.0.len(), Saved::MAX);
     }
 }

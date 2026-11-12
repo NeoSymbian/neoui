@@ -78,6 +78,7 @@ pub struct Renderer {
     power: Rc<RefCell<Vec<i32>>>,
     phone: Rc<RefCell<Vec<(String, String)>>>,
     wifi_refresh: Rc<RefCell<bool>>,
+    wifi_connect: Rc<RefCell<Option<(String, String)>>>,
     /// keys of settings edited in the UI since the last `take_setting_edits` (`SystemSettings.edited`)
     edited: Rc<RefCell<Vec<String>>>,
     /// lists scrolled by shifting pixels (smooth-ui S2d), and how many frames did so
@@ -156,6 +157,11 @@ impl Renderer {
         let wifi_refresh: Rc<RefCell<bool>> = Rc::default();
         let sink = wifi_refresh.clone();
         ui.on_wifi_refresh(move || *sink.borrow_mut() = true);
+        let wifi_connect: Rc<RefCell<Option<(String, String)>>> = Rc::default();
+        let sink = wifi_connect.clone();
+        ui.on_wifi_connect(move |b, p| {
+            *sink.borrow_mut() = Some((b.as_str().into(), p.as_str().into()))
+        });
         let edited: Rc<RefCell<Vec<String>>> = Rc::default();
         let sink = edited.clone();
         ui.global::<SystemSettings>()
@@ -169,6 +175,7 @@ impl Renderer {
             power,
             phone,
             wifi_refresh,
+            wifi_connect,
             edited,
             scrolling: Scrolling::default(),
             shifts: 0,
@@ -368,6 +375,17 @@ impl Renderer {
         core::mem::take(&mut *self.wifi_refresh.borrow_mut())
     }
 
+    /// Connect was pressed on a network's sheet since the last call: its BSSID ("aa:bb:cc:dd:ee:ff") and the
+    /// typed password.
+    pub fn take_wifi_connect(&mut self) -> Option<(String, String)> {
+        self.wifi_connect.borrow_mut().take()
+    }
+
+    /// How the join started from the sheet is going (shown under its password field).
+    pub fn set_wifi_message(&mut self, text: &str) {
+        self.ui.set_wifi_message(text.into());
+    }
+
     /// The latest Wi-Fi scan for Settings -> Connectivity: the Wi-Fi row's status and one row per network.
     pub fn set_wifi(&mut self, scan: &neoui_proto::wifi::Scan) {
         self.ui.set_wifi_status(scan.status().into());
@@ -387,6 +405,7 @@ impl Renderer {
                 band: n.band().into(),
                 signal: n.signal().into(),
                 channel: i32::from(n.channel),
+                bssid: n.bssid_text().into(),
             })
             .collect();
         self.ui

@@ -22,6 +22,9 @@ e32 = { workspace = true }
 neoapp = { workspace = true }
 # NeoSymbian/telephony: the NeoModem server's contract (MODEMD.EXE; Apache-2.0)
 modem-ipc = { workspace = true }
+# NeoSymbian/neolink: the WPA2-PSK supplicant handshakes (Wi-Fi W4; Apache-2.0).
+# shortcut: the sibling checkout while W4 is local; a git rev pin before any push (as telephony abd4c63)
+wpa = { path = "../../neolink/crates/wpa" }
 
 [workspace]
 members = ["apps/clock", "apps/term", "apps/files", "apps/devtools", "neoapp"]
