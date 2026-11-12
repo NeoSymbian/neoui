@@ -78,6 +78,20 @@ pub struct Scan {
 }
 
 pub const SIZE: usize = 4 + 32 * ENTRY;
+
+/// An SSID as text; one with nothing printable in it (all zero bytes, control characters) counts as hidden
+fn name(b: &[u8]) -> String {
+    let s = String::from_utf8_lossy(b);
+    if s.chars()
+        .all(|c| c.is_control() || c == char::REPLACEMENT_CHARACTER || c.is_whitespace())
+    {
+        String::new()
+    } else {
+        s.chars()
+            .map(|c| if c.is_control() { '?' } else { c })
+            .collect()
+    }
+}
 const ENTRY: usize = 42;
 
 impl Scan {
@@ -105,7 +119,7 @@ impl Scan {
                 channel: e[6],
                 dbm: e[7] as i8,
                 secured: e[8] & 1 != 0,
-                ssid: String::from_utf8_lossy(&e[10..10 + len]).into_owned(),
+                ssid: name(&e[10..10 + len]),
             });
         }
         Some(Scan {
@@ -204,6 +218,14 @@ mod tests {
             (s.named(), s.hidden(), l[0].signal(), l[2].signal()),
             (2, 1, "Excellent", "Very weak")
         );
+    }
+
+    #[test]
+    fn unprintable_names_count_as_hidden() {
+        assert_eq!(name(&[0; 30]), "");
+        assert_eq!(name(&[0x01, 0x02, 0xff]), "");
+        assert_eq!(name(b"Cafe\x01"), "Cafe?");
+        assert_eq!(name("Բարև".as_bytes()), "Բարև");
     }
 
     #[test]
