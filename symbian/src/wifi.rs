@@ -24,6 +24,8 @@ const RETRY_MS: u64 = 60_000;
 /// Why the supplicant thread gave up (0 = it ended with the link), for the sheet's message; shared with the thread
 /// (leaked: it lives as long as SYSSTART, and Arc needs compare-and-swap, which ARMv5TE lacks)
 type Failed = Option<&'static Mutex<i32>>;
+/// a running supplicant thread, the SSID and PMK (none: an open network) it joins with, and when it started
+type Join = (JoinHandle, alloc::vec::Vec<u8>, Option<[u8; 32]>, u64);
 const FAIL_SECURITY: i32 = 1;
 const FAIL_RANDOM: i32 = 2;
 const FAIL_DOWNGRADE: i32 = 3;
@@ -40,7 +42,7 @@ pub struct Wifi {
     asked_at: Option<u64>,
     last: Option<Scan>,
     /// the supplicant thread, the SSID and PMK it joins with, and when it started
-    join: Option<(JoinHandle, alloc::vec::Vec<u8>, Option<[u8; 32]>, u64)>,
+    join: Option<Join>,
     link: Link,
     saved: Saved,
     failed: Failed,
@@ -142,11 +144,12 @@ impl Wifi {
         }
         self.next_link = now.saturating_add(200);
         let link = neoapp::hal::wifi_link_status().unwrap_or_default();
-        if link.state == LinkState::Connected && self.link.state != LinkState::Connected {
-            if let Some((_, ssid, Some(pmk), _)) = &self.join {
-                self.saved.remember(ssid, *pmk);
-                store(&self.saved);
-            }
+        if link.state == LinkState::Connected
+            && self.link.state != LinkState::Connected
+            && let Some((_, ssid, Some(pmk), _)) = &self.join
+        {
+            self.saved.remember(ssid, *pmk);
+            store(&self.saved);
         }
         let failed = self.failed.map_or(0, |m| *m.lock());
         let text = match failed {

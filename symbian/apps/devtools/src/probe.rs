@@ -76,6 +76,14 @@ fn modem_session() -> Result<Session, i32> {
     Session::connect(modem_ipc::NAME, v)
 }
 
+/// C7 recovery action, kept in the existing Tools page alongside the other device actions.
+pub fn modem_retry() -> String {
+    match modem_session().and_then(|s| s.send_receive(op::RETRY, &TIpcArgs::new())) {
+        Ok(_) => String::from("Modem/audio recovery requested"),
+        Err(e) => format!("Modem/audio recovery unavailable ({e})"),
+    }
+}
+
 /// NeoModem's status; None without MODEMD (Syborg, or not up yet).
 fn modem_status() -> Option<Status> {
     let session = modem_session().ok()?;

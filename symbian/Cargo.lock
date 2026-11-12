@@ -2547,7 +2547,7 @@ dependencies = [
 [[package]]
 name = "modem-ipc"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/telephony?rev=1bbe3521f9b04c4501ed9ac199b8f55b6be38ee2#1bbe3521f9b04c4501ed9ac199b8f55b6be38ee2"
+source = "git+https://github.com/NeoSymbian/telephony?rev=a872947f9663a938aa4c5a872a21a3e5066c42aa#a872947f9663a938aa4c5a872a21a3e5066c42aa"
 
 [[package]]
 name = "moxcms"

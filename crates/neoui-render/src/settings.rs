@@ -59,6 +59,17 @@ pub(crate) static BINDINGS: &[Binding] = &[
     bool_binding!(keys::RADIO_AIRPLANE, get_airplane, set_airplane),
     bool_binding!(keys::SOUND_SILENT, get_silent, set_silent),
     bool_binding!(keys::SOUND_VIBRATE, get_vibrate, set_vibrate),
+    Binding {
+        key: key_name::<i32>(keys::SOUND_RING_VOLUME),
+        read: |g| Value::Int(g.get_ring_volume()),
+        write: |g, v| match v {
+            Value::Int(volume) => {
+                g.set_ring_volume(*volume);
+                true
+            }
+            _ => false,
+        },
+    },
     bool_binding!(keys::DISPLAY_DARK, get_dark, set_dark),
     bool_binding!(
         keys::DEVELOPER_USB_DEBUGGING,

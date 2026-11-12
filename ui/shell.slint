@@ -13,7 +13,7 @@ export { SystemSettings } from "system-settings.slint";
 export { Now } from "now.slint";
 export { Scroll } from "components/scroll.slint";
 import { StatusBar, Toolbar } from "components/frame.slint";
-import { OptionsMenu } from "components/controls.slint";
+import { OptionsMenu, Button } from "components/controls.slint";
 import { Shade } from "components/shade.slint";
 import { Keyboard } from "components/keyboard/keyboard.slint";
 import { Alphabets } from "components/keyboard/glyphs.slint";
@@ -24,7 +24,8 @@ import { KeyboardFocus } from "components/keyboard/focus.slint";
 import { PowerMenu } from "components/powermenu.slint";
 import { HomeScreen } from "screens/home.slint";
 import { MenuScreen } from "screens/menu.slint";
-import { PhoneScreen } from "screens/phone.slint";
+import { PhoneScreen, LiveCall } from "screens/phone.slint";
+export { LiveCall } from "screens/phone.slint";
 import { MessagesScreen } from "screens/messages.slint";
 import { ContactsScreen } from "screens/contacts.slint";
 import { BrowserScreen } from "screens/browser.slint";
@@ -157,12 +158,24 @@ export component Shell inherits Window {
     in property <bool> call-muted;
     in property <bool> call-speaker;
     in property <int> call-volume: -1;
+    in property <[LiveCall]> live-calls;
+    in property <bool> phone-pending;
+    in property <string> phone-feedback;
+    in property <int> missed-calls;
+    in property <bool> radio-online;
+    in property <bool> sim-pin-required;
+    in property <bool> sim-blocked;
+    in property <int> pin-attempts: -1;
+    in property <bool> modem-failed;
+    property <string> sim-pin;
+    property <int> pin-length;
+    changed sim-pin-required => { root.sim-pin = ""; root.pin-length = 0; }
     callback phone-action(string, string);
 
     public function open(app: string) {
         root.origin = root.screen == "menu" ? "menu" : "home";
         root.screen = app;
-        root.view = "";
+        root.view = app == "phone" && root.live-calls.length > 0 ? "call" : "";
         root.options-open = false;
         root.shade-open = false;
     }
@@ -183,7 +196,7 @@ export component Shell inherits Window {
     }
 
     pure function screen-title(s: string, v: string) -> string {
-        s == "home" ? "" : s == "menu" ? "Menu" : s == "phone" ? (v == "call" ? "Call" : "Phone") : s == "messages" ? (v == "thread" ? "Ava Lindqvist" : "Messages") : s == "contacts" ? "Contacts" : s == "browser" ? "Browser" : s == "camera" ? "Camera" : s == "photos" ? "Photos" : s == "music" ? (v == "playing" ? "Now playing" : "Music") : s == "calendar" ? "Calendar" : s == "clock" ? "Clock" : s == "files" ? "Files" : s == "settings" ? (v == "" ? "Settings" : v == "connectivity" ? "Connectivity" : v == "wifi" ? "Wi-Fi" : v == "display" ? "Display" : v == "developer" ? "Developer options" : v == "battery" ? "Battery" : v == "keyboard" ? "Language & keyboard" : "About phone") : s == "terminal" ? "Terminal" : s == "devtools" ? "Dev tools" : s == "legacy" ? "Old apps" : s == "switcher" ? "Open apps" : s
+        s == "home" ? "" : s == "menu" ? "Menu" : s == "phone" ? (v == "call" ? "Call" : "Phone") : s == "messages" ? (v == "thread" ? "Ava Lindqvist" : "Messages") : s == "contacts" ? "Contacts" : s == "browser" ? "Browser" : s == "camera" ? "Camera" : s == "photos" ? "Photos" : s == "music" ? (v == "playing" ? "Now playing" : "Music") : s == "calendar" ? "Calendar" : s == "clock" ? "Clock" : s == "files" ? "Files" : s == "settings" ? (v == "" ? "Settings" : v == "connectivity" ? "Connectivity" : v == "wifi" ? "Wi-Fi" : v == "display" ? "Display" : v == "developer" ? "Developer options" : v == "battery" ? "Battery" : v == "keyboard" ? "Language & keyboard" : v == "sounds" ? "Sounds" : "About phone") : s == "terminal" ? "Terminal" : s == "devtools" ? "Dev tools" : s == "legacy" ? "Old apps" : s == "switcher" ? "Open apps" : s
     }
 
     pure function options(s: string) -> [string] {
@@ -220,6 +233,9 @@ export component Shell inherits Window {
                 muted: root.call-muted;
                 speaker: root.call-speaker;
                 call-volume: root.call-volume;
+                calls: root.live-calls;
+                pending: root.phone-pending;
+                feedback: root.phone-feedback;
                 action(a, n) => { root.phone-action(a, n); }
             }
         }
@@ -306,6 +322,8 @@ export component Shell inherits Window {
                 wifi-link: root.wifi-link;
                 wifi-disconnect => { root.wifi-disconnect(); }
                 wifi-forget => { root.wifi-forget(); }
+                radio-online: root.radio-online;
+                phone-feedback: root.phone-feedback;
             }
         }
 
@@ -400,6 +418,9 @@ export component Shell inherits Window {
         y: Theme.status-h;
         height: root.height - Theme.status-h;
         open: shade-open;
+        missed: root.missed-calls;
+        active-call: root.live-calls.length > 0;
+        return-call => { root.open("phone"); root.view = "call"; }
         dismissed => { root.shade-open = false; }
         open-app(a) => { root.open(a); }
     }
@@ -409,5 +430,77 @@ export component Shell inherits Window {
         height: root.height;
         open: power-open;
         chosen(a) => { root.power(a); }
+    }
+
+    if modem-failed && !sim-pin-required && !sim-blocked: Button {
+        x: Theme.margin;
+        y: Theme.status-h + 8 * Theme.dp;
+        width: root.width - 2 * Theme.margin;
+        text: "Modem unavailable · Retry";
+        clicked => { root.phone-action("retry", ""); }
+    }
+
+    // PIN data lives only in this prompt, is cleared on submission, and never enters a log.
+    if sim-pin-required || sim-blocked: Rectangle {
+        background: Theme.scrim;
+        TouchArea { }
+        Rectangle {
+            x: Theme.margin;
+            width: parent.width - 2 * Theme.margin;
+            height: min(parent.height - 2 * Theme.margin, 430 * Theme.dp);
+            y: (parent.height - self.height) / 2;
+            background: Theme.bg;
+            border-radius: Theme.radius;
+            VerticalLayout {
+                padding: Theme.margin;
+                spacing: 8 * Theme.dp;
+                Text { text: root.sim-blocked ? "SIM blocked" : "Unlock SIM"; color: Theme.text; font-size: Theme.font-title; }
+                Text {
+                    text: root.sim-blocked ? "Unlock the SIM with your carrier's PUK procedure." : (root.pin-attempts >= 0 ? root.pin-attempts + " PIN attempts remaining" : "Enter the SIM PIN");
+                    color: Theme.text-secondary;
+                    font-size: Theme.font-label;
+                    wrap: word-wrap;
+                }
+                if !root.sim-blocked: Text { text: root.pin-length == 0 ? "PIN" : root.pin-length + " digits entered"; color: Theme.text; font-size: Theme.font-body; }
+                if !root.sim-blocked: VerticalLayout {
+                    spacing: 5 * Theme.dp;
+                    for row in [["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"], ["Clear", "0", "Unlock"]]: HorizontalLayout {
+                        spacing: 5 * Theme.dp;
+                        for key in row: Button {
+                            text: key;
+                            primary: key == "Unlock";
+                            clicked => {
+                                if key == "Clear" { root.sim-pin = ""; root.pin-length = 0; }
+                                else if key == "Unlock" {
+                                    if root.pin-length >= 4 && !root.phone-pending {
+                                        root.phone-action("pin", root.sim-pin);
+                                        root.sim-pin = "";
+                                        root.pin-length = 0;
+                                    }
+                                } else if root.pin-length < 8 { root.sim-pin += key; root.pin-length += 1; }
+                            }
+                        }
+                    }
+                }
+                // always a way out: an emergency call, or later (the SIM state changing brings it back)
+                HorizontalLayout {
+                    spacing: 8 * Theme.dp;
+                    Button {
+                        text: "Emergency call";
+                        primary: false;
+                        clicked => {
+                            root.phone-action("sim-dismiss", "");
+                            root.phone-action("dial", "112");
+                        }
+                    }
+                    Button {
+                        text: "Not now";
+                        primary: false;
+                        clicked => { root.phone-action("sim-dismiss", ""); }
+                    }
+                }
+                if root.phone-feedback != "": Text { text: root.phone-feedback; color: Theme.danger; font-size: Theme.font-label; wrap: word-wrap; }
+            }
+        }
     }
 }

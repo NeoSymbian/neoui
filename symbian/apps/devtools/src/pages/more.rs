@@ -41,6 +41,10 @@ pub fn bind(ctx: &Rc<Ctx>, s: &DevState<'_>) {
         });
     });
     let c = ctx.clone();
+    s.on_modem_retry(move || {
+        c.update(|m| m.tools_status = probe::modem_retry());
+    });
+    let c = ctx.clone();
     s.on_power(move |i| {
         c.update(|m| {
             m.confirm = (0..3).contains(&i).then_some(i);

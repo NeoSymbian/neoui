@@ -106,6 +106,12 @@ export component ToolsPage inherits Rectangle {
                 text: "Power";
             }
 
+            ListRow {
+                title: "Retry modem and audio";
+                subtitle: "Restart recovery after a modem or ADSP failure";
+                clicked => { DevState.modem-retry(); }
+            }
+
             for p[i] in ["Restart", "Restart to fastboot", "Power off"]: ListRow {
                 title: p;
                 clicked => {

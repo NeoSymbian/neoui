@@ -45,6 +45,9 @@ export component Shade inherits Rectangle {
     in property <bool> open;
     callback dismissed;
     callback open-app(string);
+    in property <int> missed;
+    in property <bool> active-call;
+    callback return-call;
     visible: self.opacity > 0.01;
     opacity: open ? 1 : 0;
     animate opacity { duration: Theme.popup; easing: ease-out-quad; }
@@ -123,9 +126,17 @@ export component Shade inherits Rectangle {
                 letter-spacing: 0.06 * Theme.font-status;
             }
 
-            ListRow {
-                title: "Missed call";
-                subtitle: Data.calls[0].name + " · " + Data.calls[0].when;
+            if active-call: ListRow {
+                title: "Call in progress";
+                subtitle: "Return to call controls";
+                icon: @image-url("../icons/sys/call.svg");
+                has-icon: true;
+                clicked => { root.return-call(); }
+            }
+
+            if missed > 0: ListRow {
+                title: missed == 1 ? "Missed call" : missed + " missed calls";
+                subtitle: "Since this phone session started";
                 icon: @image-url("../icons/sys/missed_call.svg");
                 has-icon: true;
                 icon-tint: Theme.danger;

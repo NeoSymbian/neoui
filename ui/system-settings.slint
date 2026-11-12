@@ -15,6 +15,7 @@ export global SystemSettings {
     in-out property <bool> airplane: false;
     in-out property <bool> silent: false;
     in-out property <bool> vibrate: true;
+    in-out property <int> ring-volume: 8;
     in-out property <bool> dark: true;
     // 0.0 to 1.0; stored as 0 to 255 (display.brightness)
     in-out property <float> brightness: 160 / 255;
@@ -39,6 +40,7 @@ export global SystemSettings {
     changed airplane => { edited("radio.airplane"); }
     changed silent => { edited("sound.silent"); }
     changed vibrate => { edited("sound.vibrate"); }
+    changed ring-volume => { edited("sound.ring_volume"); }
     changed dark => { edited("display.dark"); }
     changed brightness => { edited("display.brightness"); }
     changed clock-24h => { edited("clock.24h"); }

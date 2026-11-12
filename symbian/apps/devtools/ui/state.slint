@@ -101,6 +101,7 @@ export global DevState {
     in property <int> confirm: -1;  // the power action waiting for a confirm: 0 restart, 1 fastboot, 2 power off
     callback save-logs();
     callback console-toggled(bool);
+    callback modem-retry();
     callback power(int);
     callback power-confirmed();
     callback power-cancelled();

@@ -162,6 +162,9 @@ registry! {
     SOUND_SILENT: bool = "sound.silent", default DefaultValue::Bool(false), limit Limit::None, owner Owner::Shell;
     /// Vibrate for calls and notifications.
     SOUND_VIBRATE: bool = "sound.vibrate", default DefaultValue::Bool(true), limit Limit::None, owner Owner::Shell;
+    /// C7 built-in ringtone volume, matching NeoModem's 0..=10 steps.
+    SOUND_RING_VOLUME: i32 = "sound.ring_volume", default DefaultValue::Int(8),
+        limit Limit::Range { min: 0, max: 10 }, owner Owner::Shell;
     /// Dark theme.
     DISPLAY_DARK: bool = "display.dark", default DefaultValue::Bool(true), limit Limit::None, owner Owner::Shell;
     /// Screen brightness, 0 (dimmest) to 255; the UI server sends it to the panel (display HAL, 0..1023).

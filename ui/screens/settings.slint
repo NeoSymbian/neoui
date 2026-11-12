@@ -212,10 +212,17 @@ export component SettingsScreen inherits Rectangle {
     property <bool> wifi-sheet;
     property <string> wifi-password;
     // the switches below show and edit the system settings (SystemSettings, kept by the UI server)
+    // The store remains the source of truth for requested settings; C7 adds confirmed radio state.
     property <bool> wifi: SystemSettings.wifi;
     property <bool> bluetooth: SystemSettings.bluetooth;
     property <bool> data: SystemSettings.mobile-data;
     property <bool> dark: SystemSettings.dark;
+    property <bool> airplane: SystemSettings.airplane;
+    in property <bool> radio-online;
+    property <int> ring-volume: SystemSettings.ring-volume;
+    property <bool> silent: SystemSettings.silent;
+    property <bool> vibrate: SystemSettings.vibrate;
+    in property <string> phone-feedback;
 
     if view == "": NeoList {
         VerticalLayout {
@@ -258,6 +265,7 @@ export component SettingsScreen inherits Rectangle {
                 value: "Ringing";
                 icon: @image-url("../icons/sys/volume.svg");
                 tint: #e5484d;
+                clicked => { root.view = "sounds"; }
             }
 
             SettingRow {
@@ -344,6 +352,7 @@ export component SettingsScreen inherits Rectangle {
 
             ListRow {
                 title: "Airplane mode";
+                subtitle: airplane ? (radio-online ? "Turning radio off…" : "Radio off") : (radio-online ? "Radio on" : "Waiting for radio");
                 has-icon: true;
                 icon: @image-url("../icons/sys/lock.svg");
                 has-switch: true;
@@ -365,6 +374,36 @@ export component SettingsScreen inherits Rectangle {
                 switch-on <=> SystemSettings.usb-debugging;
                 divider: false;
             }
+        }
+    }
+
+    if view == "sounds": NeoList {
+        VerticalLayout {
+            SectionHeader { text: "Incoming calls"; }
+            ListRow {
+                title: "Silent";
+                subtitle: "Mute the built-in ringtone";
+                has-switch: true;
+                switch-on <=> SystemSettings.silent;
+            }
+            ListRow {
+                title: "Vibrate";
+                has-switch: true;
+                switch-on <=> SystemSettings.vibrate;
+            }
+            ListRow {
+                title: "Ring volume";
+                value: root.ring-volume;
+                subtitle: "Built-in ringtone";
+            }
+            HorizontalLayout {
+                padding-left: Theme.margin;
+                padding-right: Theme.margin;
+                spacing: 12 * Theme.dp;
+                Button { text: "Quieter"; clicked => { SystemSettings.ring-volume = max(0, root.ring-volume - 1); } }
+                Button { text: "Louder"; clicked => { SystemSettings.ring-volume = min(10, root.ring-volume + 1); } }
+            }
+            if phone-feedback != "": ListRow { title: phone-feedback; }
         }
     }
 
