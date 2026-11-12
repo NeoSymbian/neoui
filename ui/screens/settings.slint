@@ -87,6 +87,7 @@ export component SettingsScreen inherits Rectangle {
     in property <[float]> battery-history;
     in property <string> wifi-status: "Searching…";
     in property <[WifiNet]> wifi-networks;
+    in property <int> wifi-count;  // named networks (hidden ones not counted)
     // the switches below show and edit the system settings (SystemSettings, kept by the UI server)
     property <bool> wifi: SystemSettings.wifi;
     property <bool> bluetooth: SystemSettings.bluetooth;
@@ -98,7 +99,7 @@ export component SettingsScreen inherits Rectangle {
             SectionHeader { text: "Connections"; }
             SettingRow {
                 title: "Wi-Fi";
-                value: wifi ? (wifi-networks.length > 0 ? wifi-networks.length + " networks" : "On") : "Off";
+                value: wifi ? (wifi-count > 0 ? wifi-count + " networks" : "On") : "Off";
                 icon: @image-url("../icons/sys/wifi.svg");
                 tint: #2f80ed;
                 clicked => { root.view = "connectivity"; }

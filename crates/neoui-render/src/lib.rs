@@ -338,6 +338,7 @@ impl Renderer {
     /// The latest Wi-Fi scan for Settings -> Connectivity: the Wi-Fi row's status and one row per network.
     pub fn set_wifi(&mut self, scan: &neoui_proto::wifi::Scan) {
         self.ui.set_wifi_status(scan.status().into());
+        self.ui.set_wifi_count(scan.named() as i32);
         let rows: alloc::vec::Vec<WifiNet> = scan
             .list()
             .iter()

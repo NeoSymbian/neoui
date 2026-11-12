@@ -117,6 +117,7 @@ export component Shell inherits Window {
     // Wi-Fi scan results (symbian/src/wifi.rs, kernel HAL WlanScan)
     in property <string> wifi-status: "Searching…";
     in property <[WifiNet]> wifi-networks;
+    in property <int> wifi-count;
     // in: the modem (telephony C5, from MODEMD's NeoModem server): signal bars (-1 = no modem), operator, technology,
     // and the call shown by the Phone screen; out: what the Phone screen asked ("dial" + number, "answer", "hangup")
     in property <int> bars: -1;
@@ -268,6 +269,7 @@ export component Shell inherits Window {
                 battery-history: root.battery-history;
                 wifi-status: root.wifi-status;
                 wifi-networks: root.wifi-networks;
+                wifi-count: root.wifi-count;
             }
         }
 

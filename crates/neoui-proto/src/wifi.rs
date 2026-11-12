@@ -132,9 +132,14 @@ impl Scan {
         v
     }
 
+    /// Networks with a name (hidden ones not counted), as both Settings pages show it
+    pub fn named(&self) -> usize {
+        self.list().iter().filter(|n| !n.ssid.is_empty()).count()
+    }
+
     /// The Wi-Fi row's subtitle
     pub fn status(&self) -> String {
-        let n = self.list().iter().filter(|n| !n.ssid.is_empty()).count();
+        let n = self.named();
         match self.state {
             State::Off => String::from("Off"),
             State::Starting => String::from("Starting…"),
