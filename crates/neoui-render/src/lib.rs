@@ -179,6 +179,11 @@ impl Renderer {
         self.ui.get_screen().as_str().into()
     }
 
+    /// The current sub-page of the screen ("" = its root; Settings: "connectivity", "display", ...).
+    pub fn view(&self) -> alloc::string::String {
+        self.ui.get_view().as_str().into()
+    }
+
     /// Where an app's content goes: the full-width band between the status bar and the toolbar (physical pixels).
     pub fn body(&self) -> Rect {
         let size = self.window.size();
@@ -328,6 +333,22 @@ impl Renderer {
     /// The status bar's time text, e.g. "09:41".
     pub fn set_clock(&mut self, text: &str) {
         self.ui.set_clock(text.into());
+    }
+
+    /// The latest Wi-Fi scan for Settings -> Connectivity: the Wi-Fi row's status and one row per network.
+    pub fn set_wifi(&mut self, scan: &neoui_proto::wifi::Scan) {
+        self.ui.set_wifi_status(scan.status().into());
+        let rows: alloc::vec::Vec<WifiNet> = scan
+            .list()
+            .iter()
+            .map(|n| WifiNet {
+                name: n.title().into(),
+                detail: n.detail().into(),
+                bars: i32::from(n.bars()),
+            })
+            .collect();
+        self.ui
+            .set_wifi_networks(slint::ModelRc::new(slint::VecModel::from(rows)));
     }
 
     /// Shares the latest observation with the status bar and Battery settings page.

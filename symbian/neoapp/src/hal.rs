@@ -176,3 +176,27 @@ pub fn battery() -> Result<neoui_proto::battery::Snapshot, i32> {
     let n = read_des(0x4e1a, None, &mut buf)?;
     neoui_proto::battery::Snapshot::decode(&buf[..n]).ok_or(-20)
 }
+
+/// The latest Wi-Fi scan (kernel HAL WlanScan 0x4e1e, docs wifi.md W3); `rescan` asks the driver for a new one.
+///
+/// # Errors
+/// The HAL's error (-5 without Wi-Fi, e.g. on QEMU).
+pub fn wifi_scan(rescan: bool) -> Result<neoui_proto::wifi::Scan, i32> {
+    let mut buf = alloc::vec![0u8; neoui_proto::wifi::SIZE];
+    let mut des = TPtr8::new(&mut buf);
+    let des_ptr: *mut u8 = (&mut des as *mut TPtr8).cast();
+    // SAFETY: the kernel writes the TDes8 (its length is checked) and reads a2 only as a flag.
+    let r = unsafe {
+        hal_function(
+            GROUP_VARIANT,
+            0x4e1e,
+            des_ptr,
+            usize::from(rescan) as *mut u8,
+        )
+    };
+    if r < 0 {
+        return Err(r);
+    }
+    let n = des.len();
+    neoui_proto::wifi::Scan::decode(&buf[..n]).ok_or(-20)
+}

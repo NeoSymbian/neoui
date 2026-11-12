@@ -5,6 +5,7 @@ import { Theme } from "../theme.slint";
 import { NeoList } from "../components/scroll.slint";
 import { ListRow, SectionHeader } from "../components/lists.slint";
 import { Slider, Card } from "../components/controls.slint";
+import { WifiNet } from "../data.slint";
 
 component Tinted inherits Rectangle {
     in property <image> icon;
@@ -84,6 +85,8 @@ export component SettingsScreen inherits Rectangle {
     in property <string> battery-usb: "unknown";
     in property <string> battery-storage;
     in property <[float]> battery-history;
+    in property <string> wifi-status: "Off";
+    in property <[WifiNet]> wifi-networks;
     // the switches below show and edit the system settings (SystemSettings, kept by the UI server)
     property <bool> wifi: SystemSettings.wifi;
     property <bool> bluetooth: SystemSettings.bluetooth;
@@ -95,7 +98,7 @@ export component SettingsScreen inherits Rectangle {
             SectionHeader { text: "Connections"; }
             SettingRow {
                 title: "Wi-Fi";
-                value: wifi ? "Home" : "Off";
+                value: wifi ? (wifi-networks.length > 0 ? wifi-networks.length + " networks" : "On") : "Off";
                 icon: @image-url("../icons/sys/wifi.svg");
                 tint: #2f80ed;
                 clicked => { root.view = "connectivity"; }
@@ -184,11 +187,20 @@ export component SettingsScreen inherits Rectangle {
             SectionHeader { text: "Wireless"; }
             ListRow {
                 title: "Wi-Fi";
-                subtitle: wifi ? "Connected to Home" : "Off";
+                subtitle: wifi ? wifi-status : "Off";
                 has-icon: true;
                 icon: @image-url("../icons/sys/wifi.svg");
                 has-switch: true;
                 switch-on <=> SystemSettings.wifi;
+            }
+
+            if wifi && wifi-networks.length > 0: SectionHeader { text: "Networks"; }
+            for net in (wifi ? wifi-networks : []): ListRow {
+                title: net.name;
+                subtitle: net.detail;
+                has-icon: true;
+                icon: @image-url("../icons/sys/wifi.svg");
+                icon-tint: net.bars >= 3 ? Theme.text : net.bars >= 1 ? Theme.text-secondary : Theme.text-dim;
             }
 
             ListRow {

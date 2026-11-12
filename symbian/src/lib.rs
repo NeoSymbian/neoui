@@ -20,6 +20,7 @@ mod phone;
 mod screen;
 mod settings;
 mod usb_debug;
+mod wifi;
 
 use alloc::vec;
 use alloc::vec::Vec;
@@ -148,6 +149,7 @@ fn main() -> i32 {
     let mut running_shown: Vec<&'static str> = Vec::new();
     let mut clockwork = clockwork::Clockwork::boot();
     let mut battery = battery::Battery::boot();
+    let mut wifi = wifi::Wifi::new();
     // when Power went down, while it is held
     let mut power_down_at: Option<u64> = None;
     // the screen (screen.rs): off after display.timeout, by a short Power press; on by Power or a ringing call
@@ -457,6 +459,7 @@ fn main() -> i32 {
                 clockwork.power(a);
             }
             battery.poll(&mut ui, time::millis());
+            wifi.poll(&mut ui, time::millis());
             phone.poll(&mut ui, time::millis());
             mirror.sync(&mut ui, &mut host.settings, ms);
             if let Some(worker) = usb_debug.as_mut() {

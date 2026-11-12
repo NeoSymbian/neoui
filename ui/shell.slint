@@ -28,6 +28,7 @@ import { CalendarScreen } from "screens/calendar.slint";
 import { ClockScreen } from "screens/clock.slint";
 import { FilesScreen } from "screens/files.slint";
 import { SettingsScreen } from "screens/settings.slint";
+import { WifiNet } from "data.slint";
 import { TerminalScreen } from "screens/terminal.slint";
 import { SwitcherScreen } from "screens/switcher.slint";
 
@@ -113,6 +114,9 @@ export component Shell inherits Window {
     in property <string> battery-usb: "unknown";
     in property <string> battery-storage;
     in property <[float]> battery-history;
+    // Wi-Fi scan results (symbian/src/wifi.rs, kernel HAL WlanScan)
+    in property <string> wifi-status: "Off";
+    in property <[WifiNet]> wifi-networks;
     // in: the modem (telephony C5, from MODEMD's NeoModem server): signal bars (-1 = no modem), operator, technology,
     // and the call shown by the Phone screen; out: what the Phone screen asked ("dial" + number, "answer", "hangup")
     in property <int> bars: -1;
@@ -262,6 +266,8 @@ export component Shell inherits Window {
                 battery-usb: root.battery-usb;
                 battery-storage: root.battery-storage;
                 battery-history: root.battery-history;
+                wifi-status: root.wifi-status;
+                wifi-networks: root.wifi-networks;
             }
         }
 
