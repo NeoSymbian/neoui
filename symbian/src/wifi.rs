@@ -40,7 +40,7 @@ pub struct Wifi {
     asked_at: Option<u64>,
     last: Option<Scan>,
     /// the supplicant thread, the SSID and PMK it joins with, and when it started
-    join: Option<(JoinHandle, alloc::vec::Vec<u8>, [u8; 32], u64)>,
+    join: Option<(JoinHandle, alloc::vec::Vec<u8>, Option<[u8; 32]>, u64)>,
     link: Link,
     saved: Saved,
     failed: Failed,
@@ -64,7 +64,8 @@ impl Wifi {
     }
 
     /// Start joining `bssid` (a network of the latest scan) with this PMK; a running join is left first.
-    fn start(&mut self, bssid: [u8; 6], ssid: &[u8], pmk: [u8; 32], now: u64) {
+    /// `pmk` = `None` for an open network (no handshake, nothing remembered).
+    fn start(&mut self, bssid: [u8; 6], ssid: &[u8], pmk: Option<[u8; 32]>, now: u64) {
         if let Some((h, ..)) = self.join.take() {
             let _ = neoapp::hal::wifi_leave();
             h.join();
@@ -85,9 +86,10 @@ impl Wifi {
                 .and_then(|s| s.networks.iter().find(|n| n.bssid_text() == bssid).cloned());
             match net {
                 // shortcut: the SSID's bytes as the scan decoded them (UTF-8); a non-UTF-8 SSID hashes wrong
-                Some(n) if (8..=63).contains(&password.len()) || !n.secured => {
+                Some(n) if !n.secured => self.start(n.bssid, n.ssid.as_bytes(), None, now),
+                Some(n) if (8..=63).contains(&password.len()) => {
                     let pmk = wpa::psk(password.as_bytes(), n.ssid.as_bytes());
-                    self.start(n.bssid, n.ssid.as_bytes(), pmk, now);
+                    self.start(n.bssid, n.ssid.as_bytes(), Some(pmk), now);
                 }
                 Some(_) => ui.set_wifi_message("A WPA2 password has 8 to 63 characters"),
                 None => ui.set_wifi_message("The network is gone; refresh the list"),
@@ -95,7 +97,7 @@ impl Wifi {
         }
         let link = neoapp::hal::wifi_link_status().unwrap_or_default();
         if link.state == LinkState::Connected && self.link.state != LinkState::Connected {
-            if let Some((_, ssid, pmk, _)) = &self.join {
+            if let Some((_, ssid, Some(pmk), _)) = &self.join {
                 self.saved.remember(ssid, *pmk);
                 store(&self.saved);
             }
@@ -132,7 +134,7 @@ impl Wifi {
                     .find_map(|n| Some((n.bssid, self.saved.pmk(n.ssid.as_bytes())?, n.ssid)))
             });
             if let Some((bssid, pmk, ssid)) = known {
-                self.start(bssid, ssid.as_bytes(), pmk, now);
+                self.start(bssid, ssid.as_bytes(), Some(pmk), now);
             }
         }
     }
@@ -178,14 +180,15 @@ impl Wifi {
 
 /// The supplicant thread: join, then answer the AP's EAPOL-Key frames until the link ends (a 10 ms poll: the
 /// driver is polled too, and the AP waits about a second per handshake message).
-fn supplicant(bssid: [u8; 6], pmk: [u8; 32], failed: Failed) -> i32 {
+fn supplicant(bssid: [u8; 6], pmk: Option<[u8; 32]>, failed: Failed) -> i32 {
     use neoapp::hal;
     let fail = |why: i32| {
         set(failed, why);
         let _ = hal::wifi_leave();
         why
     };
-    if hal::wifi_join(&bssid, &wpa::RSN_IE).is_err() {
+    let rsn: &[u8] = if pmk.is_some() { &wpa::RSN_IE } else { &[] };
+    if hal::wifi_join(&bssid, rsn).is_err() {
         return fail(FAIL_HAL);
     }
     let mut hs: Option<wpa::Handshake> = None;
@@ -200,6 +203,9 @@ fn supplicant(bssid: [u8; 6], pmk: [u8; 32], failed: Failed) -> i32 {
             LinkState::Joining => continue,
             LinkState::Handshake | LinkState::Connected => {}
         }
+        let Some(pmk) = pmk else {
+            continue; // an open network: no handshake, the kernel reports Connected after association
+        };
         let hs = match &mut hs {
             Some(h) => h,
             None => {
