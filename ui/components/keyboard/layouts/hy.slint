@@ -1,0 +1,24 @@
+// SPDX-License-Identifier: Apache-2.0
+// Armenian (Eastern), phonetic: the letters sit on the QWERTY keys that sound alike (ք q, ո w, ե e, ր r, ...), as in
+// the desktop phonetic layout; the letters it keeps on the digit keys get a row of their own. All 38 letters and և.
+// The full stop is ։ (verjaket); the stress, emphasis and question marks are in the top row.
+import { Layout } from "../types.slint";
+
+export global Hy {
+    out property <Layout> layout: {
+        code: "hy",
+        name: "Armenian",
+        hint: "Phonetic",
+        font: "DejaVu Sans",
+        cols: 12,
+        rows: [
+            ["է", "ձ", "ջ", "ռ", "չ", "ժ", "և", "՝", "՛", "՞"],
+            ["ք", "ո", "ե", "ր", "տ", "ը", "ւ", "ի", "օ", "պ", "խ", "ծ"],
+            ["ա", "ս", "դ", "ֆ", "գ", "հ", "յ", "կ", "լ", "թ", "փ"],
+            ["⇧", "զ", "ղ", "ց", "վ", "բ", "ն", "մ", "շ", "ճ", "⌫"],
+        ],
+        abc: "ԱԲԳ",
+        comma: ",",
+        stop: "։",
+    };
+}

@@ -176,6 +176,18 @@ registry! {
     /// Android's adb. The UI server turns the port on (kernel HAL 0x4e04) and supervises fshell.
     DEVELOPER_USB_DEBUGGING: bool = "developer.usb_debugging", default DefaultValue::Bool(false), limit Limit::None,
         owner Owner::Shell;
+    /// The system keyboard has English (Settings -> Language & keyboard; the globe key cycles the languages on).
+    KEYBOARD_EN: bool = "keyboard.en", default DefaultValue::Bool(true), limit Limit::None, owner Owner::Shell;
+    /// The system keyboard has Armenian (phonetic).
+    KEYBOARD_HY: bool = "keyboard.hy", default DefaultValue::Bool(true), limit Limit::None, owner Owner::Shell;
+    /// The system keyboard has Russian (ЙЦУКЕН).
+    KEYBOARD_RU: bool = "keyboard.ru", default DefaultValue::Bool(true), limit Limit::None, owner Owner::Shell;
+    /// The system keyboard's language: an index into ui/components/keyboard/layouts.slint's list (append only).
+    KEYBOARD_LAYOUT: i32 = "keyboard.layout", default DefaultValue::Int(0),
+        limit Limit::Range { min: 0, max: 15 }, owner Owner::Shell;
+    /// Every keyboard language as tall as the tallest one on (shorter ones get a digit row); else each its own height.
+    KEYBOARD_SAME_HEIGHT: bool = "keyboard.same_height", default DefaultValue::Bool(true), limit Limit::None,
+        owner Owner::Shell;
     /// The Clock app's face: 0 digital, 1 analog (Clock settings).
     CLOCK_FACE: i32 = "clock.face", default DefaultValue::Int(0),
         limit Limit::Range { min: 0, max: 1 }, owner Owner::App("clock");

@@ -1,0 +1,43 @@
+// SPDX-License-Identifier: Apache-2.0
+// The system keyboard's languages, and which ones the user turned on (Settings -> Language & keyboard).
+//
+// Adding a language (docs/neoui-shell.md, "Keyboard"): a file in layouts/; a line in `all`, `on` and `set-on` here;
+// its letters in glyphs.slint; a `keyboard.<code>` key in neoui-proto's registry, a property in system-settings.slint
+// and a binding in neoui-render's settings.rs. Append only: `keyboard.layout` stores an index into `all`.
+import { SystemSettings } from "../../system-settings.slint";
+import { Layout } from "types.slint";
+import { En } from "layouts/en.slint";
+import { Hy } from "layouts/hy.slint";
+import { Ru } from "layouts/ru.slint";
+
+export global Layouts {
+    out property <[Layout]> all: [En.layout, Hy.layout, Ru.layout];
+    out property <[bool]> on: [SystemSettings.keyboard-en, SystemSettings.keyboard-hy, SystemSettings.keyboard-ru];
+
+    public function set-on(i: int, v: bool) {
+        if i == 0 {
+            SystemSettings.keyboard-en = v;
+        } else if i == 1 {
+            SystemSettings.keyboard-hy = v;
+        } else if i == 2 {
+            SystemSettings.keyboard-ru = v;
+        }
+    }
+
+    // Slint has no loops: neoui-render answers these (its `keyboard` module).
+    // The first layout turned on at or after `from`, wrapping round; 0 if none is.
+    pure callback pick(on: [bool], from: int) -> int;
+    // The most letter rows among the layouts turned on.
+    pure callback tallest-of(on: [bool], all: [Layout]) -> int;
+
+    // the layout the keyboard shows: the chosen one, or the next one on if it was turned off
+    out property <int> current: pick(on, SystemSettings.keyboard-layout);
+    out property <int> tallest: tallest-of(on, all);
+    // more than one is on: the keyboard has a globe key, and Settings won't turn off the last one
+    out property <bool> many: pick(on, current + 1) != current;
+
+    // the globe key
+    public function next() {
+        SystemSettings.keyboard-layout = pick(on, current + 1);
+    }
+}

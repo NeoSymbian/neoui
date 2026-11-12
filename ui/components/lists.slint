@@ -62,6 +62,8 @@ export component SectionHeader inherits Rectangle {
 // One row: leading glyph or avatar, one or two lines, trailing value / chevron / switch.
 export component ListRow inherits Rectangle {
     in property <string> title;
+    // the title's font ("" = the window's): "DejaVu Sans" for text a user typed in any keyboard language
+    in property <string> title-font;
     in property <string> subtitle;
     in property <string> value;
     in property <image> icon;
@@ -109,6 +111,7 @@ export component ListRow inherits Rectangle {
             horizontal-stretch: 1;
             Text {
                 text: title;
+                font-family: title-font;
                 color: Theme.text;
                 font-size: Theme.font-body;
                 font-weight: unread ? 700 : 500;

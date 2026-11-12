@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-// Settings: grouped root list (default), and the sub-pages "connectivity", "display", "about".
+// Settings: grouped root list (default), and the sub-pages "connectivity", "display", "keyboard", "about".
 import { SystemSettings } from "../system-settings.slint";
 import { Theme } from "../theme.slint";
 import { NeoList } from "../components/scroll.slint";
 import { ListRow, SectionHeader } from "../components/lists.slint";
 import { Slider, Card, Button } from "../components/controls.slint";
 import { WifiNet } from "../data.slint";
+import { Layouts } from "../components/keyboard/layouts.slint";
 
 component Tinted inherits Rectangle {
     in property <image> icon;
@@ -211,10 +212,13 @@ export component SettingsScreen inherits Rectangle {
 
             SectionHeader { text: "System"; }
             SettingRow {
-                title: "Language";
-                value: "English";
+                title: "Language & keyboard";
+                value: Layouts.all[Layouts.current].name;
                 icon: @image-url("../icons/sys/language.svg");
                 tint: #1fa9c4;
+                clicked => {
+                    root.view = "keyboard";
+                }
             }
 
             SettingRow {
@@ -504,6 +508,48 @@ export component SettingsScreen inherits Rectangle {
             height: parent.height;
             net: wifi-current;
             closed => { root.wifi-sheet = false; }
+        }
+    }
+
+    // The system keyboard: which languages it has (the globe key cycles through them) and how tall it is.
+    if view == "keyboard": NeoList {
+        VerticalLayout {
+            SectionHeader { text: "Keyboards"; }
+            for l[i] in Layouts.all: ListRow {
+                title: l.name;
+                subtitle: l.hint;
+                has-switch: true;
+                switch-on: Layouts.on[i];
+                switch-toggled(on) => {
+                    if !on && !Layouts.many {
+                        self.switch-on = true;  // the last language on stays on
+                    } else {
+                        Layouts.set-on(i, on);
+                    }
+                }
+            }
+
+            SectionHeader { text: "Typing"; }
+            // a tap picks the next language on, like the keyboard's globe key
+            ListRow {
+                title: "Current language";
+                value: Layouts.all[Layouts.current].name;
+                has-icon: true;
+                icon: @image-url("../icons/sys/language.svg");
+                clicked => {
+                    Layouts.next();
+                }
+            }
+
+            ListRow {
+                title: "Same height for all languages";
+                subtitle: "Shorter ones get a row of digits";
+                has-icon: true;
+                icon: @image-url("../icons/sys/keypad.svg");
+                has-switch: true;
+                switch-on <=> SystemSettings.keyboard-same-height;
+                divider: false;
+            }
         }
     }
 

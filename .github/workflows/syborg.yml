@@ -82,6 +82,8 @@ jobs:
           tap 270 135; expect "files: list"; tap 452 1033; tap 270 756
           kb_type neo; expect "files: mkdir"
           tap 452 1033; tap 270 924; tap 270 142; tap 430 553; expect "files: delete"
+          tap 452 1033; tap 270 756; kb_globe; kb_globe
+          kb_tap 2 8.5 12; kb_tap 2 6.5 12; kb_tap 1 5 12; kb_enter; expect "files: mkdir"
           tap 88 1033; expect "files: drives"; tap 88 1033
           tap 449 735; tap 88 1033
           tap 270 1000
@@ -119,7 +121,7 @@ jobs:
           grep -a 'term: eshell started' $s
           grep -a 'term| ESHELL 0.01' $s
           # R6c: the system keyboard opened for the Terminal and typed `dir` (no hardware key sent it)
-          grep -a 'neoui: keyboard true for terminal' $s
+          grep -a 'neoui: keyboard 2 for terminal' $s
           grep -a 'term| C:\\>dir' $s
           grep -a 'term| Directory of C:' $s
           grep -a 'term| C:\\>neotest' $s
@@ -133,9 +135,11 @@ jobs:
           n=$(grep -ao 'files: list Z:\\Sys\\Bin\\ [0-9]*' $s | grep -o '[0-9]*$' | head -1)
           test "${n:-0}" -gt 10
           grep -a 'files: view Z:\\Sys\\Data\\estart.txt 1' $s
-          grep -a 'neoui: keyboard true for files' $s
+          grep -a 'neoui: keyboard 1 for files' $s
           grep -a 'files: mkdir C:\\neo\\ 0' $s
           grep -a 'files: delete C:\\neo\\ 0' $s
+          # the keyboard's globe key, twice (English -> Armenian -> Russian), and a folder named "дом" on the FAT C:
+          grep -a 'files: mkdir C:' $s | grep -av 'C:\\neo\\' | grep -aq '\\ 0'
           grep -a 'files: quit' $s
           grep -a 'neoui: app files exited (type 0, reason 0)' $s
           # R10: Back keeps apps running (Clock is told it is hidden); Terminal comes back with its ESHELL session;

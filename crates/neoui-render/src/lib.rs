@@ -6,6 +6,7 @@
 
 extern crate alloc;
 
+pub mod keyboard;
 pub mod layer;
 mod settings;
 
@@ -24,7 +25,7 @@ use slint::platform::software_renderer::{
     TargetPixel,
 };
 use slint::platform::{Platform, PointerEventButton, WindowAdapter, WindowEvent};
-use slint::{ComponentHandle, LogicalPosition, PhysicalSize, PlatformError};
+use slint::{ComponentHandle, LogicalPosition, Model, PhysicalSize, PlatformError};
 
 /// The home screen's page count (`ui/screens/home.slint`).
 pub const HOME_PAGES: i32 = 3;
@@ -125,6 +126,13 @@ impl Renderer {
         }))
         .map_err(PlatformError::SetPlatformError)?;
         let ui = Shell::new()?;
+        // before anything draws: bindings that call these keep what they first returned
+        let layouts = ui.global::<Layouts>();
+        layouts.on_pick(|on, from| keyboard::pick(&on.iter().collect::<Vec<_>>(), from));
+        layouts.on_tallest_of(|on, all| {
+            let rows: Vec<usize> = all.iter().map(|l| l.rows.row_count()).collect();
+            keyboard::tallest(&on.iter().collect::<Vec<_>>(), &rows)
+        });
         window.set_size(PhysicalSize::new(width, height));
         ui.show()?;
         let typed: Rc<RefCell<Vec<u32>>> = Rc::default();
@@ -220,7 +228,6 @@ impl Renderer {
         self.ui.set_home_page(n.clamp(0, HOME_PAGES - 1));
     }
 
-    /// Show or hide the system keyboard over the bottom of the body.
     /// Which build is running, one line per part (kernel, user-side ROM, neoui): Settings -> About phone.
     pub fn set_build_info(&mut self, lines: &[String]) {
         let model: Vec<slint::SharedString> = lines.iter().map(|l| l.as_str().into()).collect();
@@ -233,13 +240,26 @@ impl Renderer {
         self.ui.set_server_transitions(on);
     }
 
-    pub fn set_keyboard(&mut self, open: bool) {
-        self.ui.set_keyboard_open(open);
+    /// Show the system keyboard over the bottom of the body in `mode` (`proto::KEYBOARD`: 1 text, 2 terminal), or
+    /// hide it (0).
+    pub fn set_keyboard(&mut self, mode: u8) {
+        self.ui.set_keyboard_mode(i32::from(mode));
     }
 
-    /// The keyboard's height (physical pixels) when it is open.
+    /// The keyboard's height (physical pixels) in each `proto::KEYBOARD` mode: [0, text, terminal]. It changes with
+    /// the language and the keyboard settings.
+    pub fn keyboard_heights(&self) -> [u32; 3] {
+        [
+            0,
+            self.ui.get_keyboard_text_h() as u32,
+            self.ui.get_keyboard_term_h() as u32,
+        ]
+    }
+
+    /// The keyboard's height (physical pixels) in its current mode, 0 when hidden.
     pub fn keyboard_h(&self) -> u32 {
-        self.ui.get_keyboard_h() as u32
+        let mode = self.ui.get_keyboard_mode().clamp(0, 2) as usize;
+        self.keyboard_heights()[mode]
     }
 
     /// What the keyboard typed since the last call, as Unicode code points (Backspace 8, Enter 13).

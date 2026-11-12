@@ -1,0 +1,21 @@
+// SPDX-License-Identifier: Apache-2.0
+// Russian: ЙЦУКЕН, all 33 letters on keys (ъ and ё have their own: there is no long-press yet).
+import { Layout } from "../types.slint";
+
+export global Ru {
+    out property <Layout> layout: {
+        code: "ru",
+        name: "Russian",
+        hint: "ЙЦУКЕН",
+        font: "Inter",
+        cols: 12,
+        rows: [
+            ["й", "ц", "у", "к", "е", "н", "г", "ш", "щ", "з", "х", "ъ"],
+            ["ф", "ы", "в", "а", "п", "р", "о", "л", "д", "ж", "э"],
+            ["⇧", "ё", "я", "ч", "с", "м", "и", "т", "ь", "б", "ю", "⌫"],
+        ],
+        abc: "АБВ",
+        comma: ",",
+        stop: ".",
+    };
+}

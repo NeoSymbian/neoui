@@ -3,7 +3,10 @@
 // prototype Files screen (ui/screens/files.slint): drive cards with usage bars, list rows, the Options sheet.
 // The Rust side owns the state; this file draws it and reports taps as callbacks.
 import "../../../../ui/fonts/Inter-VariableFont.ttf";
-import "../../../../ui/fonts/UbuntuMono-Regular.ttf";
+// Latin, Cyrillic and Armenian: names and text typed on the system keyboard, in any of its languages
+import "../../../../ui/fonts/DejaVuSans.ttf";
+import "../../../../ui/fonts/DejaVuSansMono.ttf";
+import { Alphabets } from "../../../../ui/components/keyboard/glyphs.slint";
 import { Theme } from "../../../../ui/theme.slint";
 import { Card, Button, OptionsMenu } from "../../../../ui/components/controls.slint";
 import { ListRow } from "../../../../ui/components/lists.slint";
@@ -43,6 +46,8 @@ export component FilesApp inherits Window {
     callback option(string);
     callback options-dismissed;
     callback dialog-done(bool);
+
+    Alphabets { }
 
     changed dialog => {
         if (dialog == "name") {
@@ -130,6 +135,7 @@ export component FilesApp inherits Window {
                 alignment: start;
                 for f[i] in rows: ListRow {
                     title: f.name;
+                    title-font: "DejaVu Sans";
                     subtitle: f.detail;
                     has-icon: true;
                     icon: f.kind == "folder" ? @image-url("../../../../ui/icons/sys/folder.svg") : f.kind == "image" ? @image-url("../../../../ui/icons/sys/image.svg") : f.kind == "text" ? @image-url("../../../../ui/icons/sys/doc.svg") : @image-url("../../../../ui/icons/sys/file.svg");
@@ -162,7 +168,7 @@ export component FilesApp inherits Window {
                 Text {
                     text: root.text;
                     wrap: char-wrap;
-                    font-family: "Ubuntu Mono";
+                    font-family: "DejaVu Sans Mono";
                     font-size: 13.5 * Theme.dp;
                     color: #d7dde5;
                 }
@@ -214,6 +220,7 @@ export component FilesApp inherits Window {
             spacing: 14 * Theme.dp;
             Text {
                 text: dialog-title;
+                font-family: "DejaVu Sans";
                 color: Theme.text;
                 font-size: Theme.font-body;
                 font-weight: 600;
@@ -257,6 +264,7 @@ export component FilesApp inherits Window {
             width: parent.width - 2 * Theme.card-pad - 24 * Theme.dp;
             height: Theme.field-h;
             text <=> root.name-text;
+            font-family: "DejaVu Sans";
             color: Theme.text;
             font-size: Theme.font-body;
             vertical-alignment: center;

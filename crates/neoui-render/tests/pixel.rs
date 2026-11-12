@@ -29,6 +29,7 @@ const SCREENS: &[(&str, &str)] = &[
     ("settings", "connectivity"),
     ("settings", "wifi"),
     ("settings", "display"),
+    ("settings", "keyboard"),
     ("settings", "about"),
     ("terminal", ""),
 ];

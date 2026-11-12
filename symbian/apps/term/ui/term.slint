@@ -1,9 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // The Terminal app (NEOTERM.EXE): a Symbian text console window -- ESHELL and the 2010 text programs -- in the look
-// of the design's prototype Terminal screen (ui/screens/terminal.slint): dark ground, Ubuntu Mono, a green cursor and
-// an extra-keys bar. Rows and the cursor come from the console server (Rust); bar keys go back as key codes.
-import "../../../../ui/fonts/UbuntuMono-Regular.ttf";
+// of the design's prototype Terminal screen (ui/screens/terminal.slint): dark ground, a monospaced font and a green
+// cursor. Rows and the cursor come from the console server (Rust). Keys, including Esc, Tab and the arrows, come from
+// the system keyboard in its terminal mode.
+// DejaVu Sans Mono: Latin, Cyrillic and Armenian in one monospaced face (the keyboard's languages)
+import "../../../../ui/fonts/DejaVuSansMono.ttf";
 import { Theme } from "../../../../ui/theme.slint";
+import { Alphabets } from "../../../../ui/components/keyboard/glyphs.slint";
 
 export { Theme }
 
@@ -16,64 +19,34 @@ export component TermApp inherits Window {
     in property <length> cell-h;
     in property <length> font-px;
     in property <length> pad;
-    in property <length> bar-h;
     // the system keyboard's height over the bottom of the surface
     in property <length> kb-h;
-    // a Symbian TKeyCode (Unicode, 13 Enter, 27 Escape, 0xF807-0xF80A arrows)
-    callback key(int);
+    default-font-family: "DejaVu Sans Mono";
     background: #07090c;
+
+    // The grid is sized for the keyboard it started with; if the keyboard grew since (another language), the rows
+    // move up so the cursor's row stays above it.
+    property <length> lift: max(0, root.pad * 2 + (root.cursor-y + 1) * root.cell-h - (root.height - root.kb-h));
+
+    Alphabets { }
 
     for row[i] in root.rows: Text {
         x: root.pad;
-        y: root.pad + i * root.cell-h;
+        y: root.pad + i * root.cell-h - root.lift;
         height: root.cell-h;
         text: row;
         color: #d7dde5;
-        font-family: "Ubuntu Mono";
+        font-family: "DejaVu Sans Mono";
         font-size: root.font-px;
         vertical-alignment: center;
     }
 
     if root.cursor-on: Rectangle {
         x: root.pad + root.cursor-x * root.cell-w;
-        y: root.pad + root.cursor-y * root.cell-h;
+        y: root.pad + root.cursor-y * root.cell-h - root.lift;
         width: root.cell-w;
         height: root.cell-h;
         background: #7ee787;
         opacity: 0.55;
-    }
-
-    Rectangle {
-        y: root.height - root.kb-h - root.bar-h;
-        height: root.bar-h;
-        background: #111418;
-        HorizontalLayout {
-            padding: 7 * Theme.dp;
-            spacing: 6 * Theme.dp;
-            for k in [
-                { label: "Esc", code: 27 },
-                { label: "Tab", code: 9 },
-                { label: "←", code: 63495 },
-                { label: "↑", code: 63497 },
-                { label: "↓", code: 63498 },
-                { label: "→", code: 63496 },
-                { label: "Enter", code: 13 },
-            ]: Rectangle {
-                border-radius: 7 * Theme.dp;
-                background: t.pressed ? Theme.pressed : #1d2025;
-                Text {
-                    text: k.label;
-                    color: Theme.text-secondary;
-                    font-family: "Ubuntu Mono";
-                    font-size: 13 * Theme.dp;
-                }
-
-                t := TouchArea {
-                    clicked => {
-                        root.key(k.code);
-                    }
-                }
-            }
-        }
     }
 }

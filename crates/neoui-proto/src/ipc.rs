@@ -5,14 +5,15 @@
 //!
 //! Since 1.1 an app also reads, writes and watches settings ([`SETTING_GET`], [`SETTING_SET`], [`SETTING_WATCH`],
 //! [`AppEvent::Settings`]; the model is [`crate::settings`]). Since 1.2 the server wakes the Clock app for a due
-//! alarm ([`AppEvent::Alarm`]).
+//! alarm ([`AppEvent::Alarm`]). Since 1.3 the system keyboard has modes ([`KEYBOARD_TEXT`], [`KEYBOARD_TERMINAL`]) and
+//! a height that changes with its language and settings ([`AppEvent::Keyboard`]).
 
 use crate::{InputEvent, TouchPhase};
 
 /// The server's name (no leading `!`: that needs ProtServ).
 pub const SERVER: &str = "NeoUi";
 /// Protocol version (major, minor); a connect with another major is refused.
-pub const VERSION: (u8, u8) = (1, 2);
+pub const VERSION: (u8, u8) = (1, 3);
 
 /// `[Des8 out: GEOMETRY_LEN bytes = width, height, dp × 256 (u32 LE)]` → 0. `dp` is the shell's design unit in
 /// pixels (`min(screen w, h) / 360`), so apps size things like the shell does.
@@ -24,9 +25,16 @@ pub const SURFACE: i32 = 2;
 pub const DAMAGE: i32 = 3;
 /// `[Des8 out: EVENT_LEN bytes]` → asynchronous: completes when there is an [`AppEvent`] for the app.
 pub const NEXT_EVENT: i32 = 4;
-/// `[show: 1 | 0]` → the height in pixels of the system keyboard now covering the bottom of the surface (0 when
-/// hidden). Its keys arrive as [`InputEvent::Key`] like hardware keys (NeoSymbian R6c).
+/// `[mode: KEYBOARD_HIDDEN | KEYBOARD_TEXT | KEYBOARD_TERMINAL]` → the height in pixels of the system keyboard now
+/// covering the bottom of the surface (0 when hidden). Its keys arrive as [`InputEvent::Key`] like hardware keys
+/// (NeoSymbian R6c). The height can change later (language, settings): [`AppEvent::Keyboard`] tells the app.
 pub const KEYBOARD: i32 = 5;
+pub const KEYBOARD_HIDDEN: i32 = 0;
+/// Letters, the symbols layer and the languages on (1.2's `show = 1`).
+pub const KEYBOARD_TEXT: i32 = 1;
+/// [`KEYBOARD_TEXT`] with a row of Escape (27), Tab (9) and the arrows (Symbian's `EKeyLeftArrow` 0xF807,
+/// `EKeyRightArrow` 0xF808, `EKeyUpArrow` 0xF809, `EKeyDownArrow` 0xF80A) on top.
+pub const KEYBOARD_TERMINAL: i32 = 2;
 /// `[claims: NAV_BACK | NAV_OPTIONS]` → 0. The app takes over the toolbar's Back and/or Options buttons: the server
 /// sends [`AppEvent::Back`] / [`AppEvent::Options`] instead of the shell acting on them. Claims end with the app.
 pub const NAV: i32 = 6;
@@ -71,6 +79,8 @@ pub enum AppEvent {
     Settings { seq: u32 },
     /// Alarm `id` (`crate::clock::alarm`) is due: the server brought the Clock app to the front to ring it.
     Alarm { id: u16 },
+    /// The open system keyboard now covers `h` pixels of the surface's bottom (its language or settings changed).
+    Keyboard { h: u32 },
 }
 
 const KIND_TOUCH: u32 = 1;
@@ -81,6 +91,7 @@ const KIND_OPTIONS: u32 = 5;
 const KIND_VISIBLE: u32 = 6;
 const KIND_SETTINGS: u32 = 7;
 const KIND_ALARM: u32 = 8;
+const KIND_KEYBOARD: u32 = 9;
 
 impl AppEvent {
     /// `[kind, a, b, c]` as little-endian u32s: touch = (phase | id << 8, x, y), key = (down, code, 0).
@@ -101,6 +112,7 @@ impl AppEvent {
             AppEvent::Visible(v) => [KIND_VISIBLE, v as u32, 0, 0],
             AppEvent::Settings { seq } => [KIND_SETTINGS, seq, 0, 0],
             AppEvent::Alarm { id } => [KIND_ALARM, u32::from(id), 0, 0],
+            AppEvent::Keyboard { h } => [KIND_KEYBOARD, h, 0, 0],
         };
         let mut out = [0u8; EVENT_LEN];
         for (i, v) in w.iter().enumerate() {
@@ -135,6 +147,7 @@ impl AppEvent {
             KIND_ALARM => AppEvent::Alarm {
                 id: u16::try_from(w(1)).ok()?,
             },
+            KIND_KEYBOARD => AppEvent::Keyboard { h: w(1) },
             _ => return None,
         })
     }
@@ -166,6 +179,8 @@ mod tests {
             AppEvent::Settings { seq: u32::MAX },
             AppEvent::Alarm { id: 0 },
             AppEvent::Alarm { id: u16::MAX },
+            AppEvent::Keyboard { h: 0 },
+            AppEvent::Keyboard { h: 369 },
         ];
         for e in all {
             assert_eq!(AppEvent::decode(&e.encode()), Some(e));

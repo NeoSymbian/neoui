@@ -143,8 +143,8 @@ fn main() -> i32 {
     };
     // the shell's design unit (theme.slint: min(w, h) / 360), in 1/256 px
     let dp256 = (w.min(h) * 256 / 360) as u32;
-    let mut host = Host::new(ui.body(), dp256, ui.keyboard_h(), settings);
-    let mut keyboard_shown = false;
+    let mut host = Host::new(ui.body(), dp256, ui.keyboard_heights(), settings);
+    let mut keyboard_shown = 0;
     let mut nav_shown = 0;
     let mut running_shown: Vec<&'static str> = Vec::new();
     let mut clockwork = clockwork::Clockwork::boot();
@@ -415,11 +415,12 @@ fn main() -> i32 {
                 running_shown = running;
             }
 
-            let want_keyboard = host.front().is_some_and(|a| a.keyboard);
+            let want_keyboard = host.front().map_or(0, |a| a.keyboard);
             if want_keyboard != keyboard_shown {
                 ui.set_keyboard(want_keyboard);
                 keyboard_shown = want_keyboard;
             }
+            host.set_keyboard_heights(ui.keyboard_heights());
             let front = host.front().is_some();
             if front != front_shown {
                 ui.set_app_front(front);

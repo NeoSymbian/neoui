@@ -28,21 +28,39 @@ type_text() {
 	done
 	add "sendkey ret"
 }
-# kb_type WORD: tap WORD (lowercase letters and spaces) on the system keyboard, then its Enter key. The keyboard is
-# open over an app screen (toolbar 61 dp); key geometry mirrors ui/components/keyboard.slint (rows 48 dp apart from
-# 6 dp below its 198 dp top, 10 units per row), as crates/neoui-render/tests/keyboard.rs does.
+# kb_type WORD: tap WORD (lowercase letters and spaces) on the system keyboard in English, then its Enter key. The
+# keyboard is open over an app screen (toolbar 61 dp); key geometry mirrors ui/components/keyboard/keyboard.slint,
+# counted up from the keyboard's bottom (row k centred 27 + 48 k dp above it, whatever rows are above), as
+# crates/neoui-render/tests/keyboard.rs does. The bottom row is 10 units: space spans 3.5-7.5 with the globe key.
 kb_key() {
 	awk -v c="$1" -v W="$SW" -v H="$SH" 'BEGIN {
-		d = (W < H ? W : H) / 360; top = H - 61 * d - 198 * d; u = W / 10; w = 1
-		if ((i = index("qwertyuiop", c))) { row = 0; at = i - 1 }
-		else if ((i = index("asdfghjkl", c))) { row = 1; at = i - 0.5 }
-		else if ((i = index("zxcvbnm", c))) { row = 2; at = i + 0.5 }
-		else if (c == " ") { row = 3; at = 2.5; w = 5 }
-		else if (c == "ENTER") { row = 3; at = 8.5; w = 1.5 }
+		d = (W < H ? W : H) / 360; bottom = H - 61 * d; u = W / 10; w = 1
+		if ((i = index("qwertyuiop", c))) { row = 3; at = i - 1 }
+		else if ((i = index("asdfghjkl", c))) { row = 2; at = i - 0.5 }
+		else if ((i = index("zxcvbnm", c))) { row = 1; at = i + 0.5 }
+		else if (c == " ") { row = 0; at = 3.5; w = 4 }
+		else if (c == "GLOBE") { row = 0; at = 1.5 }
+		else if (c == "ENTER") { row = 0; at = 8.5; w = 1.5 }
 		else exit 1
-		printf "%d %d\n", (at + w / 2) * u, top + (6 + row * 48 + 21) * d
+		printf "%d %d\n", (at + w / 2) * u, bottom - (27 + row * 48) * d
 	}'
 }
+# kb_tap K AT COLS: the one-unit key at AT (in key widths, COLS to a row) of row K counted up from the bottom row (0);
+# for the other languages, whose letters awk can't index (Russian is 12 wide: row 2 ф..э from 0.5, row 1 shift,
+# then ё я ч с м ... from 1)
+kb_tap() {
+	# shellcheck disable=SC2046 # "x y"
+	tap $(awk -v k="$1" -v at="$2" -v cols="$3" -v W="$SW" -v H="$SH" 'BEGIN {
+		d = (W < H ? W : H) / 360
+		printf "%d %d\n", (at + 0.5) * W / cols, H - 61 * d - (27 + k * 48) * d
+	}')
+}
+# kb_globe: the next language on (English -> Armenian -> Russian -> English by default)
+# shellcheck disable=SC2046 # "x y"
+kb_globe() { tap $(kb_key GLOBE); }
+# kb_enter: the Enter key
+# shellcheck disable=SC2046 # "x y"
+kb_enter() { tap $(kb_key ENTER); }
 kb_type() {
 	w=$1
 	while [ -n "$w" ]; do
