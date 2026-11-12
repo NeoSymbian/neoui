@@ -85,7 +85,7 @@ export component SettingsScreen inherits Rectangle {
     in property <string> battery-usb: "unknown";
     in property <string> battery-storage;
     in property <[float]> battery-history;
-    in property <string> wifi-status: "Off";
+    in property <string> wifi-status: "Searching…";
     in property <[WifiNet]> wifi-networks;
     // the switches below show and edit the system settings (SystemSettings, kept by the UI server)
     property <bool> wifi: SystemSettings.wifi;
