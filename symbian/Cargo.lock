@@ -5260,6 +5260,7 @@ dependencies = [
 [[package]]
 name = "wpa"
 version = "0.1.0"
+source = "git+https://github.com/NeoSymbian/neolink?rev=7db5000285acb4be606b3a4320048dfc6c195c1c#7db5000285acb4be606b3a4320048dfc6c195c1c"
 dependencies = [
  "aes-kw",
  "hmac",
