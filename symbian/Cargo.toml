@@ -24,6 +24,9 @@ neoapp = { workspace = true }
 modem-ipc = { workspace = true }
 # NeoSymbian/neolink: the WPA2-PSK supplicant handshakes (Wi-Fi W4; Apache-2.0)
 wpa = { git = "https://github.com/NeoSymbian/neolink", rev = "7db5000285acb4be606b3a4320048dfc6c195c1c" }
+# NeoSymbian/neolink: the NeoNet client (NEONET.EXE, the IP stack over Wi-Fi, W5; Apache-2.0).
+# shortcut: a path dependency until neolink's w5-net is pushed; pin it by git rev before this branch is pushed.
+net = { path = "../../neolink/crates/net", features = ["client"] }
 
 [workspace]
 members = ["apps/clock", "apps/term", "apps/files", "apps/devtools", "neoapp"]

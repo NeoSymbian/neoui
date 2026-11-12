@@ -329,6 +329,28 @@ fn mac_text(b: &[u8; 6]) -> String {
     )
 }
 
+/// Whether the internet answers over the link (SYSSTART fetches a `generate_204` page once an address is held)
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Internet {
+    #[default]
+    Checking,
+    Ok,
+    NoAccess,
+}
+
+/// The IP side of the link, from NEONET's status (docs wifi.md W5). `address` = `None` until DHCP gave one.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Ip {
+    pub address: Option<([u8; 4], u8)>,
+    pub gateway: [u8; 4],
+    pub dns: [u8; 4],
+    pub internet: Internet,
+}
+
+fn ip_text(a: [u8; 4]) -> String {
+    format!("{}.{}.{}.{}", a[0], a[1], a[2], a[3])
+}
+
 /// What Settings and the status bar show about the current link (Settings -> Wi-Fi "Current network", its details
 /// sheet). `net` = the joined network's latest scan entry, for its name and signal.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -379,11 +401,6 @@ impl LinkView {
                 format!("{} frames ({} ARP/IP)", link.rx_data, link.rx_ip),
             );
         }
-        // W5 brings DHCP: until then the link carries no IP traffic of ours
-        row(
-            "IP address",
-            String::from("None yet (no network stack: Wi-Fi W5)"),
-        );
         LinkView {
             shown,
             connected,
@@ -396,6 +413,32 @@ impl LinkView {
             },
             details,
         }
+    }
+
+    /// Add the IP rows (address, gateway, DNS, internet) while connected.
+    pub fn with_ip(mut self, ip: &Ip) -> Self {
+        if !self.connected {
+            return self;
+        }
+        let mut row = |k: &str, v: String| self.details.push((String::from(k), v));
+        let Some((address, prefix)) = ip.address else {
+            row("IP address", String::from("Getting address…"));
+            return self;
+        };
+        row("IP address", format!("{}/{}", ip_text(address), prefix));
+        if ip.gateway != [0; 4] {
+            row("Gateway", ip_text(ip.gateway));
+        }
+        if ip.dns != [0; 4] {
+            row("DNS", ip_text(ip.dns));
+        }
+        let internet = match ip.internet {
+            Internet::Checking => "Checking…",
+            Internet::Ok => "Connected",
+            Internet::NoAccess => "No access",
+        };
+        row("Internet", String::from(internet));
+        self
     }
 }
 
@@ -570,5 +613,50 @@ mod tests {
         assert_eq!((v.bars, v.name.as_str()), (-1, "01:02:03:04:05:06"));
         assert_eq!(v.subtitle, "Connecting…");
         assert!(!LinkView::new(&Link::default(), None).shown);
+    }
+
+    #[test]
+    fn link_view_ip_rows() {
+        let up = Link::decode(&link(3, 0, 0, &[])).unwrap();
+        let rows = |ip: &Ip| {
+            LinkView::new(&up, None)
+                .with_ip(ip)
+                .details
+                .into_iter()
+                .skip_while(|(k, _)| k != "IP address")
+                .map(|(k, v)| format!("{k}: {v}"))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(rows(&Ip::default()), ["IP address: Getting address…"]);
+        let ip = Ip {
+            address: Some(([192, 168, 3, 57], 24)),
+            gateway: [192, 168, 3, 1],
+            dns: [192, 168, 3, 1],
+            internet: Internet::Ok,
+        };
+        assert_eq!(
+            rows(&ip),
+            [
+                "IP address: 192.168.3.57/24",
+                "Gateway: 192.168.3.1",
+                "DNS: 192.168.3.1",
+                "Internet: Connected"
+            ]
+        );
+        // no gateway or DNS from DHCP: those rows are left out
+        let bare = Ip {
+            gateway: [0; 4],
+            dns: [0; 4],
+            internet: Internet::NoAccess,
+            ..ip
+        };
+        assert_eq!(
+            rows(&bare),
+            ["IP address: 192.168.3.57/24", "Internet: No access"]
+        );
+        // not connected: no IP rows at all
+        let joining = Link::decode(&link(1, 0, 0, &[])).unwrap();
+        let v = LinkView::new(&joining, None).with_ip(&ip);
+        assert!(v.details.iter().all(|(k, _)| k != "IP address"));
     }
 }

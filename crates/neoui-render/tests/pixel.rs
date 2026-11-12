@@ -103,7 +103,13 @@ fn pixel() {
         ssid: "Home".into(),
     };
     link.bssid = home.bssid;
-    r.set_wifi_link(&neoui_proto::wifi::LinkView::new(&link, Some(&home)));
+    let ip = neoui_proto::wifi::Ip {
+        address: Some(([192, 168, 3, 57], 24)),
+        gateway: [192, 168, 3, 1],
+        dns: [192, 168, 3, 1],
+        internet: neoui_proto::wifi::Internet::Ok,
+    };
+    r.set_wifi_link(&neoui_proto::wifi::LinkView::new(&link, Some(&home)).with_ip(&ip));
     r.show("settings", "wifi");
     common::frame(&mut r, &mut buf, w, "wifi page");
     common::tap(&mut r, (w / 2) as i32, (h as f32 * 0.1) as i32); // above the open sheet's card: closes it

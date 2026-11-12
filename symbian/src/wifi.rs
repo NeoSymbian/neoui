@@ -9,11 +9,16 @@
 //! through the kernel (HAL WlanLink 0x4e1f) and runs the WPA2 4-way handshake (neolink `wpa`). The page shows the
 //! kernel's link state. A network that reached "Connected" is remembered (SSID + PMK, never the password) in the
 //! UI server's private directory and joined again when it is seen while nothing is joined.
-//! shortcut: the supplicant is a thread of the UI server; it moves to a daemon with the network interface (W5).
+//!
+//! IP (W5): NEONET.EXE (neolink `net`, started here) gets an address by DHCP once the link is connected. The
+//! details sheet shows its lease, and one internet check per address fetches a `generate_204` page through the
+//! NeoNet client API, the way apps use it.
+//! shortcut: the supplicant is a thread of the UI server, not part of NEONET (which carries IP, not EAPOL); move it
+//! there when Wi-Fi must work without the UI.
 use e32::fs::{File, Fs, mode};
 use e32::sync::Mutex;
 use e32::thread::JoinHandle;
-use neoui_proto::wifi::{Link, LinkState, LinkView, Saved, Scan, State};
+use neoui_proto::wifi::{Internet, Ip, Link, LinkState, LinkView, Saved, Scan, State};
 use neoui_render::Renderer;
 
 /// The remembered networks, in the UI server's private directory (data-caged: apps can't read it)
@@ -33,6 +38,12 @@ const FAIL_HAL: i32 = 4;
 
 /// A list this old is refreshed when the page opens, and rescanned while it stays open
 const FRESH_MS: u64 = 30_000;
+
+/// The internet check: Android's captive-portal probe, an empty 204 answer when the internet is reachable.
+/// shortcut: a portal's login page shows as "No access"; open it when there is a browser.
+const CHECK_HOST: &str = "connectivitycheck.gstatic.com";
+const CHECK_OK: i32 = 1;
+const CHECK_FAILED: i32 = 2;
 
 pub struct Wifi {
     next_read: u64,
@@ -54,10 +65,19 @@ pub struct Wifi {
     view: LinkView,
     /// the link view changed: publish the list again (with or without the current network)
     relist: bool,
+    /// a session with NEONET (made when first needed), its lease as last read, and when it is read next (1 s)
+    net: Option<net::client::Net>,
+    ip: Ip,
+    next_ip: u64,
+    /// the running internet check, the address it was started for, and its result (0 while it runs)
+    check: Option<JoinHandle>,
+    checked: Option<[u8; 4]>,
+    internet: Failed,
 }
 
 impl Wifi {
     pub fn new() -> Self {
+        Self::start_net();
         Self {
             next_read: 0,
             listed_at: None,
@@ -72,10 +92,70 @@ impl Wifi {
             left: None,
             view: LinkView::default(),
             relist: false,
-            failed: Mutex::new(0)
-                .ok()
-                .map(|m| &*alloc::boxed::Box::leak(alloc::boxed::Box::new(m))),
+            failed: shared(),
+            net: None,
+            ip: Ip::default(),
+            next_ip: 0,
+            check: None,
+            checked: None,
+            internet: shared(),
         }
+    }
+
+    /// Start the IP stack (it waits for the link; a second start finds it running and exits).
+    fn start_net() {
+        match e32::process::Process::spawn("NEONET.EXE", "") {
+            Ok(p) => p.resume(),
+            Err(e) => e32::dprintln!("neoui: no network daemon ({})", e),
+        }
+    }
+
+    /// The IP side (W5): NEONET's lease once a second while connected, and one internet check per address.
+    fn poll_ip(&mut self, now: u64) {
+        if self.link.state != LinkState::Connected {
+            self.ip = Ip::default();
+            self.checked = None;
+            return;
+        }
+        if now < self.next_ip {
+            return;
+        }
+        self.next_ip = now.saturating_add(1000);
+        if self.net.is_none() {
+            self.net = net::client::Net::connect().ok();
+        }
+        let Some(status) = self.net.as_ref().and_then(|n| n.status().ok()) else {
+            self.net = None; // not running (yet), or it went: connect again next time
+            return;
+        };
+        let address = (status.state == net::proto::State::Up).then_some((status.ip, status.prefix));
+        let result = self.internet.map_or(0, |m| *m.lock());
+        if result != 0
+            && let Some(h) = self.check.take()
+        {
+            h.join();
+        }
+        if let Some((a, _)) = address
+            && self.checked != Some(a)
+            && self.check.is_none()
+        {
+            set(self.internet, 0);
+            let shared = self.internet;
+            match e32::thread::spawn(move || internet_check(shared)) {
+                Ok(h) => (self.check, self.checked) = (Some(h), Some(a)),
+                Err(e) => e32::dprintln!("neoui: wifi: no internet check thread ({})", e),
+            }
+        }
+        self.ip = Ip {
+            address,
+            gateway: status.gateway,
+            dns: status.dns[0],
+            internet: match self.internet.map_or(0, |m| *m.lock()) {
+                CHECK_OK => Internet::Ok,
+                CHECK_FAILED => Internet::NoAccess,
+                _ => Internet::Checking,
+            },
+        };
     }
 
     /// Start joining `bssid` (a network of the latest scan) with this PMK; a running join is left first.
@@ -168,7 +248,8 @@ impl Wifi {
             self.shown = text;
         }
         self.link = link;
-        let view = LinkView::new(&self.link, self.joined().as_ref());
+        self.poll_ip(now);
+        let view = LinkView::new(&self.link, self.joined().as_ref()).with_ip(&self.ip);
         if view != self.view {
             ui.set_wifi_link(&view);
             self.view = view;
@@ -302,6 +383,45 @@ fn supplicant(bssid: [u8; 6], pmk: Option<[u8; 32]>, failed: Failed) -> i32 {
             }
         }
     }
+}
+
+/// A result shared with a thread (leaked: see [`Failed`])
+fn shared() -> Failed {
+    Mutex::new(0)
+        .ok()
+        .map(|m| &*alloc::boxed::Box::leak(alloc::boxed::Box::new(m)))
+}
+
+/// The internet check thread: resolve, connect, fetch `/generate_204`, expect "204"; the result goes into `result`.
+fn internet_check(result: Failed) -> i32 {
+    let fetch = || -> Result<bool, i32> {
+        let net = net::client::Net::connect()?;
+        let ip = net.resolve(CHECK_HOST)?;
+        let mut s = net.tcp_connect(ip, 80)?;
+        s.write_all(
+            b"GET /generate_204 HTTP/1.1\r\nHost: connectivitycheck.gstatic.com\r\nConnection: close\r\n\r\n",
+        )?;
+        let mut b = [0u8; 16];
+        let mut n = 0;
+        while n < b.len() {
+            match s.read(&mut b[n..])? {
+                0 => break,
+                k => n += k,
+            }
+        }
+        Ok(b[..n].starts_with(b"HTTP/1.1 204") || b[..n].starts_with(b"HTTP/1.0 204"))
+    };
+    let r = fetch();
+    e32::dprintln!("neoui: wifi: internet check {:?}", r);
+    set(
+        result,
+        if r == Ok(true) {
+            CHECK_OK
+        } else {
+            CHECK_FAILED
+        },
+    );
+    0
 }
 
 fn set(failed: Failed, why: i32) {
