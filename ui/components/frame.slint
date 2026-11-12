@@ -23,6 +23,8 @@ export component StatusBar inherits Rectangle {
     in property <int> bars: -1;
     in property <string> operator;
     in property <string> rat;
+    // Wi-Fi bars 0..4 while connected, -1 = not connected (no icon)
+    in property <int> wifi-bars: -1;
     callback tapped;
     height: Theme.status-h;
     background: Theme.bg;
@@ -68,11 +70,12 @@ export component StatusBar inherits Rectangle {
                 size: Theme.status-icon;
             }
         }
-        for icon in [@image-url("../icons/sys/wifi.svg")]: VerticalLayout {
+        if wifi-bars >= 0: VerticalLayout {
             alignment: center;
             Glyph {
-                source: icon;
+                source: @image-url("../icons/sys/wifi.svg");
                 size: Theme.status-icon;
+                colorize: wifi-bars >= 2 ? Theme.text : Theme.text-secondary;
             }
         }
         if battery-connected: VerticalLayout {

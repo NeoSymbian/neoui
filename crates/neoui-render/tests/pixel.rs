@@ -91,4 +91,40 @@ fn pixel() {
     common::tap(&mut r, (w / 2) as i32, (12.0 * d) as i32);
     common::frame(&mut r, &mut buf, w, "shade");
     common::write_png("shade-pixel.png", &buf, w, h);
+
+    // Wi-Fi connected (W4): "Current network" above the list, the status bar's icon, then its details sheet
+    let mut link = alloc_link();
+    link.state = neoui_proto::wifi::LinkState::Connected;
+    let home = neoui_proto::wifi::Network {
+        bssid: [2, 0, 0, 0, 0, 1],
+        channel: 44,
+        dbm: -50,
+        secured: true,
+        ssid: "Home".into(),
+    };
+    link.bssid = home.bssid;
+    r.set_wifi_link(&neoui_proto::wifi::LinkView::new(&link, Some(&home)));
+    r.show("settings", "wifi");
+    common::frame(&mut r, &mut buf, w, "wifi page");
+    common::tap(&mut r, (w / 2) as i32, (h as f32 * 0.1) as i32); // above the open sheet's card: closes it
+    common::frame(&mut r, &mut buf, w, "wifi connected");
+    common::write_png("settings-wifi-connected-pixel.png", &buf, w, h);
+    common::tap(&mut r, (w / 2) as i32, (h as f32 * 0.232) as i32); // the current network's row
+    common::frame(&mut r, &mut buf, w, "wifi details");
+    common::write_png("settings-wifi-details-pixel.png", &buf, w, h);
+}
+
+// a connected link as the kernel reports it (HAL WlanLink status)
+fn alloc_link() -> neoui_proto::wifi::Link {
+    let mut b = vec![
+        1u8, 3, 4, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 1, 2, 0x4e, 0xc1, 0x47, 0x28, 0xa4,
+    ];
+    b.extend_from_slice(&120u32.to_le_bytes());
+    b.extend_from_slice(&96u32.to_le_bytes());
+    let rsn = [
+        0x30u8, 20, 1, 0, 0, 0x0f, 0xac, 4, 1, 0, 0, 0x0f, 0xac, 4, 1, 0, 0, 0x0f, 0xac, 2, 0, 0,
+    ];
+    b.push(rsn.len() as u8);
+    b.extend_from_slice(&rsn);
+    neoui_proto::wifi::Link::decode(&b).unwrap()
 }

@@ -79,6 +79,8 @@ pub struct Renderer {
     phone: Rc<RefCell<Vec<(String, String)>>>,
     wifi_refresh: Rc<RefCell<bool>>,
     wifi_connect: Rc<RefCell<Option<(String, String)>>>,
+    /// Disconnect (false) or Forget (true) pressed on the current network's details
+    wifi_leave: Rc<RefCell<Option<bool>>>,
     /// keys of settings edited in the UI since the last `take_setting_edits` (`SystemSettings.edited`)
     edited: Rc<RefCell<Vec<String>>>,
     /// lists scrolled by shifting pixels (smooth-ui S2d), and how many frames did so
@@ -157,6 +159,11 @@ impl Renderer {
         let wifi_refresh: Rc<RefCell<bool>> = Rc::default();
         let sink = wifi_refresh.clone();
         ui.on_wifi_refresh(move || *sink.borrow_mut() = true);
+        let wifi_leave: Rc<RefCell<Option<bool>>> = Rc::default();
+        let sink = wifi_leave.clone();
+        ui.on_wifi_disconnect(move || *sink.borrow_mut() = Some(false));
+        let sink = wifi_leave.clone();
+        ui.on_wifi_forget(move || *sink.borrow_mut() = Some(true));
         let wifi_connect: Rc<RefCell<Option<(String, String)>>> = Rc::default();
         let sink = wifi_connect.clone();
         ui.on_wifi_connect(move |b, p| {
@@ -176,6 +183,7 @@ impl Renderer {
             phone,
             wifi_refresh,
             wifi_connect,
+            wifi_leave,
             edited,
             scrolling: Scrolling::default(),
             shifts: 0,
@@ -379,6 +387,31 @@ impl Renderer {
     /// typed password.
     pub fn take_wifi_connect(&mut self) -> Option<(String, String)> {
         self.wifi_connect.borrow_mut().take()
+    }
+
+    /// Disconnect (`Some(false)`) or Forget (`Some(true)`) was pressed on the current network since the last call.
+    pub fn take_wifi_leave(&mut self) -> Option<bool> {
+        self.wifi_leave.borrow_mut().take()
+    }
+
+    /// The current link: Settings' "Current network" and its details, the status bar's Wi-Fi icon.
+    pub fn set_wifi_link(&mut self, v: &neoui_proto::wifi::LinkView) {
+        let details: alloc::vec::Vec<WifiDetail> = v
+            .details
+            .iter()
+            .map(|(l, d)| WifiDetail {
+                label: l.as_str().into(),
+                value: d.as_str().into(),
+            })
+            .collect();
+        self.ui.set_wifi_link(WifiLink {
+            shown: v.shown,
+            connected: v.connected,
+            name: v.name.as_str().into(),
+            subtitle: v.subtitle.as_str().into(),
+            bars: i32::from(v.bars),
+            details: slint::ModelRc::new(slint::VecModel::from(details)),
+        });
     }
 
     /// How the join started from the sheet is going (shown under its password field).

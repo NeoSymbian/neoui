@@ -13,7 +13,7 @@
 use e32::fs::{File, Fs, mode};
 use e32::sync::Mutex;
 use e32::thread::JoinHandle;
-use neoui_proto::wifi::{Link, LinkState, Saved, Scan, State};
+use neoui_proto::wifi::{Link, LinkState, LinkView, Saved, Scan, State};
 use neoui_render::Renderer;
 
 /// The remembered networks, in the UI server's private directory (data-caged: apps can't read it)
@@ -47,6 +47,11 @@ pub struct Wifi {
     /// the sheet's message as last shown, and when the link state is read next (every 200 ms)
     shown: alloc::string::String,
     next_link: u64,
+    /// the SSID the user disconnected from: not rejoined on its own until Connect is pressed again
+    left: Option<alloc::vec::Vec<u8>>,
+    view: LinkView,
+    /// the link view changed: publish the list again (with or without the current network)
+    relist: bool,
 }
 
 impl Wifi {
@@ -62,6 +67,9 @@ impl Wifi {
             saved: load(),
             shown: alloc::string::String::new(),
             next_link: 0,
+            left: None,
+            view: LinkView::default(),
+            relist: false,
             failed: Mutex::new(0)
                 .ok()
                 .map(|m| &*alloc::boxed::Box::leak(alloc::boxed::Box::new(m))),
@@ -71,10 +79,8 @@ impl Wifi {
     /// Start joining `bssid` (a network of the latest scan) with this PMK; a running join is left first.
     /// `pmk` = `None` for an open network (no handshake, nothing remembered).
     fn start(&mut self, bssid: [u8; 6], ssid: &[u8], pmk: Option<[u8; 32]>, now: u64) {
-        if let Some((h, ..)) = self.join.take() {
-            let _ = neoapp::hal::wifi_leave();
-            h.join();
-        }
+        self.stop();
+        self.left = None;
         set(self.failed, 0);
         let failed = self.failed;
         match e32::thread::spawn(move || supplicant(bssid, pmk, failed)) {
@@ -83,7 +89,38 @@ impl Wifi {
         }
     }
 
+    /// Leave the network and end the supplicant thread.
+    fn stop(&mut self) {
+        if let Some((h, ..)) = self.join.take() {
+            let _ = neoapp::hal::wifi_leave();
+            h.join();
+        }
+    }
+
+    /// The joined network's latest scan entry (for its name and signal)
+    fn joined(&self) -> Option<neoui_proto::wifi::Network> {
+        let b = self.link.bssid;
+        self.last
+            .as_ref()?
+            .networks
+            .iter()
+            .find(|n| n.bssid == b)
+            .cloned()
+    }
+
     fn poll_link(&mut self, ui: &mut Renderer, now: u64) {
+        if let Some(forget) = ui.take_wifi_leave() {
+            let ssid = self.joined().map(|n| n.ssid.into_bytes());
+            self.stop();
+            if let Some(ssid) = ssid {
+                if forget {
+                    self.saved.forget(&ssid);
+                    store(&self.saved);
+                }
+                self.left = Some(ssid);
+            }
+            self.next_link = 0; // show the change now
+        }
         if let Some((bssid, password)) = ui.take_wifi_connect() {
             let net = self
                 .last
@@ -128,6 +165,12 @@ impl Wifi {
             self.shown = text;
         }
         self.link = link;
+        let view = LinkView::new(&self.link, self.joined().as_ref());
+        if view != self.view {
+            ui.set_wifi_link(&view);
+            self.view = view;
+            self.relist = true;
+        }
         // a remembered network in the list while nothing is joined: try it (once a minute at most)
         let idle = matches!(
             self.link.state,
@@ -141,6 +184,7 @@ impl Wifi {
             let known = self.last.as_ref().and_then(|s| {
                 s.list()
                     .into_iter()
+                    .filter(|n| self.left.as_deref() != Some(n.ssid.as_bytes()))
                     .find_map(|n| Some((n.bssid, self.saved.pmk(n.ssid.as_bytes())?, n.ssid)))
             });
             if let Some((bssid, pmk, ssid)) = known {
@@ -162,7 +206,7 @@ impl Wifi {
         let waiting = self.asked_at.is_some_and(|t| now.saturating_sub(t) < 5000);
         let rescan =
             page && !waiting && (refresh || opened && stale || stale && self.asked_at.is_some());
-        if !rescan && !opened && now < self.next_read {
+        if !rescan && !opened && !self.relist && now < self.next_read {
             return;
         }
         self.next_read = now.saturating_add(if page { 500 } else { 5000 });
@@ -176,9 +220,16 @@ impl Wifi {
         if self.last.as_ref().is_none_or(|l| l.scans != scan.scans) && scan.state != State::Off {
             self.listed_at = Some(now);
         }
-        if self.last.as_ref() != Some(&scan) || rescan {
-            // a requested scan shows as searching at once, before the kernel's state catches up
+        let relist = core::mem::take(&mut self.relist);
+        if self.last.as_ref() != Some(&scan) || rescan || relist {
+            // a requested scan shows as searching at once, before the kernel's state catches up; the network we
+            // are on shows under "Current network", not in the list
             let mut shown = scan.clone();
+            if self.view.shown {
+                shown
+                    .networks
+                    .retain(|n| n.ssid.is_empty() || n.ssid != self.view.name);
+            }
             if rescan && shown.state == State::Ready {
                 shown.state = State::Scanning;
             }

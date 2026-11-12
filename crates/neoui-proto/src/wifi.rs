@@ -306,6 +306,11 @@ impl Saved {
         self.0.iter().find(|(s, _)| s == ssid).map(|(_, p)| *p)
     }
 
+    /// Forget a network (Settings -> Wi-Fi -> its details -> Forget)
+    pub fn forget(&mut self, ssid: &[u8]) {
+        self.0.retain(|(s, _)| s != ssid);
+    }
+
     /// Remember (or refresh) a network as the newest
     pub fn remember(&mut self, ssid: &[u8], pmk: [u8; 32]) {
         if ssid.is_empty() || ssid.len() > 32 {
@@ -314,6 +319,83 @@ impl Saved {
         self.0.retain(|(s, _)| s != ssid);
         self.0.insert(0, (ssid.to_vec(), pmk));
         self.0.truncate(Self::MAX);
+    }
+}
+
+fn mac_text(b: &[u8; 6]) -> String {
+    format!(
+        "{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
+        b[0], b[1], b[2], b[3], b[4], b[5]
+    )
+}
+
+/// What Settings and the status bar show about the current link (Settings -> Wi-Fi "Current network", its details
+/// sheet). `net` = the joined network's latest scan entry, for its name and signal.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct LinkView {
+    /// a link exists (joining, connected, or just lost): the page shows its section
+    pub shown: bool,
+    pub connected: bool,
+    pub name: String,
+    /// "Connected · 5 GHz · Excellent", "Connecting…"
+    pub subtitle: String,
+    /// 0..=4 while connected, else -1 (the status bar's Wi-Fi icon)
+    pub bars: i8,
+    pub details: Vec<(String, String)>,
+}
+
+impl LinkView {
+    pub fn new(link: &Link, net: Option<&Network>) -> Self {
+        let shown = matches!(
+            link.state,
+            LinkState::Joining | LinkState::Handshake | LinkState::Connected
+        );
+        let connected = link.state == LinkState::Connected;
+        let name = net.map_or_else(|| mac_text(&link.bssid), |n| String::from(n.title()));
+        let state = link.message();
+        let mut subtitle = state.clone();
+        if let (true, Some(n)) = (connected, net) {
+            subtitle = format!("{} · {} · {}", state, n.band(), n.signal());
+        }
+        let mut details = Vec::new();
+        let mut row = |k: &str, v: String| details.push((String::from(k), v));
+        row("Status", state);
+        if let Some(n) = net {
+            row("Signal", format!("{} ({} dBm)", n.signal(), n.dbm));
+            row("Band", format!("{} · channel {}", n.band(), n.channel));
+        }
+        let security = if link.rsn.is_empty() {
+            "Open"
+        } else {
+            "WPA2-Personal (AES-CCMP)"
+        };
+        row("Security", String::from(security));
+        row("Access point", mac_text(&link.bssid));
+        row("Phone MAC", mac_text(&link.mac));
+        if connected {
+            row("Association ID", format!("{}", link.aid));
+            row(
+                "Received",
+                format!("{} frames ({} ARP/IP)", link.rx_data, link.rx_ip),
+            );
+        }
+        // W5 brings DHCP: until then the link carries no IP traffic of ours
+        row(
+            "IP address",
+            String::from("None yet (no network stack: Wi-Fi W5)"),
+        );
+        LinkView {
+            shown,
+            connected,
+            name,
+            subtitle,
+            bars: if connected {
+                net.map_or(0, |n| n.bars() as i8)
+            } else {
+                -1
+            },
+            details,
+        }
     }
 }
 
@@ -454,5 +536,39 @@ mod tests {
         assert_eq!((s.0.len(), &s.0[0].0[..]), (Saved::MAX, &[b'n', 19][..]));
         s.remember(&[], [0; 32]);
         assert_eq!(s.0.len(), Saved::MAX);
+        s.forget(&[b'n', 19]);
+        assert_eq!((s.0.len(), s.pmk(&[b'n', 19])), (Saved::MAX - 1, None));
+    }
+
+    #[test]
+    fn link_view() {
+        let net = Network {
+            bssid: [1, 2, 3, 4, 5, 6],
+            channel: 44,
+            dbm: -50,
+            secured: true,
+            ssid: "home".into(),
+        };
+        let up = Link::decode(&link(3, 0, 0, &[0x30, 2, 1, 0])).unwrap();
+        let v = LinkView::new(&up, Some(&net));
+        assert!(v.shown && v.connected);
+        assert_eq!((v.name.as_str(), v.bars), ("home", 4));
+        assert_eq!(v.subtitle, "Connected · 5 GHz · Excellent");
+        let get = |k: &str| {
+            v.details
+                .iter()
+                .find(|(a, _)| a == k)
+                .map(|(_, b)| b.clone())
+        };
+        assert_eq!(get("Security").unwrap(), "WPA2-Personal (AES-CCMP)");
+        assert_eq!(get("Access point").unwrap(), "01:02:03:04:05:06");
+        assert_eq!(get("Received").unwrap(), "100 frames (40 ARP/IP)");
+        assert_eq!(get("Band").unwrap(), "5 GHz · channel 44");
+        // joining: shown, not connected, no bars; an unknown network is named by its BSSID
+        let v = LinkView::new(&Link::decode(&link(1, 0, 0, &[])).unwrap(), None);
+        assert!(v.shown && !v.connected);
+        assert_eq!((v.bars, v.name.as_str()), (-1, "01:02:03:04:05:06"));
+        assert_eq!(v.subtitle, "Connecting…");
+        assert!(!LinkView::new(&Link::default(), None).shown);
     }
 }

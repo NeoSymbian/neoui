@@ -35,7 +35,7 @@ import { CalendarScreen } from "screens/calendar.slint";
 import { ClockScreen } from "screens/clock.slint";
 import { FilesScreen } from "screens/files.slint";
 import { SettingsScreen } from "screens/settings.slint";
-import { WifiNet } from "data.slint";
+import { WifiNet, WifiLink } from "data.slint";
 import { TerminalScreen } from "screens/terminal.slint";
 import { SwitcherScreen } from "screens/switcher.slint";
 
@@ -142,6 +142,10 @@ export component Shell inherits Window {
     // Connect on a network's sheet (BSSID, password) and how that join is going (symbian/src/wifi.rs)
     callback wifi-connect(string, string);
     in property <string> wifi-message;
+    // the current link (Settings' "Current network" + details, the status bar's Wi-Fi icon) and its buttons
+    in property <WifiLink> wifi-link;
+    callback wifi-disconnect();
+    callback wifi-forget();
     // in: the modem (telephony C5, from MODEMD's NeoModem server): signal bars (-1 = no modem), operator, technology,
     // and the call shown by the Phone screen; out: what the Phone screen asked ("dial" + number, "answer", "hangup")
     in property <int> bars: -1;
@@ -299,6 +303,9 @@ export component Shell inherits Window {
                 wifi-refresh => { root.wifi-refresh(); }
                 wifi-connect(b, p) => { root.wifi-connect(b, p); }
                 wifi-message: root.wifi-message;
+                wifi-link: root.wifi-link;
+                wifi-disconnect => { root.wifi-disconnect(); }
+                wifi-forget => { root.wifi-forget(); }
             }
         }
 
@@ -338,6 +345,7 @@ export component Shell inherits Window {
         bars: root.bars;
         operator: root.operator;
         rat: root.rat;
+        wifi-bars: root.wifi-link.connected ? root.wifi-link.bars : -1;
         title: screen-title(screen, view);
         tapped => {
             root.shade-open = !root.shade-open;
