@@ -37,6 +37,11 @@ impl Network {
         }
     }
 
+    /// "Excellent", "Good", "Fair", "Weak" or "Very weak" (the sheet's signal line)
+    pub fn signal(&self) -> &'static str {
+        ["Very weak", "Weak", "Fair", "Good", "Excellent"][usize::from(self.bars())]
+    }
+
     pub fn band(&self) -> &'static str {
         if self.channel <= 14 {
             "2.4 GHz"
@@ -137,6 +142,11 @@ impl Scan {
         self.list().iter().filter(|n| !n.ssid.is_empty()).count()
     }
 
+    /// Access points that hide their name (the Wi-Fi page counts them instead of listing them)
+    pub fn hidden(&self) -> usize {
+        self.networks.iter().filter(|n| n.ssid.is_empty()).count()
+    }
+
     /// The Wi-Fi row's subtitle
     pub fn status(&self) -> String {
         let n = self.named();
@@ -190,6 +200,10 @@ mod tests {
         assert_eq!(l[0].detail(), "Secured · 2.4 GHz · -46 dBm");
         assert_eq!(l[2].detail(), "Open · 5 GHz · -90 dBm");
         assert_eq!(s.status(), "2 networks found · not connected");
+        assert_eq!(
+            (s.named(), s.hidden(), l[0].signal(), l[2].signal()),
+            (2, 1, "Excellent", "Very weak")
+        );
     }
 
     #[test]

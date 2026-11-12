@@ -76,6 +76,7 @@ pub struct Renderer {
     closed: Rc<RefCell<Vec<alloc::string::String>>>,
     power: Rc<RefCell<Vec<i32>>>,
     phone: Rc<RefCell<Vec<(String, String)>>>,
+    wifi_refresh: Rc<RefCell<bool>>,
     /// keys of settings edited in the UI since the last `take_setting_edits` (`SystemSettings.edited`)
     edited: Rc<RefCell<Vec<String>>>,
     /// lists scrolled by shifting pixels (smooth-ui S2d), and how many frames did so
@@ -144,6 +145,9 @@ impl Renderer {
             sink.borrow_mut()
                 .push((a.as_str().into(), n.as_str().into()))
         });
+        let wifi_refresh: Rc<RefCell<bool>> = Rc::default();
+        let sink = wifi_refresh.clone();
+        ui.on_wifi_refresh(move || *sink.borrow_mut() = true);
         let edited: Rc<RefCell<Vec<String>>> = Rc::default();
         let sink = edited.clone();
         ui.global::<SystemSettings>()
@@ -156,6 +160,7 @@ impl Renderer {
             closed,
             power,
             phone,
+            wifi_refresh,
             edited,
             scrolling: Scrolling::default(),
             shifts: 0,
@@ -335,17 +340,30 @@ impl Renderer {
         self.ui.set_clock(text.into());
     }
 
+    /// The Wi-Fi page's refresh button was pressed since the last call.
+    pub fn take_wifi_refresh(&mut self) -> bool {
+        core::mem::take(&mut *self.wifi_refresh.borrow_mut())
+    }
+
     /// The latest Wi-Fi scan for Settings -> Connectivity: the Wi-Fi row's status and one row per network.
     pub fn set_wifi(&mut self, scan: &neoui_proto::wifi::Scan) {
         self.ui.set_wifi_status(scan.status().into());
         self.ui.set_wifi_count(scan.named() as i32);
+        self.ui.set_wifi_hidden(scan.hidden() as i32);
+        self.ui
+            .set_wifi_scanning(scan.state == neoui_proto::wifi::State::Scanning);
         let rows: alloc::vec::Vec<WifiNet> = scan
             .list()
             .iter()
+            .filter(|n| !n.ssid.is_empty())
             .map(|n| WifiNet {
                 name: n.title().into(),
                 detail: n.detail().into(),
                 bars: i32::from(n.bars()),
+                secured: n.secured,
+                band: n.band().into(),
+                signal: n.signal().into(),
+                channel: i32::from(n.channel),
             })
             .collect();
         self.ui

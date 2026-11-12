@@ -7,7 +7,7 @@ export struct Conversation { name: string, initials: string, tint: color, snippe
 export struct Message { text: string, mine: bool, when: string }
 export struct FileItem { name: string, kind: string, detail: string }
 // one scanned Wi-Fi network (neoui-proto wifi::Network): name, "Secured · 5 GHz · -46 dBm", 0..4 bars
-export struct WifiNet { name: string, detail: string, bars: int }
+export struct WifiNet { name: string, detail: string, bars: int, secured: bool, band: string, signal: string, channel: int }
 export struct Song { title: string, artist: string, length: string }
 export struct Event { time: string, title: string, place: string, tint: color }
 export struct Alarm { time: string, label: string, on: bool }

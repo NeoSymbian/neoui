@@ -4,7 +4,7 @@ import { SystemSettings } from "../system-settings.slint";
 import { Theme } from "../theme.slint";
 import { NeoList } from "../components/scroll.slint";
 import { ListRow, SectionHeader } from "../components/lists.slint";
-import { Slider, Card } from "../components/controls.slint";
+import { Slider, Card, Button } from "../components/controls.slint";
 import { WifiNet } from "../data.slint";
 
 component Tinted inherits Rectangle {
@@ -75,6 +75,57 @@ component SettingRow inherits Rectangle {
     }
 }
 
+// The sheet a tapped Wi-Fi network opens (Android/iOS style): what the phone knows about it, the password and
+// Connect. Joining comes with Wi-Fi W4 (docs wifi.md); until then Connect says so instead of pretending.
+component WifiSheet inherits Rectangle {
+    in property <WifiNet> net;
+    callback closed;
+    property <bool> tried;
+    background: #000000b0;
+    TouchArea { clicked => { root.closed(); } }
+
+    Rectangle {
+        x: 0;
+        width: root.width;
+        height: card.preferred-height;
+        y: root.height - self.height;
+        background: Theme.bg-raised;
+        border-top-left-radius: Theme.radius;
+        border-top-right-radius: Theme.radius;
+        TouchArea { }  // taps on the card don't close it
+
+        card := VerticalLayout {
+            padding: 20 * Theme.dp;
+            spacing: 14 * Theme.dp;
+            Text { text: net.name; font-size: Theme.font-title; font-weight: 600; color: Theme.text; }
+            Text {
+                text: "Signal " + net.signal + " · " + (net.secured ? "Secured (WPA2/WPA3)" : "Open") + " · " + net.band + " · channel " + net.channel;
+                font-size: Theme.font-label;
+                color: Theme.text-secondary;
+                wrap: word-wrap;
+            }
+            if net.secured: Rectangle {
+                height: 48 * Theme.dp;
+                border-radius: 8 * Theme.dp;
+                border-width: 1px;
+                border-color: Theme.text-dim;
+                Text { x: 14 * Theme.dp; text: "Password"; color: Theme.text-dim; font-size: Theme.font-body; }
+            }
+            if tried: Text {
+                text: "Connecting to networks is the next Wi-Fi step. The phone can already find this network.";
+                font-size: Theme.font-status;
+                color: Theme.text-dim;
+                wrap: word-wrap;
+            }
+            HorizontalLayout {
+                spacing: 12 * Theme.dp;
+                Button { text: "Cancel"; primary: false; clicked => { root.closed(); } }
+                Button { text: "Connect"; clicked => { root.tried = true; } }
+            }
+        }
+    }
+}
+
 export component SettingsScreen inherits Rectangle {
     in-out property <string> view;
     // in: which build is running, one line each for the kernel, the user-side ROM and neoui (the UI server reads them)
@@ -88,6 +139,11 @@ export component SettingsScreen inherits Rectangle {
     in property <string> wifi-status: "Searching…";
     in property <[WifiNet]> wifi-networks;
     in property <int> wifi-count;  // named networks (hidden ones not counted)
+    in property <int> wifi-hidden;
+    in property <bool> wifi-scanning;
+    callback wifi-refresh();
+    // the network whose sheet is open (-1: none)
+    property <int> wifi-selected: -1;
     // the switches below show and edit the system settings (SystemSettings, kept by the UI server)
     property <bool> wifi: SystemSettings.wifi;
     property <bool> bluetooth: SystemSettings.bluetooth;
@@ -99,10 +155,10 @@ export component SettingsScreen inherits Rectangle {
             SectionHeader { text: "Connections"; }
             SettingRow {
                 title: "Wi-Fi";
-                value: wifi ? (wifi-count > 0 ? wifi-count + " networks" : "On") : "Off";
+                value: wifi ? "Not connected" : "Off";
                 icon: @image-url("../icons/sys/wifi.svg");
                 tint: #2f80ed;
-                clicked => { root.view = "connectivity"; }
+                clicked => { root.view = "wifi"; }
             }
 
             SettingRow {
@@ -189,19 +245,12 @@ export component SettingsScreen inherits Rectangle {
             ListRow {
                 title: "Wi-Fi";
                 subtitle: wifi ? wifi-status : "Off";
+                chevron: true;
+                clicked => { root.view = "wifi"; }
                 has-icon: true;
                 icon: @image-url("../icons/sys/wifi.svg");
                 has-switch: true;
                 switch-on <=> SystemSettings.wifi;
-            }
-
-            if wifi && wifi-networks.length > 0: SectionHeader { text: "Networks"; }
-            for net in (wifi ? wifi-networks : []): ListRow {
-                title: net.name;
-                subtitle: net.detail;
-                has-icon: true;
-                icon: @image-url("../icons/sys/wifi.svg");
-                icon-tint: net.bars >= 3 ? Theme.text : net.bars >= 1 ? Theme.text-secondary : Theme.text-dim;
             }
 
             ListRow {
@@ -370,6 +419,87 @@ export component SettingsScreen inherits Rectangle {
                 font-size: Theme.font-label;
                 wrap: word-wrap;
             }
+        }
+    }
+
+    if view == "wifi": Rectangle {
+        NeoList {
+            VerticalLayout {
+                ListRow {
+                    title: "Wi-Fi";
+                    subtitle: wifi ? "Not connected" : "Off";
+                    has-icon: true;
+                    icon: @image-url("../icons/sys/wifi.svg");
+                    has-switch: true;
+                    switch-on <=> SystemSettings.wifi;
+                }
+
+                // the section header with "Searching…" and the refresh button on its baseline
+                if wifi: Rectangle {
+                    height: 48 * Theme.dp;
+                    SectionHeader { y: parent.height - self.height; width: parent.width; text: "Available networks"; }
+                    Text {
+                        x: parent.width - self.width - 56 * Theme.dp;
+                        y: parent.height - self.height - 6 * Theme.dp;
+                        text: wifi-scanning ? "Searching…" : "";
+                        color: Theme.text-dim;
+                        font-size: Theme.font-status;
+                    }
+                    Image {
+                        width: 22 * Theme.dp;
+                        height: self.width;
+                        x: parent.width - self.width - Theme.margin;
+                        y: parent.height - self.height - 4 * Theme.dp;
+                        source: @image-url("../icons/sys/refresh.svg");
+                        colorize: wifi-scanning ? Theme.text-dim : Theme.accent;
+                    }
+                    TouchArea {
+                        x: parent.width - 64 * Theme.dp;
+                        width: 64 * Theme.dp;
+                        clicked => { if !wifi-scanning { root.wifi-refresh(); } }
+                    }
+                }
+
+                for net[i] in (wifi ? wifi-networks : []): ListRow {
+                    title: net.name;
+                    subtitle: net.detail;
+                    has-icon: true;
+                    icon: @image-url("../icons/sys/wifi.svg");
+                    icon-tint: net.bars >= 3 ? Theme.text : net.bars >= 1 ? Theme.text-secondary : Theme.text-dim;
+                    clicked => { root.wifi-selected = i; }
+                }
+
+                if wifi && wifi-networks.length == 0: Text {
+                    x: Theme.margin;
+                    height: 64 * Theme.dp;
+                    vertical-alignment: center;
+                    text: wifi-scanning ? "Looking for networks…" : "No networks found. Tap refresh to search again.";
+                    color: Theme.text-secondary;
+                    font-size: Theme.font-body;
+                }
+                if wifi && wifi-hidden > 0: Text {
+                    x: Theme.margin;
+                    height: 48 * Theme.dp;
+                    vertical-alignment: center;
+                    text: wifi-hidden == 1 ? "1 hidden network nearby" : wifi-hidden + " hidden networks nearby";
+                    color: Theme.text-dim;
+                    font-size: Theme.font-status;
+                }
+                if !wifi: Text {
+                    x: Theme.margin;
+                    height: 64 * Theme.dp;
+                    vertical-alignment: center;
+                    text: "Turn on Wi-Fi to see available networks.";
+                    color: Theme.text-secondary;
+                    font-size: Theme.font-body;
+                }
+            }
+        }
+        if wifi-selected >= 0 && wifi-selected < wifi-networks.length: WifiSheet {
+            width: parent.width;
+            height: parent.height;
+            net: wifi-networks[wifi-selected];
+            closed => { root.wifi-selected = -1; }
         }
     }
 
