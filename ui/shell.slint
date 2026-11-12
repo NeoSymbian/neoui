@@ -6,6 +6,8 @@
 // Bundled so the glyphs baked into the binary are the same on every build host.
 import "fonts/Inter-VariableFont.ttf";
 import "fonts/UbuntuMono-Regular.ttf";
+// Latin, Cyrillic and Armenian in one face: the Armenian keyboard (Slint draws a Text in one font, no fallback)
+import "fonts/DejaVuSans.ttf";
 import { Theme } from "theme.slint";
 export { SystemSettings } from "system-settings.slint";
 export { Now } from "now.slint";
@@ -13,7 +15,12 @@ export { Scroll } from "components/scroll.slint";
 import { StatusBar, Toolbar } from "components/frame.slint";
 import { OptionsMenu, Button } from "components/controls.slint";
 import { Shade } from "components/shade.slint";
-import { Keyboard } from "components/keyboard.slint";
+import { Keyboard } from "components/keyboard/keyboard.slint";
+import { Alphabets } from "components/keyboard/glyphs.slint";
+export { Layouts } from "components/keyboard/layouts.slint";
+export { Layout } from "components/keyboard/types.slint";
+export { KeyboardFocus } from "components/keyboard/focus.slint";
+import { KeyboardFocus } from "components/keyboard/focus.slint";
 import { PowerMenu } from "components/powermenu.slint";
 import { HomeScreen } from "screens/home.slint";
 import { MenuScreen } from "screens/menu.slint";
@@ -29,6 +36,7 @@ import { CalendarScreen } from "screens/calendar.slint";
 import { ClockScreen } from "screens/clock.slint";
 import { FilesScreen } from "screens/files.slint";
 import { SettingsScreen } from "screens/settings.slint";
+import { WifiNet, WifiLink } from "data.slint";
 import { TerminalScreen } from "screens/terminal.slint";
 import { SwitcherScreen } from "screens/switcher.slint";
 
@@ -66,6 +74,14 @@ export component Shell inherits Window {
         Theme.instant = self.server-transitions;
     }
 
+    // leaving a screen or view hides the keyboard its field opened
+    changed screen => {
+        KeyboardFocus.close();
+    }
+    changed view => {
+        KeyboardFocus.close();
+    }
+
     // 1 dp = min(width, height) / 360 (the Belle reference screen is 360x640)
     property <length> dp: min(self.width, self.height) / 360;
     init => {
@@ -82,15 +98,20 @@ export component Shell inherits Window {
     in-out property <int> home-page <=> home.page;
     out property <length> home-strip-h: home.strip-h;
     out property <length> body-h: self.height - Theme.status-h - (has-toolbar ? Theme.toolbar-h : 0);
-    // in: the UI server shows the system keyboard over the bottom of the body for an app that asked (R6c) and
-    // forwards what it types; out: its height, so the server can tell the app how much is covered
-    in property <bool> keyboard-open;
-    out property <length> keyboard-h: kb.keyboard-h;
+    // in: the UI server shows the system keyboard over the bottom of the body for an app that asked (R6c), in the
+    // mode it asked for (0 hidden; proto::KEYBOARD's 1 text, 2 terminal), and forwards what it types; out: its
+    // height in each mode, for the server to tell the app (it changes with the language and the settings)
+    in property <int> keyboard-mode;
+    out property <length> keyboard-text-h: kb.text-h;
+    out property <length> keyboard-term-h: kb.term-h;
     callback typed(string);
     // in: the foreground app claimed the toolbar's Back / Options; the shell then reports them through app-nav
     // (1 = Back, 2 = Options) instead of acting (R8)
     in property <bool> app-back;
     in property <bool> app-options;
+    // in: an app process is in front: the shell's own mock of that screen stays hidden (an overlay shows over a dark
+    // body, not over a mock), and unclaimed toolbar buttons do nothing
+    in property <bool> app-front;
     callback app-nav(int);
     // in: the apps the UI server keeps running, most recent first (R10); out: the switcher's close button
     in property <[string]> running;
@@ -101,6 +122,31 @@ export component Shell inherits Window {
     callback power(int);
     // in: the status bar's time, from the system clock (the default is the design's mock time)
     in property <string> clock: "10:24";
+    in property <int> battery-percent: -1;
+    in property <string> battery-text: "--%";
+    in property <bool> battery-charging;
+    in property <bool> battery-connected;
+    in property <bool> battery-full;
+    in property <string> battery-voltage: "unknown";
+    in property <string> battery-state: "Unknown";
+    in property <string> battery-usb: "unknown";
+    in property <string> battery-storage;
+    in property <[float]> battery-history;
+    // Wi-Fi scan results (symbian/src/wifi.rs, kernel HAL WlanScan)
+    in property <string> wifi-status: "Searching…";
+    in property <[WifiNet]> wifi-networks;
+    in property <int> wifi-count;
+    in property <int> wifi-hidden;
+    in property <bool> wifi-scanning;
+    // the Wi-Fi page's refresh button (symbian/src/wifi.rs scans at once)
+    callback wifi-refresh();
+    // Connect on a network's sheet (BSSID, password) and how that join is going (symbian/src/wifi.rs)
+    callback wifi-connect(string, string);
+    in property <string> wifi-message;
+    // the current link (Settings' "Current network" + details, the status bar's Wi-Fi icon) and its buttons
+    in property <WifiLink> wifi-link;
+    callback wifi-disconnect();
+    callback wifi-forget();
     // in: the modem (telephony C5, from MODEMD's NeoModem server): signal bars (-1 = no modem), operator, technology,
     // and the call shown by the Phone screen; out: what the Phone screen asked ("dial" + number, "answer", "hangup")
     in property <int> bars: -1;
@@ -150,7 +196,7 @@ export component Shell inherits Window {
     }
 
     pure function screen-title(s: string, v: string) -> string {
-        s == "home" ? "" : s == "menu" ? "Menu" : s == "phone" ? (v == "call" ? "Call" : "Phone") : s == "messages" ? (v == "thread" ? "Ava Lindqvist" : "Messages") : s == "contacts" ? "Contacts" : s == "browser" ? "Browser" : s == "camera" ? "Camera" : s == "photos" ? "Photos" : s == "music" ? (v == "playing" ? "Now playing" : "Music") : s == "calendar" ? "Calendar" : s == "clock" ? "Clock" : s == "files" ? "Files" : s == "settings" ? (v == "" ? "Settings" : v == "connectivity" ? "Connectivity" : v == "display" ? "Display" : "About phone") : s == "terminal" ? "Terminal" : s == "devtools" ? "Dev tools" : s == "legacy" ? "Old apps" : s == "switcher" ? "Open apps" : s
+        s == "home" ? "" : s == "menu" ? "Menu" : s == "phone" ? (v == "call" ? "Call" : "Phone") : s == "messages" ? (v == "thread" ? "Ava Lindqvist" : "Messages") : s == "contacts" ? "Contacts" : s == "browser" ? "Browser" : s == "camera" ? "Camera" : s == "photos" ? "Photos" : s == "music" ? (v == "playing" ? "Now playing" : "Music") : s == "calendar" ? "Calendar" : s == "clock" ? "Clock" : s == "files" ? "Files" : s == "settings" ? (v == "" ? "Settings" : v == "connectivity" ? "Connectivity" : v == "wifi" ? "Wi-Fi" : v == "display" ? "Display" : v == "developer" ? "Developer options" : v == "battery" ? "Battery" : v == "keyboard" ? "Language & keyboard" : v == "sounds" ? "Sounds" : "About phone") : s == "terminal" ? "Terminal" : s == "devtools" ? "Dev tools" : s == "legacy" ? "Old apps" : s == "switcher" ? "Open apps" : s
     }
 
     pure function options(s: string) -> [string] {
@@ -243,12 +289,12 @@ export component Shell inherits Window {
         }
 
         Slot {
-            active: screen == "clock";
+            active: screen == "clock" && !root.app-front;
             ClockScreen { }
         }
 
         Slot {
-            active: screen == "files";
+            active: screen == "files" && !root.app-front;
             FilesScreen {
                 view <=> root.view;
             }
@@ -259,13 +305,30 @@ export component Shell inherits Window {
             SettingsScreen {
                 view <=> root.view;
                 build: root.build-info;
+                battery-text: root.battery-text;
+                battery-voltage: root.battery-voltage;
+                battery-state: root.battery-state;
+                battery-usb: root.battery-usb;
+                battery-storage: root.battery-storage;
+                battery-history: root.battery-history;
+                wifi-status: root.wifi-status;
+                wifi-networks: root.wifi-networks;
+                wifi-count: root.wifi-count;
+                wifi-hidden: root.wifi-hidden;
+                wifi-scanning: root.wifi-scanning;
+                wifi-refresh => { root.wifi-refresh(); }
+                wifi-connect(b, p) => { root.wifi-connect(b, p); }
+                wifi-message: root.wifi-message;
+                wifi-link: root.wifi-link;
+                wifi-disconnect => { root.wifi-disconnect(); }
+                wifi-forget => { root.wifi-forget(); }
                 radio-online: root.radio-online;
                 phone-feedback: root.phone-feedback;
             }
         }
 
         Slot {
-            active: screen == "terminal";
+            active: screen == "terminal" && !root.app-front;
             TerminalScreen { }
         }
 
@@ -279,18 +342,28 @@ export component Shell inherits Window {
         }
     }
 
+    Alphabets { }
+
     kb := Keyboard {
         y: body-y + body-h - self.height;
-        visible: keyboard-open;
+        mode: max(1, keyboard-mode);
+        // an app asked for it, or one of the shell's own fields has the focus
+        visible: keyboard-mode > 0 || KeyboardFocus.open;
         typed(t) => { root.typed(t); }
     }
 
     StatusBar {
+        battery-percent: root.battery-percent;
+        battery-text: root.battery-text;
+        battery-charging: root.battery-charging;
+        battery-connected: root.battery-connected;
+        battery-full: root.battery-full;
         y: 0;
         time: clock;
         bars: root.bars;
         operator: root.operator;
         rat: root.rat;
+        wifi-bars: root.wifi-link.connected ? root.wifi-link.bars : -1;
         title: screen-title(screen, view);
         tapped => {
             root.shade-open = !root.shade-open;
@@ -299,7 +372,7 @@ export component Shell inherits Window {
 
     if has-toolbar: Toolbar {
         y: root.height - Theme.toolbar-h;
-        has-action: screen == "messages" || screen == "contacts" || screen == "browser" || screen == "clock" || screen == "menu";
+        has-action: !root.app-front && (screen == "messages" || screen == "contacts" || screen == "browser" || screen == "clock" || screen == "menu");
         action-icon: screen == "contacts" ? @image-url("icons/sys/person_add.svg") : screen == "browser" ? @image-url("icons/sys/refresh.svg") : screen == "menu" ? @image-url("icons/sys/tabs.svg") : @image-url("icons/sys/add.svg");
         back => {
             if (root.app-back && !root.shade-open && !root.options-open) {
@@ -309,8 +382,11 @@ export component Shell inherits Window {
             }
         }
         options => {
-            if (root.app-options && !root.shade-open && !root.options-open) {
-                root.app-nav(2);
+            // an app in front owns Options (nothing when it didn't claim it); the shell's menu is for its own screens
+            if (root.app-front) {
+                if (root.app-options && !root.shade-open) {
+                    root.app-nav(2);
+                }
             } else {
                 root.options-open = !root.options-open;
             }
@@ -404,6 +480,23 @@ export component Shell inherits Window {
                                 } else if root.pin-length < 8 { root.sim-pin += key; root.pin-length += 1; }
                             }
                         }
+                    }
+                }
+                // always a way out: an emergency call, or later (the SIM state changing brings it back)
+                HorizontalLayout {
+                    spacing: 8 * Theme.dp;
+                    Button {
+                        text: "Emergency call";
+                        primary: false;
+                        clicked => {
+                            root.phone-action("sim-dismiss", "");
+                            root.phone-action("dial", "112");
+                        }
+                    }
+                    Button {
+                        text: "Not now";
+                        primary: false;
+                        clicked => { root.phone-action("sim-dismiss", ""); }
                     }
                 }
                 if root.phone-feedback != "": Text { text: root.phone-feedback; color: Theme.danger; font-size: Theme.font-label; wrap: word-wrap; }

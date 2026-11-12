@@ -71,6 +71,11 @@ pub(crate) static BINDINGS: &[Binding] = &[
         },
     },
     bool_binding!(keys::DISPLAY_DARK, get_dark, set_dark),
+    bool_binding!(
+        keys::DEVELOPER_USB_DEBUGGING,
+        get_usb_debugging,
+        set_usb_debugging
+    ),
     Binding {
         key: key_name::<i32>(keys::DISPLAY_BRIGHTNESS),
         read: |g| Value::Int(brightness_to_store(g.get_brightness())),
@@ -86,6 +91,36 @@ pub(crate) static BINDINGS: &[Binding] = &[
         },
     },
     bool_binding!(keys::CLOCK_24H, get_clock_24h, set_clock_24h),
+    bool_binding!(keys::KEYBOARD_EN, get_keyboard_en, set_keyboard_en),
+    bool_binding!(keys::KEYBOARD_HY, get_keyboard_hy, set_keyboard_hy),
+    bool_binding!(keys::KEYBOARD_RU, get_keyboard_ru, set_keyboard_ru),
+    bool_binding!(
+        keys::KEYBOARD_SAME_HEIGHT,
+        get_keyboard_same_height,
+        set_keyboard_same_height
+    ),
+    Binding {
+        key: key_name::<i32>(keys::KEYBOARD_LAYOUT),
+        read: |g| Value::Int(g.get_keyboard_layout()),
+        write: |g, v| match v {
+            Value::Int(i) => {
+                g.set_keyboard_layout(*i);
+                true
+            }
+            _ => false,
+        },
+    },
+    Binding {
+        key: key_name::<i32>(keys::DISPLAY_TIMEOUT),
+        read: |g| Value::Int(g.get_screen_timeout()),
+        write: |g, v| match v {
+            Value::Int(s) => {
+                g.set_screen_timeout(*s);
+                true
+            }
+            _ => false,
+        },
+    },
 ];
 
 /// The binding for `key`, if the shell shows it.

@@ -1,0 +1,211 @@
+// SPDX-License-Identifier: Apache-2.0
+// The system on-screen keyboard (NeoSymbian R6c; docs/neoui-shell.md, "Keyboard"): the UI server shows it over the
+// bottom of an app that asks for it and sends what it types to that app as key events. The languages are data
+// (layouts/, chosen in layouts.slint); this draws whichever is current, with a symbols layer, one-shot shift, a
+// globe key when more than one language is on, and in terminal mode a row of Esc, Tab and arrows on top.
+//
+// Geometry, counted from the keyboard's bottom edge (crates/neoui-render/tests/keyboard.rs and symbian/taps.sh use
+// it): row k (0 = the bottom row) is centred 27 + 48 k dp above the bottom, keys are 42 dp high. The bottom row is
+// 10 units wide: symbols 0-1.5, globe 1.5-2.5, comma 2.5-3.5 (1.5 without a globe), space to 7.5, stop, Enter 8.5-10.
+// shortcut: no key repeat, long-press or Ctrl; add them with text editing beyond one-line fields.
+import { Theme } from "../../theme.slint";
+import { SystemSettings } from "../../system-settings.slint";
+import { Layout } from "types.slint";
+import { Layouts } from "layouts.slint";
+import { Common } from "layouts/common.slint";
+import { KeyboardFocus } from "focus.slint";
+
+component Key inherits Rectangle {
+    in property <string> label;
+    in property <string> font: "Inter";
+    // a function key: drawn darker
+    in property <bool> special;
+    in property <bool> lit;
+    in property <image> icon;
+    callback pressed-key;
+    border-radius: Theme.radius-small;
+    background: touch.pressed || lit ? #4a5160 : special ? #2a2e35 : #3a3f48;
+    if label != "": Text {
+        text: label;
+        color: Theme.text;
+        font-family: font;
+        font-size: (label.character-count > 1 ? 14 : 19) * Theme.dp;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    if label == "": Image {
+        width: 20 * Theme.dp;
+        height: self.width;
+        source: icon;
+        colorize: Theme.text;
+    }
+    touch := TouchArea {
+        clicked => {
+            root.pressed-key();
+        }
+    }
+}
+
+// One row of keys `cols` wide: letters centred, or a shift / backspace at either end taking the width left over.
+component KeyRow inherits Rectangle {
+    in property <[string]> keys;
+    in property <float> cols;
+    in property <string> font;
+    in property <bool> shift;
+    callback key(string);
+    property <bool> lead: keys.length > 0 && (keys[0] == "⇧" || keys[0] == "⌫");
+    property <bool> tail: keys.length > 1 && (keys[keys.length - 1] == "⇧" || keys[keys.length - 1] == "⌫");
+    property <int> ends: (lead ? 1 : 0) + (tail ? 1 : 0);
+    property <float> edge: ends == 0 ? 0 : (cols - (keys.length - ends)) / ends;
+    property <float> start: ends == 0 ? (cols - keys.length) / 2 : (lead ? edge - 1 : 0);
+    property <length> unit: self.width / cols;
+    for k[i] in keys: Key {
+        property <bool> end: (i == 0 && lead) || (i == keys.length - 1 && tail);
+        x: (end ? (i == 0 ? 0 : cols - edge) : start + i) * unit + 3 * Theme.dp;
+        width: (end ? edge : 1) * unit - 6 * Theme.dp;
+        height: parent.height;
+        label: shift && !end ? k.to-uppercase() : k;
+        font: end ? "Inter" : root.font;
+        special: end;
+        lit: k == "⇧" && root.shift;
+        pressed-key => {
+            root.key(k);
+        }
+    }
+}
+
+export component Keyboard inherits Rectangle {
+    // proto::KEYBOARD's modes: 1 text, 2 terminal (the Esc / Tab / arrows row on top)
+    in property <int> mode: 1;
+    // what a key typed: a character, Backspace "\u{8}", Enter "\u{d}", or (terminal row) Escape, Tab, an arrow
+    callback typed(string);
+    property <bool> symbols;
+    property <bool> shift;
+    property <Layout> layout: Layouts.all[Layouts.current];
+    // all languages as tall as the tallest one on: a shorter one gets the digit row on top
+    property <bool> digits: SystemSettings.keyboard-same-height && layout.rows.length < Layouts.tallest;
+    property <int> rows: layout.rows.length + (digits ? 1 : 0);
+    property <length> pitch: 48 * Theme.dp;
+    // out: the height in each mode, for the UI server to tell apps (it changes with the language and settings)
+    out property <length> text-h: 6 * Theme.dp + (rows + 1) * pitch;
+    out property <length> term-h: text-h + pitch;
+    height: mode == 2 ? term-h : text-h;
+    background: #16181c;
+    init => {
+        KeyboardFocus.text-h = self.text-h;
+    }
+    changed text-h => {
+        KeyboardFocus.text-h = self.text-h;
+    }
+
+    // the language changed: start in its letters, lower case
+    changed layout => {
+        symbols = false;
+        shift = false;
+    }
+
+    function press(k: string) {
+        if k == "⇧" {
+            shift = !shift;
+        } else {
+            typed(k == "⌫" ? "\u{8}" : shift ? k.to-uppercase() : k);
+            shift = false;
+        }
+    }
+
+    // the top y of row k, counted up from the bottom row (0)
+    pure function row-y(k: int) -> length {
+        root.height - (k + 1) * pitch
+    }
+
+    if mode == 2: Rectangle {
+        y: row-y(rows + 1);
+        height: 42 * Theme.dp;
+        for t[i] in Common.terminal: Key {
+            x: i * root.width / Common.terminal.length + 3 * Theme.dp;
+            width: root.width / Common.terminal.length - 6 * Theme.dp;
+            label: t.label;
+            special: true;
+            pressed-key => {
+                root.typed(t.text);
+            }
+        }
+    }
+
+    if digits && !symbols: KeyRow {
+        y: row-y(rows);
+        height: 42 * Theme.dp;
+        keys: Common.digits;
+        cols: 10;
+        font: "Inter";
+        key(k) => { root.press(k); }
+    }
+
+    for row[r] in symbols ? Common.symbols : layout.rows: KeyRow {
+        y: row-y((symbols ? Common.symbols.length : layout.rows.length) - r);
+        height: 42 * Theme.dp;
+        keys: row;
+        cols: symbols ? 10 : layout.cols;
+        font: symbols ? "Inter" : layout.font;
+        shift: root.shift && !symbols;
+        key(k) => { root.press(k); }
+    }
+
+    // the bottom row, the same in every language
+    Rectangle {
+        y: row-y(0);
+        height: 42 * Theme.dp;
+        property <length> unit: root.width / 10;
+        property <float> globe: Layouts.many ? 1 : 0;
+        Key {
+            x: 3 * Theme.dp;
+            width: 1.5 * unit - 6 * Theme.dp;
+            label: symbols ? layout.abc : "?123";
+            font: layout.font;
+            special: true;
+            pressed-key => {
+                root.symbols = !root.symbols;
+                root.shift = false;
+            }
+        }
+        if Layouts.many: Key {
+            x: 1.5 * unit + 3 * Theme.dp;
+            width: unit - 6 * Theme.dp;
+            icon: @image-url("../../icons/sys/language.svg");
+            special: true;
+            pressed-key => {
+                Layouts.next();
+            }
+        }
+        Key {
+            x: (1.5 + globe) * unit + 3 * Theme.dp;
+            width: unit - 6 * Theme.dp;
+            label: layout.comma;
+            font: layout.font;
+            pressed-key => { root.press(layout.comma); }
+        }
+        Key {
+            x: (2.5 + globe) * unit + 3 * Theme.dp;
+            width: (5 - globe) * unit - 6 * Theme.dp;
+            label: "space";
+            pressed-key => { root.press(" "); }
+        }
+        Key {
+            x: 7.5 * unit + 3 * Theme.dp;
+            width: unit - 6 * Theme.dp;
+            label: layout.stop;
+            font: layout.font;
+            pressed-key => { root.press(layout.stop); }
+        }
+        Key {
+            x: 8.5 * unit + 3 * Theme.dp;
+            width: 1.5 * unit - 6 * Theme.dp;
+            label: "⏎";
+            special: true;
+            pressed-key => {
+                root.typed("\u{d}");
+                root.shift = false;
+            }
+        }
+    }
+}

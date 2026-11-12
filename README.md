@@ -22,7 +22,8 @@ Mac the buffer is just shown in a window.
 | `crates/neoui-proto` | `#![no_std]` shared types: `Rect`, `Damage`, `InputEvent`, `SurfaceId` |
 | `crates/neoui-render` | `#![no_std]` + `alloc`: Slint platform on `MinimalSoftwareWindow`; `Renderer::new(w, h, now_ms)`, `render(buf, stride) -> Damage`, `dispatch(InputEvent)` |
 | `ui/launcher.slint` | The launcher: status bar, banner, 8 app tiles; sizes follow the window |
-| `ui/fonts/` | Inter (OFL-1.1), bundled so the glyphs baked into the binary do not depend on the build host's fonts |
+| `ui/fonts/` | Inter (OFL-1.1), Ubuntu Mono, DejaVu Sans and DejaVu Sans Mono (Latin, Cyrillic, Armenian), bundled so the glyphs baked into the binary do not depend on the build host's fonts |
+| `ui/components/keyboard/` | The system keyboard: English, Armenian and Russian layouts as data, a terminal mode, managed in Settings → Language & keyboard ([neoui-shell.md](https://github.com/NeoSymbian/docs/blob/main/neoui-shell.md), "System keyboard") |
 | `crates/neoui-host` | Mac/Linux desktop host: winit + softbuffer, mouse as touch |
 | `snapshots/` | PNGs written by the snapshot tests |
 | `crates/neoui-term` | `#![no_std]` text console model: the grid, cursor and control characters of a Symbian console window |
@@ -90,7 +91,8 @@ toolbar. Touches in the body go to the app; Back makes the server send `Quit`, a
 (`symbian/apps/term`) is the Symbian text console server `!E32WindowServer`; the UI ROM ships the stock
 `econs.dll` (a client of that server) as `ECONS.DLL`, so `Console::NewL` in ESHELL and in any text program lands in
 our terminal. The grid (`crates/neoui-term`, host-tested) follows the stock console's rules: newline mode, wrap,
-destructive backspace, tabs, scrolling. Keys come from the keyboard and from the extra-keys bar. `dir` and
+destructive backspace, tabs, scrolling. Keys come from the system keyboard in its terminal mode (Esc, Tab and arrows
+on top) and from hardware keys. `dir` and
 `neotest` run in it on Syborg. Apps share their plumbing (connect, surface, Slint platform) in `symbian/neoapp`.
 
 **Dev tools (`NEODEV.EXE`, `symbian/apps/devtools`): the phone as a developer sees it.** Five tabs: Home (uptime,

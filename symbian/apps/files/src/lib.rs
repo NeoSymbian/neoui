@@ -138,6 +138,7 @@ fn run() -> Result<(), i32> {
                 ui.set_options_open(st.options_open);
             }
             Some(AppEvent::Input(InputEvent::Key { code, down: true })) => app.dispatch_key(code),
+            Some(AppEvent::Keyboard { h }) if ui.get_dialog() == "name" => ui.set_kb_h(h as f32),
             Some(AppEvent::Input(touch @ InputEvent::Touch { .. })) => app.dispatch_touch(touch),
             _ => {}
         }
@@ -360,7 +361,7 @@ fn open_dialog(app: &App, ui: &FilesApp, st: &mut State, d: Dialog) {
         Dialog::Delete(i) => ("confirm", alloc::format!("Delete {}?", i.name), "Delete"),
     };
     if kind == "name" {
-        let kb = app.keyboard(true).unwrap_or(0);
+        let kb = app.keyboard(proto::KEYBOARD_TEXT).unwrap_or(0);
         ui.set_kb_h(kb as f32);
     }
     ui.set_dialog_title(title.into());
@@ -371,7 +372,7 @@ fn open_dialog(app: &App, ui: &FilesApp, st: &mut State, d: Dialog) {
 
 fn close_dialog(app: &App, ui: &FilesApp) {
     if ui.get_dialog() == "name" {
-        let _ = app.keyboard(false);
+        let _ = app.keyboard(proto::KEYBOARD_HIDDEN);
         ui.set_kb_h(0.0);
     }
     ui.set_dialog(SharedString::new());

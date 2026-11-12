@@ -4,11 +4,13 @@
 
 extern crate alloc;
 
+pub mod battery;
 pub mod clock;
 pub mod devtools;
 pub mod ipc;
 pub mod recents;
 pub mod settings;
+pub mod wifi;
 
 /// This neoui build: "neoui <commit>[+dirty] <UTC time>, e32-rs <commit>" (build.rs).
 pub const BUILD: &str = env!("NEOUI_BUILD");

@@ -6,6 +6,7 @@
 
 extern crate alloc;
 
+pub mod keyboard;
 pub mod layer;
 mod settings;
 
@@ -86,6 +87,10 @@ pub struct Renderer {
     closed: Rc<RefCell<Vec<alloc::string::String>>>,
     power: Rc<RefCell<Vec<i32>>>,
     phone: Rc<RefCell<Vec<(String, String)>>>,
+    wifi_refresh: Rc<RefCell<bool>>,
+    wifi_connect: Rc<RefCell<Option<(String, String)>>>,
+    /// Disconnect (false) or Forget (true) pressed on the current network's details
+    wifi_leave: Rc<RefCell<Option<bool>>>,
     /// keys of settings edited in the UI since the last `take_setting_edits` (`SystemSettings.edited`)
     edited: Rc<RefCell<Vec<String>>>,
     /// lists scrolled by shifting pixels (smooth-ui S2d), and how many frames did so
@@ -134,6 +139,13 @@ impl Renderer {
         }))
         .map_err(PlatformError::SetPlatformError)?;
         let ui = Shell::new()?;
+        // before anything draws: bindings that call these keep what they first returned
+        let layouts = ui.global::<Layouts>();
+        layouts.on_pick(|on, from| keyboard::pick(&on.iter().collect::<Vec<_>>(), from));
+        layouts.on_tallest_of(|on, all| {
+            let rows: Vec<usize> = all.iter().map(|l| l.rows.row_count()).collect();
+            keyboard::tallest(&on.iter().collect::<Vec<_>>(), &rows)
+        });
         window.set_size(PhysicalSize::new(width, height));
         ui.show()?;
         let typed: Rc<RefCell<Vec<u32>>> = Rc::default();
@@ -154,6 +166,19 @@ impl Renderer {
             sink.borrow_mut()
                 .push((a.as_str().into(), n.as_str().into()))
         });
+        let wifi_refresh: Rc<RefCell<bool>> = Rc::default();
+        let sink = wifi_refresh.clone();
+        ui.on_wifi_refresh(move || *sink.borrow_mut() = true);
+        let wifi_leave: Rc<RefCell<Option<bool>>> = Rc::default();
+        let sink = wifi_leave.clone();
+        ui.on_wifi_disconnect(move || *sink.borrow_mut() = Some(false));
+        let sink = wifi_leave.clone();
+        ui.on_wifi_forget(move || *sink.borrow_mut() = Some(true));
+        let wifi_connect: Rc<RefCell<Option<(String, String)>>> = Rc::default();
+        let sink = wifi_connect.clone();
+        ui.on_wifi_connect(move |b, p| {
+            *sink.borrow_mut() = Some((b.as_str().into(), p.as_str().into()))
+        });
         let edited: Rc<RefCell<Vec<String>>> = Rc::default();
         let sink = edited.clone();
         ui.global::<SystemSettings>()
@@ -166,6 +191,9 @@ impl Renderer {
             closed,
             power,
             phone,
+            wifi_refresh,
+            wifi_connect,
+            wifi_leave,
             edited,
             scrolling: Scrolling::default(),
             shifts: 0,
@@ -187,6 +215,11 @@ impl Renderer {
     /// The current screen key: "home", "menu" or an app key such as "clock".
     pub fn screen(&self) -> alloc::string::String {
         self.ui.get_screen().as_str().into()
+    }
+
+    /// The current sub-page of the screen ("" = its root; Settings: "connectivity", "display", ...).
+    pub fn view(&self) -> alloc::string::String {
+        self.ui.get_view().as_str().into()
     }
 
     /// Where an app's content goes: the full-width band between the status bar and the toolbar (physical pixels).
@@ -220,7 +253,6 @@ impl Renderer {
         self.ui.set_home_page(n.clamp(0, HOME_PAGES - 1));
     }
 
-    /// Show or hide the system keyboard over the bottom of the body.
     /// Which build is running, one line per part (kernel, user-side ROM, neoui): Settings -> About phone.
     pub fn set_build_info(&mut self, lines: &[String]) {
         let model: Vec<slint::SharedString> = lines.iter().map(|l| l.as_str().into()).collect();
@@ -233,21 +265,42 @@ impl Renderer {
         self.ui.set_server_transitions(on);
     }
 
-    pub fn set_keyboard(&mut self, open: bool) {
-        self.ui.set_keyboard_open(open);
+    /// Show the system keyboard over the bottom of the body in `mode` (`proto::KEYBOARD`: 1 text, 2 terminal), or
+    /// hide it (0).
+    pub fn set_keyboard(&mut self, mode: u8) {
+        self.ui.set_keyboard_mode(i32::from(mode));
     }
 
-    /// The keyboard's height (physical pixels) when it is open.
+    /// The keyboard's height (physical pixels) in each `proto::KEYBOARD` mode: [0, text, terminal]. It changes with
+    /// the language and the keyboard settings.
+    pub fn keyboard_heights(&self) -> [u32; 3] {
+        [
+            0,
+            self.ui.get_keyboard_text_h() as u32,
+            self.ui.get_keyboard_term_h() as u32,
+        ]
+    }
+
+    /// The keyboard's height (physical pixels) as shown: in the mode an app asked for, else the text keyboard while
+    /// a shell field has the focus, else 0.
     pub fn keyboard_h(&self) -> u32 {
-        self.ui.get_keyboard_h() as u32
+        let mode = self.ui.get_keyboard_mode().clamp(0, 2) as usize;
+        let shell = self.ui.global::<KeyboardFocus>().get_open();
+        self.keyboard_heights()[if mode == 0 && shell { 1 } else { mode }]
     }
 
-    /// What the keyboard typed since the last call, as Unicode code points (Backspace 8, Enter 13).
+    /// What the keyboard typed for an app since the last call, as Unicode code points (Backspace 8, Enter 13);
+    /// what it types into a shell field goes there instead.
     pub fn take_typed(&mut self) -> Vec<u32> {
         core::mem::take(&mut *self.typed.borrow_mut())
     }
 
     /// Whether the foreground app handles the toolbar's Back and Options itself.
+    /// An app process is in front (the shell hides its own mock of the screen and unclaimed toolbar buttons).
+    pub fn set_app_front(&mut self, front: bool) {
+        self.ui.set_app_front(front);
+    }
+
     pub fn set_app_nav(&mut self, back: bool, options: bool) {
         self.ui.set_app_back(back);
         self.ui.set_app_options(options);
@@ -268,6 +321,12 @@ impl Renderer {
     /// Apps the switcher's × asked to close since the last call.
     pub fn take_closed(&mut self) -> Vec<alloc::string::String> {
         core::mem::take(&mut *self.closed.borrow_mut())
+    }
+
+    /// Is the status shade open over the app area? The UI server neither composes the app's surface over it nor
+    /// gives it the touches meanwhile. (The shell's Options menu never opens over an app: its Options is the app's.)
+    pub fn overlay_open(&self) -> bool {
+        self.ui.get_shade_open()
     }
 
     /// Show or hide the Power menu (the UI server opens it when Power is held).
@@ -327,6 +386,104 @@ impl Renderer {
     /// The status bar's time text, e.g. "09:41".
     pub fn set_clock(&mut self, text: &str) {
         self.ui.set_clock(text.into());
+    }
+
+    /// The Wi-Fi page's refresh button was pressed since the last call.
+    pub fn take_wifi_refresh(&mut self) -> bool {
+        core::mem::take(&mut *self.wifi_refresh.borrow_mut())
+    }
+
+    /// Connect was pressed on a network's sheet since the last call: its BSSID ("aa:bb:cc:dd:ee:ff") and the
+    /// typed password.
+    pub fn take_wifi_connect(&mut self) -> Option<(String, String)> {
+        self.wifi_connect.borrow_mut().take()
+    }
+
+    /// Disconnect (`Some(false)`) or Forget (`Some(true)`) was pressed on the current network since the last call.
+    pub fn take_wifi_leave(&mut self) -> Option<bool> {
+        self.wifi_leave.borrow_mut().take()
+    }
+
+    /// The current link: Settings' "Current network" and its details, the status bar's Wi-Fi icon.
+    pub fn set_wifi_link(&mut self, v: &neoui_proto::wifi::LinkView) {
+        let details: alloc::vec::Vec<WifiDetail> = v
+            .details
+            .iter()
+            .map(|(l, d)| WifiDetail {
+                label: l.as_str().into(),
+                value: d.as_str().into(),
+            })
+            .collect();
+        self.ui.set_wifi_link(WifiLink {
+            shown: v.shown,
+            connected: v.connected,
+            name: v.name.as_str().into(),
+            subtitle: v.subtitle.as_str().into(),
+            bars: i32::from(v.bars),
+            details: slint::ModelRc::new(slint::VecModel::from(details)),
+        });
+    }
+
+    /// How the join started from the sheet is going (shown under its password field).
+    pub fn set_wifi_message(&mut self, text: &str) {
+        self.ui.set_wifi_message(text.into());
+    }
+
+    /// The latest Wi-Fi scan for Settings -> Connectivity: the Wi-Fi row's status and one row per network.
+    pub fn set_wifi(&mut self, scan: &neoui_proto::wifi::Scan) {
+        self.ui.set_wifi_status(scan.status().into());
+        self.ui.set_wifi_count(scan.named() as i32);
+        self.ui.set_wifi_hidden(scan.hidden() as i32);
+        self.ui
+            .set_wifi_scanning(scan.state == neoui_proto::wifi::State::Scanning);
+        let rows: alloc::vec::Vec<WifiNet> = scan
+            .list()
+            .iter()
+            .filter(|n| !n.ssid.is_empty())
+            .map(|n| WifiNet {
+                name: n.title().into(),
+                detail: n.detail().into(),
+                bars: i32::from(n.bars()),
+                secured: n.secured,
+                band: n.band().into(),
+                signal: n.signal().into(),
+                channel: i32::from(n.channel),
+                bssid: n.bssid_text().into(),
+            })
+            .collect();
+        self.ui
+            .set_wifi_networks(slint::ModelRc::new(slint::VecModel::from(rows)));
+    }
+
+    /// Shares the latest observation with the status bar and Battery settings page.
+    pub fn set_battery(
+        &mut self,
+        sample: &neoui_proto::battery::Snapshot,
+        history: &neoui_proto::battery::History,
+        storage_error: bool,
+    ) {
+        self.ui
+            .set_battery_percent(sample.percent().map_or(-1, |p| p as i32));
+        self.ui.set_battery_text(sample.percent_text().into());
+        self.ui.set_battery_charging(sample.charging());
+        self.ui.set_battery_connected(sample.usb_connected());
+        self.ui.set_battery_full(sample.full_on_usb());
+        self.ui.set_battery_voltage(sample.voltage_text().into());
+        self.ui.set_battery_state(sample.charge_text().into());
+        self.ui.set_battery_usb(sample.usb_text().into());
+        self.ui.set_battery_storage(
+            if storage_error {
+                "History unavailable or could not be saved; live readings remain available"
+            } else {
+                "History is saved every five minutes and before normal restart or shutdown"
+            }
+            .into(),
+        );
+        let now = history.points().back().map_or(0, |p| p.utc);
+        self.ui
+            .set_battery_history(slint::ModelRc::new(slint::VecModel::from(
+                history.bars(now),
+            )));
     }
 
     /// The status bar's network (telephony C5): `bars` 0..=4, or -1 without a modem; the operator's name; the
@@ -483,10 +640,9 @@ impl Renderer {
                 }
             }
             InputEvent::Key { code, down } => {
-                let Some(ch) = char::from_u32(code) else {
+                let Some(text) = keyboard::key_text(code) else {
                     return;
                 };
-                let text = ch.into();
                 if down {
                     WindowEvent::KeyPressed { text }
                 } else {
@@ -495,6 +651,17 @@ impl Renderer {
             }
         };
         self.window.dispatch_event(event);
+        // the system keyboard typed into one of the shell's own fields, not for an app
+        if self.ui.global::<KeyboardFocus>().get_open() {
+            for code in self.take_typed() {
+                if let Some(text) = keyboard::key_text(code) {
+                    self.window
+                        .dispatch_event(WindowEvent::KeyPressed { text: text.clone() });
+                    self.window
+                        .dispatch_event(WindowEvent::KeyReleased { text });
+                }
+            }
+        }
     }
 
     /// Cancels the touch in progress: whatever it pressed lets go without a click (the UI server took the gesture

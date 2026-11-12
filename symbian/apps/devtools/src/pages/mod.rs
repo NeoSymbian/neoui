@@ -36,6 +36,26 @@ pub struct Ctx {
 }
 
 impl Ctx {
+    /// Render the change; a scrolled list moves its rows instead of being redrawn (smooth-ui S2d, as Files).
+    pub fn draw(&self) -> Result<(), i32> {
+        let Some(ui) = self.ui.upgrade() else {
+            return self.app.draw();
+        };
+        self.app.draw_scrolled(|| {
+            let sc = ui.global::<crate::Scroll>();
+            let moved = (sc.get_dy(), sc.get_lists());
+            sc.set_dy(0);
+            sc.set_lists(0);
+            let list = neoui_proto::Rect::new(
+                sc.get_x() as i32,
+                sc.get_y() as i32,
+                sc.get_width() as u32,
+                sc.get_height() as u32,
+            );
+            (moved, list)
+        })
+    }
+
     /// Changes the model, then shows the result.
     pub fn update(&self, f: impl FnOnce(&mut Model)) {
         f(&mut self.model.borrow_mut());

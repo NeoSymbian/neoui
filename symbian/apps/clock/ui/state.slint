@@ -9,7 +9,7 @@ export struct LapRow { number: int, lap: string, total: string }
 
 export global ClockState {
     // Navigation: the open tab (0 Clock, 1 Alarms, 2 World, 3 Timer, 4 Stopwatch) and an open sub-view over it
-    // ("" none, "set-time", "alarm", "cities", "ringing").
+    // ("" none, "set-time", "alarm", "cities", "ringing", "settings").
     in-out property <int> tab;
     in property <string> view;
     callback tab-chosen(int);
@@ -25,6 +25,17 @@ export global ClockState {
     in property <string> date;
     in property <string> next-alarm;
     callback set-time();
+    // what the face shows (Clock settings) and the analog face, drawn by the app each second
+    in property <bool> analog;
+    in property <bool> show-seconds: true;
+    in property <bool> show-date: true;
+    in property <image> analog-face;
+
+    // Clock settings (sub-view "settings", opened by the toolbar's Options)
+    callback set-analog(bool);
+    callback set-seconds(bool);
+    callback set-date(bool);
+    callback set-h24(bool);
 
     // Set time
     in property <[string]> fields;

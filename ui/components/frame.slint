@@ -11,6 +11,11 @@ export component Glyph inherits Image {
 
 export component StatusBar inherits Rectangle {
     in property <string> title;
+    in property <int> battery-percent: -1;
+    in property <string> battery-text: "--%";
+    in property <bool> battery-charging;
+    in property <bool> battery-connected;
+    in property <bool> battery-full;
     in property <bool> shade-open;
     in property <string> time: "10:24";
     // the modem (telephony C5): bars 0..4, -1 = no modem (the plain signal icon); the operator shows where the title
@@ -18,22 +23,25 @@ export component StatusBar inherits Rectangle {
     in property <int> bars: -1;
     in property <string> operator;
     in property <string> rat;
+    // Wi-Fi bars 0..4 while connected, -1 = not connected (no icon)
+    in property <int> wifi-bars: -1;
     callback tapped;
     height: Theme.status-h;
     background: Theme.bg;
-    Text {
-        x: Theme.margin;
-        text: title != "" ? title : operator;
-        color: Theme.text;
-        font-size: Theme.font-status;
-        font-weight: 600;
-        vertical-alignment: center;
-    }
-
     HorizontalLayout {
-        alignment: end;
+        padding-left: Theme.margin;
         padding-right: Theme.margin;
         spacing: 6 * Theme.dp;
+        Text {
+            text: title != "" ? title : operator;
+            color: Theme.text;
+            font-size: Theme.font-status;
+            font-weight: 600;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+            min-width: 0px;
+            overflow: elide;
+        }
         if bars >= 0 && rat != "": Text {
             text: rat;
             color: Theme.text;
@@ -62,15 +70,46 @@ export component StatusBar inherits Rectangle {
                 size: Theme.status-icon;
             }
         }
-        for icon in [
-            @image-url("../icons/sys/wifi.svg"),
-            @image-url("../icons/sys/battery.svg")
-        ]: VerticalLayout {
+        if wifi-bars >= 0: VerticalLayout {
             alignment: center;
             Glyph {
-                source: icon;
+                source: @image-url("../icons/sys/wifi.svg");
                 size: Theme.status-icon;
+                colorize: wifi-bars >= 2 ? Theme.text : Theme.text-secondary;
             }
+        }
+        if battery-connected: VerticalLayout {
+            alignment: center;
+            Glyph { source: @image-url("../icons/sys/plug.svg"); size: 10 * Theme.dp; }
+        }
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 22 * Theme.dp;
+                height: 11 * Theme.dp;
+                border-width: 1 * Theme.dp;
+                border-color: battery-percent < 0 ? Theme.text-dim : Theme.text;
+                border-radius: 2 * Theme.dp;
+                background: transparent;
+                Rectangle {
+                    x: 2 * Theme.dp; y: 2 * Theme.dp;
+                    width: max(0, min(100, battery-percent)) / 100 * 18 * Theme.dp;
+                    height: 7 * Theme.dp;
+                    background: battery-charging || battery-full ? #22b46a : Theme.text;
+                    opacity: battery-charging || battery-full ? 0.4 : 1;
+                }
+                if battery-charging || battery-full: Glyph {
+                    source: battery-charging ? @image-url("../icons/sys/charging.svg") : @image-url("../icons/sys/check.svg");
+                    x: 5 * Theme.dp; y: -0.5 * Theme.dp;
+                    size: 12 * Theme.dp;
+                }
+            }
+        }
+        Text {
+            text: battery-text;
+            color: battery-charging || battery-full ? #22b46a : Theme.text;
+            font-size: Theme.font-status * 0.8;
+            vertical-alignment: center;
         }
         Text {
             text: time;

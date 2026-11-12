@@ -6,6 +6,11 @@ export struct Call { name: string, initials: string, tint: color, kind: string, 
 export struct Conversation { name: string, initials: string, tint: color, snippet: string, when: string, unread: bool }
 export struct Message { text: string, mine: bool, when: string }
 export struct FileItem { name: string, kind: string, detail: string }
+// one scanned Wi-Fi network (neoui-proto wifi::Network): name, "Secured · 5 GHz · -46 dBm", 0..4 bars
+// the current Wi-Fi link (symbian/src/wifi.rs from the kernel's HAL WlanLink; neoui-proto wifi::LinkView)
+export struct WifiDetail { label: string, value: string }
+export struct WifiLink { shown: bool, connected: bool, name: string, subtitle: string, bars: int, details: [WifiDetail] }
+export struct WifiNet { name: string, detail: string, bars: int, secured: bool, band: string, signal: string, channel: int, bssid: string }
 export struct Song { title: string, artist: string, length: string }
 export struct Event { time: string, title: string, place: string, tint: color }
 export struct Alarm { time: string, label: string, on: bool }

@@ -1,17 +1,16 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //! The Terminal app (`NEOTERM.EXE`, NeoSymbian R6b): a neoui app process ([`neoapp`]) that is also the Symbian text
 //! console server ([`console`], `!E32WindowServer`) and starts ESHELL, so ESHELL and the 2010 text programs run in
-//! a window of the Rust UI. Keys come from the UI server (`NEXT_EVENT`) and from the on-screen extra-keys bar.
+//! a window of the Rust UI. Keys come from the UI server (`NEXT_EVENT`): hardware keys and the system keyboard in its
+//! terminal mode (Esc, Tab and the arrows in a row above the letters).
 #![no_std]
 
 extern crate alloc;
 
 mod console;
 
-use alloc::collections::VecDeque;
 use alloc::rc::Rc;
 use alloc::vec::Vec;
-use core::cell::RefCell;
 use core::pin::pin;
 use e32::ipc::TIpcArgs;
 use e32::process::Process;
@@ -45,32 +44,30 @@ fn main() -> i32 {
 fn run() -> Result<(), i32> {
     let app = App::connect()?;
     // The phone has no keys: the system keyboard covers the bottom, and the grid fits above it.
-    // shortcut: always shown, no hide toggle; add one with a grid reflow when ESHELL can be told of a resize.
-    let kb_h = app.keyboard(true)? as f32;
+    // shortcut: always shown, no hide toggle, and the grid keeps its start size (term.slint lifts it when the keyboard
+    // grows); add a reflow when ESHELL can be told of a resize.
+    let kb_h = app.keyboard(proto::KEYBOARD_TERMINAL)? as f32;
     let ui = TermApp::new().map_err(|_| -2)?;
     let dp = app.dp;
     ui.global::<Theme>().set_dp(dp);
 
-    // The grid from the surface: Ubuntu Mono advances 0.5 em, as the design's prototype sizes it (14.5 dp text).
+    // The grid from the surface: DejaVu Sans Mono advances 1233/2048 em; 12 dp text keeps the prototype's columns
+    // (it had Ubuntu Mono's 0.5 em at 14.5 dp).
     // shortcut: assumed glyph advance; measure it when Slint exposes text metrics.
-    let font_px = round(14.5 * dp);
-    let (cell_w, cell_h) = (font_px * 0.5, round(font_px * 1.3));
-    let (pad, bar_h) = (round(8.0 * dp), round(52.0 * dp));
+    let font_px = round(12.0 * dp);
+    let (cell_w, cell_h) = (font_px * 1233.0 / 2048.0, round(font_px * 1.45));
+    let pad = round(8.0 * dp);
     let cols = ((app.width as f32 - 2.0 * pad) / cell_w) as usize;
-    let rows = ((app.height as f32 - kb_h - bar_h - 2.0 * pad) / cell_h) as usize;
+    let rows = ((app.height as f32 - kb_h - 2.0 * pad) / cell_h) as usize;
     ui.set_font_px(font_px);
     ui.set_cell_w(cell_w);
     ui.set_cell_h(cell_h);
     ui.set_pad(pad);
-    ui.set_bar_h(bar_h);
     ui.set_kb_h(kb_h);
     let model = Rc::new(VecModel::from(
         (0..rows).map(|_| SharedString::new()).collect::<Vec<_>>(),
     ));
     ui.set_rows(ModelRc::from(model.clone()));
-    let bar_keys: Rc<RefCell<VecDeque<i32>>> = Rc::default();
-    let pending = bar_keys.clone();
-    ui.on_key(move |code| pending.borrow_mut().push_back(code));
     ui.show().map_err(|_| -2)?;
     dprintln!(
         "term: console {}x{} in {}x{}",
@@ -139,10 +136,8 @@ fn run() -> Result<(), i32> {
                 Some(AppEvent::Input(InputEvent::Key { code, down: true })) => {
                     con.key(console_key(code))
                 }
-                Some(AppEvent::Input(touch @ InputEvent::Touch { .. })) => {
-                    app.dispatch_touch(touch);
-                    let keys: Vec<i32> = bar_keys.borrow_mut().drain(..).collect();
-                    keys.into_iter().for_each(|k| con.key(k));
+                Some(AppEvent::Keyboard { h }) => {
+                    ui.set_kb_h(h as f32);
                     con.dirty = true;
                 }
                 _ => {}

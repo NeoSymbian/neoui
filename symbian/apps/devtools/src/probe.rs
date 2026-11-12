@@ -36,6 +36,7 @@ pub struct Readings {
     pub adsp: Option<Result<[u32; 4], i32>>,
     pub slot: Option<Result<String, i32>>,
     pub console: Option<Result<bool, i32>>,
+    pub battery: Option<Result<neoui_proto::battery::Snapshot, i32>>,
 }
 
 /// Reads everything (a few HAL calls, one NeoModem request, the drives' volume info).
@@ -61,6 +62,7 @@ pub fn read() -> Readings {
         adsp: Some(hal::adsp_state()),
         slot: Some(hal::slot_info()),
         console: Some(hal::console_shown()),
+        battery: Some(hal::battery()),
     }
 }
 
@@ -349,6 +351,18 @@ pub fn facts(dev: &Device, r: &Readings, extra: &crate::state::Model) -> Vec<(St
     let mut f: Vec<(String, String)> = Vec::new();
     let mut put = |k: &str, v: String| f.push((k.to_string(), v));
     match dev.key.as_str() {
+        "battery" => {
+            if let Some(Ok(b)) = r.battery {
+                put("Reported charge", b.percent_text());
+                put("Voltage", b.voltage_text());
+                put("USB", b.usb_text().into());
+                put("Charge state", b.charge_text().into());
+                put(
+                    "Profile",
+                    "Firmware-reported; profile unverified; read only".into(),
+                );
+            }
+        }
         "memory" => {
             if let Some(Ok(m)) = r.memory {
                 put("Total RAM", format_bytes(m.total_ram));

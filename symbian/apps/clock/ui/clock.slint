@@ -15,8 +15,10 @@ import { WorldPage, CityPicker } from "pages/world.slint";
 import { TimerPage } from "pages/timer.slint";
 import { StopwatchPage } from "pages/stopwatch.slint";
 import { RingingPage } from "pages/ringing.slint";
+import { SettingsPage } from "pages/settings.slint";
 
-export { Theme, ClockState }
+import { Scroll } from "../../../../ui/components/scroll.slint";
+export { Theme, ClockState, Scroll }
 
 export component ClockApp inherits Window {
     default-font-family: "Inter";
@@ -47,4 +49,5 @@ export component ClockApp inherits Window {
     if ClockState.view == "alarm": AlarmEditor { }
     if ClockState.view == "cities": CityPicker { }
     if ClockState.view == "ringing": RingingPage { }
+    if ClockState.view == "settings": SettingsPage { }
 }

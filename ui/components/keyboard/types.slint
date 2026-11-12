@@ -1,0 +1,24 @@
+// SPDX-License-Identifier: Apache-2.0
+// One keyboard layout (one language) of the system keyboard: plain data, drawn by keyboard.slint.
+
+// `rows` are the letter rows, top first, one string per key (what it types; shift types its upper case). "⇧" and
+// "⌫" are shift and backspace: they may only start or end a row and share the width the letters leave. A row
+// without them is centred. Every layout gets the same bottom row (symbols, globe, comma, space, stop, Enter).
+export struct Layout {
+    // ISO 639-1 code
+    code: string,
+    // shown in Settings (in English: the Settings font has no Armenian)
+    name: string,
+    // Settings' second line: the arrangement
+    hint: string,
+    // the font the keys are drawn in; it must have every letter (Inter has no Armenian)
+    font: string,
+    // the row width in key widths
+    cols: float,
+    rows: [[string]],
+    // the symbols key's way back to letters ("ABC")
+    abc: string,
+    // the bottom row's punctuation
+    comma: string,
+    stop: string,
+}

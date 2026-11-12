@@ -25,6 +25,7 @@ use neoui_proto::ipc::{self as proto, AppEvent};
 use neoui_proto::recents::Recents;
 use neoui_proto::settings::value::ENCODED_MAX;
 use neoui_proto::settings::{Caller, KEY_MAX, Value, kerr};
+use neoui_proto::{InputEvent, TouchPhase};
 
 /// Screen keys that are separate processes: their EXEs and command lines.
 // shortcut: a fixed table; a registry of installed apps comes with app installation.
@@ -55,8 +56,10 @@ pub struct App {
     queue: VecDeque<AppEvent>,
     /// When `Quit` was sent (ms): it is leaving, and is killed if it hasn't after [`QUIT_GRACE_MS`].
     quit_at: Option<u64>,
-    /// It asked for the system keyboard (`KEYBOARD`); applies while it is in front.
-    pub keyboard: bool,
+    /// The system keyboard mode it asked for (`KEYBOARD`: 0 none, 1 text, 2 terminal); applies while it is in front.
+    pub keyboard: u8,
+    /// The keyboard height it was last told (the `KEYBOARD` reply or `AppEvent::Keyboard`).
+    keyboard_h: u32,
     /// Toolbar buttons it claimed (`NAV_BACK | NAV_OPTIONS`); apply while it is in front.
     pub nav: i32,
 }
@@ -65,7 +68,27 @@ impl App {
     fn send(&mut self, e: AppEvent) {
         match self.waiting.take() {
             Some(m) => deliver(m, e),
-            None => self.queue.push_back(e),
+            None => {
+                // a move replaces the queued move of the same finger: a slow app catches up with the finger instead
+                // of replaying its path
+                if let AppEvent::Input(InputEvent::Touch {
+                    id,
+                    phase: TouchPhase::Move,
+                    ..
+                }) = e
+                    && let Some(
+                        last @ AppEvent::Input(InputEvent::Touch {
+                            phase: TouchPhase::Move,
+                            ..
+                        }),
+                    ) = self.queue.back_mut()
+                    && matches!(last, AppEvent::Input(InputEvent::Touch { id: q, .. }) if *q == id)
+                {
+                    *last = e;
+                    return;
+                }
+                self.queue.push_back(e);
+            }
         }
     }
 
@@ -82,8 +105,8 @@ pub struct Host {
     pub body: Rect,
     /// The shell's design unit in 1/256 px, for apps.
     pub dp256: u32,
-    /// The keyboard's height in pixels when open.
-    pub keyboard_h: u32,
+    /// The keyboard's height in pixels in each mode ([0, text, terminal]); it changes with the language and settings.
+    keyboard_h: [u32; 3],
     apps: Recents<App>,
     /// The current screen when it is an app's key.
     front: Option<&'static str>,
@@ -92,6 +115,9 @@ pub struct Host {
     pub blits: Vec<Rect>,
     /// Show the foreground app's whole surface on the next compose (it just came back).
     pub refresh: bool,
+    /// The foreground app's `DAMAGE` calls (with their session), answered once that frame is on screen
+    /// ([`Self::release_frames`]): the app doesn't draw over pixels the server hasn't copied yet.
+    frames: Vec<(u32, Message)>,
     /// An app asked for a restart or power-off (`proto::POWER`); the main loop carries it out.
     pub power: Option<i32>,
     /// The settings store apps read, write and watch (`proto::SETTING_*`); the shell's own view syncs with it in
@@ -100,7 +126,7 @@ pub struct Host {
 }
 
 impl Host {
-    pub fn new(body: Rect, dp256: u32, keyboard_h: u32, settings: Settings) -> Self {
+    pub fn new(body: Rect, dp256: u32, keyboard_h: [u32; 3], settings: Settings) -> Self {
         Self {
             body,
             dp256,
@@ -110,8 +136,17 @@ impl Host {
             next_session: 1,
             blits: Vec::new(),
             refresh: false,
+            frames: Vec::new(),
             power: None,
             settings,
+        }
+    }
+
+    /// Answer the held `DAMAGE` calls: the frame they asked for is on screen (or won't be shown). Call once per server
+    /// frame after compose, and on every path that skips it.
+    pub fn release_frames(&mut self) {
+        for (_, m) in self.frames.drain(..) {
+            m.complete(0);
         }
     }
 
@@ -134,13 +169,28 @@ impl Host {
 
     /// The part of the body the app's surface shows in (screen coordinates): all of it but the open keyboard.
     pub fn app_area(&self) -> Rect {
-        let covered = if self.front().is_some_and(|a| a.keyboard) {
-            self.keyboard_h
-        } else {
-            0
-        };
+        let covered = self
+            .front()
+            .map_or(0, |a| self.keyboard_h[usize::from(a.keyboard)]);
         let b = self.body;
         Rect::new(b.x, b.y, b.w, b.h.saturating_sub(covered))
+    }
+
+    /// The keyboard's heights now ([`Renderer::keyboard_heights`](neoui_render::Renderer::keyboard_heights)): each
+    /// app with the keyboard open whose height changed is told (`AppEvent::Keyboard`). Call once per frame.
+    pub fn set_keyboard_heights(&mut self, heights: [u32; 3]) {
+        self.keyboard_h = heights;
+        let front = self.front;
+        for app in self.apps.iter_mut() {
+            let h = heights[usize::from(app.keyboard)];
+            if app.keyboard != 0 && app.keyboard_h != h && app.quit_at.is_none() {
+                app.keyboard_h = h;
+                app.send(AppEvent::Keyboard { h });
+                if front == Some(app.key) {
+                    self.refresh = true; // the part the keyboard gave back (or now covers) shows again
+                }
+            }
+        }
     }
 
     /// The shell moved to `screen`: hide the app that was in front, and show (or start) the one for `screen`.
@@ -158,6 +208,7 @@ impl Host {
             app.send(AppEvent::Visible(false));
         }
         self.blits.clear();
+        self.release_frames();
         let Some(key) = key else { return };
         self.front = Some(key);
         if self.apps.touch(|a| a.key == key && a.quit_at.is_none()) {
@@ -197,7 +248,8 @@ impl Host {
                     waiting: None,
                     queue: VecDeque::new(),
                     quit_at: None,
-                    keyboard: false,
+                    keyboard: 0,
+                    keyboard_h: 0,
                     nav: 0,
                 });
             }
@@ -363,13 +415,21 @@ impl Service for Host {
                         m.int(2) as u32,
                         m.int(3) as u32,
                     ));
+                    self.frames.push((*id, m)); // answered after compose
+                } else {
+                    m.complete(0);
                 }
-                m.complete(0);
             }
             proto::KEYBOARD => {
-                app.keyboard = m.int(0) != 0;
+                // an unknown mode is the text keyboard (1.2 apps sent show = 1)
+                app.keyboard = match m.int(0) {
+                    proto::KEYBOARD_HIDDEN => 0,
+                    proto::KEYBOARD_TERMINAL => 2,
+                    _ => 1,
+                };
+                app.keyboard_h = keyboard_h[usize::from(app.keyboard)];
                 dprintln!("neoui: keyboard {} for {}", app.keyboard, app.key);
-                m.complete(if app.keyboard { keyboard_h as i32 } else { 0 });
+                m.complete(app.keyboard_h as i32);
             }
             proto::NAV => {
                 app.nav = m.int(0) & (proto::NAV_BACK | proto::NAV_OPTIONS);
@@ -403,6 +463,11 @@ impl Service for Host {
     fn disconnect(&mut self, id: u32) -> ControlFlow<()> {
         self.settings.drop_session(id);
         // Complete what the session still has outstanding before its disconnect completes.
+        let (gone, kept): (Vec<_>, Vec<_>) = self.frames.drain(..).partition(|(s, _)| *s == id);
+        self.frames = kept;
+        for (_, m) in gone {
+            m.complete(err::KERR_CANCEL);
+        }
         if let Some(m) = self
             .apps
             .find_mut(|a| a.session == Some(id))

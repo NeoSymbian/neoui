@@ -190,12 +190,18 @@ impl App {
                 }
                 ScrollPlan::Normal => r.render(px, self.width),
             };
-            for (o, s) in region.iter() {
+            // one DAMAGE per frame, the union: the server answers it once the frame is on screen, so the next render
+            // never writes pixels the server hasn't copied yet
+            let damage = region.iter().fold(None, |acc: Option<Rect>, (o, s)| {
+                let r = Rect::new(o.x, o.y, s.width, s.height);
+                Some(acc.map_or(r, |a| a.union(&r)))
+            });
+            if let Some(d) = damage {
                 let mut args = TIpcArgs::new();
-                args.int(0, o.x)
-                    .int(1, o.y)
-                    .int(2, s.width as i32)
-                    .int(3, s.height as i32);
+                args.int(0, d.x)
+                    .int(1, d.y)
+                    .int(2, d.w as i32)
+                    .int(3, d.h as i32);
                 if let Err(e) = self.server.send_receive(proto::DAMAGE, &args) {
                     result = Err(e);
                 }
@@ -204,10 +210,12 @@ impl App {
         result
     }
 
-    /// Show or hide the system keyboard; returns how many pixels of the surface's bottom it now covers.
-    pub fn keyboard(&self, show: bool) -> Result<u32, i32> {
+    /// Show the system keyboard in `mode` (`proto::KEYBOARD_TEXT`, `KEYBOARD_TERMINAL`) or hide it
+    /// (`KEYBOARD_HIDDEN`); returns how many pixels of the surface's bottom it now covers. When that changes later
+    /// (the user switched language) the app gets `AppEvent::Keyboard`.
+    pub fn keyboard(&self, mode: i32) -> Result<u32, i32> {
         let mut args = TIpcArgs::new();
-        args.int(0, show as i32);
+        args.int(0, mode);
         self.server
             .send_receive(proto::KEYBOARD, &args)
             .map(|h| h as u32)
@@ -285,13 +293,19 @@ impl App {
         self.server.send_receive(proto::NAV, &args).map(drop)
     }
 
-    /// A key from the server (a hardware key or the system keyboard: Unicode, Enter 13, Backspace 8, Escape 27) as a
-    /// Slint key press and release, for text fields.
+    /// A key from the server (a hardware key or the system keyboard: Unicode, Enter 13, Backspace 8, Escape 27, Tab 9,
+    /// the arrows 0xF807-0xF80A) as a Slint key press and release, for text fields.
     pub fn dispatch_key(&self, code: u32) {
         let text: SharedString = match code {
             13 | 10 => Key::Return.into(),
             8 => Key::Backspace.into(),
             27 => Key::Escape.into(),
+            9 => Key::Tab.into(),
+            // Symbian's arrow key codes (the system keyboard's terminal row)
+            0xF807 => Key::LeftArrow.into(),
+            0xF808 => Key::RightArrow.into(),
+            0xF809 => Key::UpArrow.into(),
+            0xF80A => Key::DownArrow.into(),
             c => match char::from_u32(c) {
                 Some(ch) => ch.into(),
                 None => return,

@@ -7,6 +7,7 @@ mod alarms;
 mod face;
 mod ringing;
 mod set_time;
+mod settings;
 mod stopwatch;
 mod timer;
 mod world;
@@ -62,9 +63,31 @@ pub struct Ctx {
     pub app: App,
     pub ui: slint::Weak<ClockApp>,
     pub model: RefCell<Model>,
+    /// The analog face's dial, kept between seconds (face.rs).
+    pub analog: RefCell<face::Analog>,
 }
 
 impl Ctx {
+    /// Render the change; a scrolled list moves its rows instead of being redrawn (smooth-ui S2d, as Files).
+    pub fn draw(&self) -> Result<(), i32> {
+        let Some(ui) = self.ui.upgrade() else {
+            return self.app.draw();
+        };
+        self.app.draw_scrolled(|| {
+            let sc = ui.global::<crate::Scroll>();
+            let moved = (sc.get_dy(), sc.get_lists());
+            sc.set_dy(0);
+            sc.set_lists(0);
+            let list = neoui_proto::Rect::new(
+                sc.get_x() as i32,
+                sc.get_y() as i32,
+                sc.get_width() as u32,
+                sc.get_height() as u32,
+            );
+            (moved, list)
+        })
+    }
+
     /// Changes the model, saves the part it names, and shows the result.
     pub fn update(&self, f: impl FnOnce(&mut Model, &Now) -> Option<Part>) {
         let now = Now::read();
@@ -75,14 +98,36 @@ impl Ctx {
         self.show(&now);
     }
 
-    /// Opens a sub-view over the tabs (or closes it with [`View::None`]); while one is open, Back closes it.
+    /// Opens a sub-view over the tabs (or closes it with [`View::None`]); while one is open, Back closes it. Options
+    /// is always the app's: it opens (or closes) the Clock settings.
     pub fn open(&self, view: View) {
         self.model.borrow_mut().view = view;
-        if let Err(e) = self.app.claim_nav(view != View::None, false) {
+        if let Err(e) = self.app.claim_nav(view != View::None, true) {
             dprintln!("clock: cannot claim Back ({})", e);
         }
         dprintln!("clock: view {}", view.name());
         self.show(&Now::read());
+    }
+
+    /// The analog face for `now`, when it is on screen (the Clock tab, analog, no sub-view): the dial kept, the hands
+    /// drawn over a copy, about 0.4 MPx once a second.
+    fn draw_analog(&self, ui: &ClockApp, m: &Model, now: &Now) {
+        if !m.analog || m.view != View::None || m.tab != crate::state::Tab::Clock {
+            return;
+        }
+        let size = ((220.0 * self.app.dp) as usize).max(16);
+        let theme = ui.global::<crate::Theme>();
+        let rgb = |c: slint::Color| [c.red(), c.green(), c.blue()];
+        let (ink, accent) = (rgb(theme.get_text()), rgb(theme.get_accent()));
+        let px = face::draw_analog(
+            &mut self.analog.borrow_mut(),
+            size,
+            (now.local.hour, now.local.minute, now.second),
+            m.seconds,
+            ink,
+            accent,
+        );
+        ui.global::<ClockState>().set_analog_face(px);
     }
 
     /// Fills every page from the model.
@@ -93,6 +138,8 @@ impl Ctx {
         s.set_tab(m.tab as i32);
         s.set_view(m.view.name().into());
         face::show(&s, &m, now);
+        settings::show(&s, &m);
+        self.draw_analog(&ui, &m, now);
         set_time::show(&s, &m);
         alarms::show(&s, &m);
         world::show(&s, &m, now);
@@ -115,6 +162,7 @@ impl Ctx {
         }
         let m = self.model.borrow();
         face::show(&s, &m, now);
+        self.draw_analog(&ui, &m, now);
         timer::show(&s, &m, now);
         stopwatch::show(&s, &m, now);
         if now.second == 0 {
@@ -138,6 +186,7 @@ pub fn bind(ctx: &Rc<Ctx>, ui: &ClockApp) {
     let c = ctx.clone();
     s.on_close(move || c.open(View::None));
     face::bind(ctx, &s);
+    settings::bind(ctx, &s);
     set_time::bind(ctx, &s);
     alarms::bind(ctx, &s);
     world::bind(ctx, &s);

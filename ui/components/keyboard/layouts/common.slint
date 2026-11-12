@@ -1,0 +1,21 @@
+// SPDX-License-Identifier: Apache-2.0
+// The rows every language shares: the symbols layer (what ESHELL paths and commands need), the digit row that
+// pads shorter layouts when all have the same height, and the terminal row (keyboard mode 2).
+
+export global Common {
+    out property <[[string]]> symbols: [
+        ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"],
+        ["-", "/", "\\", ":", ";", "(", ")", "*", "\"", "'"],
+        ["_", "+", "=", "&", "@", "%", "<", ">", "#", "⌫"],
+    ];
+    out property <[string]> digits: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0"];
+    // label and what it types: Escape, Tab, and Symbian's arrow key codes (EKeyLeftArrow 0xF807 ... Down 0xF80A)
+    out property <[{ label: string, text: string }]> terminal: [
+        { label: "Esc", text: "\u{1b}" },
+        { label: "Tab", text: "\u{9}" },
+        { label: "←", text: "\u{f807}" },
+        { label: "↑", text: "\u{f809}" },
+        { label: "↓", text: "\u{f80a}" },
+        { label: "→", text: "\u{f808}" },
+    ];
+}

@@ -22,6 +22,8 @@ e32 = { workspace = true }
 neoapp = { workspace = true }
 # NeoSymbian/telephony: the NeoModem server's contract (MODEMD.EXE; Apache-2.0)
 modem-ipc = { workspace = true }
+# NeoSymbian/neolink: the WPA2-PSK supplicant handshakes (Wi-Fi W4; Apache-2.0)
+wpa = { git = "https://github.com/NeoSymbian/neolink", rev = "7db5000285acb4be606b3a4320048dfc6c195c1c" }
 
 [workspace]
 members = ["apps/clock", "apps/term", "apps/files", "apps/devtools", "neoapp"]
@@ -33,7 +35,7 @@ neoui-proto = { path = "../crates/neoui-proto" }
 slint = { version = "=1.18.1", default-features = false, features = ["compat-1-2", "unsafe-single-threaded", "libm", "renderer-software"] }
 slint-build = { version = "=1.18.1", features = ["sdf-fonts"] }
 neoapp = { path = "neoapp" }
-modem-ipc = { git = "https://github.com/NeoSymbian/telephony", rev = "507ec6bfc103253b82a31e32a9b2a05310fdae70" }
+modem-ipc = { git = "https://github.com/NeoSymbian/telephony", rev = "a872947f9663a938aa4c5a872a21a3e5066c42aa" }
 neoui-term = { path = "../crates/neoui-term" }
 neoui-files = { path = "../crates/neoui-files" }
 

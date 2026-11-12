@@ -4,7 +4,7 @@
 mod common;
 
 /// An app that claims the toolbar's Back and Options gets them through `take_nav`; the shell doesn't act on them.
-/// Unclaimed, Back leaves the screen as before.
+/// Unclaimed, Back leaves the screen as before (Options does nothing: an app in front owns it).
 #[test]
 fn claimed_toolbar_buttons_go_to_the_app() {
     let (w, h) = (539, 1079);
@@ -22,6 +22,7 @@ fn claimed_toolbar_buttons_go_to_the_app() {
 
     r.show("files", "");
     press(&mut r, w as i32 / 2); // a settled first frame
+    r.set_app_front(true); // the server says so whenever an app process is in front
     r.set_app_nav(true, true);
     press(&mut r, back);
     press(&mut r, options);

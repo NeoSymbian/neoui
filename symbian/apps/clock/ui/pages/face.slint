@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// The Clock tab: the time, seconds, the date and the next alarm; "Set time" opens the editor.
+// The Clock tab: the time (digital, or the analog face the app draws), the seconds and the date when enabled (Clock
+// settings), the next alarm; "Set time" opens the editor.
 import { Theme } from "../../../../../ui/theme.slint";
 import { BigClock, Button } from "../../../../../ui/components/controls.slint";
 import { Glyph } from "../../../../../ui/components/frame.slint";
@@ -9,7 +10,16 @@ export component FacePage inherits Rectangle {
     VerticalLayout {
         alignment: center;
         spacing: 12 * Theme.dp;
-        HorizontalLayout {
+        if ClockState.analog: HorizontalLayout {
+            alignment: center;
+            Image {
+                source: ClockState.analog-face;
+                width: 220 * Theme.dp;
+                height: 220 * Theme.dp;
+            }
+        }
+
+        if !ClockState.analog: HorizontalLayout {
             alignment: center;
             spacing: 8 * Theme.dp;
             BigClock {
@@ -30,14 +40,14 @@ export component FacePage inherits Rectangle {
             }
         }
 
-        Text {
+        if !ClockState.analog && ClockState.show-seconds: Text {
             text: (ClockState.seconds < 10 ? ":0" : ":") + ClockState.seconds;
             color: Theme.text-dim;
             font-size: 26 * Theme.dp;
             horizontal-alignment: center;
         }
 
-        Text {
+        if ClockState.show-date: Text {
             text: ClockState.date;
             color: Theme.text;
             font-size: 18 * Theme.dp;

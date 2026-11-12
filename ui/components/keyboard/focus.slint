@@ -1,0 +1,14 @@
+// SPDX-License-Identifier: Apache-2.0
+// A shell text field has the focus: the shell shows the system keyboard over the body and the UI server's renderer
+// types into the field (neoui-render `Renderer::dispatch`). Fields set `open` from their focus (controls.slint
+// `FieldInput`); the shell closes it when the screen or view changes (a field removed with its `if` never reports
+// losing focus).
+export global KeyboardFocus {
+    in-out property <bool> open;
+    // the keyboard's height in text mode (written by keyboard.slint), to lift a sheet above it
+    in-out property <length> text-h;
+
+    public function close() {
+        open = false;
+    }
+}

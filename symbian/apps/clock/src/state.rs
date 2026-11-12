@@ -42,6 +42,7 @@ pub enum View {
     Alarm,
     Cities,
     Ringing,
+    Settings,
 }
 
 impl View {
@@ -53,6 +54,7 @@ impl View {
             View::Alarm => "alarm",
             View::Cities => "cities",
             View::Ringing => "ringing",
+            View::Settings => "settings",
         }
     }
 }
@@ -65,6 +67,11 @@ pub enum Part {
     Cities,
     Timer,
     Stopwatch,
+    /// The Clock settings: face, seconds, date, 24-hour (each its own key).
+    Face,
+    Seconds,
+    Date,
+    H24,
 }
 
 /// An alarm being edited: a copy of an existing one (`Some(id)`) or a new one.
@@ -79,6 +86,10 @@ pub struct Model {
     pub tab: Tab,
     pub view: View,
     pub h24: bool,
+    /// Clock settings: the analog face (else digital), the seconds, the date line.
+    pub analog: bool,
+    pub seconds: bool,
+    pub date: bool,
     pub alarms: Alarms,
     pub cities: Cities,
     pub timer: Timer,
@@ -98,6 +109,9 @@ impl Model {
             tab: Tab::from_index(app.setting(keys::CLOCK_TAB).unwrap_or(0)),
             view: View::None,
             h24: app.setting(keys::CLOCK_24H).unwrap_or(true),
+            analog: app.setting(keys::CLOCK_FACE).unwrap_or(0) == 1,
+            seconds: app.setting(keys::CLOCK_SECONDS).unwrap_or(true),
+            date: app.setting(keys::CLOCK_DATE).unwrap_or(true),
             alarms: blob(app, keys::CLOCK_ALARMS, Alarms::decode).unwrap_or_default(),
             cities: blob(app, keys::CLOCK_CITIES, Cities::decode).unwrap_or_default(),
             timer: blob(app, keys::CLOCK_TIMER, Timer::decode).unwrap_or_default(),
@@ -142,6 +156,10 @@ impl Model {
             Part::Stopwatch => {
                 app.set_setting(keys::CLOCK_STOPWATCH, Bytes(self.stopwatch.encode()))
             }
+            Part::Face => app.set_setting(keys::CLOCK_FACE, i32::from(self.analog)),
+            Part::Seconds => app.set_setting(keys::CLOCK_SECONDS, self.seconds),
+            Part::Date => app.set_setting(keys::CLOCK_DATE, self.date),
+            Part::H24 => app.set_setting(keys::CLOCK_24H, self.h24),
         };
         if let Err(e) = r {
             dprintln!("clock: saving {:?} failed ({})", part, e);

@@ -28,33 +28,53 @@ fn connect() -> Result<Session, i32> {
 pub struct Watch {
     session: Option<Session>,
     revision: u32,
+    /// MODEMD was started (else there is nothing to watch: QEMU/CI, and the loop must not wake for it)
+    present: bool,
+    /// the wait before the next connect after a failure: 0.5 s doubling to 10 s, back to 0.5 s after a status
+    backoff_ms: u32,
 }
 
-/// Cancels the held request before its future and descriptor storage are dropped.
-struct Cancel<'a>(&'a Session);
+const BACKOFF_MS: u32 = 500;
+const BACKOFF_MAX_MS: u32 = 10_000;
+
+/// Cancels the held request before its future and descriptor storage are dropped, unless it completed.
+struct Cancel<'a>(&'a Session, bool);
 impl Drop for Cancel<'_> {
     fn drop(&mut self) {
-        let _ = self.0.send_receive(op::CANCEL_NOTIFY, &TIpcArgs::new());
+        if !self.1 {
+            let _ = self.0.send_receive(op::CANCEL_NOTIFY, &TIpcArgs::new());
+        }
     }
 }
 
 impl Watch {
-    pub fn new() -> Self {
+    pub fn new(present: bool) -> Self {
         Self {
             session: None,
             revision: u32::MAX,
+            present,
+            backoff_ms: BACKOFF_MS,
         }
     }
 
+    async fn back_off(&mut self) {
+        e32::time::delay(i32::try_from(self.backoff_ms * 1000).unwrap_or(i32::MAX)).await;
+        self.backoff_ms = self.backoff_ms.saturating_mul(2).min(BACKOFF_MAX_MS);
+    }
+
     pub async fn next(mut self) -> (Self, Option<Status>) {
+        if !self.present {
+            core::future::pending::<()>().await;
+        }
         if self.session.is_none() {
             self.session = connect().ok();
             self.revision = u32::MAX;
         }
-        let Some(session) = self.session.as_ref() else {
-            e32::time::delay(500_000).await;
+        if self.session.is_none() {
+            self.back_off().await;
             return (self, None);
-        };
+        }
+        let session = self.session.as_ref().unwrap();
         let mut bytes = [0u8; Status::SIZE];
         let result = {
             let mut descriptor = TPtr8::new(&mut bytes);
@@ -63,16 +83,19 @@ impl Watch {
             args.int(1, self.revision as i32);
             let future = session.send(op::NOTIFY, &args);
             let future = core::pin::pin!(future);
-            // Declared after the pinned future: cancellation runs first on every exit path.
-            let _cancel = Cancel(session);
-            future.await
+            // Declared after the pinned future: cancellation runs first on every exit path where it is still held.
+            let mut cancel = Cancel(session, false);
+            let r = future.await;
+            cancel.1 = true; // completed: nothing to cancel
+            r
         };
         let status = result.ok().and_then(|_| Status::from_bytes(&bytes));
         if let Some(s) = status {
             self.revision = s.revision;
+            self.backoff_ms = BACKOFF_MS;
         } else {
             self.session = None;
-            e32::time::delay(500_000).await;
+            self.back_off().await;
         }
         (self, status)
     }
@@ -86,11 +109,12 @@ pub struct Phone {
     disconnected: bool,
     close_at: Option<u64>,
     volume: Option<u8>,
-    off: bool,
-    /// A deliberate power-key wake stays awake for this call generation.
-    woken_for: Option<(u32, u8)>,
     preferences: Option<(u32, bool, modem_ipc::Ring)>,
     preferences_retry_at: u64,
+    /// a call started ringing since `take_ring` (the screen wakes for it)
+    rang: bool,
+    /// the SIM state whose PIN/blocked prompt the user put away ("Not now", or an emergency call)
+    sim_dismissed: Option<u8>,
 }
 
 const CLOSE_MS: u64 = 2000;
@@ -116,24 +140,36 @@ impl Phone {
             disconnected: false,
             close_at: None,
             volume: None,
-            off: false,
-            woken_for: None,
             preferences: None,
             preferences_retry_at: 0,
+            rang: false,
+            sim_dismissed: None,
         }
+    }
+
+    /// Did a call start ringing since the last call? (Once per call: main's screen wakes for it.)
+    pub fn take_ring(&mut self) -> bool {
+        core::mem::take(&mut self.rang)
+    }
+
+    /// A call is up (ringing, dialling or connected): the screen stays on.
+    pub fn in_call(&self) -> bool {
+        self.shown.as_ref().is_some_and(live)
+    }
+
+    /// MODEMD was started (the watcher has something to watch).
+    pub fn present(&self) -> bool {
+        self.present
     }
 
     pub fn observe(&mut self, status: Option<Status>) {
         self.update = status;
-        self.disconnected = status.is_none();
+        // only a session that had delivered status can be lost: MODEMD not up yet at boot is not "connection lost"
+        self.disconnected = status.is_none() && self.shown.is_some();
         if status.is_none() {
             self.session = None;
             self.preferences = None;
         }
-    }
-
-    pub fn screen_off(&self) -> bool {
-        self.off
     }
 
     /// The persisted shell store owns requested radio/sound preferences. MODEMD owns confirmation and recovery;
@@ -175,48 +211,11 @@ impl Phone {
         }
     }
 
+    /// The SIM prompt covers the shell (until it is put away for this SIM state).
     pub fn modal(&self) -> bool {
-        self.shown
-            .is_some_and(|s| matches!(s.sim, sim::PIN_REQUIRED | sim::BLOCKED))
-    }
-
-    pub fn wake_screen(&mut self) {
-        if !self.off {
-            return;
-        }
-        if self.set_screen(true, self.shown.map(|s| (s.generation, s.call.id))) {
-            self.woken_for = self.shown.map(|s| (s.generation, s.call.id));
-        }
-    }
-
-    fn set_screen(&mut self, on: bool, context: Option<(u32, u8)>) -> bool {
-        let started = e32::time::millis();
-        let (generation, call_id) = context.unwrap_or((0, 0));
-        dprintln!(
-            "neoui: display enter t={} on={} gen={} call={}",
-            started,
-            on,
-            generation,
-            call_id
-        );
-        // EDisplayHalSetState = 20 in u32hal.h: a1 is a scalar TBool, not a pointer to storage.
-        // SAFETY: group 4, function 20 accepts only scalar a1 and ignores the null a2.
-        let r = unsafe {
-            e32::sys::ui::hal_function(4, 20, usize::from(on) as *mut u8, core::ptr::null_mut())
-        };
-        if r == 0 {
-            self.off = !on;
-        }
-        dprintln!(
-            "neoui: display exit t={} on={} gen={} call={} result={} elapsed={}ms",
-            e32::time::millis(),
-            on,
-            generation,
-            call_id,
-            r,
-            e32::time::millis().saturating_sub(started)
-        );
-        r == 0
+        self.shown.is_some_and(|s| {
+            matches!(s.sim, sim::PIN_REQUIRED | sim::BLOCKED) && self.sim_dismissed != Some(s.sim)
+        })
     }
 
     pub fn poll(&mut self, ui: &mut Renderer, now_ms: u64) {
@@ -224,19 +223,16 @@ impl Phone {
             return;
         }
         if self.disconnected {
-            let context = self.shown.map(|s| (s.generation, s.call.id));
+            let had_call = self.shown.as_ref().is_some_and(live);
             self.disconnected = false;
             self.shown = None;
-            self.close_at = None;
-            self.woken_for = None;
+            // a call view says "Call interrupted", then closes like an ended call (it stayed up after a reconnect)
+            self.close_at = had_call.then_some(now_ms + CLOSE_MS);
             ui.set_calls(&[]);
             ui.set_call("Call interrupted", "", false);
             ui.set_call_audio(false, false, -1);
             ui.set_network(0, "No service", "");
             ui.set_phone_feedback(false, "Modem connection lost");
-            if self.off {
-                self.set_screen(true, context);
-            }
         }
         if self.close_at.is_some_and(|t| now_ms >= t) {
             self.close_at = None;
@@ -245,6 +241,11 @@ impl Phone {
             }
         }
         for (action, value) in ui.take_phone() {
+            if action == "sim-dismiss" {
+                self.sim_dismissed = self.shown.map(|s| s.sim);
+                ui.set_sim(false, false, None);
+                continue;
+            }
             let r = self.request(&action, &value);
             // The action name and completion are safe; the descriptor (number/PIN) is never logged.
             dprintln!("neoui: phone {} -> {}", action, r);
@@ -278,6 +279,7 @@ impl Phone {
         });
         if incoming && !had_incoming {
             ui.show_call();
+            self.rang = true;
         }
         self.volume = None;
         // Registration and RAT survive a failed stop/recovery in MODEMD's cached protocol status. They describe
@@ -343,28 +345,17 @@ impl Phone {
         };
         ui.set_phone_feedback(s.pending, &feedback);
         ui.set_phone_settings(s.radio_online);
+        if self.sim_dismissed.is_some_and(|d| d != s.sim) {
+            self.sim_dismissed = None; // a new SIM state asks again
+        }
+        let prompt = self.sim_dismissed.is_none();
         ui.set_sim(
-            s.sim == sim::PIN_REQUIRED,
-            s.sim == sim::BLOCKED,
+            prompt && s.sim == sim::PIN_REQUIRED,
+            prompt && s.sim == sim::BLOCKED,
             (s.pin_attempts != u8::MAX).then_some(s.pin_attempts),
         );
         ui.set_phone_availability(s.modem == modem::FAILED, s.missed);
-        let earpiece = s.audio.on
-            && !s.audio.speaker
-            && !incoming
-            && s.calls
-                .as_slice()
-                .iter()
-                .any(|c| c.state == call::CONVERSATION);
-        let key = (s.generation, s.call.id);
-        if earpiece && self.woken_for != Some(key) && !self.off {
-            self.set_screen(false, Some(key));
-        } else if !earpiece {
-            self.woken_for = None;
-            if self.off {
-                self.set_screen(true, Some(key));
-            }
-        }
+        // (no earpiece blanking until there is a proximity sensor: the screen is main's screen.rs alone)
         self.shown = Some(s);
     }
 
@@ -422,7 +413,7 @@ impl Phone {
                         "resume" => manage::RESUME,
                         "swap" => manage::SWAP,
                         _ => manage::MERGE,
-                    } as i32,
+                    },
                 );
                 args.int(1, target);
                 op::MANAGE
@@ -442,18 +433,6 @@ impl Phone {
             "dtmf" => {
                 args.int(0, value.bytes().next().map_or(-1, i32::from));
                 op::DTMF
-            }
-            "silent" | "vibrate" | "ring-volume" => {
-                let mut ring = self.shown.map_or_else(modem_ipc::Ring::default, |s| s.ring);
-                match action {
-                    "silent" => ring.silent = value == "1",
-                    "vibrate" => ring.vibrate = value == "1",
-                    _ => ring.volume = value.parse().unwrap_or(ring.volume),
-                }
-                args.int(0, i32::from(ring.volume));
-                args.int(1, i32::from(ring.silent));
-                args.int(2, i32::from(ring.vibrate));
-                op::RING_SETTINGS
             }
             "retry" => op::RETRY,
             _ => return -5,

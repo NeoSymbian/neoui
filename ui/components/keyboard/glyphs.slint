@@ -1,0 +1,10 @@
+// SPDX-License-Identifier: Apache-2.0
+// Every letter the system keyboard can type, upper and lower case. Slint bakes into each binary only the glyphs its
+// own .slint string literals use (plus ASCII), so a screen that shows typed text puts an `Alphabets {}` in its
+// window and draws that text in "DejaVu Sans" or "DejaVu Sans Mono" (Inter and Ubuntu Mono have no Armenian).
+// The shell's keys get lower case from the layouts and upper case from here. A new layout adds its letters here.
+export component Alphabets inherits Text {
+    visible: false;
+    text: "йцукенгшщзхъфывапролджэёячсмитьбю ЙЦУКЕНГШЩЗХЪФЫВАПРОЛДЖЭЁЯЧСМИТЬБЮ "
+        + "աբգդեզէըթժիլխծկհձղճմյնշոչպջռսվտրցւփքօֆև ԱԲԳԴԵԶԷԸԹԺԻԼԽԾԿՀՁՂՃՄՅՆՇՈՉՊՋՌՍՎՏՐՑՒՓՔՕՖ ։՝՛՞«»";
+}

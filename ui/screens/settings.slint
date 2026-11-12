@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
-// Settings: grouped root list (default), and the sub-pages "connectivity", "display", "about".
+// Settings: grouped root list (default), and the sub-pages "connectivity", "display", "keyboard", "about".
 import { SystemSettings } from "../system-settings.slint";
 import { Theme } from "../theme.slint";
 import { NeoList } from "../components/scroll.slint";
 import { ListRow, SectionHeader } from "../components/lists.slint";
-import { Slider, Card, Button } from "../components/controls.slint";
+import { Slider, Card, Button, TextField } from "../components/controls.slint";
+import { KeyboardFocus } from "../components/keyboard/focus.slint";
+import { WifiNet, WifiLink } from "../data.slint";
+import { Layouts } from "../components/keyboard/layouts.slint";
 
 component Tinted inherits Rectangle {
     in property <image> icon;
@@ -74,10 +77,141 @@ component SettingRow inherits Rectangle {
     }
 }
 
+// The sheet a tapped Wi-Fi network opens (Android/iOS style): what the phone knows about it, the password and
+// Connect (Wi-Fi W4, docs wifi.md: symbian/src/wifi.rs joins and runs the WPA2 handshake).
+component WifiSheet inherits Rectangle {
+    in property <WifiNet> net;
+    // what was typed in the password field (for joining, Wi-Fi W4)
+    in-out property <string> password;
+    // how the join is going ("Connecting…", "Connected", "Wrong password", ...), empty before Connect
+    in property <string> message;
+    callback closed;
+    callback connect();
+    property <bool> tried;
+    background: #000000b0;
+    TouchArea { clicked => { root.closed(); } }
+
+    Rectangle {
+        x: 0;
+        width: root.width;
+        height: card.preferred-height;
+        // above the system keyboard while the password field has it up
+        y: root.height - self.height - (KeyboardFocus.open ? KeyboardFocus.text-h : 0);
+        background: Theme.bg-raised;
+        border-top-left-radius: Theme.radius;
+        border-top-right-radius: Theme.radius;
+        TouchArea { }  // taps on the card don't close it
+
+        card := VerticalLayout {
+            padding: 20 * Theme.dp;
+            spacing: 14 * Theme.dp;
+            Text { text: net.name; font-size: Theme.font-title; font-weight: 600; color: Theme.text; }
+            Text {
+                text: "Signal " + net.signal + " · " + (net.secured ? "Secured (WPA2/WPA3)" : "Open") + " · " + net.band + " · channel " + net.channel;
+                font-size: Theme.font-label;
+                color: Theme.text-secondary;
+                wrap: word-wrap;
+            }
+            if net.secured: TextField {
+                placeholder: "Password";
+                password: true;
+                autofocus: true;
+                text <=> root.password;
+                accepted => { root.tried = true; root.connect(); }
+            }
+            if tried && message != "": Text {
+                text: message;
+                font-size: Theme.font-status;
+                color: Theme.text-dim;
+                wrap: word-wrap;
+            }
+            HorizontalLayout {
+                spacing: 12 * Theme.dp;
+                Button { text: "Cancel"; primary: false; clicked => { root.closed(); } }
+                Button { text: "Connect"; clicked => { root.tried = true; root.connect(); } }
+            }
+        }
+    }
+}
+
+// The current network's details (tap it under "Current network"): what the link is, Disconnect and Forget.
+component WifiDetailsSheet inherits Rectangle {
+    in property <WifiLink> link;
+    callback closed;
+    callback disconnect();
+    callback forget();
+    background: #000000b0;
+    TouchArea { clicked => { root.closed(); } }
+
+    Rectangle {
+        x: 0;
+        width: root.width;
+        height: card.preferred-height;
+        y: root.height - self.height;
+        background: Theme.bg-raised;
+        border-top-left-radius: Theme.radius;
+        border-top-right-radius: Theme.radius;
+        TouchArea { }  // taps on the card don't close it
+
+        card := VerticalLayout {
+            padding: 20 * Theme.dp;
+            spacing: 10 * Theme.dp;
+            Text { text: link.name; font-size: Theme.font-title; font-weight: 600; color: Theme.text; }
+            for d in link.details: HorizontalLayout {
+                spacing: 12 * Theme.dp;
+                Text {
+                    text: d.label;
+                    width: 38%;
+                    color: Theme.text-secondary;
+                    font-size: Theme.font-label;
+                }
+                Text {
+                    text: d.value;
+                    horizontal-stretch: 1;
+                    color: Theme.text;
+                    font-size: Theme.font-label;
+                    wrap: word-wrap;
+                }
+            }
+            HorizontalLayout {
+                padding-top: 8 * Theme.dp;
+                spacing: 12 * Theme.dp;
+                Button { text: "Forget"; primary: false; clicked => { root.forget(); } }
+                Button { text: link.connected ? "Disconnect" : "Cancel"; clicked => { root.disconnect(); } }
+            }
+        }
+    }
+}
+
 export component SettingsScreen inherits Rectangle {
     in-out property <string> view;
     // in: which build is running, one line each for the kernel, the user-side ROM and neoui (the UI server reads them)
     in property <[string]> build;
+    in property <string> battery-text: "--%";
+    in property <string> battery-voltage: "unknown";
+    in property <string> battery-state: "Unknown";
+    in property <string> battery-usb: "unknown";
+    in property <string> battery-storage;
+    in property <[float]> battery-history;
+    in property <string> wifi-status: "Searching…";
+    in property <[WifiNet]> wifi-networks;
+    in property <int> wifi-count;  // named networks (hidden ones not counted)
+    in property <int> wifi-hidden;
+    in property <bool> wifi-scanning;
+    callback wifi-refresh();
+    // Connect on a network's sheet: its BSSID ("aa:bb:..") and the typed password
+    callback wifi-connect(string, string);
+    in property <string> wifi-message;
+    // the current link: Settings' "Current network" section, its details sheet, the rows' "Connected to …"
+    in property <WifiLink> wifi-link;
+    callback wifi-disconnect();
+    callback wifi-forget();
+    property <bool> wifi-details;
+    // the network whose sheet is open: a copy, so a rescan that reorders the list can't swap it
+    property <WifiNet> wifi-current;
+    property <bool> wifi-sheet;
+    property <string> wifi-password;
+    // the switches below show and edit the system settings (SystemSettings, kept by the UI server)
     // The store remains the source of truth for requested settings; C7 adds confirmed radio state.
     property <bool> wifi: SystemSettings.wifi;
     property <bool> bluetooth: SystemSettings.bluetooth;
@@ -95,10 +229,10 @@ export component SettingsScreen inherits Rectangle {
             SectionHeader { text: "Connections"; }
             SettingRow {
                 title: "Wi-Fi";
-                value: wifi ? "Home" : "Off";
+                value: !wifi ? "Off" : wifi-link.connected ? wifi-link.name : "Not connected";
                 icon: @image-url("../icons/sys/wifi.svg");
                 tint: #2f80ed;
-                clicked => { root.view = "connectivity"; }
+                clicked => { root.view = "wifi"; }
             }
 
             SettingRow {
@@ -136,7 +270,8 @@ export component SettingsScreen inherits Rectangle {
 
             SettingRow {
                 title: "Battery";
-                value: "82%";
+                value: battery-text;
+                clicked => { root.view = "battery"; }
                 icon: @image-url("../icons/sys/battery_saver.svg");
                 tint: #14a37f;
             }
@@ -150,16 +285,27 @@ export component SettingsScreen inherits Rectangle {
 
             SectionHeader { text: "System"; }
             SettingRow {
-                title: "Language";
-                value: "English";
+                title: "Language & keyboard";
+                value: Layouts.all[Layouts.current].name;
                 icon: @image-url("../icons/sys/language.svg");
                 tint: #1fa9c4;
+                clicked => {
+                    root.view = "keyboard";
+                }
             }
 
             SettingRow {
                 title: "Privacy";
                 icon: @image-url("../icons/sys/privacy.svg");
                 tint: #5b6472;
+            }
+
+            SettingRow {
+                title: "Developer options";
+                value: SystemSettings.usb-debugging ? "USB debugging" : "Off";
+                icon: @image-url("../icons/sys/usb.svg");
+                tint: #5b6472;
+                clicked => { root.view = "developer"; }
             }
 
             SettingRow {
@@ -176,7 +322,9 @@ export component SettingsScreen inherits Rectangle {
             SectionHeader { text: "Wireless"; }
             ListRow {
                 title: "Wi-Fi";
-                subtitle: wifi ? "Connected to Home" : "Off";
+                subtitle: !wifi ? "Off" : wifi-link.connected ? "Connected to " + wifi-link.name : wifi-status;
+                chevron: true;
+                clicked => { root.view = "wifi"; }
                 has-icon: true;
                 icon: @image-url("../icons/sys/wifi.svg");
                 has-switch: true;
@@ -209,6 +357,21 @@ export component SettingsScreen inherits Rectangle {
                 icon: @image-url("../icons/sys/lock.svg");
                 has-switch: true;
                 switch-on <=> SystemSettings.airplane;
+                divider: false;
+            }
+        }
+    }
+
+    if view == "developer": NeoList {
+        VerticalLayout {
+            SectionHeader { text: "Debugging"; }
+            ListRow {
+                title: "USB debugging";
+                subtitle: SystemSettings.usb-debugging ? "Shell on the second USB port (phone.py sh)" : "Off";
+                has-icon: true;
+                icon: @image-url("../icons/sys/usb.svg");
+                has-switch: true;
+                switch-on <=> SystemSettings.usb-debugging;
                 divider: false;
             }
         }
@@ -281,13 +444,22 @@ export component SettingsScreen inherits Rectangle {
                 chevron: true;
             }
 
+            // a tap steps through the choices (no picker widget yet)
             ListRow {
                 title: "Screen timeout";
-                value: "1 minute";
+                value: SystemSettings.screen-timeout == 0 ? "Never"
+                    : SystemSettings.screen-timeout < 60 ? "\{SystemSettings.screen-timeout} seconds"
+                    : SystemSettings.screen-timeout == 60 ? "1 minute"
+                    : "\{SystemSettings.screen-timeout / 60} minutes";
                 has-icon: true;
                 icon: @image-url("../icons/sys/stopwatch.svg");
-                chevron: true;
                 divider: false;
+                clicked => {
+                    SystemSettings.screen-timeout = SystemSettings.screen-timeout == 15 ? 30
+                        : SystemSettings.screen-timeout == 30 ? 60 : SystemSettings.screen-timeout == 60 ? 120
+                        : SystemSettings.screen-timeout == 120 ? 300 : SystemSettings.screen-timeout == 300 ? 600
+                        : SystemSettings.screen-timeout == 600 ? 0 : 15;
+                }
             }
         }
     }
@@ -356,6 +528,187 @@ export component SettingsScreen inherits Rectangle {
                 font-size: Theme.font-label;
                 wrap: word-wrap;
             }
+        }
+    }
+
+    if view == "wifi": Rectangle {
+        NeoList {
+            VerticalLayout {
+                ListRow {
+                    title: "Wi-Fi";
+                    subtitle: !wifi ? "Off" : wifi-link.connected ? "Connected to " + wifi-link.name : "Not connected";
+                    has-icon: true;
+                    icon: @image-url("../icons/sys/wifi.svg");
+                    has-switch: true;
+                    switch-on <=> SystemSettings.wifi;
+                }
+
+                if wifi && wifi-link.shown: SectionHeader { text: "Current network"; }
+                if wifi && wifi-link.shown: ListRow {
+                    title: wifi-link.name;
+                    subtitle: wifi-link.subtitle;
+                    has-icon: true;
+                    icon: @image-url("../icons/sys/wifi.svg");
+                    icon-tint: wifi-link.connected ? Theme.accent : Theme.text-secondary;
+                    chevron: true;
+                    clicked => { root.wifi-details = true; }
+                }
+
+                // the section header with "Searching…" and the refresh button on its baseline
+                if wifi: Rectangle {
+                    height: 48 * Theme.dp;
+                    SectionHeader { y: parent.height - self.height; width: parent.width; text: "Available networks"; }
+                    Text {
+                        x: parent.width - self.width - 56 * Theme.dp;
+                        y: parent.height - self.height - 6 * Theme.dp;
+                        text: wifi-scanning ? "Searching…" : "";
+                        color: Theme.text-dim;
+                        font-size: Theme.font-status;
+                    }
+                    Image {
+                        width: 22 * Theme.dp;
+                        height: self.width;
+                        x: parent.width - self.width - Theme.margin;
+                        y: parent.height - self.height - 4 * Theme.dp;
+                        source: @image-url("../icons/sys/refresh.svg");
+                        colorize: wifi-scanning ? Theme.text-dim : Theme.accent;
+                    }
+                    TouchArea {
+                        x: parent.width - 64 * Theme.dp;
+                        width: 64 * Theme.dp;
+                        clicked => { if !wifi-scanning { root.wifi-refresh(); } }
+                    }
+                }
+
+                for net in (wifi ? wifi-networks : []): ListRow {
+                    title: net.name;
+                    subtitle: net.detail;
+                    has-icon: true;
+                    icon: @image-url("../icons/sys/wifi.svg");
+                    icon-tint: net.bars >= 3 ? Theme.text : net.bars >= 1 ? Theme.text-secondary : Theme.text-dim;
+                    clicked => {
+                        root.wifi-current = net;
+                        root.wifi-sheet = true;
+                    }
+                }
+
+                if wifi && wifi-networks.length == 0: Text {
+                    x: Theme.margin;
+                    height: 64 * Theme.dp;
+                    vertical-alignment: center;
+                    text: wifi-scanning ? "Looking for networks…" : "No networks found. Tap refresh to search again.";
+                    color: Theme.text-secondary;
+                    font-size: Theme.font-body;
+                }
+                if wifi && wifi-hidden > 0: Text {
+                    x: Theme.margin;
+                    height: 48 * Theme.dp;
+                    vertical-alignment: center;
+                    text: wifi-hidden == 1 ? "1 hidden network nearby" : wifi-hidden + " hidden networks nearby";
+                    color: Theme.text-dim;
+                    font-size: Theme.font-status;
+                }
+                if !wifi: Text {
+                    x: Theme.margin;
+                    height: 64 * Theme.dp;
+                    vertical-alignment: center;
+                    text: "Turn on Wi-Fi to see available networks.";
+                    color: Theme.text-secondary;
+                    font-size: Theme.font-body;
+                }
+            }
+        }
+        if wifi-details: WifiDetailsSheet {
+            width: parent.width;
+            height: parent.height;
+            link: wifi-link;
+            closed => { root.wifi-details = false; }
+            disconnect => { root.wifi-details = false; root.wifi-disconnect(); }
+            forget => { root.wifi-details = false; root.wifi-forget(); }
+        }
+        if wifi-sheet: WifiSheet {
+            width: parent.width;
+            height: parent.height;
+            net: wifi-current;
+            password <=> root.wifi-password;
+            message: root.wifi-message;
+            connect => { root.wifi-connect(root.wifi-current.bssid, root.wifi-password); }
+            closed => {
+                root.wifi-sheet = false;
+                root.wifi-password = "";
+                KeyboardFocus.close();
+            }
+        }
+    }
+
+    // The system keyboard: which languages it has (the globe key cycles through them) and how tall it is.
+    if view == "keyboard": NeoList {
+        VerticalLayout {
+            SectionHeader { text: "Keyboards"; }
+            for l[i] in Layouts.all: ListRow {
+                title: l.name;
+                subtitle: l.hint;
+                has-switch: true;
+                switch-on: Layouts.on[i];
+                switch-toggled(on) => {
+                    if !on && !Layouts.many {
+                        self.switch-on = true;  // the last language on stays on
+                    } else {
+                        Layouts.set-on(i, on);
+                    }
+                }
+            }
+
+            SectionHeader { text: "Typing"; }
+            // a tap picks the next language on, like the keyboard's globe key
+            ListRow {
+                title: "Current language";
+                value: Layouts.all[Layouts.current].name;
+                has-icon: true;
+                icon: @image-url("../icons/sys/language.svg");
+                clicked => {
+                    Layouts.next();
+                }
+            }
+
+            ListRow {
+                title: "Same height for all languages";
+                subtitle: "Shorter ones get a row of digits";
+                has-icon: true;
+                icon: @image-url("../icons/sys/keypad.svg");
+                has-switch: true;
+                switch-on <=> SystemSettings.keyboard-same-height;
+                divider: false;
+            }
+        }
+    }
+
+    if view == "battery": NeoList {
+        VerticalLayout {
+            spacing: 14 * Theme.dp;
+            padding: Theme.margin;
+            Text { text: battery-text; font-size: Theme.font-title * 2; color: Theme.text; }
+            Text { text: battery-state + " · USB " + battery-usb; font-size: Theme.font-body; color: Theme.text-secondary; wrap: word-wrap; }
+            Text { text: "Battery voltage: " + battery-voltage; font-size: Theme.font-label; color: Theme.text; }
+            Text { text: "Reported by the PMIC · battery profile unverified"; font-size: Theme.font-status; color: Theme.text-dim; wrap: word-wrap; }
+            SectionHeader { text: "Battery level · last 24 hours"; }
+            chart := Rectangle {
+                height: 180 * Theme.dp;
+                background: #151719;
+                for value[i] in battery-history: Rectangle {
+                    x: i / 1440 * chart.width;
+                    width: chart.width / 1440;
+                    height: value < 0 ? 0px : max(1px, value * (chart.height - 20 * Theme.dp));
+                    y: chart.height - self.height;
+                    background: #22b46a;
+                }
+            }
+            HorizontalLayout {
+                Text { text: "24 hours ago"; font-size: Theme.font-status; color: Theme.text-dim; }
+                Text { text: "Now"; horizontal-stretch: 1; horizontal-alignment: right; font-size: Theme.font-status; color: Theme.text-dim; }
+            }
+            Text { text: "0–100% · one sample per minute. Gaps mean no reading; history begins with real observations."; font-size: Theme.font-status; color: Theme.text-dim; wrap: word-wrap; }
+            Text { text: battery-storage; font-size: Theme.font-status; color: Theme.text-dim; wrap: word-wrap; }
         }
     }
 }

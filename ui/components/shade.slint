@@ -11,7 +11,6 @@ component Toggle inherits Rectangle {
     in property <image> icon;
     in property <string> label;
     in-out property <bool> on;
-    callback toggled(bool);
     height: 74 * Theme.dp;
     border-radius: Theme.radius;
     background: on ? Theme.accent : Theme.field;
@@ -38,7 +37,6 @@ component Toggle inherits Rectangle {
     TouchArea {
         clicked => {
             root.on = !root.on;
-            root.toggled(root.on);
         }
     }
 }
