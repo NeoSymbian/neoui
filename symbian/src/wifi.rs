@@ -44,6 +44,9 @@ pub struct Wifi {
     link: Link,
     saved: Saved,
     failed: Failed,
+    /// the sheet's message as last shown, and when the link state is read next (every 200 ms)
+    shown: alloc::string::String,
+    next_link: u64,
 }
 
 impl Wifi {
@@ -57,6 +60,8 @@ impl Wifi {
             join: None,
             link: Link::default(),
             saved: load(),
+            shown: alloc::string::String::new(),
+            next_link: 0,
             failed: Mutex::new(0)
                 .ok()
                 .map(|m| &*alloc::boxed::Box::leak(alloc::boxed::Box::new(m))),
@@ -95,6 +100,10 @@ impl Wifi {
                 None => ui.set_wifi_message("The network is gone; refresh the list"),
             }
         }
+        if now < self.next_link {
+            return;
+        }
+        self.next_link = now.saturating_add(200);
         let link = neoapp::hal::wifi_link_status().unwrap_or_default();
         if link.state == LinkState::Connected && self.link.state != LinkState::Connected {
             if let Some((_, ssid, Some(pmk), _)) = &self.join {
@@ -114,8 +123,9 @@ impl Wifi {
             FAIL_HAL => "Wi-Fi is not available".into(),
             _ => link.message(),
         };
-        if link != self.link || failed != 0 {
+        if text != self.shown {
             ui.set_wifi_message(&text);
+            self.shown = text;
         }
         self.link = link;
         // a remembered network in the list while nothing is joined: try it (once a minute at most)
