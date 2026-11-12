@@ -256,13 +256,16 @@ impl Renderer {
         ]
     }
 
-    /// The keyboard's height (physical pixels) in its current mode, 0 when hidden.
+    /// The keyboard's height (physical pixels) as shown: in the mode an app asked for, else the text keyboard while
+    /// a shell field has the focus, else 0.
     pub fn keyboard_h(&self) -> u32 {
         let mode = self.ui.get_keyboard_mode().clamp(0, 2) as usize;
-        self.keyboard_heights()[mode]
+        let shell = self.ui.global::<KeyboardFocus>().get_open();
+        self.keyboard_heights()[if mode == 0 && shell { 1 } else { mode }]
     }
 
-    /// What the keyboard typed since the last call, as Unicode code points (Backspace 8, Enter 13).
+    /// What the keyboard typed for an app since the last call, as Unicode code points (Backspace 8, Enter 13);
+    /// what it types into a shell field goes there instead.
     pub fn take_typed(&mut self) -> Vec<u32> {
         core::mem::take(&mut *self.typed.borrow_mut())
     }
@@ -535,10 +538,9 @@ impl Renderer {
                 }
             }
             InputEvent::Key { code, down } => {
-                let Some(ch) = char::from_u32(code) else {
+                let Some(text) = keyboard::key_text(code) else {
                     return;
                 };
-                let text = ch.into();
                 if down {
                     WindowEvent::KeyPressed { text }
                 } else {
@@ -547,6 +549,17 @@ impl Renderer {
             }
         };
         self.window.dispatch_event(event);
+        // the system keyboard typed into one of the shell's own fields, not for an app
+        if self.ui.global::<KeyboardFocus>().get_open() {
+            for code in self.take_typed() {
+                if let Some(text) = keyboard::key_text(code) {
+                    self.window
+                        .dispatch_event(WindowEvent::KeyPressed { text: text.clone() });
+                    self.window
+                        .dispatch_event(WindowEvent::KeyReleased { text });
+                }
+            }
+        }
     }
 
     /// Cancels the touch in progress: whatever it pressed lets go without a click (the UI server took the gesture

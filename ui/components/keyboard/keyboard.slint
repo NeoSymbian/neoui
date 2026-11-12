@@ -13,6 +13,7 @@ import { SystemSettings } from "../../system-settings.slint";
 import { Layout } from "types.slint";
 import { Layouts } from "layouts.slint";
 import { Common } from "layouts/common.slint";
+import { KeyboardFocus } from "focus.slint";
 
 component Key inherits Rectangle {
     in property <string> label;
@@ -90,6 +91,12 @@ export component Keyboard inherits Rectangle {
     out property <length> term-h: text-h + pitch;
     height: mode == 2 ? term-h : text-h;
     background: #16181c;
+    init => {
+        KeyboardFocus.text-h = self.text-h;
+    }
+    changed text-h => {
+        KeyboardFocus.text-h = self.text-h;
+    }
 
     // the language changed: start in its letters, lower case
     changed layout => {

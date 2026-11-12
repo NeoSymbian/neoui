@@ -4,7 +4,8 @@ import { SystemSettings } from "../system-settings.slint";
 import { Theme } from "../theme.slint";
 import { NeoList } from "../components/scroll.slint";
 import { ListRow, SectionHeader } from "../components/lists.slint";
-import { Slider, Card, Button } from "../components/controls.slint";
+import { Slider, Card, Button, TextField } from "../components/controls.slint";
+import { KeyboardFocus } from "../components/keyboard/focus.slint";
 import { WifiNet } from "../data.slint";
 import { Layouts } from "../components/keyboard/layouts.slint";
 
@@ -80,6 +81,8 @@ component SettingRow inherits Rectangle {
 // Connect. Joining comes with Wi-Fi W4 (docs wifi.md); until then Connect says so instead of pretending.
 component WifiSheet inherits Rectangle {
     in property <WifiNet> net;
+    // what was typed in the password field (for joining, Wi-Fi W4)
+    in-out property <string> password;
     callback closed;
     property <bool> tried;
     background: #000000b0;
@@ -89,7 +92,8 @@ component WifiSheet inherits Rectangle {
         x: 0;
         width: root.width;
         height: card.preferred-height;
-        y: root.height - self.height;
+        // above the system keyboard while the password field has it up
+        y: root.height - self.height - (KeyboardFocus.open ? KeyboardFocus.text-h : 0);
         background: Theme.bg-raised;
         border-top-left-radius: Theme.radius;
         border-top-right-radius: Theme.radius;
@@ -105,12 +109,12 @@ component WifiSheet inherits Rectangle {
                 color: Theme.text-secondary;
                 wrap: word-wrap;
             }
-            if net.secured: Rectangle {
-                height: 48 * Theme.dp;
-                border-radius: 8 * Theme.dp;
-                border-width: 1px;
-                border-color: Theme.text-dim;
-                Text { x: 14 * Theme.dp; text: "Password"; color: Theme.text-dim; font-size: Theme.font-body; }
+            if net.secured: TextField {
+                placeholder: "Password";
+                password: true;
+                autofocus: true;
+                text <=> root.password;
+                accepted => { root.tried = true; }
             }
             if tried: Text {
                 text: "Connecting to networks is the next Wi-Fi step. The phone can already find this network.";
@@ -146,6 +150,7 @@ export component SettingsScreen inherits Rectangle {
     // the network whose sheet is open: a copy, so a rescan that reorders the list can't swap it
     property <WifiNet> wifi-current;
     property <bool> wifi-sheet;
+    property <string> wifi-password;
     // the switches below show and edit the system settings (SystemSettings, kept by the UI server)
     property <bool> wifi: SystemSettings.wifi;
     property <bool> bluetooth: SystemSettings.bluetooth;
@@ -507,7 +512,12 @@ export component SettingsScreen inherits Rectangle {
             width: parent.width;
             height: parent.height;
             net: wifi-current;
-            closed => { root.wifi-sheet = false; }
+            password <=> root.wifi-password;
+            closed => {
+                root.wifi-sheet = false;
+                root.wifi-password = "";
+                KeyboardFocus.close();
+            }
         }
     }
 

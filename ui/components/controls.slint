@@ -1,7 +1,60 @@
 // SPDX-License-Identifier: Apache-2.0
-// Controls: buttons, search field, tabs, slider, card, page dots, the Options menu.
+// Controls: buttons, text and search fields, tabs, slider, card, page dots, the Options menu.
 import { Theme } from "../theme.slint";
 import { Glyph } from "frame.slint";
+import { KeyboardFocus } from "keyboard/focus.slint";
+
+// The typing part of a field: text in any of the keyboard's languages (DejaVu Sans: Latin, Cyrillic, Armenian; the
+// window must import the font), and focus shows the system keyboard.
+component FieldInput inherits TextInput {
+    font-family: "DejaVu Sans";
+    font-size: Theme.font-body;
+    color: Theme.text;
+    vertical-alignment: center;
+    single-line: true;
+    changed has-focus => {
+        KeyboardFocus.open = self.has-focus;
+    }
+}
+
+// A one-line text field: tap it (or `autofocus`) and the system keyboard comes up.
+export component TextField inherits Rectangle {
+    in-out property <string> text;
+    in property <string> placeholder;
+    // masked as dots
+    in property <bool> password;
+    in property <bool> autofocus;
+    callback accepted(string);
+    height: Theme.field-h;
+    border-radius: Theme.radius-small;
+    background: Theme.field;
+    border-width: max(1px, Theme.dp / 2);
+    border-color: input.has-focus ? Theme.accent : Theme.text-dim;
+
+    if root.text == "": Text {
+        x: 14 * Theme.dp;
+        text: root.placeholder;
+        color: Theme.text-dim;
+        font-size: Theme.font-body;
+        vertical-alignment: center;
+    }
+    input := FieldInput {
+        x: 14 * Theme.dp;
+        width: parent.width - 28 * Theme.dp;
+        height: parent.height;
+        text <=> root.text;
+        input-type: root.password ? InputType.password : InputType.text;
+        accepted => {
+            root.accepted(self.text);
+        }
+    }
+
+    init => {
+        if root.autofocus {
+            input.focus();
+        }
+    }
+}
 
 export component Button inherits Rectangle {
     in property <string> text;
@@ -71,6 +124,7 @@ export component RoundButton inherits Rectangle {
 
 export component SearchField inherits Rectangle {
     in property <string> placeholder: "Search";
+    in-out property <string> text;
     height: Theme.field-h;
     border-radius: self.height / 2;
     background: Theme.field;
@@ -87,12 +141,18 @@ export component SearchField inherits Rectangle {
             }
         }
 
-        Text {
-            text: placeholder;
-            color: Theme.text-dim;
-            font-size: Theme.font-body;
-            vertical-alignment: center;
+        Rectangle {
             horizontal-stretch: 1;
+            if root.text == "": Text {
+                x: 0;
+                text: root.placeholder;
+                color: Theme.text-dim;
+                font-size: Theme.font-body;
+                vertical-alignment: center;
+            }
+            FieldInput {
+                text <=> root.text;
+            }
         }
     }
 }

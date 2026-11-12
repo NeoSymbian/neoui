@@ -19,6 +19,8 @@ import { Keyboard } from "components/keyboard/keyboard.slint";
 import { Alphabets } from "components/keyboard/glyphs.slint";
 export { Layouts } from "components/keyboard/layouts.slint";
 export { Layout } from "components/keyboard/types.slint";
+export { KeyboardFocus } from "components/keyboard/focus.slint";
+import { KeyboardFocus } from "components/keyboard/focus.slint";
 import { PowerMenu } from "components/powermenu.slint";
 import { HomeScreen } from "screens/home.slint";
 import { MenuScreen } from "screens/menu.slint";
@@ -69,6 +71,14 @@ export component Shell inherits Window {
     in property <bool> server-transitions;
     changed server-transitions => {
         Theme.instant = self.server-transitions;
+    }
+
+    // leaving a screen or view hides the keyboard its field opened
+    changed screen => {
+        KeyboardFocus.close();
+    }
+    changed view => {
+        KeyboardFocus.close();
     }
 
     // 1 dp = min(width, height) / 360 (the Belle reference screen is 360x640)
@@ -307,7 +317,8 @@ export component Shell inherits Window {
     kb := Keyboard {
         y: body-y + body-h - self.height;
         mode: max(1, keyboard-mode);
-        visible: keyboard-mode > 0;
+        // an app asked for it, or one of the shell's own fields has the focus
+        visible: keyboard-mode > 0 || KeyboardFocus.open;
         typed(t) => { root.typed(t); }
     }
 
