@@ -178,7 +178,7 @@ jobs:
           s=out/serial.log
           grep -a 'neoui: app legacy started' $s
           grep -a '\[proc\] create EWSRV.EXE' $s
-          grep -aE 'legacy: guest wserv 539x1079 up, surface 539x[0-9]+' $s
+          grep -aE 'legacy: guest wserv 360x640 up, surface 539x[0-9]+' $s
           grep -a '\[proc\] create grid.exe' $s
           grep -aE 'legacy: raw 10 [0-9]+ [0-9]+' $s
           grep -a 'legacy: closing' $s
