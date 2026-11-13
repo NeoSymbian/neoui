@@ -91,6 +91,21 @@ pub(crate) static BINDINGS: &[Binding] = &[
         },
     },
     bool_binding!(keys::CLOCK_24H, get_clock_24h, set_clock_24h),
+    bool_binding!(keys::TIME_AUTO, get_time_auto, set_time_auto),
+    bool_binding!(keys::TIME_AUTO_ZONE, get_time_auto_zone, set_time_auto_zone),
+    bool_binding!(keys::STATUS_SECONDS, get_status_seconds, set_status_seconds),
+    bool_binding!(keys::SHADE_DATE, get_shade_date, set_shade_date),
+    Binding {
+        key: key_name::<i32>(keys::TIME_DATE_FORMAT),
+        read: |g| Value::Int(g.get_date_format()),
+        write: |g, v| match v {
+            Value::Int(i) => {
+                g.set_date_format(*i);
+                true
+            }
+            _ => false,
+        },
+    },
     bool_binding!(keys::KEYBOARD_EN, get_keyboard_en, set_keyboard_en),
     bool_binding!(keys::KEYBOARD_HY, get_keyboard_hy, set_keyboard_hy),
     bool_binding!(keys::KEYBOARD_RU, get_keyboard_ru, set_keyboard_ru),

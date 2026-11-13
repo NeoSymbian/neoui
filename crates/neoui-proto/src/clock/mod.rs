@@ -16,6 +16,7 @@
 
 pub mod alarm;
 pub mod analog;
+pub mod datetime;
 pub mod face;
 pub mod local;
 pub mod saved;

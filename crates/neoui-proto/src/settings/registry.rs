@@ -150,7 +150,7 @@ macro_rules! registry {
 }
 
 registry! {
-    /// Wi-Fi radio on. UI only until there is a Wi-Fi driver (telephony P4).
+    /// Wi-Fi on: off, SYSSTART neither scans nor rejoins on its own (the kernel keeps the radio up for now).
     RADIO_WIFI: bool = "radio.wifi", default DefaultValue::Bool(true), limit Limit::None, owner Owner::Shell;
     /// Bluetooth radio on. UI only until there is a driver.
     RADIO_BT: bool = "radio.bt", default DefaultValue::Bool(false), limit Limit::None, owner Owner::Shell;
@@ -173,6 +173,17 @@ registry! {
     /// Seconds without a touch before the screen turns off; 0 = never.
     DISPLAY_TIMEOUT: i32 = "display.timeout", default DefaultValue::Int(60),
         limit Limit::Range { min: 0, max: 600 }, owner Owner::Shell;
+    /// Settings -> Date & time: the network (the modem's NITZ, else an HTTP Date) sets the clock.
+    TIME_AUTO: bool = "time.auto", default DefaultValue::Bool(true), limit Limit::None, owner Owner::Shell;
+    /// The mobile network's time zone (NITZ) sets the offset; off, the Time zone row picks it.
+    TIME_AUTO_ZONE: bool = "time.auto_zone", default DefaultValue::Bool(true), limit Limit::None, owner Owner::Shell;
+    /// The shade's date format: an index into `clock::datetime::DATE_FORMATS`.
+    TIME_DATE_FORMAT: i32 = "time.date_format", default DefaultValue::Int(0),
+        limit Limit::Range { min: 0, max: 3 }, owner Owner::Shell;
+    /// The status bar's time shows the seconds.
+    STATUS_SECONDS: bool = "status.seconds", default DefaultValue::Bool(false), limit Limit::None, owner Owner::Shell;
+    /// The shade shows the date beside the time.
+    SHADE_DATE: bool = "shade.date", default DefaultValue::Bool(true), limit Limit::None, owner Owner::Shell;
     /// 24-hour clock (else 12-hour).
     CLOCK_24H: bool = "clock.24h", default DefaultValue::Bool(true), limit Limit::None, owner Owner::App("clock");
     /// USB debugging (Developer options): fshell's USB serial port and the shell on it (`phone.py sh`), like

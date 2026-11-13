@@ -20,6 +20,12 @@ export global SystemSettings {
     // 0.0 to 1.0; stored as 0 to 255 (display.brightness)
     in-out property <float> brightness: 160 / 255;
     in-out property <bool> clock-24h: true;
+    // Settings -> Date & time
+    in-out property <bool> time-auto: true;
+    in-out property <bool> time-auto-zone: true;
+    in-out property <int> date-format: 0;
+    in-out property <bool> status-seconds: false;
+    in-out property <bool> shade-date: true;
     // seconds before the screen turns off, 0 = never (display.timeout)
     in-out property <int> screen-timeout: 60;
     in-out property <bool> usb-debugging: false;
@@ -44,6 +50,11 @@ export global SystemSettings {
     changed dark => { edited("display.dark"); }
     changed brightness => { edited("display.brightness"); }
     changed clock-24h => { edited("clock.24h"); }
+    changed time-auto => { edited("time.auto"); }
+    changed time-auto-zone => { edited("time.auto_zone"); }
+    changed date-format => { edited("time.date_format"); }
+    changed status-seconds => { edited("status.seconds"); }
+    changed shade-date => { edited("shade.date"); }
     changed screen-timeout => { edited("display.timeout"); }
     changed usb-debugging => { edited("developer.usb_debugging"); }
     changed keyboard-en => { edited("keyboard.en"); }

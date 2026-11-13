@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Settings: grouped root list (default), and the sub-pages "connectivity", "display", "keyboard", "about".
 import { SystemSettings } from "../system-settings.slint";
+import { Now } from "../now.slint";
 import { Theme } from "../theme.slint";
 import { NeoList } from "../components/scroll.slint";
 import { ListRow, SectionHeader } from "../components/lists.slint";
@@ -285,6 +286,16 @@ export component SettingsScreen inherits Rectangle {
 
             SectionHeader { text: "System"; }
             SettingRow {
+                title: "Date & time";
+                value: SystemSettings.time-auto ? "Automatic" : "Manual";
+                icon: @image-url("../icons/sys/stopwatch.svg");
+                tint: #3d8bfd;
+                clicked => {
+                    root.view = "datetime";
+                }
+            }
+
+            SettingRow {
                 title: "Language & keyboard";
                 value: Layouts.all[Layouts.current].name;
                 icon: @image-url("../icons/sys/language.svg");
@@ -426,14 +437,6 @@ export component SettingsScreen inherits Rectangle {
                 icon: @image-url("../icons/sys/theme.svg");
                 has-switch: true;
                 switch-on <=> SystemSettings.dark;
-            }
-
-            ListRow {
-                title: "24-hour time";
-                has-icon: true;
-                icon: @image-url("../icons/sys/stopwatch.svg");
-                has-switch: true;
-                switch-on <=> SystemSettings.clock-24h;
             }
 
             ListRow {
@@ -637,6 +640,69 @@ export component SettingsScreen inherits Rectangle {
                 root.wifi-sheet = false;
                 root.wifi-password = "";
                 KeyboardFocus.close();
+            }
+        }
+    }
+
+    // Date & time: where the time comes from, the zone, and how the status bar and the shade show it
+    if view == "datetime": NeoList {
+        VerticalLayout {
+            SectionHeader { text: "Network time"; }
+            ListRow {
+                title: "Automatic time";
+                subtitle: "Last set: " + Now.synced;
+                has-switch: true;
+                switch-on <=> SystemSettings.time-auto;
+            }
+
+            ListRow {
+                title: "Automatic time zone";
+                subtitle: "From the mobile network";
+                has-switch: true;
+                switch-on <=> SystemSettings.time-auto-zone;
+            }
+
+            // a tap steps to the next zone (no picker widget yet)
+            ListRow {
+                title: "Time zone";
+                value: Now.zone;
+                subtitle: SystemSettings.time-auto-zone ? "Set by the network" : "Tap for the next zone";
+                divider: false;
+                clicked => {
+                    if !SystemSettings.time-auto-zone {
+                        Now.zone-next();
+                    }
+                }
+            }
+
+            SectionHeader { text: "Format"; }
+            ListRow {
+                title: "24-hour time";
+                has-switch: true;
+                switch-on <=> SystemSettings.clock-24h;
+            }
+
+            ListRow {
+                title: "Seconds in the status bar";
+                subtitle: "Uses more battery";
+                has-switch: true;
+                switch-on <=> SystemSettings.status-seconds;
+            }
+
+            ListRow {
+                title: "Date in the shade";
+                has-switch: true;
+                switch-on <=> SystemSettings.shade-date;
+            }
+
+            // a tap steps through the formats
+            ListRow {
+                title: "Date format";
+                value: Now.date-text;
+                divider: false;
+                clicked => {
+                    SystemSettings.date-format = SystemSettings.date-format >= 3 ? 0 : SystemSettings.date-format + 1;
+                }
             }
         }
     }

@@ -64,6 +64,10 @@ export global Theme {
     out property <color> bubble-out: #2f6fd6;
     out property <color> danger: #e5484d;
     out property <color> ok: #22b46a;
+    out property <color> warn: #f59e0b;
+    // the status bar battery's fill: red at or below low, orange at or below mid, green above
+    out property <int> battery-low: 15;
+    out property <int> battery-mid: 30;
     out property <color> scrim: #000000b3;
 
     // Motion, from the phone's transition effects (Belle: app start 0.25 s, exit 0.3 s, pop-ups 0.25 s,

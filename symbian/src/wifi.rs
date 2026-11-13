@@ -29,12 +29,21 @@ const RETRY_MS: u64 = 60_000;
 /// Why the supplicant thread gave up (0 = it ended with the link), for the sheet's message; shared with the thread
 /// (leaked: it lives as long as SYSSTART, and Arc needs compare-and-swap, which ARMv5TE lacks)
 type Failed = Option<&'static Mutex<i32>>;
+/// An HTTP Date from the internet check (Unix seconds) and when it was read (ms since boot), for the clock;
+/// shared with the check's thread (leaked, as [`Failed`])
+type HttpTime = Option<&'static Mutex<Option<(i64, u64)>>>;
 /// a running supplicant thread, the SSID and PMK (none: an open network) it joins with, and when it started
 type Join = (JoinHandle, alloc::vec::Vec<u8>, Option<[u8; 32]>, u64);
 const FAIL_SECURITY: i32 = 1;
 const FAIL_RANDOM: i32 = 2;
 const FAIL_DOWNGRADE: i32 = 3;
 const FAIL_HAL: i32 = 4;
+/// The AP kept resending message 1: it never accepted our message 2 (a wrong password), and didn't say so
+const FAIL_HANDSHAKE: i32 = 5;
+/// A 4-way handshake takes well under a second; give up after this. An AP that keeps resending message 1 without a
+/// deauthentication left the WCN3990 firmware half-joined for a minute until its station health monitor asserted and
+/// took the whole modem down (2026-11-13, `wlan_ps_sta_health_monitor_timeout`).
+const HANDSHAKE_MS: u64 = 10_000;
 
 /// A list this old is refreshed when the page opens, and rescanned while it stays open
 const FRESH_MS: u64 = 30_000;
@@ -73,6 +82,7 @@ pub struct Wifi {
     check: Option<JoinHandle>,
     checked: Option<[u8; 4]>,
     internet: Failed,
+    http_time: HttpTime,
 }
 
 impl Wifi {
@@ -99,7 +109,15 @@ impl Wifi {
             check: None,
             checked: None,
             internet: shared(),
+            http_time: Mutex::new(None)
+                .ok()
+                .map(|m| &*alloc::boxed::Box::leak(alloc::boxed::Box::new(m))),
         }
+    }
+
+    /// The internet check's HTTP Date, once (for the network clock).
+    pub fn take_http_time(&mut self) -> Option<(i64, u64)> {
+        self.http_time.and_then(|m| m.lock().take())
     }
 
     /// Start the IP stack (it waits for the link; a second start finds it running and exits).
@@ -140,8 +158,8 @@ impl Wifi {
             && self.check.is_none()
         {
             set(self.internet, 0);
-            let shared = self.internet;
-            match e32::thread::spawn(move || internet_check(shared)) {
+            let (shared, http) = (self.internet, self.http_time);
+            match e32::thread::spawn(move || internet_check(shared, http)) {
                 Ok(h) => (self.check, self.checked) = (Some(h), Some(a)),
                 Err(e) => e32::dprintln!("neoui: wifi: no internet check thread ({})", e),
             }
@@ -190,7 +208,7 @@ impl Wifi {
             .cloned()
     }
 
-    fn poll_link(&mut self, ui: &mut Renderer, now: u64) {
+    fn poll_link(&mut self, ui: &mut Renderer, now: u64, radio_on: bool) {
         if let Some(forget) = ui.take_wifi_leave() {
             let ssid = self.joined().map(|n| n.ssid.into_bytes());
             self.stop();
@@ -241,6 +259,7 @@ impl Wifi {
                 "The network's security changed during the handshake: not joined".into()
             }
             FAIL_HAL => "Wi-Fi is not available".into(),
+            FAIL_HANDSHAKE => "Wrong password".into(),
             _ => link.message(),
         };
         if text != self.shown {
@@ -264,7 +283,7 @@ impl Wifi {
             .join
             .as_ref()
             .is_none_or(|j| now.saturating_sub(j.3) >= RETRY_MS);
-        if idle && quiet {
+        if idle && quiet && radio_on {
             let known = self.last.as_ref().and_then(|s| {
                 s.list()
                     .into_iter()
@@ -277,8 +296,10 @@ impl Wifi {
         }
     }
 
-    pub fn poll(&mut self, ui: &mut Renderer, now: u64) {
-        self.poll_link(ui, now);
+    /// `radio_on`: Settings' Wi-Fi switch. Off, nothing is joined or scanned on its own.
+    /// shortcut: the kernel keeps the radio up while the switch is off; power it down once the driver can.
+    pub fn poll(&mut self, ui: &mut Renderer, now: u64, radio_on: bool) {
+        self.poll_link(ui, now, radio_on);
         let page = ui.screen() == "settings" && ui.view() == "wifi";
         let refresh = ui.take_wifi_refresh();
         let opened = page && !self.page_open;
@@ -288,8 +309,23 @@ impl Wifi {
             .is_none_or(|t| now.saturating_sub(t) >= FRESH_MS);
         // one request at a time: the kernel queues a single scan, so don't ask again for 5 s
         let waiting = self.asked_at.is_some_and(|t| now.saturating_sub(t) < 5000);
-        let rescan =
-            page && !waiting && (refresh || opened && stale || stale && self.asked_at.is_some());
+        // in the background: not joined, a remembered network to look for, and no fresh list (a scan a minute; the
+        // kernel never scans while joined), so a saved network comes back after a reboot without opening the page
+        let idle = matches!(
+            self.link.state,
+            LinkState::Idle | LinkState::Lost | LinkState::Error
+        );
+        let wanted = self
+            .saved
+            .0
+            .iter()
+            .any(|(ssid, _)| self.left.as_deref() != Some(ssid.as_slice()));
+        let old = self
+            .listed_at
+            .is_none_or(|t| now.saturating_sub(t) >= RETRY_MS);
+        let background = !page && radio_on && idle && wanted && old && !waiting;
+        let rescan = background
+            || page && !waiting && (refresh || opened && stale || stale && self.asked_at.is_some());
         if !rescan && !opened && !self.relist && now < self.next_read {
             return;
         }
@@ -338,6 +374,7 @@ fn supplicant(bssid: [u8; 6], pmk: Option<[u8; 32]>, failed: Failed) -> i32 {
     }
     let mut hs: Option<wpa::Handshake> = None;
     let mut frame = [0u8; 512];
+    let mut handshake_since: Option<u64> = None;
     loop {
         e32::time::sleep(10_000);
         let Ok(link) = hal::wifi_link_status() else {
@@ -346,7 +383,14 @@ fn supplicant(bssid: [u8; 6], pmk: Option<[u8; 32]>, failed: Failed) -> i32 {
         match link.state {
             LinkState::Idle | LinkState::Lost | LinkState::Error => return 0,
             LinkState::Joining => continue,
-            LinkState::Handshake | LinkState::Connected => {}
+            LinkState::Handshake => {
+                let now = e32::time::millis();
+                if now.saturating_sub(*handshake_since.get_or_insert(now)) > HANDSHAKE_MS {
+                    e32::dprintln!("neoui: wifi: no message 3 in {} ms: leaving", HANDSHAKE_MS);
+                    return fail(FAIL_HANDSHAKE);
+                }
+            }
+            LinkState::Connected => {}
         }
         let Some(pmk) = pmk else {
             continue; // an open network: no handshake, the kernel reports Connected after association
@@ -392,8 +436,9 @@ fn shared() -> Failed {
         .map(|m| &*alloc::boxed::Box::leak(alloc::boxed::Box::new(m)))
 }
 
-/// The internet check thread: resolve, connect, fetch `/generate_204`, expect "204"; the result goes into `result`.
-fn internet_check(result: Failed) -> i32 {
+/// The internet check thread: resolve, connect, fetch `/generate_204`, expect "204"; the result goes into `result`,
+/// the response's `Date:` into `http` (the clock).
+fn internet_check(result: Failed, http: HttpTime) -> i32 {
     let fetch = || -> Result<bool, i32> {
         let net = net::client::Net::connect()?;
         let ip = net.resolve(CHECK_HOST)?;
@@ -401,13 +446,17 @@ fn internet_check(result: Failed) -> i32 {
         s.write_all(
             b"GET /generate_204 HTTP/1.1\r\nHost: connectivitycheck.gstatic.com\r\nConnection: close\r\n\r\n",
         )?;
-        let mut b = [0u8; 16];
+        // the status line and the headers (a 204 has no body)
+        let mut b = [0u8; 1024];
         let mut n = 0;
-        while n < b.len() {
+        while n < b.len() && !b[..n].windows(4).any(|w| w == b"\r\n\r\n") {
             match s.read(&mut b[n..])? {
                 0 => break,
                 k => n += k,
             }
+        }
+        if let (Some(m), Some(date)) = (http, neoui_proto::clock::datetime::http_date(&b[..n])) {
+            *m.lock() = Some((date as i64, e32::time::millis()));
         }
         Ok(b[..n].starts_with(b"HTTP/1.1 204") || b[..n].starts_with(b"HTTP/1.0 204"))
     };

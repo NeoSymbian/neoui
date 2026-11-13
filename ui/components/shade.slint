@@ -6,6 +6,7 @@ import { Glyph } from "frame.slint";
 import { ListRow } from "lists.slint";
 import { Slider } from "controls.slint";
 import { SystemSettings } from "../system-settings.slint";
+import { Now } from "../now.slint";
 
 component Toggle inherits Rectangle {
     in property <image> icon;
@@ -64,7 +65,7 @@ export component Shade inherits Rectangle {
     panel := Rectangle {
         y: open ? 0 : -self.height * 0.15;
         animate y { duration: Theme.popup; easing: ease-out-quad; }
-        height: 470 * Theme.dp;
+        height: 516 * Theme.dp;
         background: #0f1115f7;
         border-radius: 0;
         TouchArea { }
@@ -73,6 +74,28 @@ export component Shade inherits Rectangle {
             padding: Theme.margin;
             spacing: 12 * Theme.dp;
             alignment: start;
+            // the time and, unless Settings -> Date & time turns it off, the date in its format
+            HorizontalLayout {
+                spacing: 10 * Theme.dp;
+                padding-left: 4 * Theme.dp;
+                Text {
+                    text: (Now.h24 && Now.hours < 10 ? "0" : "") + "\{Now.hours}:" + (Now.minutes < 10 ? "0" : "")
+                        + "\{Now.minutes}" + (Now.am-pm != "" ? " " + Now.am-pm : "");
+                    color: Theme.text;
+                    font-size: 30 * Theme.dp;
+                    font-weight: 300;
+                    vertical-alignment: center;
+                }
+                if SystemSettings.shade-date: Text {
+                    text: Now.date-text;
+                    color: Theme.text-secondary;
+                    font-size: Theme.font-status;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+            }
+
             HorizontalLayout {
                 spacing: 8 * Theme.dp;
                 Toggle {

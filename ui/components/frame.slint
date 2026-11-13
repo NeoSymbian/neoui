@@ -19,13 +19,16 @@ export component StatusBar inherits Rectangle {
     in property <bool> shade-open;
     in property <string> time: "10:24";
     // the modem (telephony C5): bars 0..4, -1 = no modem (the plain signal icon); the operator shows where the title
-    // is empty (home), the radio technology ("LTE", "3G", "2G") before the bars
+    // is empty (home), the radio technology ("LTE", "3G", "2G") right before the bars
     in property <int> bars: -1;
     in property <string> operator;
     in property <string> rat;
-    // Wi-Fi bars 0..4 while connected, -1 = not connected (no icon)
+    // Wi-Fi bars 0..4 while connected, -1 = not connected (no icon); its band ("2.4", "5") as a small label
     in property <int> wifi-bars: -1;
+    in property <string> wifi-band;
     callback tapped;
+    // a swipe down on the bar (the shade opens)
+    callback pulled;
     height: Theme.status-h;
     background: Theme.bg;
     HorizontalLayout {
@@ -42,24 +45,33 @@ export component StatusBar inherits Rectangle {
             min-width: 0px;
             overflow: elide;
         }
-        if bars >= 0 && rat != "": Text {
-            text: rat;
-            color: Theme.text;
-            font-size: Theme.font-status * 0.8;
-            font-weight: 600;
-            vertical-alignment: center;
-        }
+        // the radio technology and its bars as one cluster: fixed widths, so the title takes all the spare room
         if bars >= 0: HorizontalLayout {
-            spacing: 1.5 * Theme.dp;
-            alignment: center;
-            for i in 4: VerticalLayout {
-                alignment: end;
-                Rectangle {
-                    width: 3 * Theme.dp;
-                    height: Theme.status-icon * (i + 1) / 4;
-                    border-radius: 1 * Theme.dp;
-                    background: i < bars ? Theme.text : Theme.text-dim;
-                    opacity: i < bars ? 1 : 0.4;
+            spacing: 3 * Theme.dp;
+            horizontal-stretch: 0;
+            if rat != "": Text {
+                text: rat;
+                color: Theme.text;
+                font-size: Theme.font-status * 0.8;
+                font-weight: 600;
+                vertical-alignment: center;
+            }
+            VerticalLayout {
+                alignment: center;
+                HorizontalLayout {
+                    width: 16.5 * Theme.dp;
+                    height: Theme.status-icon;
+                    spacing: 1.5 * Theme.dp;
+                    for i in 4: VerticalLayout {
+                        alignment: end;
+                        Rectangle {
+                            width: 3 * Theme.dp;
+                            height: Theme.status-icon * (i + 1) / 4;
+                            border-radius: 1 * Theme.dp;
+                            background: i < bars ? Theme.text : Theme.text-dim;
+                            opacity: i < bars ? 1 : 0.4;
+                        }
+                    }
                 }
             }
         }
@@ -72,44 +84,81 @@ export component StatusBar inherits Rectangle {
         }
         if wifi-bars >= 0: VerticalLayout {
             alignment: center;
-            Glyph {
-                source: @image-url("../icons/sys/wifi.svg");
-                size: Theme.status-icon;
-                colorize: wifi-bars >= 2 ? Theme.text : Theme.text-secondary;
+            Rectangle {
+                width: Theme.status-icon + (wifi-band != "" ? 5 * Theme.dp : 0);
+                height: Theme.status-icon;
+                Glyph {
+                    x: 0;
+                    y: 0;
+                    source: @image-url("../icons/sys/wifi.svg");
+                    size: Theme.status-icon;
+                    colorize: wifi-bars >= 2 ? Theme.text : Theme.text-secondary;
+                }
+                if wifi-band != "": Text {
+                    x: parent.width - self.width;
+                    y: parent.height - self.height + 2 * Theme.dp;
+                    text: wifi-band;
+                    color: Theme.text;
+                    font-size: 7 * Theme.dp;
+                    font-weight: 700;
+                }
             }
         }
-        if battery-connected: VerticalLayout {
-            alignment: center;
-            Glyph { source: @image-url("../icons/sys/plug.svg"); size: 10 * Theme.dp; }
-        }
+        // the battery as one widget: the fill's colour is the level (red, orange, green), and inside it the percent on
+        // battery, a bolt when plugged in (dim while the charger idles), or a check when full on USB
         VerticalLayout {
             alignment: center;
-            Rectangle {
-                width: 22 * Theme.dp;
-                height: 11 * Theme.dp;
-                border-width: 1 * Theme.dp;
-                border-color: battery-percent < 0 ? Theme.text-dim : Theme.text;
-                border-radius: 2 * Theme.dp;
-                background: transparent;
+            HorizontalLayout {
                 Rectangle {
-                    x: 2 * Theme.dp; y: 2 * Theme.dp;
-                    width: max(0, min(100, battery-percent)) / 100 * 18 * Theme.dp;
-                    height: 7 * Theme.dp;
-                    background: battery-charging || battery-full ? #22b46a : Theme.text;
-                    opacity: battery-charging || battery-full ? 0.4 : 1;
+                    width: 28 * Theme.dp;
+                    height: 13 * Theme.dp;
+                    border-width: 1 * Theme.dp;
+                    border-color: battery-percent < 0 ? Theme.text-dim : Theme.text-secondary;
+                    border-radius: 3 * Theme.dp;
+                    clip: true;
+                    if battery-percent >= 0: Rectangle {
+                        x: 0;
+                        y: 0;
+                        width: min(100, battery-percent) / 100 * parent.width;
+                        height: parent.height;
+                        background: battery-percent <= Theme.battery-low ? Theme.danger
+                            : battery-percent <= Theme.battery-mid ? Theme.warn : Theme.ok;
+                    }
+                    // plugged in: a bolt, bright while charging, dim while the charger idles
+                    if (battery-charging || battery-connected) && !battery-full: Glyph {
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        source: @image-url("../icons/sys/charging.svg");
+                        size: 11 * Theme.dp;
+                        colorize: battery-charging ? Theme.text : Theme.text-dim;
+                    }
+                    if battery-full && !battery-charging: Glyph {
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        source: @image-url("../icons/sys/check.svg");
+                        size: 11 * Theme.dp;
+                    }
+                    if !battery-charging && !battery-connected && !battery-full: Text {
+                        width: parent.width;
+                        height: parent.height;
+                        text: battery-percent < 0 ? "--" : "\{battery-percent}";
+                        color: battery-percent < 0 ? Theme.text-dim : Theme.text;
+                        font-size: 9 * Theme.dp;
+                        font-weight: 700;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
                 }
-                if battery-charging || battery-full: Glyph {
-                    source: battery-charging ? @image-url("../icons/sys/charging.svg") : @image-url("../icons/sys/check.svg");
-                    x: 5 * Theme.dp; y: -0.5 * Theme.dp;
-                    size: 12 * Theme.dp;
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 2 * Theme.dp;
+                        height: 5 * Theme.dp;
+                        border-radius: 1 * Theme.dp;
+                        background: battery-percent < 0 ? Theme.text-dim : Theme.text-secondary;
+                    }
                 }
             }
-        }
-        Text {
-            text: battery-text;
-            color: battery-charging || battery-full ? #22b46a : Theme.text;
-            font-size: Theme.font-status * 0.8;
-            vertical-alignment: center;
         }
         Text {
             text: time;
@@ -121,8 +170,22 @@ export component StatusBar inherits Rectangle {
     }
 
     TouchArea {
+        property <bool> was-pulled;
+        pointer-event(e) => {
+            if e.kind == PointerEventKind.down {
+                self.was-pulled = false;
+            }
+        }
+        moved => {
+            if !self.was-pulled && self.mouse-y - self.pressed-y > 24 * Theme.dp {
+                self.was-pulled = true;
+                root.pulled();
+            }
+        }
         clicked => {
-            root.tapped();
+            if !self.was-pulled {
+                root.tapped();
+            }
         }
     }
 }

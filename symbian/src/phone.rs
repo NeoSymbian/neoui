@@ -157,6 +157,11 @@ impl Phone {
         self.shown.as_ref().is_some_and(live)
     }
 
+    /// The network's time (NITZ), once the modem has one.
+    pub fn nitz(&self) -> Option<modem_ipc::Nitz> {
+        self.shown.map(|s| s.nitz).filter(|n| n.utc != 0)
+    }
+
     /// MODEMD was started (the watcher has something to watch).
     pub fn present(&self) -> bool {
         self.present

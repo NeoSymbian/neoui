@@ -13,4 +13,11 @@ export global Now {
     in property <string> date: "Friday, 6 November";
     // the next alarm, "Tue 07:30"; empty when none is on
     in property <string> next-alarm;
+    // Settings -> Date & time: the date in the chosen format (the shade), the zone ("UTC+04:00 · Yerevan") and where
+    // the time last came from ("Mobile network, 23:41")
+    in property <string> date-text: "Friday, 6 November";
+    in property <string> zone: "UTC+00:00 · London";
+    in property <string> synced: "Not yet";
+    // the Time zone row was tapped: the server steps to the next zone
+    callback zone-next();
 }

@@ -15,6 +15,7 @@ mod battery;
 mod clock;
 mod clockwork;
 mod host;
+mod netclock;
 mod perf;
 mod phone;
 mod screen;
@@ -148,6 +149,7 @@ fn main() -> i32 {
     let mut nav_shown = 0;
     let mut running_shown: Vec<&'static str> = Vec::new();
     let mut clockwork = clockwork::Clockwork::boot();
+    let mut netclock = netclock::NetClock::default();
     let mut battery = battery::Battery::boot();
     let mut wifi = wifi::Wifi::new();
     // when Power went down, while it is held
@@ -195,6 +197,10 @@ fn main() -> i32 {
                 || power_down_at.is_some()
             {
                 next_frame.saturating_sub(now_us())
+            } else if host.settings.get(keys::STATUS_SECONDS).unwrap_or(false) && scr.is_on() {
+                // the status bar's seconds: wake at the next whole second
+                let us = e32::sys::time_now().0.rem_euclid(1_000_000) as u64;
+                1_000_000 - us
             } else {
                 IDLE_US
             };
@@ -493,7 +499,11 @@ fn main() -> i32 {
                 clockwork.power(a);
             }
             battery.poll(&mut ui, time::millis());
-            wifi.poll(&mut ui, time::millis());
+            wifi.poll(
+                &mut ui,
+                time::millis(),
+                host.settings.get(keys::RADIO_WIFI).unwrap_or(true),
+            );
             mirror.sync(&mut ui, &mut host.settings, ms);
             phone.sync_settings(&host.settings, ms); // (phone.poll runs right after the select, C7)
             if let Some(worker) = usb_debug.as_mut() {
@@ -501,6 +511,11 @@ fn main() -> i32 {
             }
             host.deliver_settings();
             settings::log_save(host.settings.tick(ms));
+            if let Some(source) =
+                netclock.frame(&host.settings, phone.nitz(), wifi.take_http_time(), ms)
+            {
+                clockwork.set_synced(source);
+            }
             clockwork.frame(&mut ui, &mut host, ms);
             let woke = if phone.take_ring() {
                 scr.wake(ms)

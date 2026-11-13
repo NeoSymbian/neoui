@@ -64,13 +64,30 @@ fn battery_settings_and_status_bar_update_and_clear_stale_readings() {
             frames.iter().all(|previous| previous != &status),
             "each charge/connection state needs a distinct status bar"
         );
-        if charge == 1 || charge == 3 {
+        frames.push(status);
+    }
+    // the fill's colour is the level: red at or below 15 %, orange at or below 30 %, green above
+    for (percent, colour) in [(10, 0xffe5_484d_u32), (25, 0xfff5_9e0b), (80, 0xff22_b46a)] {
+        let sample = Snapshot {
+            percent,
+            charge: 1,
+            usb_present: 0,
+            usb_online: 0,
+            ..charging
+        };
+        r.set_battery(&sample, &empty, false);
+        common::frame(&mut r, &mut buf, w, "battery level colour");
+        let status = &buf[..status_end];
+        assert!(
+            status.contains(&colour),
+            "{percent} % fills with {colour:08x}"
+        );
+        for other in [0xffe5_484d_u32, 0xfff5_9e0b, 0xff22_b46a] {
             assert!(
-                !status.contains(&0xff22_b46a),
-                "discharging and connected-idle must stay neutral"
+                other == colour || !status.contains(&other),
+                "{percent} % shows only its own level colour"
             );
         }
-        frames.push(status);
     }
     let invalid = Snapshot {
         valid: 0,
@@ -80,6 +97,6 @@ fn battery_settings_and_status_bar_update_and_clear_stale_readings() {
     common::frame(&mut r, &mut buf, w, "invalid battery flags");
     assert_eq!(
         buf, unknown,
-        "invalid stale fields must not show plug, lightning, or green"
+        "invalid stale fields must not show a bolt, a level or a colour"
     );
 }

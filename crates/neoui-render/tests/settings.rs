@@ -44,7 +44,8 @@ fn settings_binding() {
     common::write_png("shade-settings-539x1079.png", &buf, w, h);
     let (margin, gap) = (12.0 * d, 8.0 * d);
     let tile_w = (w as f32 - 2.0 * margin - 3.0 * gap) / 4.0;
-    let (x, y) = (margin + tile_w / 2.0, 25.0 * d + margin + 37.0 * d);
+    let header = 47.0 * d; // the shade's time-and-date row and the gap under it
+    let (x, y) = (margin + tile_w / 2.0, 25.0 * d + margin + header + 37.0 * d);
     common::tap(&mut r, x as i32, y as i32);
     common::frame(&mut r, &mut buf, w, "shade");
     assert_eq!(r.take_setting_edits(), [("radio.wifi", Value::Bool(true))]);

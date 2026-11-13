@@ -12,6 +12,7 @@ use alloc::format;
 use alloc::string::String;
 use e32::{dprintln, time};
 use neoui_proto::clock::alarm::{Alarms, Minute};
+use neoui_proto::clock::datetime;
 use neoui_proto::clock::face::{Face, LocalTime};
 use neoui_proto::ipc::AppEvent;
 use neoui_proto::settings::keys;
@@ -22,8 +23,11 @@ const CLOCK_APP: &str = "clock";
 
 pub struct Clockwork {
     keeper: clock::Keeper,
-    /// What the face shows now, so it is redrawn only when it changes.
-    shown: Option<(LocalTime, bool, u32)>,
+    /// What the face shows now (the time, the second when the status bar shows it, the 24-hour setting, the
+    /// settings' sequence number and the offset), so it is redrawn only when it changes.
+    shown: Option<(LocalTime, u32, bool, u32, i32)>,
+    /// Where the time last came from (Settings -> Date & time), set by the network clock.
+    pub synced: String,
     /// The last minute alarms were checked for.
     checked: Option<Minute>,
     /// An alarm that rang, until the Clock app has been told.
@@ -36,6 +40,7 @@ impl Clockwork {
         Self {
             keeper: clock::Keeper::boot(),
             shown: None,
+            synced: String::from("Not yet"),
             checked: None,
             ringing: None,
         }
@@ -44,16 +49,37 @@ impl Clockwork {
     /// Once per frame: keeps the clock, updates the face, rings due alarms.
     pub fn frame(&mut self, ui: &mut Renderer, host: &mut Host, now_ms: u64) {
         self.keeper.tick(now_ms);
-        let now = local_now();
+        if ui.take_zone_next() && !host.settings.get(keys::TIME_AUTO_ZONE).unwrap_or(true) {
+            let (utc, offset) = time::utc_now();
+            let r = time::set_utc_and_offset(utc, datetime::next_zone(offset));
+            dprintln!("neoui: clock: zone -> {:?}", r); // the keeper saves it
+        }
+        let (now, second) = local_now();
         let h24 = host.settings.get(keys::CLOCK_24H).unwrap_or(true);
+        let seconds = host.settings.get(keys::STATUS_SECONDS).unwrap_or(false);
+        let second = if seconds { second } else { 0 };
         let seq = host.settings.store().seq();
-        if self.shown != Some((now, h24, seq)) {
-            self.shown = Some((now, h24, seq));
+        let offset = time::utc_now().1;
+        let shown = (now, second, h24, seq, offset);
+        if self.shown != Some(shown) {
+            let minute_changed = self.shown.is_none_or(|s| s.0 != now || s.2 != h24);
+            self.shown = Some(shown);
             let face = Face::new(&now, h24, &alarms(&host.settings));
-            let text = status_text(&face);
-            dprintln!("neoui: clock {}", text);
+            let mut text = status_text(&face);
+            if seconds {
+                text = format!("{text}:{second:02}");
+            }
+            if minute_changed {
+                dprintln!("neoui: clock {}", text);
+            }
             ui.set_clock(&text);
             ui.set_now(&face);
+            let format = host.settings.get(keys::TIME_DATE_FORMAT).unwrap_or(0);
+            ui.set_datetime(
+                &datetime::date_text(&now, format),
+                &datetime::zone_text(offset),
+                &self.synced,
+            );
         }
         let minute = now.minute_of_week();
         if self.checked != Some(minute) {
@@ -77,23 +103,31 @@ impl Clockwork {
         }
     }
 
+    /// A network time arrived from `source` (Settings -> Date & time "Last set: Mobile network, 23:41").
+    pub fn set_synced(&mut self, source: &str) {
+        let (now, _) = local_now();
+        self.synced = format!("{source}, {:02}:{:02}", now.hour, now.minute);
+        self.shown = None;
+    }
+
     /// Before a restart or power-off: keep the clock.
     pub fn power(&mut self, action: i32) {
         clock::power(action, &mut self.keeper);
     }
 }
 
-/// The local time from the kernel.
-fn local_now() -> LocalTime {
+/// The local time from the kernel, and its second.
+fn local_now() -> (LocalTime, u32) {
     let t = time::now();
-    LocalTime {
+    let local = LocalTime {
         year: t.year,
         month: t.month,
         day: t.day,
         weekday: t.weekday,
         hour: t.hour,
         minute: t.minute,
-    }
+    };
+    (local, t.second)
 }
 
 /// The alarms as saved by the Clock app; none when unset or unreadable (logged).

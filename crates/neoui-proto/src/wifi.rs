@@ -363,6 +363,8 @@ pub struct LinkView {
     pub subtitle: String,
     /// 0..=4 while connected, else -1 (the status bar's Wi-Fi icon)
     pub bars: i8,
+    /// the status bar icon's band label: "2.4" or "5" ("" when the network's scan entry is unknown)
+    pub band: String,
     pub details: Vec<(String, String)>,
 }
 
@@ -411,6 +413,9 @@ impl LinkView {
             } else {
                 -1
             },
+            band: net.map_or_else(String::new, |n| {
+                String::from(n.band().trim_end_matches(" GHz"))
+            }),
             details,
         }
     }
@@ -595,7 +600,7 @@ mod tests {
         let up = Link::decode(&link(3, 0, 0, &[0x30, 2, 1, 0])).unwrap();
         let v = LinkView::new(&up, Some(&net));
         assert!(v.shown && v.connected);
-        assert_eq!((v.name.as_str(), v.bars), ("home", 4));
+        assert_eq!((v.name.as_str(), v.bars, v.band.as_str()), ("home", 4, "5"));
         assert_eq!(v.subtitle, "Connected · 5 GHz · Excellent");
         let get = |k: &str| {
             v.details

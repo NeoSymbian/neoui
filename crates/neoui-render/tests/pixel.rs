@@ -118,6 +118,16 @@ fn pixel() {
     common::tap(&mut r, (w / 2) as i32, (h as f32 * 0.232) as i32); // the current network's row
     common::frame(&mut r, &mut buf, w, "wifi details");
     common::write_png("settings-wifi-details-pixel.png", &buf, w, h);
+
+    // Settings -> Date & time
+    r.set_datetime(
+        "Friday, 13 November",
+        "UTC+04:00 · Yerevan",
+        "Mobile network, 23:41",
+    );
+    r.show("settings", "datetime");
+    common::frame(&mut r, &mut buf, w, "date and time");
+    common::write_png("settings-datetime-pixel.png", &buf, w, h);
 }
 
 // a connected link as the kernel reports it (HAL WlanLink status)

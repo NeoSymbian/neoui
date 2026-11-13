@@ -88,6 +88,7 @@ pub struct Renderer {
     power: Rc<RefCell<Vec<i32>>>,
     phone: Rc<RefCell<Vec<(String, String)>>>,
     wifi_refresh: Rc<RefCell<bool>>,
+    zone_next: Rc<RefCell<bool>>,
     wifi_connect: Rc<RefCell<Option<(String, String)>>>,
     /// Disconnect (false) or Forget (true) pressed on the current network's details
     wifi_leave: Rc<RefCell<Option<bool>>>,
@@ -169,6 +170,10 @@ impl Renderer {
         let wifi_refresh: Rc<RefCell<bool>> = Rc::default();
         let sink = wifi_refresh.clone();
         ui.on_wifi_refresh(move || *sink.borrow_mut() = true);
+        let zone_next: Rc<RefCell<bool>> = Rc::default();
+        let sink = zone_next.clone();
+        ui.global::<Now>()
+            .on_zone_next(move || *sink.borrow_mut() = true);
         let wifi_leave: Rc<RefCell<Option<bool>>> = Rc::default();
         let sink = wifi_leave.clone();
         ui.on_wifi_disconnect(move || *sink.borrow_mut() = Some(false));
@@ -192,6 +197,7 @@ impl Renderer {
             power,
             phone,
             wifi_refresh,
+            zone_next,
             wifi_connect,
             wifi_leave,
             edited,
@@ -383,6 +389,19 @@ impl Renderer {
         now.set_next_alarm(face.next_alarm.as_str().into());
     }
 
+    /// Settings -> Date & time and the shade: the date in its format, the zone, and where the time last came from.
+    pub fn set_datetime(&mut self, date: &str, zone: &str, synced: &str) {
+        let now = self.ui.global::<Now>();
+        now.set_date_text(date.into());
+        now.set_zone(zone.into());
+        now.set_synced(synced.into());
+    }
+
+    /// The Time zone row was tapped since the last call (step to the next zone).
+    pub fn take_zone_next(&mut self) -> bool {
+        core::mem::take(&mut *self.zone_next.borrow_mut())
+    }
+
     /// The status bar's time text, e.g. "09:41".
     pub fn set_clock(&mut self, text: &str) {
         self.ui.set_clock(text.into());
@@ -420,6 +439,7 @@ impl Renderer {
             name: v.name.as_str().into(),
             subtitle: v.subtitle.as_str().into(),
             bars: i32::from(v.bars),
+            band: v.band.as_str().into(),
             details: slint::ModelRc::new(slint::VecModel::from(details)),
         });
     }

@@ -196,7 +196,7 @@ export component Shell inherits Window {
     }
 
     pure function screen-title(s: string, v: string) -> string {
-        s == "home" ? "" : s == "menu" ? "Menu" : s == "phone" ? (v == "call" ? "Call" : "Phone") : s == "messages" ? (v == "thread" ? "Ava Lindqvist" : "Messages") : s == "contacts" ? "Contacts" : s == "browser" ? "Browser" : s == "camera" ? "Camera" : s == "photos" ? "Photos" : s == "music" ? (v == "playing" ? "Now playing" : "Music") : s == "calendar" ? "Calendar" : s == "clock" ? "Clock" : s == "files" ? "Files" : s == "settings" ? (v == "" ? "Settings" : v == "connectivity" ? "Connectivity" : v == "wifi" ? "Wi-Fi" : v == "display" ? "Display" : v == "developer" ? "Developer options" : v == "battery" ? "Battery" : v == "keyboard" ? "Language & keyboard" : v == "sounds" ? "Sounds" : "About phone") : s == "terminal" ? "Terminal" : s == "devtools" ? "Dev tools" : s == "legacy" ? "Old apps" : s == "switcher" ? "Open apps" : s
+        s == "home" ? "" : s == "menu" ? "Menu" : s == "phone" ? (v == "call" ? "Call" : "Phone") : s == "messages" ? (v == "thread" ? "Ava Lindqvist" : "Messages") : s == "contacts" ? "Contacts" : s == "browser" ? "Browser" : s == "camera" ? "Camera" : s == "photos" ? "Photos" : s == "music" ? (v == "playing" ? "Now playing" : "Music") : s == "calendar" ? "Calendar" : s == "clock" ? "Clock" : s == "files" ? "Files" : s == "settings" ? (v == "" ? "Settings" : v == "connectivity" ? "Connectivity" : v == "wifi" ? "Wi-Fi" : v == "display" ? "Display" : v == "developer" ? "Developer options" : v == "battery" ? "Battery" : v == "keyboard" ? "Language & keyboard" : v == "datetime" ? "Date & time" : v == "sounds" ? "Sounds" : "About phone") : s == "terminal" ? "Terminal" : s == "devtools" ? "Dev tools" : s == "legacy" ? "Old apps" : s == "switcher" ? "Open apps" : s
     }
 
     pure function options(s: string) -> [string] {
@@ -364,9 +364,13 @@ export component Shell inherits Window {
         operator: root.operator;
         rat: root.rat;
         wifi-bars: root.wifi-link.connected ? root.wifi-link.bars : -1;
+        wifi-band: root.wifi-link.band;
         title: screen-title(screen, view);
         tapped => {
             root.shade-open = !root.shade-open;
+        }
+        pulled => {
+            root.shade-open = true;
         }
     }
 
