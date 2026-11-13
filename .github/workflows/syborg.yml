@@ -67,7 +67,7 @@ jobs:
           export SCREEN=539x1079
           . ../neoui/symbian/taps.sh
           tap 270 1000
-          tap 449 530; expect "clock: surface"
+          tap 449 530; expect "clock: surface"; wait_s 2   # the clock ticks once a second while shown (checked below)
           tap 270 500; expect "clock: touch"
           tap 88 1033; expect "clock: visible false"
           tap 449 735; expect "term| Copyright"; wait_s 1
