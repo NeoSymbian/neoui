@@ -3,7 +3,7 @@
 //! and the network time from an HTTP `Date:` header (docs/neoui-shell.md "Date & time").
 
 use super::face::{DAYS, LocalTime, MONTHS};
-use super::world::CATALOGUE;
+use super::world::{CATALOGUE, City, find};
 use alloc::format;
 use alloc::string::String;
 
@@ -32,30 +32,32 @@ pub fn date_text(t: &LocalTime, format: i32) -> String {
     }
 }
 
-/// "UTC+04:00 · Yerevan": the offset (seconds east of UTC) and the first catalogue city on it, if any.
+/// "UTC+02:00 · Berlin (summer time)": the offset in force (seconds east of UTC) and the zone. `zone` (a catalogue
+/// city, `time.zone`) is named when its rule gives that offset at `utc`; else the first city on that offset then.
 #[must_use]
-pub fn zone_text(offset_s: i32) -> String {
+pub fn zone_text(utc: i64, offset_s: i32, zone: &str) -> String {
     let sign = if offset_s < 0 { '-' } else { '+' };
     let m = offset_s.unsigned_abs() / 60;
-    let utc = format!("UTC{sign}{:02}:{:02}", m / 60, m % 60);
-    match CATALOGUE
-        .iter()
-        .find(|c| i32::from(c.offset_min) * 60 == offset_s)
-    {
-        Some(c) => format!("{utc} · {}", c.name),
-        None => utc,
+    let text = format!("UTC{sign}{:02}:{:02}", m / 60, m % 60);
+    let city = find(zone)
+        .filter(|c| c.offset_at(utc) == offset_s)
+        .or_else(|| CATALOGUE.iter().find(|c| c.offset_at(utc) == offset_s));
+    match city {
+        Some(c) if c.is_dst(utc) => format!("{text} · {} (summer time)", c.name),
+        Some(c) => format!("{text} · {}", c.name),
+        None => text,
     }
 }
 
-/// The next zone after `offset_s` among the catalogue's offsets (a tap on the Time zone row), wrapping around.
+/// The city after `zone` in the catalogue (a tap on the Time zone row), wrapping around. A zone that isn't a
+/// catalogue city starts at the first city whose offset at `utc` is past `offset_s`.
 #[must_use]
-pub fn next_zone(offset_s: i32) -> i32 {
-    let offsets = || CATALOGUE.iter().map(|c| i32::from(c.offset_min) * 60);
-    offsets()
-        .filter(|&o| o > offset_s)
-        .min()
-        .or_else(|| offsets().min())
-        .unwrap_or(0)
+pub fn next_zone(zone: &str, offset_s: i32, utc: i64) -> &'static City {
+    let next = match CATALOGUE.iter().position(|c| c.name == zone) {
+        Some(i) => CATALOGUE.get(i + 1),
+        None => CATALOGUE.iter().find(|c| c.offset_at(utc) > offset_s),
+    };
+    next.unwrap_or(&CATALOGUE[0])
 }
 
 /// What a network time should change, given the clock now (`(utc, offset)`): `Some((utc, offset))` when the time is
@@ -68,7 +70,7 @@ pub fn correction(now: (i64, i32), net_utc: i64, net_offset: Option<i32>) -> Opt
 }
 
 /// Days since 1970-01-01 of a proleptic Gregorian date (H. Hinnant's days_from_civil).
-fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
+pub(crate) fn days_from_civil(y: i64, m: i64, d: i64) -> i64 {
     let y = if m <= 2 { y - 1 } else { y };
     let era = y.div_euclid(400);
     let yoe = y - era * 400;
@@ -133,13 +135,35 @@ mod tests {
 
     #[test]
     fn zones_show_and_step() {
-        assert_eq!(zone_text(4 * 3600), "UTC+04:00 · Yerevan");
-        assert_eq!(zone_text(-(3 * 3600 + 1800)), "UTC-03:30");
-        assert_eq!(zone_text(5 * 3600 + 45 * 60), "UTC+05:45 · Kathmandu");
-        assert_eq!(next_zone(3 * 3600), 4 * 3600);
-        assert_eq!(next_zone(4 * 3600), 5 * 3600 + 30 * 60); // Dubai shares +4: one stop per offset
-        assert_eq!(next_zone(12 * 3600), -10 * 3600); // wraps
-        assert_eq!(next_zone(7 * 60), 3600); // an offset off the list goes to the next one on it
+        let winter = 1_794_513_000; // 2026-11-12
+        let summer = 1_782_000_000; // 2026-06-21
+        assert_eq!(zone_text(winter, 4 * 3600, ""), "UTC+04:00 · Dubai");
+        assert_eq!(
+            zone_text(winter, 4 * 3600, "Yerevan"),
+            "UTC+04:00 · Yerevan"
+        );
+        assert_eq!(
+            zone_text(winter, -(3 * 3600 + 1800), ""),
+            "UTC-03:30 · St. John's"
+        );
+        assert_eq!(zone_text(winter, -(2 * 3600 + 1800), ""), "UTC-02:30");
+        assert_eq!(
+            zone_text(summer, 2 * 3600, "Berlin"),
+            "UTC+02:00 · Berlin (summer time)"
+        );
+        assert_eq!(zone_text(winter, 3600, "Berlin"), "UTC+01:00 · Berlin");
+        // a zone whose rule disagrees with the clock (NITZ set another offset): the offset's own city
+        assert_eq!(
+            zone_text(winter, 5 * 3600 + 45 * 60, "Berlin"),
+            "UTC+05:45 · Kathmandu"
+        );
+        assert_eq!(next_zone("Yerevan", 4 * 3600, winter).name, "Tbilisi");
+        assert_eq!(
+            next_zone("Kiritimati", 14 * 3600, winter).name,
+            CATALOGUE[0].name
+        ); // wraps
+        assert_eq!(next_zone("", 4 * 3600, winter).name, "Kabul"); // past every +4 city
+        assert_eq!(next_zone("Atlantis", 7 * 60, winter).name, "Lagos");
     }
 
     #[test]

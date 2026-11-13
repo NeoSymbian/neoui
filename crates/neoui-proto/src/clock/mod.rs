@@ -10,6 +10,7 @@
 //! | [`analog`] | the analog face drawn into pixels (dial once, hands each second) |
 //! | [`face`] | the face as text: 24/12-hour, the date line, the next alarm (home widget and the app) |
 //! | [`world`] | world clocks: the city catalogue, times there, and the saved list |
+//! | [`tz`] | time zone rules (POSIX `TZ` strings): the offset at a time, daylight saving |
 //! | [`timer`] | the countdown timer's state machine |
 //! | [`stopwatch`] | the stopwatch and its laps |
 //! | [`wire`] | the small byte codec the settings blobs share |
@@ -22,6 +23,7 @@ pub mod local;
 pub mod saved;
 pub mod stopwatch;
 pub mod timer;
+pub mod tz;
 pub mod wire;
 pub mod world;
 

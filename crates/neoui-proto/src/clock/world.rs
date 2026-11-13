@@ -3,6 +3,7 @@
 //! catalogue can grow or be reordered without breaking saved lists).
 
 use super::alarm::format_hm;
+use super::tz;
 use super::wire::{Corrupt, Reader, Writer};
 use alloc::format;
 use alloc::string::String;
@@ -13,102 +14,390 @@ pub const CITIES_MAX: usize = 12;
 const BLOB_VERSION: u8 = 1;
 const SECONDS_PER_DAY: i64 = 86_400;
 
-/// A city and its standard UTC offset.
+/// A city and its time zone rule.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct City {
     pub name: &'static str,
-    /// Minutes east of UTC.
-    pub offset_min: i16,
+    /// The zone's rule as a POSIX `TZ` string ([`tz::Rule`]), from IANA tzdata.
+    pub tz: &'static str,
 }
 
-// shortcut: fixed standard offsets, no daylight saving time; replace with a tz database when one is on the device.
-/// The cities offered, west to east.
+// shortcut: today's rules only (IANA tzdata 2025), no history; update the table when a country changes its rules.
+/// The cities offered, west to east by standard offset.
 pub static CATALOGUE: &[City] = &[
     City {
+        name: "Pago Pago",
+        tz: "SST11",
+    },
+    City {
         name: "Honolulu",
-        offset_min: -10 * 60,
+        tz: "HST10",
+    },
+    City {
+        name: "Anchorage",
+        tz: "AKST9AKDT,M3.2.0,M11.1.0",
     },
     City {
         name: "Los Angeles",
-        offset_min: -8 * 60,
+        tz: "PST8PDT,M3.2.0,M11.1.0",
+    },
+    City {
+        name: "Vancouver",
+        tz: "PST8PDT,M3.2.0,M11.1.0",
+    },
+    City {
+        name: "Phoenix",
+        tz: "MST7",
     },
     City {
         name: "Denver",
-        offset_min: -7 * 60,
+        tz: "MST7MDT,M3.2.0,M11.1.0",
+    },
+    City {
+        name: "Mexico City",
+        tz: "CST6",
     },
     City {
         name: "Chicago",
-        offset_min: -6 * 60,
+        tz: "CST6CDT,M3.2.0,M11.1.0",
+    },
+    City {
+        name: "Bogotá",
+        tz: "<-05>5",
+    },
+    City {
+        name: "Lima",
+        tz: "<-05>5",
     },
     City {
         name: "New York",
-        offset_min: -5 * 60,
+        tz: "EST5EDT,M3.2.0,M11.1.0",
+    },
+    City {
+        name: "Toronto",
+        tz: "EST5EDT,M3.2.0,M11.1.0",
+    },
+    City {
+        name: "Havana",
+        tz: "CST5CDT,M3.2.0/0,M11.1.0/1",
+    },
+    City {
+        name: "Caracas",
+        tz: "<-04>4",
+    },
+    City {
+        name: "Halifax",
+        tz: "AST4ADT,M3.2.0,M11.1.0",
+    },
+    City {
+        name: "Santiago",
+        tz: "<-04>4<-03>,M9.1.6/24,M4.1.6/24",
+    },
+    City {
+        name: "St. John's",
+        tz: "NST3:30NDT,M3.2.0,M11.1.0",
     },
     City {
         name: "São Paulo",
-        offset_min: -3 * 60,
+        tz: "<-03>3",
+    },
+    City {
+        name: "Buenos Aires",
+        tz: "<-03>3",
+    },
+    City {
+        name: "Nuuk",
+        tz: "<-02>2<-01>,M3.5.0/-1,M10.5.0/0",
+    },
+    City {
+        name: "Praia",
+        tz: "<-01>1",
+    },
+    City {
+        name: "Azores",
+        tz: "<-01>1<+00>,M3.5.0/0,M10.5.0/1",
+    },
+    City {
+        name: "Reykjavik",
+        tz: "GMT0",
     },
     City {
         name: "London",
-        offset_min: 0,
+        tz: "GMT0BST,M3.5.0/1,M10.5.0",
+    },
+    City {
+        name: "Dublin",
+        tz: "GMT0IST,M3.5.0/1,M10.5.0",
+    },
+    City {
+        name: "Lisbon",
+        tz: "WET0WEST,M3.5.0/1,M10.5.0",
+    },
+    City {
+        name: "Lagos",
+        tz: "WAT-1",
     },
     City {
         name: "Paris",
-        offset_min: 60,
+        tz: "CET-1CEST,M3.5.0,M10.5.0/3",
     },
     City {
         name: "Berlin",
-        offset_min: 60,
+        tz: "CET-1CEST,M3.5.0,M10.5.0/3",
+    },
+    City {
+        name: "Madrid",
+        tz: "CET-1CEST,M3.5.0,M10.5.0/3",
+    },
+    City {
+        name: "Rome",
+        tz: "CET-1CEST,M3.5.0,M10.5.0/3",
+    },
+    City {
+        name: "Amsterdam",
+        tz: "CET-1CEST,M3.5.0,M10.5.0/3",
+    },
+    City {
+        name: "Stockholm",
+        tz: "CET-1CEST,M3.5.0,M10.5.0/3",
+    },
+    City {
+        name: "Vienna",
+        tz: "CET-1CEST,M3.5.0,M10.5.0/3",
+    },
+    City {
+        name: "Warsaw",
+        tz: "CET-1CEST,M3.5.0,M10.5.0/3",
+    },
+    City {
+        name: "Prague",
+        tz: "CET-1CEST,M3.5.0,M10.5.0/3",
+    },
+    City {
+        name: "Cairo",
+        tz: "EET-2EEST,M4.5.5/0,M10.5.4/24",
+    },
+    City {
+        name: "Johannesburg",
+        tz: "SAST-2",
+    },
+    City {
+        name: "Athens",
+        tz: "EET-2EEST,M3.5.0/3,M10.5.0/4",
+    },
+    City {
+        name: "Bucharest",
+        tz: "EET-2EEST,M3.5.0/3,M10.5.0/4",
     },
     City {
         name: "Helsinki",
-        offset_min: 2 * 60,
+        tz: "EET-2EEST,M3.5.0/3,M10.5.0/4",
+    },
+    City {
+        name: "Kyiv",
+        tz: "EET-2EEST,M3.5.0/3,M10.5.0/4",
+    },
+    City {
+        name: "Beirut",
+        tz: "EET-2EEST,M3.5.0/0,M10.5.0/0",
+    },
+    City {
+        name: "Jerusalem",
+        tz: "IST-2IDT,M3.4.4/26,M10.5.0",
+    },
+    City {
+        name: "Istanbul",
+        tz: "<+03>-3",
     },
     City {
         name: "Moscow",
-        offset_min: 3 * 60,
+        tz: "MSK-3",
     },
     City {
-        name: "Yerevan",
-        offset_min: 4 * 60,
+        name: "Nairobi",
+        tz: "EAT-3",
+    },
+    City {
+        name: "Riyadh",
+        tz: "<+03>-3",
+    },
+    City {
+        name: "Baghdad",
+        tz: "<+03>-3",
+    },
+    City {
+        name: "Tehran",
+        tz: "<+0330>-3:30",
     },
     City {
         name: "Dubai",
-        offset_min: 4 * 60,
+        tz: "<+04>-4",
+    },
+    City {
+        name: "Yerevan",
+        tz: "<+04>-4",
+    },
+    City {
+        name: "Tbilisi",
+        tz: "<+04>-4",
+    },
+    City {
+        name: "Baku",
+        tz: "<+04>-4",
+    },
+    City {
+        name: "Kabul",
+        tz: "<+0430>-4:30",
+    },
+    City {
+        name: "Karachi",
+        tz: "PKT-5",
+    },
+    City {
+        name: "Tashkent",
+        tz: "<+05>-5",
+    },
+    City {
+        name: "Almaty",
+        tz: "<+05>-5",
     },
     City {
         name: "Delhi",
-        offset_min: 5 * 60 + 30,
+        tz: "IST-5:30",
+    },
+    City {
+        name: "Colombo",
+        tz: "<+0530>-5:30",
     },
     City {
         name: "Kathmandu",
-        offset_min: 5 * 60 + 45,
+        tz: "<+0545>-5:45",
+    },
+    City {
+        name: "Dhaka",
+        tz: "<+06>-6",
+    },
+    City {
+        name: "Yangon",
+        tz: "<+0630>-6:30",
     },
     City {
         name: "Bangkok",
-        offset_min: 7 * 60,
+        tz: "<+07>-7",
+    },
+    City {
+        name: "Ho Chi Minh City",
+        tz: "<+07>-7",
+    },
+    City {
+        name: "Jakarta",
+        tz: "WIB-7",
     },
     City {
         name: "Singapore",
-        offset_min: 8 * 60,
+        tz: "<+08>-8",
     },
     City {
         name: "Beijing",
-        offset_min: 8 * 60,
+        tz: "CST-8",
+    },
+    City {
+        name: "Hong Kong",
+        tz: "HKT-8",
+    },
+    City {
+        name: "Taipei",
+        tz: "CST-8",
+    },
+    City {
+        name: "Manila",
+        tz: "PST-8",
+    },
+    City {
+        name: "Perth",
+        tz: "AWST-8",
+    },
+    City {
+        name: "Seoul",
+        tz: "KST-9",
     },
     City {
         name: "Tokyo",
-        offset_min: 9 * 60,
+        tz: "JST-9",
+    },
+    City {
+        name: "Darwin",
+        tz: "ACST-9:30",
+    },
+    City {
+        name: "Adelaide",
+        tz: "ACST-9:30ACDT,M10.1.0,M4.1.0/3",
+    },
+    City {
+        name: "Brisbane",
+        tz: "AEST-10",
     },
     City {
         name: "Sydney",
-        offset_min: 10 * 60,
+        tz: "AEST-10AEDT,M10.1.0,M4.1.0/3",
+    },
+    City {
+        name: "Melbourne",
+        tz: "AEST-10AEDT,M10.1.0,M4.1.0/3",
+    },
+    City {
+        name: "Lord Howe",
+        tz: "<+1030>-10:30<+11>-11,M10.1.0,M4.1.0",
+    },
+    City {
+        name: "Nouméa",
+        tz: "<+11>-11",
     },
     City {
         name: "Auckland",
-        offset_min: 12 * 60,
+        tz: "NZST-12NZDT,M9.5.0,M4.1.0/3",
+    },
+    City {
+        name: "Fiji",
+        tz: "<+12>-12",
+    },
+    City {
+        name: "Chatham",
+        tz: "<+1245>-12:45<+1345>,M9.5.0/2:45,M4.1.0/3:45",
+    },
+    City {
+        name: "Tongatapu",
+        tz: "<+13>-13",
+    },
+    City {
+        name: "Kiritimati",
+        tz: "<+14>-14",
     },
 ];
+
+impl City {
+    fn rule(&self) -> tz::Rule {
+        tz::Rule::parse(self.tz).unwrap_or(tz::Rule::UTC)
+    }
+
+    /// The offset in force here at `utc` (Unix seconds), seconds east of UTC.
+    #[must_use]
+    pub fn offset_at(&self, utc: i64) -> i32 {
+        self.rule().offset_at(utc)
+    }
+
+    /// The standard (winter) offset, seconds east of UTC.
+    #[must_use]
+    pub fn standard_offset(&self) -> i32 {
+        self.rule().standard
+    }
+
+    /// Daylight saving time is in force here at `utc`.
+    #[must_use]
+    pub fn is_dst(&self, utc: i64) -> bool {
+        self.rule().is_dst(utc)
+    }
+}
 
 /// The catalogue entry named `name`.
 #[must_use]
@@ -131,7 +420,7 @@ impl City {
     /// The time at this city for `utc` (Unix seconds), against a local time zone `here_s` (seconds east of UTC).
     #[must_use]
     pub fn show(&self, utc: i64, here_s: i32, h24: bool) -> Shown {
-        let there_s = i64::from(self.offset_min) * 60;
+        let there_s = i64::from(self.offset_at(utc));
         let there = utc + there_s;
         let here = utc + i64::from(here_s);
         let sod = there.rem_euclid(SECONDS_PER_DAY);
@@ -274,10 +563,11 @@ mod tests {
                 "{}",
                 c.name
             );
+            assert!(tz::Rule::parse(c.tz).is_some(), "{} parses", c.name);
             assert!(
                 CATALOGUE[i + 1..]
                     .iter()
-                    .all(|d| d.offset_min >= c.offset_min),
+                    .all(|d| d.standard_offset() >= c.standard_offset()),
                 "{}",
                 c.name
             );

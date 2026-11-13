@@ -177,6 +177,9 @@ registry! {
     TIME_AUTO: bool = "time.auto", default DefaultValue::Bool(true), limit Limit::None, owner Owner::Shell;
     /// The mobile network's time zone (NITZ) sets the offset; off, the Time zone row picks it.
     TIME_AUTO_ZONE: bool = "time.auto_zone", default DefaultValue::Bool(true), limit Limit::None, owner Owner::Shell;
+    /// The time zone, a city of `clock::world::CATALOGUE`: its rule moves the clock in and out of summer time while
+    /// "Automatic time zone" is off. Empty: a fixed offset (as `clock.dat` keeps it).
+    TIME_ZONE: alloc::string::String = "time.zone", default DefaultValue::Str(""), limit Limit::MaxLen(32), owner Owner::Shell;
     /// The shade's date format: an index into `clock::datetime::DATE_FORMATS`.
     TIME_DATE_FORMAT: i32 = "time.date_format", default DefaultValue::Int(0),
         limit Limit::Range { min: 0, max: 3 }, owner Owner::Shell;

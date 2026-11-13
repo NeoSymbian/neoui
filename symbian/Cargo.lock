@@ -2853,7 +2853,7 @@ version = "0.1.0"
 [[package]]
 name = "net"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/neolink?rev=9ebd97a021164e9198d93997f6bdf4c64309668d#9ebd97a021164e9198d93997f6bdf4c64309668d"
+source = "git+https://github.com/NeoSymbian/neolink?rev=3c19f03858e48dfbec42a3e29c52f59117d7eff3#3c19f03858e48dfbec42a3e29c52f59117d7eff3"
 dependencies = [
  "e32",
  "heapless",
@@ -5348,7 +5348,7 @@ dependencies = [
 [[package]]
 name = "wpa"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/neolink?rev=9ebd97a021164e9198d93997f6bdf4c64309668d#9ebd97a021164e9198d93997f6bdf4c64309668d"
+source = "git+https://github.com/NeoSymbian/neolink?rev=3c19f03858e48dfbec42a3e29c52f59117d7eff3#3c19f03858e48dfbec42a3e29c52f59117d7eff3"
 dependencies = [
  "aes-kw",
  "hmac",

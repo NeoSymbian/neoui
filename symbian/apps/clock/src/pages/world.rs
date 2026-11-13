@@ -57,10 +57,8 @@ pub fn show(s: &ClockState<'_>, m: &Model, now: &Now) {
     s.set_cities_full(m.cities.as_slice().len() >= CITIES_MAX);
     if m.view == View::Cities {
         s.set_catalogue(rows(CATALOGUE.iter().map(|city| {
-            let (sign, mins) = (
-                if city.offset_min < 0 { '−' } else { '+' },
-                city.offset_min.unsigned_abs(),
-            );
+            let offset = city.offset_at(now.utc) / 60; // in force now: summer time counts
+            let (sign, mins) = (if offset < 0 { '−' } else { '+' }, offset.unsigned_abs());
             CatalogueRow {
                 name: city.name.into(),
                 offset: format!("UTC{sign}{}:{:02}", mins / 60, mins % 60)

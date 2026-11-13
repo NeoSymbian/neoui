@@ -23,9 +23,9 @@ neoapp = { workspace = true }
 # NeoSymbian/telephony: the NeoModem server's contract (MODEMD.EXE; Apache-2.0)
 modem-ipc = { workspace = true }
 # NeoSymbian/neolink: the WPA2-PSK supplicant handshakes (Wi-Fi W4; Apache-2.0)
-wpa = { git = "https://github.com/NeoSymbian/neolink", rev = "9ebd97a021164e9198d93997f6bdf4c64309668d" }
+wpa = { git = "https://github.com/NeoSymbian/neolink", rev = "3c19f03858e48dfbec42a3e29c52f59117d7eff3" }
 # NeoSymbian/neolink: the NeoNet client (NEONET.EXE, the IP stack over Wi-Fi, W5; Apache-2.0).
-net = { git = "https://github.com/NeoSymbian/neolink", rev = "9ebd97a021164e9198d93997f6bdf4c64309668d", features = ["client"] }
+net = { git = "https://github.com/NeoSymbian/neolink", rev = "3c19f03858e48dfbec42a3e29c52f59117d7eff3", features = ["client"] }
 
 [workspace]
 members = ["apps/clock", "apps/term", "apps/files", "apps/devtools", "neoapp"]
