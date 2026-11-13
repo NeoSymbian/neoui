@@ -7,8 +7,19 @@ name: syborg
 # never the ROM (it links Slint under GPL-3.0 with EPL-1.0 Symbian code).
 on:
   push:
+    branches: [main]     # a PR branch runs once, as its pull_request
+    paths-ignore: ['**/*.md', 'design/**', 'snapshots/**']
   pull_request:
+    paths-ignore: ['**/*.md', 'design/**', 'snapshots/**']
   workflow_dispatch:
+  # nightly against build's main head: a build change that breaks the UI shows up within a day, not at the next neoui push
+  schedule:
+    - cron: '30 3 * * *'
+
+# a newer push to the same PR cancels its older run; main keeps one result per commit
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   syborg:
@@ -24,10 +35,17 @@ jobs:
           repository: NeoSymbian/build
           path: build
 
-      - name: Rust (toolchain pinned by symbian/rust-toolchain.toml)
+      - name: Rust toolchain (pinned by symbian/rust-toolchain.toml)
+        working-directory: neoui/symbian
+        run: rustup toolchain install   # reads rust-toolchain.toml
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: neoui/symbian -> target
+
+      - name: Rust
         working-directory: neoui/symbian
         run: |
-          rustup toolchain install   # reads rust-toolchain.toml
           cargo fmt --all --check
           cargo clippy --workspace --release --target armv5te-none-eabi -Zbuild-std=core,alloc,compiler_builtins -- -D warnings
           cargo arm --workspace
@@ -45,6 +63,14 @@ jobs:
       - name: Fetch the Symbian sources
         working-directory: build
         run: ./fetch.sh
+
+      # the 2010 user side already built for this build commit (build CI publishes it on main), else the full build
+      - name: Prebuilt base (ghcr.io/neosymbian/userside-base:<build commit>)
+        working-directory: build
+        run: |
+          t=ghcr.io/neosymbian/userside-base:$(git rev-parse HEAD)
+          if docker pull -q "$t"; then docker run --rm -v neosymbian-build:/build "$t" cp -a /base/. /build/
+          else echo "no prebuilt base for build $(git rev-parse --short HEAD): the full build"; fi
 
       - name: Build the ROM (SYSSTART.EXE = the UI server, no window server; NEOCLOCK/NEOTERM/NEOFILES.EXE = apps)
         working-directory: build

@@ -3,7 +3,15 @@ name: ci
 
 on:
   push:
+    branches: [main]     # a PR branch runs once, as its pull_request
+    paths-ignore: ['**/*.md', 'design/**', 'snapshots/**']
   pull_request:
+    paths-ignore: ['**/*.md', 'design/**', 'snapshots/**']
+
+# a newer push to the same PR cancels its older run; main keeps one result per commit
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   CARGO_TERM_COLOR: always
