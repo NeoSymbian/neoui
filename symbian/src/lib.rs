@@ -14,7 +14,6 @@ extern crate alloc;
 mod battery;
 mod clock;
 mod clockwork;
-mod contacts;
 mod host;
 mod netclock;
 mod perf;
@@ -133,9 +132,6 @@ fn main() -> i32 {
     };
     dprintln!("neoui: boot OK -> {}", boot_ok);
     let mut phone = phone::Phone::start();
-    // telephony C8: the contacts book, shown before the first frame
-    let mut contacts = contacts::Contacts::load();
-    contacts.show_list(&mut ui);
     // Settings -> Developer options -> USB debugging: fshell on a second USB port, on a worker thread (usb_debug.rs);
     // the UI only tells it the switch
     let usb_debugging =
@@ -150,7 +146,6 @@ fn main() -> i32 {
     // the shell's design unit (theme.slint: min(w, h) / 360), in 1/256 px
     let dp256 = (w.min(h) * 256 / 360) as u32;
     let mut host = Host::new(ui.body(), dp256, ui.keyboard_heights(), settings);
-    phone.show_speed(&mut ui, &contacts, &host.settings);
     let mut keyboard_shown = 0;
     let mut nav_shown = 0;
     // the foreground app's title and toolbar button as last given to the shell
@@ -214,10 +209,6 @@ fn main() -> i32 {
             } else {
                 IDLE_US
             };
-            // the phone's own timers (a note, the next tone, the call's ticking time)
-            let wait = phone
-                .next_wake_ms(time::millis(), &host.settings)
-                .map_or(wait, |ms| wait.min(ms * 1000));
             match rt::select(
                 rt::select(input.as_mut(), receive.as_mut()),
                 rt::select(modem_update.as_mut(), time::delay(wait as i32)),
@@ -401,8 +392,9 @@ fn main() -> i32 {
                 }
                 Either::Right(Either::Right(())) => {}
             }
-            // Apply modem navigation before the app lifecycle/compositor decides which surface is visible.
-            phone.poll(&mut ui, time::millis(), &mut contacts, &mut host.settings);
+            // Apply modem navigation (a call brings the Phone app up) before the app lifecycle/compositor decides which
+            // surface is visible.
+            phone.poll(&mut ui, &host.settings);
             let modal = phone.modal();
             let modal_changed = modal != phone_modal;
             phone_modal = modal;
@@ -473,7 +465,7 @@ fn main() -> i32 {
                 running_shown = running;
             }
 
-            // the phone's full-screen call or SIM view covers the app: no app keyboard or nav buttons then
+            // the SIM prompt covers the app: no app keyboard or nav buttons then
             let want_keyboard = if phone_modal {
                 0
             } else {

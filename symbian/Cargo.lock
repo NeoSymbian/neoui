@@ -2817,13 +2817,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "neoui-contacts"
-version = "0.1.0"
-dependencies = [
- "phone-rules",
-]
-
-[[package]]
 name = "neoui-files"
 version = "0.1.0"
 
@@ -2847,7 +2840,6 @@ dependencies = [
  "e32",
  "modem-ipc",
  "neoapp",
- "neoui-contacts",
  "neoui-proto",
  "neoui-render",
  "net",

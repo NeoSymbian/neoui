@@ -33,38 +33,4 @@ fn claimed_toolbar_buttons_go_to_the_app() {
     press(&mut r, back);
     assert!(r.take_nav().is_empty());
     assert_ne!(r.screen(), "files", "an unclaimed Back leaves the screen");
-
-    // C7: an old close timer cannot dismiss a replacement/remaining call. Once every call ends it closes normally.
-    r.set_call("Connected", "+37400000000", false);
-    r.set_call_audio(false, false, 8);
-    r.set_calls(&[neoui_render::CallView {
-        id: 2,
-        number: "+37400000000",
-        state: "Connected",
-        incoming: false,
-        held: false,
-        waiting: false,
-    }]);
-    r.show_call();
-    common::frame(&mut r, &mut buf, w, "active call");
-    let active = buf.clone();
-    r.close_call();
-    common::frame(&mut r, &mut buf, w, "active call retained");
-    assert_eq!(
-        buf, active,
-        "close must preserve controls while a call remains"
-    );
-
-    r.set_calls(&[]);
-    r.close_call();
-    common::frame(&mut r, &mut buf, w, "call ended");
-    assert_ne!(buf, active, "the last call ending returns to the dialer");
-
-    // A delayed call close must never dismiss another screen's sub-view.
-    r.show("settings", "connectivity");
-    common::frame(&mut r, &mut buf, w, "settings connectivity");
-    let settings = buf.clone();
-    r.close_call();
-    common::frame(&mut r, &mut buf, w, "settings retained");
-    assert_eq!(buf, settings);
 }

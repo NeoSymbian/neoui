@@ -78,22 +78,13 @@ fn shell_fields_use_the_system_keyboard() {
     common::frame(&mut r, &mut buf, W, "wifi closed");
     assert_eq!(r.keyboard_h(), 0, "closing the sheet hides the keyboard");
 
-    // Contacts: tapping the search field brings the keyboard up; leaving the screen hides it
-    r.show("contacts", "");
-    common::frame(&mut r, &mut buf, W, "contacts");
-    tap(
-        &mut r,
-        &mut buf,
-        ((W / 2) as i32, body.y + (30.0 * d) as i32),
-    );
+    // Leaving the screen hides the keyboard a field opened: the sheet again, then home
+    tap(&mut r, &mut buf, ((W / 2) as i32, (H as f32 * 0.33) as i32));
+    common::frame(&mut r, &mut buf, W, "wifi sheet again");
     assert!(
         r.keyboard_h() > 0,
-        "the search field brings the keyboard up"
+        "the password field brings the keyboard up"
     );
-    press(&mut r, &mut buf, 3, 0.0, 1.0); // q
-    assert!(r.take_typed().is_empty());
-    common::frame(&mut r, &mut buf, W, "contacts search");
-    common::write_png("contacts-search-539x1079.png", &buf, W, H);
     r.show("home", "");
     common::frame(&mut r, &mut buf, W, "home");
     assert_eq!(r.keyboard_h(), 0, "leaving the screen hides the keyboard");

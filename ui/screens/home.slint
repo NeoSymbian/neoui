@@ -126,6 +126,8 @@ component MusicCard inherits Card {
 
 export component HomeScreen inherits Rectangle {
     callback open-app(string);
+    // an app on one of its pages (app key, view: host::PAGES)
+    callback open-view(string, string);
     in-out property <int> page: 0;
     property <length> pad: 16 * Theme.dp;
     property <length> page-w: self.width;
@@ -354,7 +356,7 @@ export component HomeScreen inherits Rectangle {
                 compact: landscape;
                 icon: @image-url("../icons/apps/phone.svg");
                 label: "Phone";
-                clicked => { root.open-app("phone"); }
+                clicked => { root.open-view("phone", "dial"); }
             }
 
             DockIcon {

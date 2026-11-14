@@ -10,8 +10,6 @@ import "fonts/UbuntuMono-Regular.ttf";
 import "fonts/DejaVuSans.ttf";
 import { Theme } from "theme.slint";
 export { SystemSettings } from "system-settings.slint";
-export { PhoneData, MatchRow, LogRow, LogDetail, SpeedCell, PersonRow, NumberRow, CardView } from "phone-data.slint";
-import { PhoneData } from "phone-data.slint";
 export { Now } from "now.slint";
 export { Scroll } from "components/scroll.slint";
 import { StatusBar, Toolbar } from "components/frame.slint";
@@ -26,10 +24,7 @@ import { KeyboardFocus } from "components/keyboard/focus.slint";
 import { PowerMenu } from "components/powermenu.slint";
 import { HomeScreen } from "screens/home.slint";
 import { MenuScreen } from "screens/menu.slint";
-import { PhoneScreen, LiveCall } from "screens/phone.slint";
-export { LiveCall } from "screens/phone.slint";
 import { MessagesScreen } from "screens/messages.slint";
-import { ContactsScreen } from "screens/contacts.slint";
 import { BrowserScreen } from "screens/browser.slint";
 import { CameraScreen } from "screens/camera.slint";
 import { PhotosScreen } from "screens/photos.slint";
@@ -157,17 +152,12 @@ export component Shell inherits Window {
     callback wifi-disconnect();
     callback wifi-forget();
     // in: the modem (telephony C5, from MODEMD's NeoModem server): signal bars (-1 = no modem), operator, technology,
-    // and the call shown by the Phone screen; out: what the Phone screen asked ("dial" + number, "answer", "hangup")
+    // and whether a call is up (the shade's "return to call"); out: what the SIM prompt and the Retry banner asked
+    // ("pin", "sim-dismiss", "dial", "retry"). The Phone app (NEOPHONE) draws the calls themselves.
     in property <int> bars: -1;
     in property <string> operator;
     in property <string> rat;
-    in property <string> call-state;
-    in property <string> call-number;
-    in property <bool> call-incoming;
-    in property <bool> call-muted;
-    in property <bool> call-speaker;
-    in property <int> call-volume: -1;
-    in property <[LiveCall]> live-calls;
+    in property <bool> in-call;
     in property <bool> phone-pending;
     in property <string> phone-feedback;
     in property <int> missed-calls;
@@ -184,7 +174,7 @@ export component Shell inherits Window {
     public function open(app: string) {
         root.origin = root.screen == "menu" ? "menu" : "home";
         root.screen = app;
-        root.view = app == "phone" && root.live-calls.length > 0 ? "call" : "";
+        root.view = "";
         root.options-open = false;
         root.shade-open = false;
     }
@@ -194,10 +184,6 @@ export component Shell inherits Window {
             root.shade-open = false;
         } else if (root.options-open) {
             root.options-open = false;
-        } else if (root.screen == "phone" && root.view == "logdetail") {
-            root.view = "log";
-        } else if (root.screen == "contacts" && (root.view == "delete" || (root.view == "edit" && PhoneData.edit-id != 0))) {
-            root.view = "card";
         } else if (root.view != "") {
             root.view = "";
         } else if (root.screen == "menu") {
@@ -221,9 +207,9 @@ export component Shell inherits Window {
     pure function screen-title(s: string, v: string) -> string {
         s == "home" ? ""
         : s == "menu" ? "Menu"
-        : s == "phone" ? (v == "call" ? "Call" : v == "log" ? "Recent calls" : v == "logdetail" ? "Call details" : v == "speed" ? "Speed dial" : "Phone")
+        : s == "phone" ? "Phone"
         : s == "messages" ? (v == "thread" ? "Ava Lindqvist" : "Messages")
-        : s == "contacts" ? (v == "card" ? "Contact" : v == "edit" ? "Edit contact" : v == "delete" ? "Delete" : "Contacts")
+        : s == "contacts" ? "Contacts"
         : s == "browser" ? "Browser"
         : s == "camera" ? "Camera"
         : s == "photos" ? "Photos"
@@ -249,15 +235,11 @@ export component Shell inherits Window {
         : v == "keyboard" ? "Language & keyboard"
         : v == "datetime" ? "Date & time"
         : v == "sounds" ? "Sounds"
-        : v == "phone" ? "Phone"
         : "About phone"
     }
 
     pure function options(s: string, v: string) -> [string] {
         s == "messages" ? ["New message", "Mark all as read", "Delete conversations", "Settings"]
-        : s == "contacts" ? ["New contact", "Import vCards", "Export vCards", "Contacts settings"]
-        : s == "phone" && v == "log" ? ["Clear list", "Call settings"]
-        : s == "phone" ? ["Recent calls", "Speed dial", "Voice mailbox", "Call settings"]
         : s == "photos" ? ["Slideshow", "Select", "Sort by date"]
         : s == "files" ? ["New folder", "Sort", "Show hidden files"]
         : s == "browser" ? ["New tab", "Bookmarks", "History", "Share page"]
@@ -275,6 +257,7 @@ export component Shell inherits Window {
             active: screen == "home";
             home := HomeScreen {
                 open-app(a) => { root.open(a); }
+                open-view(a, v) => { root.open(a); root.view = v; }
             }
         }
 
@@ -286,34 +269,9 @@ export component Shell inherits Window {
         }
 
         Slot {
-            active: screen == "phone";
-            PhoneScreen {
-                view <=> root.view;
-                call-state: root.call-state;
-                call-number: root.call-number;
-                call-incoming: root.call-incoming;
-                muted: root.call-muted;
-                speaker: root.call-speaker;
-                call-volume: root.call-volume;
-                calls: root.live-calls;
-                pending: root.phone-pending;
-                feedback: root.phone-feedback;
-                action(a, n) => { root.phone-action(a, n); }
-            }
-        }
-
-        Slot {
             active: screen == "messages";
             MessagesScreen {
                 view <=> root.view;
-            }
-        }
-
-        Slot {
-            active: screen == "contacts";
-            ContactsScreen {
-                view <=> root.view;
-                open-app(a) => { root.open(a); }
             }
         }
 
@@ -367,6 +325,7 @@ export component Shell inherits Window {
             SettingsScreen {
                 view <=> root.view;
                 build: root.build-info;
+                open-view(a, v) => { root.open(a); root.view = v; }
                 battery-text: root.battery-text;
                 battery-voltage: root.battery-voltage;
                 battery-state: root.battery-state;
@@ -438,8 +397,8 @@ export component Shell inherits Window {
 
     if has-toolbar: Toolbar {
         y: root.height - Theme.toolbar-h;
-        has-action: root.app-front ? root.app-action > 0 : (screen == "messages" || screen == "contacts" || screen == "browser" || screen == "clock" || screen == "menu");
-        action-icon: root.app-front ? app-icon(root.app-action) : screen == "contacts" ? @image-url("icons/sys/person_add.svg") : screen == "browser" ? @image-url("icons/sys/refresh.svg") : screen == "menu" ? @image-url("icons/sys/tabs.svg") : @image-url("icons/sys/add.svg");
+        has-action: root.app-front ? root.app-action > 0 : (screen == "messages" || screen == "browser" || screen == "clock" || screen == "menu");
+        action-icon: root.app-front ? app-icon(root.app-action) : screen == "browser" ? @image-url("icons/sys/refresh.svg") : screen == "menu" ? @image-url("icons/sys/tabs.svg") : @image-url("icons/sys/add.svg");
         action-label: root.app-front ? root.app-action-label : "";
         action-pill: root.app-front && mod(root.app-toolbar-style, 2) == 1;
         back-cancel: root.app-front && mod(floor(root.app-toolbar-style / 2), 2) == 1;
@@ -468,9 +427,6 @@ export component Shell inherits Window {
                 }
             } else if (root.screen == "messages") {
                 root.view = "thread";
-            } else if (root.screen == "contacts") {
-                PhoneData.act("contact-new", "");
-                root.view = "edit";
             } else if (root.screen == "menu") {
                 root.open("switcher");
             }
@@ -487,26 +443,6 @@ export component Shell inherits Window {
             root.options-open = false;
             if (i == "Settings") {
                 root.open("settings");
-            } else if (i == "Call settings" || i == "Contacts settings") {
-                root.open("settings");
-                root.view = "phone";
-                PhoneData.act("waiting", "query");
-            } else if (i == "Recent calls") {
-                root.view = "log";
-                PhoneData.act("log-tab", PhoneData.log-tab);
-            } else if (i == "Speed dial") {
-                root.view = "speed";
-            } else if (i == "Voice mailbox") {
-                PhoneData.act("key-long", "1");
-            } else if (i == "Clear list") {
-                PhoneData.act("log-clear", "tab");
-            } else if (i == "New contact") {
-                PhoneData.act("contact-new", "");
-                root.view = "edit";
-            } else if (i == "Import vCards") {
-                PhoneData.act("contact-import", "");
-            } else if (i == "Export vCards") {
-                PhoneData.act("contact-export", "");
             }
         }
     }
@@ -516,8 +452,9 @@ export component Shell inherits Window {
         height: root.height - Theme.status-h;
         open: shade-open;
         missed: root.missed-calls;
-        active-call: root.live-calls.length > 0;
+        active-call: root.in-call;
         return-call => { root.open("phone"); root.view = "call"; }
+        open-view(a, v) => { root.open(a); root.view = v; }
         dismissed => { root.shade-open = false; }
         open-app(a) => { root.open(a); }
     }

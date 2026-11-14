@@ -32,7 +32,7 @@ jobs:
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test
       - name: no_std build (Cortex-M stand-in for the Symbian ARM user side)
-        run: cargo build -p neoui-proto -p neoui-render -p neoui-term -p neoui-files -p neoui-contacts --target thumbv7em-none-eabihf
+        run: cargo build -p neoui-proto -p neoui-render -p neoui-term -p neoui-files --target thumbv7em-none-eabihf
       - uses: actions/upload-artifact@v4
         if: always()
         with:

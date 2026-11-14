@@ -49,6 +49,8 @@ export component Shade inherits Rectangle {
     in property <int> missed;
     in property <bool> active-call;
     callback return-call;
+    // an app on one of its pages (app key, view: host::PAGES)
+    callback open-view(string, string);
     visible: self.opacity > 0.01;
     opacity: open ? 1 : 0;
     animate opacity { duration: Theme.popup; easing: ease-out-quad; }
@@ -163,7 +165,7 @@ export component Shade inherits Rectangle {
                 icon: @image-url("../icons/sys/missed_call.svg");
                 has-icon: true;
                 icon-tint: Theme.danger;
-                clicked => { root.open-app("phone"); }
+                clicked => { root.open-view("phone", "recents"); }
             }
 
             ListRow {
