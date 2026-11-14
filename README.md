@@ -72,7 +72,7 @@ inside the reported damage.
 `symbian/` runs the launcher on the 2010 Symbian user side **instead of the window server**: estart starts
 `SYSSTART.EXE` when the ROM has one. It reads the frame buffer from the HAL, registers as the window server to take
 raw pointer and key events from the kernel, renders into a RAM frame and copies the damaged rectangles to the screen.
-On Syborg the first frame takes about 80 ms, and tapping the Phone tile opens the Phone screen.
+On Syborg the first frame takes about 80 ms.
 
 ```sh
 cd symbian && cargo arm        # target/armv5te-none-eabi/release/libneoui_symbian.a (nightly pinned here)
@@ -86,6 +86,13 @@ cd symbian && cargo arm        # target/armv5te-none-eabi/release/libneoui_symbi
 surface (a global chunk shared by handle, mapped at the same address in both processes), renders its own Slint UI
 into it and reports damage. The server shows the surface in the shell's body, between the live status bar and
 toolbar. Touches in the body go to the app; Back makes the server send `Quit`, and the app exits.
+
+**Phone and Contacts are an app: `NEOPHONE.EXE` in [NeoSymbian/phone](https://github.com/NeoSymbian/phone)** (its
+contacts model is that repo's `crates/contacts`). The UI server starts it hidden at boot and keeps it running
+(`host::RESIDENT`); the Phone and Contacts icons, the Settings row, the shade and a ringing call open it on one of its
+pages (`host::PAGES`, `ALIASES`). The shell keeps only a phone service (`symbian/src/phone.rs`): MODEMD's status for
+the status bar, the SIM PIN prompt, the "Modem unavailable" banner, the shade's missed calls and "return to call",
+the screen during calls, the volume keys in a call, the radio and ring settings and the network time.
 
 **A Terminal app (R6b): ESHELL and the 2010 text programs inside the Rust UI.** `NEOTERM.EXE`
 (`symbian/apps/term`) is the Symbian text console server `!E32WindowServer`; the UI ROM ships the stock
