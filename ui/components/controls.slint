@@ -5,22 +5,40 @@ import { Glyph } from "frame.slint";
 import { KeyboardFocus } from "keyboard/focus.slint";
 
 // The typing part of a field: text in any of the keyboard's languages (DejaVu Sans: Latin, Cyrillic, Armenian; the
-// window must import the font), and focus shows the system keyboard.
+// window must import the font), and focus shows the system keyboard (`keys`: proto::KEYBOARD's 1 text, 3 number,
+// 4 phone).
 component FieldInput inherits TextInput {
+    in property <int> keys: 1;
+    // KeyboardFocus.seq when this field took the focus: a later field's focus wins over this one letting go
+    property <int> took;
     font-family: "DejaVu Sans";
     font-size: Theme.font-body;
     color: Theme.text;
     vertical-alignment: center;
     single-line: true;
     changed has-focus => {
-        KeyboardFocus.open = self.has-focus;
+        if self.has-focus {
+            self.reopen();
+            KeyboardFocus.mode = self.keys;
+            KeyboardFocus.open = true;
+        } else if self.took == KeyboardFocus.seq {
+            KeyboardFocus.open = false;
+        }
+    }
+    // the focus came (or a tap on the focused field): the keyboard shows again if it was put away
+    public function reopen() {
+        KeyboardFocus.seq += 1;
+        self.took = KeyboardFocus.seq;
+        KeyboardFocus.dismissed = false;
     }
 }
 
-// A one-line text field: tap it (or `autofocus`) and the system keyboard comes up.
+// A one-line text field: tap it (or `autofocus`) and the system keyboard comes up, the one `keys` asks for
+// (proto::KEYBOARD's 1 text, 3 number, 4 phone).
 export component TextField inherits Rectangle {
     in-out property <string> text;
     in property <string> placeholder;
+    in property <int> keys: 1;
     // masked as dots
     in property <bool> password;
     in property <bool> autofocus;
@@ -43,9 +61,16 @@ export component TextField inherits Rectangle {
         width: parent.width - 28 * Theme.dp;
         height: parent.height;
         text <=> root.text;
-        input-type: root.password ? InputType.password : InputType.text;
+        keys: root.keys;
+        input-type: root.password ? InputType.password : root.keys == 3 ? InputType.number : InputType.text;
         accepted => {
             root.accepted(self.text);
+        }
+    }
+    // the keyboard was put away while this field kept the focus: a tap on it brings the keyboard back
+    if KeyboardFocus.dismissed && input.has-focus: TouchArea {
+        clicked => {
+            input.reopen();
         }
     }
 

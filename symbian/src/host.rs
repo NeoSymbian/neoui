@@ -89,7 +89,8 @@ pub struct App {
     queue: VecDeque<AppEvent>,
     /// When `Quit` was sent (ms): it is leaving, and is killed if it hasn't after [`QUIT_GRACE_MS`].
     quit_at: Option<u64>,
-    /// The system keyboard mode it asked for (`KEYBOARD`: 0 none, 1 text, 2 terminal); applies while it is in front.
+    /// The system keyboard mode it asked for (`KEYBOARD`: 0 none, 1 text, 2 terminal, 3 number, 4 phone); applies
+    /// while it is in front.
     pub keyboard: u8,
     /// The keyboard height it was last told (the `KEYBOARD` reply or `AppEvent::Keyboard`).
     keyboard_h: u32,
@@ -143,8 +144,12 @@ pub struct Host {
     pub body: Rect,
     /// The shell's design unit in 1/256 px, for apps.
     pub dp256: u32,
-    /// The keyboard's height in pixels in each mode ([0, text, terminal]); it changes with the language and settings.
-    keyboard_h: [u32; 3],
+    /// The keyboard's height in pixels in each mode ([0, text, terminal, number, phone]); it changes with the
+    /// language and settings, and is all 0 while the user put the keyboard away.
+    keyboard_h: [u32; proto::KEYBOARD_MODES],
+    /// The app in front asked for the keyboard (`KEYBOARD` with a mode above 0): the main loop brings it back if
+    /// the user had put it away.
+    pub reopen: bool,
     apps: Recents<App>,
     /// The current screen when it is an app's key.
     front: Option<&'static str>,
@@ -166,11 +171,17 @@ pub struct Host {
 }
 
 impl Host {
-    pub fn new(body: Rect, dp256: u32, keyboard_h: [u32; 3], settings: Settings) -> Self {
+    pub fn new(
+        body: Rect,
+        dp256: u32,
+        keyboard_h: [u32; proto::KEYBOARD_MODES],
+        settings: Settings,
+    ) -> Self {
         Self {
             body,
             dp256,
             keyboard_h,
+            reopen: false,
             apps: Recents::default(),
             front: None,
             next_session: 1,
@@ -241,8 +252,9 @@ impl Host {
     }
 
     /// The keyboard's heights now ([`Renderer::keyboard_heights`](neoui_render::Renderer::keyboard_heights)): each
-    /// app with the keyboard open whose height changed is told (`AppEvent::Keyboard`). Call once per frame.
-    pub fn set_keyboard_heights(&mut self, heights: [u32; 3]) {
+    /// app with the keyboard open whose height changed is told (`AppEvent::Keyboard`). Call once per frame; pass all
+    /// 0 while the user put the keyboard away (the app gets its whole body back).
+    pub fn set_keyboard_heights(&mut self, heights: [u32; proto::KEYBOARD_MODES]) {
         self.keyboard_h = heights;
         let front = self.front;
         for app in self.apps.iter_mut() {
@@ -502,8 +514,13 @@ impl Service for Host {
                 app.keyboard = match m.int(0) {
                     proto::KEYBOARD_HIDDEN => 0,
                     proto::KEYBOARD_TERMINAL => 2,
+                    proto::KEYBOARD_NUMBER => 3,
+                    proto::KEYBOARD_PHONE => 4,
                     _ => 1,
                 };
+                if app.keyboard != 0 && front == Some(app.key) {
+                    self.reopen = true;
+                }
                 app.keyboard_h = keyboard_h[usize::from(app.keyboard)];
                 dprintln!("neoui: keyboard {} for {}", app.keyboard, app.key);
                 m.complete(app.keyboard_h as i32);

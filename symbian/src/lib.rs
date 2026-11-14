@@ -473,7 +473,15 @@ fn main() -> i32 {
                 ui.set_keyboard(want_keyboard);
                 keyboard_shown = want_keyboard;
             }
-            host.set_keyboard_heights(ui.keyboard_heights());
+            // an app asking for the keyboard brings it back; while the user put it away the app has its whole body
+            if core::mem::take(&mut host.reopen) {
+                ui.clear_keyboard_dismissed();
+            }
+            host.set_keyboard_heights(if ui.keyboard_dismissed() {
+                [0; proto::KEYBOARD_MODES]
+            } else {
+                ui.keyboard_heights()
+            });
             let front = !phone_modal && host.front().is_some();
             if front != front_shown {
                 ui.set_app_front(front);

@@ -22,3 +22,22 @@ export struct Layout {
     comma: string,
     stop: string,
 }
+
+// What a pad key does: types its text, Backspace (8), Done (Enter, 13), or switches to the letter keyboard.
+export enum KeyKind { char, backspace, done, switch }
+
+// One key of a pad. `text` is what a char key types (empty: its label); `hint` is a small second line (a phone
+// pad's letters).
+export struct PadKey {
+    label: string,
+    hint: string,
+    text: string,
+    kind: KeyKind,
+}
+
+// A pad keyboard (proto::KEYBOARD modes 3 and up, listed in layouts.slint's `Pads`): plain data, drawn by
+// keyboard.slint. `rows` are top first; the keys of a row share its width equally.
+export struct Pad {
+    name: string,
+    rows: [[PadKey]],
+}

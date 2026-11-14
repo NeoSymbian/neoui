@@ -97,11 +97,13 @@ component WifiSheet inherits Rectangle {
         width: root.width;
         height: card.preferred-height;
         // above the system keyboard while the password field has it up
-        y: root.height - self.height - (KeyboardFocus.open ? KeyboardFocus.text-h : 0);
+        y: root.height - self.height - (KeyboardFocus.open && !KeyboardFocus.dismissed ? KeyboardFocus.text-h : 0);
         background: Theme.bg-raised;
         border-top-left-radius: Theme.radius;
         border-top-right-radius: Theme.radius;
-        TouchArea { }  // taps on the card don't close it
+        // taps on the card don't close it; outside the field they put the keyboard away (as the shell's focus sink)
+        TouchArea { clicked => { card-sink.focus(); } }
+        card-sink := FocusScope { width: 0; height: 0; }
 
         card := VerticalLayout {
             padding: 20 * Theme.dp;

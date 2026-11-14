@@ -18,6 +18,7 @@ use core::cell::RefCell;
 use core::time::Duration;
 
 use neoui_proto::clock::face::Face;
+use neoui_proto::ipc::KEYBOARD_MODES;
 use neoui_proto::settings::Value;
 use neoui_proto::{Damage, InputEvent, Rect, ScrollPlan, Scrolling, TouchPhase};
 use slint::platform::software_renderer::{
@@ -272,28 +273,52 @@ impl Renderer {
         self.ui.set_server_transitions(on);
     }
 
-    /// Show the system keyboard over the bottom of the body in `mode` (`proto::KEYBOARD`: 1 text, 2 terminal), or
-    /// hide it (0).
+    /// Show the system keyboard over the bottom of the body in `mode` (`proto::KEYBOARD`: 1 text, 2 terminal,
+    /// 3 number, 4 phone), or hide it (0).
     pub fn set_keyboard(&mut self, mode: u8) {
         self.ui.set_keyboard_mode(i32::from(mode));
     }
 
-    /// The keyboard's height (physical pixels) in each `proto::KEYBOARD` mode: [0, text, terminal]. It changes with
-    /// the language and the keyboard settings.
-    pub fn keyboard_heights(&self) -> [u32; 3] {
+    /// The keyboard's height (physical pixels) in each `proto::KEYBOARD` mode: [0, text, terminal, number, phone].
+    /// It changes with the language and the keyboard settings.
+    pub fn keyboard_heights(&self) -> [u32; KEYBOARD_MODES] {
         [
             0,
             self.ui.get_keyboard_text_h() as u32,
             self.ui.get_keyboard_term_h() as u32,
+            self.ui.get_keyboard_number_h() as u32,
+            self.ui.get_keyboard_phone_h() as u32,
         ]
     }
 
-    /// The keyboard's height (physical pixels) as shown: in the mode an app asked for, else the text keyboard while
-    /// a shell field has the focus, else 0.
+    /// The keyboard's height (physical pixels) as shown: in the mode an app asked for, else in the one the focused
+    /// shell field wants, else 0; 0 too while the user put it away ([`Self::keyboard_dismissed`]).
     pub fn keyboard_h(&self) -> u32 {
-        let mode = self.ui.get_keyboard_mode().clamp(0, 2) as usize;
-        let shell = self.ui.global::<KeyboardFocus>().get_open();
-        self.keyboard_heights()[if mode == 0 && shell { 1 } else { mode }]
+        let focus = self.ui.global::<KeyboardFocus>();
+        if focus.get_dismissed() {
+            return 0;
+        }
+        let mode = match self.ui.get_keyboard_mode() {
+            0 if focus.get_open() => focus.get_mode(),
+            m => m,
+        };
+        // an unknown mode is the text keyboard (as keyboard.slint draws it)
+        let mode = if (0..KEYBOARD_MODES as i32).contains(&mode) {
+            mode
+        } else {
+            1
+        };
+        self.keyboard_heights()[mode as usize]
+    }
+
+    /// The user put the keyboard away with the toolbar's keyboard button: the app in front gets its body back.
+    pub fn keyboard_dismissed(&self) -> bool {
+        self.ui.global::<KeyboardFocus>().get_dismissed()
+    }
+
+    /// Bring the keyboard back after the user put it away (an app asked for it again).
+    pub fn clear_keyboard_dismissed(&mut self) {
+        self.ui.global::<KeyboardFocus>().set_dismissed(false);
     }
 
     /// What the keyboard typed for an app since the last call, as Unicode code points (Backspace 8, Enter 13);

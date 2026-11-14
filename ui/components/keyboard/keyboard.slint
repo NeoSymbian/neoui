@@ -7,16 +7,19 @@
 // Geometry, counted from the keyboard's bottom edge (crates/neoui-render/tests/keyboard.rs and symbian/taps.sh use
 // it): row k (0 = the bottom row) is centred 27 + 48 k dp above the bottom, keys are 42 dp high. The bottom row is
 // 10 units wide: symbols 0-1.5, globe 1.5-2.5, comma 2.5-3.5 (1.5 without a globe), space to 7.5, stop, Enter 8.5-10.
+// The pads (modes 3 and up: number, phone; data in pads/) use the same rows, each row's keys sharing its width.
 // shortcut: no key repeat, long-press or Ctrl; add them with text editing beyond one-line fields.
 import { Theme } from "../../theme.slint";
 import { SystemSettings } from "../../system-settings.slint";
-import { Layout } from "types.slint";
-import { Layouts } from "layouts.slint";
+import { Layout, Pad, PadKey, KeyKind } from "types.slint";
+import { Layouts, Pads } from "layouts.slint";
 import { Common } from "layouts/common.slint";
 import { KeyboardFocus } from "focus.slint";
 
 component Key inherits Rectangle {
     in property <string> label;
+    // a small second line under the label (a phone pad's letters)
+    in property <string> hint;
     in property <string> font: "Inter";
     // a function key: drawn darker
     in property <bool> special;
@@ -32,6 +35,16 @@ component Key inherits Rectangle {
         font-size: (label.character-count > 1 ? 14 : 19) * Theme.dp;
         horizontal-alignment: center;
         vertical-alignment: center;
+        // with a hint the label sits higher and the hint under it
+        y: hint == "" ? (parent.height - self.height) / 2 : 2 * Theme.dp;
+    }
+    if hint != "": Text {
+        y: parent.height - 15 * Theme.dp;
+        height: 12 * Theme.dp;
+        text: hint;
+        color: Theme.text-secondary;
+        font-size: 9 * Theme.dp;
+        horizontal-alignment: center;
     }
     if label == "": Image {
         width: 20 * Theme.dp;
@@ -75,7 +88,8 @@ component KeyRow inherits Rectangle {
 }
 
 export component Keyboard inherits Rectangle {
-    // proto::KEYBOARD's modes: 1 text, 2 terminal (the Esc / Tab / arrows row on top)
+    // proto::KEYBOARD's modes: 1 text, 2 terminal (the Esc / Tab / arrows row on top), 3 and up a pad (`Pads`:
+    // 3 number, 4 phone); an unknown one is text
     in property <int> mode: 1;
     // what a key typed: a character, Backspace "\u{8}", Enter "\u{d}", or (terminal row) Escape, Tab, an arrow
     callback typed(string);
@@ -89,13 +103,27 @@ export component Keyboard inherits Rectangle {
     // out: the height in each mode, for the UI server to tell apps (it changes with the language and settings)
     out property <length> text-h: 6 * Theme.dp + (rows + 1) * pitch;
     out property <length> term-h: text-h + pitch;
-    height: mode == 2 ? term-h : text-h;
+    out property <length> number-h: pad-h(Pads.all[0]);
+    out property <length> phone-h: pad-h(Pads.all[1]);
+    // a pad's switch key showed the letters (its symbols key goes back)
+    // shortcut: the height then is the text keyboard's while the server still has the pad's; no pad has a switch key
+    property <bool> letters;
+    property <bool> pad-on: mode >= 3 && mode < 3 + Pads.all.length && !letters;
+    property <[[PadKey]]> pad: pad-on ? Pads.all[mode - 3].rows : [];
+    height: mode == 2 ? term-h : pad-on ? 6 * Theme.dp + pad.length * pitch : text-h;
+    changed mode => {
+        letters = false;
+    }
     background: #16181c;
     init => {
         KeyboardFocus.text-h = self.text-h;
     }
     changed text-h => {
         KeyboardFocus.text-h = self.text-h;
+    }
+
+    pure function pad-h(p: Pad) -> length {
+        6 * Theme.dp + p.rows.length * pitch
     }
 
     // the language changed: start in its letters, lower case
@@ -110,6 +138,18 @@ export component Keyboard inherits Rectangle {
         } else {
             typed(k == "⌫" ? "\u{8}" : shift ? k.to-uppercase() : k);
             shift = false;
+        }
+    }
+
+    function pad-press(k: PadKey) {
+        if k.kind == KeyKind.backspace {
+            typed("\u{8}");
+        } else if k.kind == KeyKind.done {
+            typed("\u{d}");
+        } else if k.kind == KeyKind.switch {
+            letters = true;
+        } else {
+            typed(k.text != "" ? k.text : k.label);
         }
     }
 
@@ -132,7 +172,23 @@ export component Keyboard inherits Rectangle {
         }
     }
 
-    if digits && !symbols: KeyRow {
+    for row[r] in pad: Rectangle {
+        y: row-y(pad.length - 1 - r);
+        height: 42 * Theme.dp;
+        for k[i] in row: Key {
+            x: i * root.width / row.length + 3 * Theme.dp;
+            width: root.width / row.length - 6 * Theme.dp;
+            label: k.kind == KeyKind.backspace ? "" : k.label;
+            hint: k.hint;
+            icon: @image-url("../../icons/sys/backspace.svg");
+            special: k.kind != KeyKind.char;
+            pressed-key => {
+                root.pad-press(k);
+            }
+        }
+    }
+
+    if digits && !symbols && !pad-on: KeyRow {
         y: row-y(rows);
         height: 42 * Theme.dp;
         keys: Common.digits;
@@ -141,7 +197,7 @@ export component Keyboard inherits Rectangle {
         key(k) => { root.press(k); }
     }
 
-    for row[r] in symbols ? Common.symbols : layout.rows: KeyRow {
+    for row[r] in pad-on ? [] : symbols ? Common.symbols : layout.rows: KeyRow {
         y: row-y((symbols ? Common.symbols.length : layout.rows.length) - r);
         height: 42 * Theme.dp;
         keys: row;
@@ -152,7 +208,7 @@ export component Keyboard inherits Rectangle {
     }
 
     // the bottom row, the same in every language
-    Rectangle {
+    if !pad-on: Rectangle {
         y: row-y(0);
         height: 42 * Theme.dp;
         property <length> unit: root.width / 10;
@@ -160,11 +216,15 @@ export component Keyboard inherits Rectangle {
         Key {
             x: 3 * Theme.dp;
             width: 1.5 * unit - 6 * Theme.dp;
-            label: symbols ? layout.abc : "?123";
+            label: letters ? "123" : symbols ? layout.abc : "?123";
             font: layout.font;
             special: true;
             pressed-key => {
-                root.symbols = !root.symbols;
+                if root.letters {
+                    root.letters = false;
+                } else {
+                    root.symbols = !root.symbols;
+                }
                 root.shift = false;
             }
         }

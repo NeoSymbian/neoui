@@ -153,7 +153,7 @@ fn keyboard() {
     assert_eq!(
         kb.r.keyboard_heights()
             .map(|h| (h as f32 / common::dp(W, H)).round() as u32),
-        [0, 198, 246]
+        [0, 198, 246, 198, 246]
     );
     for i in 0..6 {
         kb.letter(4, i as f32, 6.0);

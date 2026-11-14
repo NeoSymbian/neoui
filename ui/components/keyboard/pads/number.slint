@@ -1,0 +1,15 @@
+// SPDX-License-Identifier: Apache-2.0
+// The number pad (proto::KEYBOARD_NUMBER): a PIN or an amount.
+import { Pad, KeyKind } from "../types.slint";
+
+export global Number {
+    out property <Pad> pad: {
+        name: "number",
+        rows: [
+            [{ label: "1" }, { label: "2" }, { label: "3" }],
+            [{ label: "4" }, { label: "5" }, { label: "6" }],
+            [{ label: "7" }, { label: "8" }, { label: "9" }],
+            [{ kind: KeyKind.backspace }, { label: "0" }, { label: "Done", kind: KeyKind.done }],
+        ],
+    };
+}

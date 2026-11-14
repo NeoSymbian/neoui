@@ -13,7 +13,7 @@ export { SystemSettings } from "system-settings.slint";
 export { Now } from "now.slint";
 export { Scroll } from "components/scroll.slint";
 import { StatusBar, Toolbar } from "components/frame.slint";
-import { OptionsMenu, Button } from "components/controls.slint";
+import { OptionsMenu, Button, TextField } from "components/controls.slint";
 import { Shade } from "components/shade.slint";
 import { Keyboard } from "components/keyboard/keyboard.slint";
 import { Alphabets } from "components/keyboard/glyphs.slint";
@@ -99,11 +99,15 @@ export component Shell inherits Window {
     // while home shows (a resident app)
     out property <length> app-body-h: self.height - Theme.status-h - Theme.toolbar-h;
     // in: the UI server shows the system keyboard over the bottom of the body for an app that asked (R6c), in the
-    // mode it asked for (0 hidden; proto::KEYBOARD's 1 text, 2 terminal), and forwards what it types; out: its
-    // height in each mode, for the server to tell the app (it changes with the language and the settings)
+    // mode it asked for (0 hidden; proto::KEYBOARD's 1 text, 2 terminal, 3 number, 4 phone), and forwards what it
+    // types; out: its height in each mode, for the server to tell the app (it changes with the language and the
+    // settings). The toolbar's keyboard button puts it away (KeyboardFocus.dismissed) and brings it back.
     in property <int> keyboard-mode;
     out property <length> keyboard-text-h: kb.text-h;
     out property <length> keyboard-term-h: kb.term-h;
+    out property <length> keyboard-number-h: kb.number-h;
+    out property <length> keyboard-phone-h: kb.phone-h;
+    property <bool> keyboard-wanted: keyboard-mode > 0 || KeyboardFocus.open;
     callback typed(string);
     // in: the foreground app claimed the toolbar's Back / Options; the shell then reports them through app-nav
     // (1 = Back, 2 = Options) instead of acting (R8)
@@ -170,8 +174,21 @@ export component Shell inherits Window {
     in property <int> pin-attempts: -1;
     in property <bool> modem-failed;
     property <string> sim-pin;
-    property <int> pin-length;
-    changed sim-pin-required => { root.sim-pin = ""; root.pin-length = 0; }
+    property <int> pin-length: sim-pin.character-count;
+    changed sim-pin-required => {
+        root.sim-pin = "";
+        // the prompt and its field went away without letting go of the focus: the number pad closes with them
+        if !self.sim-pin-required {
+            focus-sink.focus();
+            KeyboardFocus.close();
+        }
+    }
+    function unlock() {
+        if root.pin-length >= 4 && root.pin-length <= 8 && !root.phone-pending {
+            root.phone-action("pin", root.sim-pin);
+            root.sim-pin = "";
+        }
+    }
     callback phone-action(string, string);
 
     public function open(app: string) {
@@ -248,6 +265,17 @@ export component Shell inherits Window {
         : s == "browser" ? ["New tab", "Bookmarks", "History", "Share page"]
         : s == "music" ? ["Shuffle all", "Playlists", "Sleep timer"]
         : ["Settings", "Help", "About"]
+    }
+
+    // A tap that no row, button or field takes lands here: the focused field lets go, so the keyboard closes.
+    TouchArea {
+        clicked => {
+            focus-sink.focus();
+        }
+    }
+    focus-sink := FocusScope {
+        width: 0;
+        height: 0;
     }
 
     // The current screen
@@ -370,9 +398,12 @@ export component Shell inherits Window {
 
     kb := Keyboard {
         y: body-y + body-h - self.height;
-        mode: max(1, keyboard-mode);
-        // an app asked for it, or one of the shell's own fields has the focus
-        visible: keyboard-mode > 0 || KeyboardFocus.open;
+        // above the SIM prompt, whose PIN field uses it
+        z: root.sim-pin-required ? 1 : 0;
+        // the app's mode when one asked, else the one the shell's focused field wants
+        mode: keyboard-mode > 0 ? keyboard-mode : KeyboardFocus.mode;
+        // an app asked for it, or one of the shell's own fields has the focus, and the user didn't put it away
+        visible: keyboard-wanted && !KeyboardFocus.dismissed;
         typed(t) => { root.typed(t); }
     }
 
@@ -406,6 +437,11 @@ export component Shell inherits Window {
         action-pill: root.app-front && mod(root.app-toolbar-style, 2) == 1;
         back-cancel: root.app-front && mod(floor(root.app-toolbar-style / 2), 2) == 1;
         empty: root.app-front && mod(floor(root.app-toolbar-style / 4), 2) == 1;
+        has-keyboard: root.keyboard-wanted;
+        keyboard-shown: !KeyboardFocus.dismissed;
+        keyboard-toggled => {
+            KeyboardFocus.dismissed = !KeyboardFocus.dismissed;
+        }
         back => {
             if (root.app-back && !root.shade-open && !root.options-open) {
                 root.app-nav(1);
@@ -484,11 +520,12 @@ export component Shell inherits Window {
         Rectangle {
             x: Theme.margin;
             width: parent.width - 2 * Theme.margin;
-            height: min(parent.height - 2 * Theme.margin, 430 * Theme.dp);
-            y: (parent.height - self.height) / 2;
+            height: min(parent.height - 2 * Theme.margin, prompt.preferred-height);
+            // centred, or above the number pad its PIN field brings up
+            y: min((parent.height - self.height) / 2, (kb.visible ? kb.y : root.height) - self.height - Theme.margin);
             background: Theme.bg;
             border-radius: Theme.radius;
-            VerticalLayout {
+            prompt := VerticalLayout {
                 padding: Theme.margin;
                 spacing: 8 * Theme.dp;
                 Text { text: root.sim-blocked ? "SIM blocked" : "Unlock SIM"; color: Theme.text; font-size: Theme.font-title; }
@@ -498,26 +535,17 @@ export component Shell inherits Window {
                     font-size: Theme.font-label;
                     wrap: word-wrap;
                 }
-                if !root.sim-blocked: Text { text: root.pin-length == 0 ? "PIN" : root.pin-length + " digits entered"; color: Theme.text; font-size: Theme.font-body; }
-                if !root.sim-blocked: VerticalLayout {
-                    spacing: 5 * Theme.dp;
-                    for row in [["1", "2", "3"], ["4", "5", "6"], ["7", "8", "9"], ["Clear", "0", "Unlock"]]: HorizontalLayout {
-                        spacing: 5 * Theme.dp;
-                        for key in row: Button {
-                            text: key;
-                            primary: key == "Unlock";
-                            clicked => {
-                                if key == "Clear" { root.sim-pin = ""; root.pin-length = 0; }
-                                else if key == "Unlock" {
-                                    if root.pin-length >= 4 && !root.phone-pending {
-                                        root.phone-action("pin", root.sim-pin);
-                                        root.sim-pin = "";
-                                        root.pin-length = 0;
-                                    }
-                                } else if root.pin-length < 8 { root.sim-pin += key; root.pin-length += 1; }
-                            }
-                        }
-                    }
+                if !root.sim-blocked: TextField {
+                    placeholder: "PIN";
+                    password: true;
+                    keys: 3;
+                    autofocus: true;
+                    text <=> root.sim-pin;
+                    accepted => { root.unlock(); }
+                }
+                if !root.sim-blocked: Button {
+                    text: "Unlock";
+                    clicked => { root.unlock(); }
                 }
                 // always a way out: an emergency call, or later (the SIM state changing brings it back)
                 HorizontalLayout {

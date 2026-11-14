@@ -8,14 +8,17 @@
 //! alarm ([`AppEvent::Alarm`]). Since 1.3 the system keyboard has modes ([`KEYBOARD_TEXT`], [`KEYBOARD_TERMINAL`]) and
 //! a height that changes with its language and settings ([`AppEvent::Keyboard`]). Since 1.4 an app sets its title
 //! ([`TITLE`]) and the toolbar's middle button ([`TOOLBAR`], [`AppEvent::Action`]), and the server opens one of its
-//! pages ([`AppEvent::Page`]): the Phone app is one process behind the Phone and Contacts icons.
+//! pages ([`AppEvent::Page`]): the Phone app is one process behind the Phone and Contacts icons. Since 1.5 the
+//! keyboard has number and phone pads ([`KEYBOARD_NUMBER`], [`KEYBOARD_PHONE`]), and the user can put it away with
+//! the toolbar's keyboard button: the app then gets [`AppEvent::Keyboard`] with `h = 0` (its whole body back) while
+//! its mode stays; any [`KEYBOARD`] request with a mode above 0 brings it back.
 
 use crate::{InputEvent, TouchPhase};
 
 /// The server's name (no leading `!`: that needs ProtServ).
 pub const SERVER: &str = "NeoUi";
 /// Protocol version (major, minor); a connect with another major is refused.
-pub const VERSION: (u8, u8) = (1, 4);
+pub const VERSION: (u8, u8) = (1, 5);
 
 /// `[Des8 out: GEOMETRY_LEN bytes = width, height, dp × 256 (u32 LE)]` → 0. `dp` is the shell's design unit in
 /// pixels (`min(screen w, h) / 360`), so apps size things like the shell does.
@@ -27,7 +30,7 @@ pub const SURFACE: i32 = 2;
 pub const DAMAGE: i32 = 3;
 /// `[Des8 out: EVENT_LEN bytes]` → asynchronous: completes when there is an [`AppEvent`] for the app.
 pub const NEXT_EVENT: i32 = 4;
-/// `[mode: KEYBOARD_HIDDEN | KEYBOARD_TEXT | KEYBOARD_TERMINAL]` → the height in pixels of the system keyboard now
+/// `[mode: KEYBOARD_HIDDEN | KEYBOARD_TEXT | KEYBOARD_TERMINAL | KEYBOARD_NUMBER | KEYBOARD_PHONE]` → the height in pixels of the system keyboard now
 /// covering the bottom of the surface (0 when hidden). Its keys arrive as [`InputEvent::Key`] like hardware keys
 /// (NeoSymbian R6c). The height can change later (language, settings): [`AppEvent::Keyboard`] tells the app.
 pub const KEYBOARD: i32 = 5;
@@ -37,6 +40,12 @@ pub const KEYBOARD_TEXT: i32 = 1;
 /// [`KEYBOARD_TEXT`] with a row of Escape (27), Tab (9) and the arrows (Symbian's `EKeyLeftArrow` 0xF807,
 /// `EKeyRightArrow` 0xF808, `EKeyUpArrow` 0xF809, `EKeyDownArrow` 0xF80A) on top.
 pub const KEYBOARD_TERMINAL: i32 = 2;
+/// A PIN or amount pad: 0-9, Backspace (8) and Done (Enter, 13).
+pub const KEYBOARD_NUMBER: i32 = 3;
+/// A phone pad: 0-9, `*`, `#`, `+`, `p` and `w` (pause and wait), Backspace (8) and Done (Enter, 13).
+pub const KEYBOARD_PHONE: i32 = 4;
+/// How many keyboard modes there are (hidden included): the length of the server's height table.
+pub const KEYBOARD_MODES: usize = 5;
 /// `[claims: NAV_BACK | NAV_OPTIONS]` → 0. The app takes over the toolbar's Back and/or Options buttons: the server
 /// sends [`AppEvent::Back`] / [`AppEvent::Options`] instead of the shell acting on them. Claims end with the app.
 pub const NAV: i32 = 6;

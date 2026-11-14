@@ -4,8 +4,15 @@
 // Adding a language (docs/neoui-shell.md, "Keyboard"): a file in layouts/; a line in `all`, `on` and `set-on` here;
 // its letters in glyphs.slint; a `keyboard.<code>` key in neoui-proto's registry, a property in system-settings.slint
 // and a binding in neoui-render's settings.rs. Append only: `keyboard.layout` stores an index into `all`.
+//
+// Adding a keyboard (a pad of keys, like the number and phone pads): a file in pads/ (a `Pad`, types.slint); a line
+// in `Pads` below; a mode number in neoui-proto's `ipc` (`KEYBOARD_*`: mode 3 is `Pads.all[0]`, 4 is `[1]`, ...),
+// with its height in keyboard.slint's out properties, the shell's, and neoui-render's `keyboard_heights`. Fields ask
+// for it with `keys: <mode>`, apps with that mode in KEYBOARD.
 import { SystemSettings } from "../../system-settings.slint";
-import { Layout } from "types.slint";
+import { Layout, Pad } from "types.slint";
+import { Number } from "pads/number.slint";
+import { Phone } from "pads/phone.slint";
 import { En } from "layouts/en.slint";
 import { Hy } from "layouts/hy.slint";
 import { Ru } from "layouts/ru.slint";
@@ -40,4 +47,9 @@ export global Layouts {
     public function next() {
         SystemSettings.keyboard-layout = pick(on, current + 1);
     }
+}
+
+// The pad keyboards, in proto::KEYBOARD mode order from 3 (KEYBOARD_NUMBER, KEYBOARD_PHONE). Append only.
+export global Pads {
+    out property <[Pad]> all: [Number.pad, Phone.pad];
 }

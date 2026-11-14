@@ -67,13 +67,65 @@ fn shell_fields_use_the_system_keyboard() {
     common::frame(&mut r, &mut buf, W, "wifi password");
     common::write_png("wifi-password-539x1079.png", &buf, W, H);
 
-    // Cancel: the left of the two buttons at the card's bottom, just above the keyboard
+    // The toolbar's keyboard button (the middle one: Settings has no action) puts the keyboard away while the
+    // field keeps the focus and its text, and brings it back
     let body = r.body();
-    let card_bottom = (body.y + body.h as i32 - kb as i32) as f32;
+    let body_bottom = (body.y + body.h as i32) as f32;
+    let kb_button = ((W / 2) as i32, (H as f32 - 30.0 * d) as i32);
+    tap(&mut r, &mut buf, kb_button);
+    assert!(r.keyboard_dismissed());
+    assert_eq!(r.keyboard_h(), 0, "the keyboard button hides it");
+    common::frame(&mut r, &mut buf, W, "wifi keyboard away");
+    tap(&mut r, &mut buf, kb_button);
+    assert_eq!(r.keyboard_h(), kb, "and shows it again");
+
+    // put away again, a tap on the field brings it back (the card sits at the body's bottom without it: the field
+    // is 100 dp above, over the buttons' row)
+    tap(&mut r, &mut buf, kb_button);
+    assert_eq!(r.keyboard_h(), 0);
     tap(
         &mut r,
         &mut buf,
-        ((W / 4) as i32, (card_bottom - 42.0 * d) as i32),
+        ((W / 2) as i32, (body_bottom - 100.0 * d) as i32),
+    );
+    assert_eq!(
+        r.keyboard_h(),
+        kb,
+        "tapping the field brings the keyboard back"
+    );
+    press(&mut r, &mut buf, 1, 3.5, 1.0); // c, into the same field
+
+    // a tap on the card outside the field (the gap above the buttons) takes the focus away: the keyboard closes
+    let card_bottom = body_bottom - kb as f32;
+    tap(
+        &mut r,
+        &mut buf,
+        ((W / 2) as i32, (card_bottom - 71.0 * d) as i32),
+    );
+    assert_eq!(
+        r.keyboard_h(),
+        0,
+        "a tap outside the field hides the keyboard"
+    );
+    assert!(!r.keyboard_dismissed(), "it closed, not put away");
+    common::frame(&mut r, &mut buf, W, "wifi field left");
+
+    // Connect (the right button, at the body's bottom now): the field kept everything typed
+    tap(
+        &mut r,
+        &mut buf,
+        ((W * 3 / 4) as i32, (body_bottom - 42.0 * d) as i32),
+    );
+    assert_eq!(
+        r.take_wifi_connect().map(|(_, p)| p).as_deref(),
+        Some("ab1c")
+    );
+
+    // Cancel: the left of the two buttons at the card's bottom
+    tap(
+        &mut r,
+        &mut buf,
+        ((W / 4) as i32, (body_bottom - 42.0 * d) as i32),
     );
     common::frame(&mut r, &mut buf, W, "wifi closed");
     assert_eq!(r.keyboard_h(), 0, "closing the sheet hides the keyboard");

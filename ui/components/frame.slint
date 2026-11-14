@@ -256,10 +256,13 @@ component LabelButton inherits Rectangle {
 
 // Back on the left, an optional action in the middle, Options on the right (Belle's toolbar). An app can give the
 // action a label and a green pill (the dialer's Call), turn Back into "Cancel" (an editor), or empty the toolbar (a
-// full-screen call view).
+// full-screen call view). While a field uses the system keyboard a keyboard button that hides and shows it comes
+// after Back: Back | keyboard | Options, or Back | keyboard | action | Options (four narrower buttons).
 export component Toolbar inherits Rectangle {
     in property <image> action-icon;
     in property <bool> has-action;
+    in property <bool> has-keyboard;
+    in property <bool> keyboard-shown;
     in property <string> action-label;
     in property <bool> action-pill;
     in property <bool> back-cancel;
@@ -267,6 +270,8 @@ export component Toolbar inherits Rectangle {
     callback back;
     callback action;
     callback options;
+    callback keyboard-toggled;
+    property <length> button-w: has-keyboard && has-action ? 90 * Theme.dp : Theme.toolbar-button-w;
     height: Theme.toolbar-h;
     background: empty ? Theme.bg : @linear-gradient(180deg, Theme.toolbar-top 0%, Theme.toolbar-bottom 100%);
     if !empty: Rectangle {
@@ -278,12 +283,14 @@ export component Toolbar inherits Rectangle {
     if !empty: HorizontalLayout {
         alignment: space-between;
         if !back-cancel: ToolbarButton {
+            width: root.button-w;
             icon: @image-url("../icons/sys/back.svg");
             clicked => {
                 root.back();
             }
         }
         if back-cancel: LabelButton {
+            width: root.button-w;
             icon: @image-url("../icons/sys/close.svg");
             label: "Cancel";
             clicked => {
@@ -291,14 +298,25 @@ export component Toolbar inherits Rectangle {
             }
         }
 
-        if action-label == "" && !action-pill: ToolbarButton {
+        if has-keyboard: ToolbarButton {
+            width: root.button-w;
+            icon: keyboard-shown ? @image-url("../icons/sys/keyboard_hide.svg") : @image-url("../icons/sys/keyboard.svg");
+            clicked => {
+                root.keyboard-toggled();
+            }
+        }
+
+        // without an action the keyboard button takes the middle
+        if (action-label == "" && !action-pill) && (has-action || !has-keyboard): ToolbarButton {
+            width: root.button-w;
             icon: action-icon;
             enabled: has-action;
             clicked => {
                 root.action();
             }
         }
-        if action-label != "" || action-pill: LabelButton {
+        if (action-label != "" || action-pill) && (has-action || !has-keyboard): LabelButton {
+            width: root.button-w;
             icon: action-icon;
             label: action-label;
             pill: action-pill;
@@ -309,6 +327,7 @@ export component Toolbar inherits Rectangle {
         }
 
         ToolbarButton {
+            width: root.button-w;
             icon: @image-url("../icons/sys/options.svg");
             clicked => {
                 root.options();

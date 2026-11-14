@@ -1,0 +1,23 @@
+// SPDX-License-Identifier: Apache-2.0
+// The phone pad (proto::KEYBOARD_PHONE): digits with their letters as on a phone keypad, `* # +`, and `p` / `w`
+// (pause and wait in a dial string) in the bottom row with Backspace and Done.
+import { Pad, KeyKind } from "../types.slint";
+
+export global Phone {
+    out property <Pad> pad: {
+        name: "phone",
+        rows: [
+            [{ label: "1" }, { label: "2", hint: "ABC" }, { label: "3", hint: "DEF" }],
+            [{ label: "4", hint: "GHI" }, { label: "5", hint: "JKL" }, { label: "6", hint: "MNO" }],
+            [{ label: "7", hint: "PQRS" }, { label: "8", hint: "TUV" }, { label: "9", hint: "WXYZ" }],
+            [{ label: "*" }, { label: "0" }, { label: "#" }],
+            [
+                { label: "+" },
+                { label: "p", hint: "pause" },
+                { label: "w", hint: "wait" },
+                { kind: KeyKind.backspace },
+                { label: "Done", kind: KeyKind.done },
+            ],
+        ],
+    };
+}

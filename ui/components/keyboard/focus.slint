@@ -2,13 +2,22 @@
 // A shell text field has the focus: the shell shows the system keyboard over the body and the UI server's renderer
 // types into the field (neoui-render `Renderer::dispatch`). Fields set `open` from their focus (controls.slint
 // `FieldInput`); the shell closes it when the screen or view changes (a field removed with its `if` never reports
-// losing focus).
+// losing focus), and a tap outside any field takes the focus away (shell.slint's focus sink).
 export global KeyboardFocus {
     in-out property <bool> open;
+    // the user put the keyboard away (the toolbar's keyboard button) while the field keeps the focus; a field
+    // gaining the focus, a tap on the focused field or the button again brings it back
+    in-out property <bool> dismissed;
+    // counts fields gaining the focus (and taps that bring a dismissed keyboard back): an app re-sends KEYBOARD on a
+    // change
+    in-out property <int> seq;
+    // the keyboard the focused field wants (its `keys`): proto::KEYBOARD's 1 text, 3 number, 4 phone
+    in-out property <int> mode: 1;
     // the keyboard's height in text mode (written by keyboard.slint), to lift a sheet above it
     in-out property <length> text-h;
 
     public function close() {
         open = false;
+        dismissed = false;
     }
 }
