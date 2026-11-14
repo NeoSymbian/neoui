@@ -36,6 +36,14 @@ export global SystemSettings {
     in-out property <bool> keyboard-ru: true;
     in-out property <int> keyboard-layout: 0;
     in-out property <bool> keyboard-same-height: true;
+    // Settings -> Phone (telephony C8)
+    in-out property <int> phone-clir: 0;
+    in-out property <bool> phone-show-duration: false;
+    in-out property <bool> phone-summary: false;
+    in-out property <int> phone-log-days: 30;
+    in-out property <bool> phone-smart-dial: true;
+    in-out property <string> phone-voicemail;
+    in-out property <int> contacts-name-order: 0;
 
     // A setting changed in the UI (its registry key); the server reads the property and stores it.
     callback edited(string);
@@ -62,4 +70,11 @@ export global SystemSettings {
     changed keyboard-ru => { edited("keyboard.ru"); }
     changed keyboard-layout => { edited("keyboard.layout"); }
     changed keyboard-same-height => { edited("keyboard.same_height"); }
+    changed phone-clir => { edited("phone.clir"); }
+    changed phone-show-duration => { edited("phone.show_duration"); }
+    changed phone-summary => { edited("phone.summary"); }
+    changed phone-log-days => { edited("phone.log_days"); }
+    changed phone-smart-dial => { edited("phone.smart_dial"); }
+    changed phone-voicemail => { edited("phone.voicemail"); }
+    changed contacts-name-order => { edited("contacts.name_order"); }
 }

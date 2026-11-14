@@ -2610,7 +2610,7 @@ dependencies = [
 [[package]]
 name = "modem-ipc"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/telephony?rev=d2d04398c6c80ffa23306630ac59b72551e3f39a#d2d04398c6c80ffa23306630ac59b72551e3f39a"
+source = "git+https://github.com/NeoSymbian/telephony?rev=a58dfe6c69ccff8fcd04bf6407906f9bfe182de3#a58dfe6c69ccff8fcd04bf6407906f9bfe182de3"
 
 [[package]]
 name = "moxcms"
@@ -2817,6 +2817,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "neoui-contacts"
+version = "0.1.0"
+dependencies = [
+ "phone-rules",
+]
+
+[[package]]
 name = "neoui-files"
 version = "0.1.0"
 
@@ -2840,9 +2847,11 @@ dependencies = [
  "e32",
  "modem-ipc",
  "neoapp",
+ "neoui-contacts",
  "neoui-proto",
  "neoui-render",
  "net",
+ "phone-rules",
  "wpa",
 ]
 
@@ -3398,6 +3407,11 @@ name = "percent-encoding"
 version = "2.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
+
+[[package]]
+name = "phone-rules"
+version = "0.1.0"
+source = "git+https://github.com/NeoSymbian/telephony?rev=a58dfe6c69ccff8fcd04bf6407906f9bfe182de3#a58dfe6c69ccff8fcd04bf6407906f9bfe182de3"
 
 [[package]]
 name = "pico-args"

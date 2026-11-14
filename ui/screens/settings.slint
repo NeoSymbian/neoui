@@ -9,6 +9,7 @@ import { Slider, Card, Button, TextField } from "../components/controls.slint";
 import { KeyboardFocus } from "../components/keyboard/focus.slint";
 import { WifiNet, WifiLink } from "../data.slint";
 import { Layouts } from "../components/keyboard/layouts.slint";
+import { PhoneData } from "../phone-data.slint";
 
 component Tinted inherits Rectangle {
     in property <image> icon;
@@ -270,6 +271,17 @@ export component SettingsScreen inherits Rectangle {
             }
 
             SettingRow {
+                title: "Phone";
+                value: SystemSettings.phone-clir == 1 ? "Caller ID hidden" : "Calls & contacts";
+                icon: @image-url("../icons/sys/call.svg");
+                tint: #22b46a;
+                clicked => {
+                    root.view = "phone";
+                    PhoneData.act("waiting", "query");
+                }
+            }
+
+            SettingRow {
                 title: "Battery";
                 value: battery-text;
                 clicked => { root.view = "battery"; }
@@ -415,6 +427,84 @@ export component SettingsScreen inherits Rectangle {
                 Button { text: "Louder"; clicked => { SystemSettings.ring-volume = min(10, root.ring-volume + 1); } }
             }
             if phone-feedback != "": ListRow { title: phone-feedback; }
+        }
+    }
+
+    // Phone (telephony C8): calls, the call log and contacts, as Symbian^3's call settings; a tap steps through the
+    // choices. Call waiting lives on the network: the row shows what it last said.
+    if view == "phone": NeoList {
+        VerticalLayout {
+            SectionHeader { text: "Calls"; }
+            ListRow {
+                title: "Send my caller ID";
+                value: SystemSettings.phone-clir == 1 ? "No" : SystemSettings.phone-clir == 2 ? "Yes" : "Set by network";
+                clicked => {
+                    SystemSettings.phone-clir = mod(SystemSettings.phone-clir + 1, 3);
+                }
+            }
+            ListRow {
+                title: "Call waiting";
+                subtitle: "Tap to turn it " + (PhoneData.waiting == 2 ? "off" : "on");
+                value: PhoneData.waiting == 1 ? "Asking…" : PhoneData.waiting == 2 ? "On" : PhoneData.waiting == 3 ? "Off"
+                    : PhoneData.waiting == 4 ? "Not available" : "Unknown";
+                clicked => {
+                    if PhoneData.waiting != 1 {
+                        PhoneData.act("waiting", PhoneData.waiting == 2 ? "off" : "on");
+                    }
+                }
+            }
+            ListRow {
+                title: "Show call duration";
+                has-switch: true;
+                switch-on <=> SystemSettings.phone-show-duration;
+            }
+            ListRow {
+                title: "Summary after call";
+                has-switch: true;
+                switch-on <=> SystemSettings.phone-summary;
+            }
+            ListRow {
+                title: "Contact search";
+                subtitle: "The dialer offers names its digits spell";
+                has-switch: true;
+                switch-on <=> SystemSettings.phone-smart-dial;
+            }
+            SectionHeader { text: "Voice mailbox"; }
+            HorizontalLayout {
+                padding-left: Theme.margin;
+                padding-right: Theme.margin;
+                TextField {
+                    text <=> SystemSettings.phone-voicemail;
+                    placeholder: "Voice mailbox number";
+                }
+            }
+
+            SectionHeader { text: "Call log"; }
+            ListRow {
+                title: "Log length";
+                value: SystemSettings.phone-log-days == 0 ? "No log" : SystemSettings.phone-log-days == 1 ? "1 day" : "\{SystemSettings.phone-log-days} days";
+                subtitle: SystemSettings.phone-log-days == 0 ? "The log is not kept" : "";
+                clicked => {
+                    SystemSettings.phone-log-days = SystemSettings.phone-log-days == 30 ? 0
+                        : SystemSettings.phone-log-days == 0 ? 1 : SystemSettings.phone-log-days == 1 ? 10 : 30;
+                }
+            }
+            ListRow {
+                title: "Clear call log";
+                clicked => { PhoneData.act("log-clear", "all"); }
+            }
+
+            SectionHeader { text: "Contacts"; }
+            ListRow {
+                title: "Name display";
+                value: SystemSettings.contacts-name-order == 1 ? "Last name First name" : "First name Last name";
+                clicked => { SystemSettings.contacts-name-order = 1 - SystemSettings.contacts-name-order; }
+            }
+            ListRow {
+                title: "Contacts shown from";
+                value: "Phone memory";
+                divider: false;
+            }
         }
     }
 

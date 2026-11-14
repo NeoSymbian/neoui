@@ -1,15 +1,42 @@
 // SPDX-License-Identifier: Apache-2.0
-// Contacts: A-Z list with search and a favourites strip (default), a contact card ("card").
+// Contacts (telephony C8): the list with search, My Card and favourites first (default), a contact's card ("card")
+// and the editor ("edit"). The data and every action go through PhoneData (symbian/src/contacts.rs).
 import { Theme } from "../theme.slint";
 import { NeoList } from "../components/scroll.slint";
-import { Data } from "../data.slint";
-import { SearchField, RoundButton } from "../components/controls.slint";
+import { SearchField, RoundButton, Button, TextField } from "../components/controls.slint";
 import { ListRow, SectionHeader, Avatar } from "../components/lists.slint";
+import { PhoneData } from "../phone-data.slint";
+
+// one number of the editor: its label (tap to change) and the number
+component NumberField inherits HorizontalLayout {
+    in property <int> index;
+    in-out property <string> number;
+    spacing: 8 * Theme.dp;
+    Rectangle {
+        width: 112 * Theme.dp;
+        border-radius: Theme.radius-small;
+        background: lt.pressed ? Theme.pressed : Theme.field;
+        Text {
+            text: PhoneData.edit-labels[index];
+            color: Theme.text;
+            font-size: Theme.font-label;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+        lt := TouchArea {
+            clicked => { PhoneData.act("contact-label", index); }
+        }
+    }
+    TextField {
+        text <=> root.number;
+        placeholder: "Number";
+    }
+}
 
 export component ContactsScreen inherits Rectangle {
     in-out property <string> view;
-    in-out property <int> current: 0;
     callback open-app(string);
+
     if view == "": NeoList {
         VerticalLayout {
             padding-top: 8 * Theme.dp;
@@ -18,37 +45,47 @@ export component ContactsScreen inherits Rectangle {
                 padding-right: Theme.margin;
                 padding-bottom: 4 * Theme.dp;
                 SearchField {
-                    placeholder: "Search " + Data.people.length + " contacts";
+                    text <=> PhoneData.search;
+                    placeholder: "Search " + PhoneData.people-total + " contacts";
                 }
             }
 
-            SectionHeader {
-                text: "Favourites";
-            }
-
-            for p[i] in Data.people: ListRow {
-                visible: p.favourite;
-                height: p.favourite ? Theme.list-row-h + 8 * Theme.dp : 0;
-                title: p.name;
-                avatar: p.initials;
-                avatar-tint: p.tint;
+            if PhoneData.search == "": ListRow {
+                title: PhoneData.has-my-card ? "My Card" : "Create My Card";
+                has-icon: true;
+                icon: @image-url("../icons/sys/person_add.svg");
+                chevron: true;
                 clicked => {
-                    root.current = i;
-                    root.view = "card";
+                    PhoneData.act("contact-open", -1);
+                    root.view = PhoneData.has-my-card ? "card" : "edit";
                 }
             }
-            SectionHeader {
-                text: "All contacts";
+
+            if PhoneData.people-total == 0: Text {
+                height: 120 * Theme.dp;
+                text: "No contacts\n(Options → New contact, or Import vCards)";
+                color: Theme.text-dim;
+                font-size: Theme.font-body;
+                horizontal-alignment: center;
+                vertical-alignment: center;
             }
 
-            for p[i] in Data.people: ListRow {
+            for p in PhoneData.people: ListRow {
                 height: Theme.list-row-h + 8 * Theme.dp;
                 title: p.name;
+                title-font: "DejaVu Sans";
+                subtitle: p.detail;
+                value: p.favourite ? "★" : "";
                 avatar: p.initials;
                 avatar-tint: p.tint;
                 clicked => {
-                    root.current = i;
-                    root.view = "card";
+                    if PhoneData.assigning > 0 {
+                        PhoneData.act("speed-assign", p.id);
+                        root.open-app("phone");
+                    } else {
+                        PhoneData.act("contact-open", p.id);
+                        root.view = "card";
+                    }
                 }
             }
         }
@@ -56,70 +93,154 @@ export component ContactsScreen inherits Rectangle {
 
     if view == "card": NeoList {
         VerticalLayout {
-            padding-top: 28 * Theme.dp;
-            spacing: 10 * Theme.dp;
+            padding-top: 24 * Theme.dp;
+            spacing: 8 * Theme.dp;
             HorizontalLayout {
                 alignment: center;
                 Avatar {
-                    initials: Data.people[current].initials;
-                    tint: Data.people[current].tint;
+                    initials: PhoneData.card.initials;
+                    tint: PhoneData.card.tint;
                     size: Theme.avatar-large;
                 }
             }
 
             Text {
-                text: Data.people[current].name;
+                text: PhoneData.card.name;
+                font-family: "DejaVu Sans";
                 color: Theme.text;
                 font-size: Theme.font-title * 1.3;
                 font-weight: 600;
                 horizontal-alignment: center;
             }
 
-            HorizontalLayout {
-                padding-top: 10 * Theme.dp;
-                padding-bottom: 14 * Theme.dp;
-                alignment: center;
-                spacing: 28 * Theme.dp;
-                RoundButton {
-                    icon: @image-url("../icons/sys/call.svg");
-                    label: "Call";
-                    fill: Theme.ok;
-                    clicked => { root.open-app("phone"); }
-                }
-
-                RoundButton {
-                    icon: @image-url("../icons/sys/message.svg");
-                    label: "Message";
-                    fill: Theme.accent;
-                    clicked => { root.open-app("messages"); }
-                }
-
-                RoundButton {
-                    icon: @image-url("../icons/sys/video.svg");
-                    label: "Video";
-                }
+            if PhoneData.card.company != "": Text {
+                text: PhoneData.card.company;
+                font-family: "DejaVu Sans";
+                color: Theme.text-secondary;
+                font-size: Theme.font-body;
+                horizontal-alignment: center;
             }
 
-            ListRow {
-                title: Data.people[current].number;
-                subtitle: Data.people[current].label;
+            for n[i] in PhoneData.card.numbers: ListRow {
+                title: n.number;
+                subtitle: n.label;
                 icon: @image-url("../icons/sys/call.svg");
                 has-icon: true;
+                icon-tint: Theme.ok;
+                clicked => { PhoneData.act("dial", n.number); }
             }
 
-            ListRow {
-                title: Data.people[current].initials.to-lowercase() + "@example.org";
+            if PhoneData.card.email != "": ListRow {
+                title: PhoneData.card.email;
                 subtitle: "Email";
                 icon: @image-url("../icons/sys/message.svg");
                 has-icon: true;
             }
 
-            ListRow {
-                title: Data.people[current].favourite ? "In favourites" : "Add to favourites";
+            if PhoneData.card.note != "": ListRow {
+                title: PhoneData.card.note;
+                title-font: "DejaVu Sans";
+                subtitle: "Note";
+                has-icon: true;
+                icon: @image-url("../icons/sys/edit.svg");
+            }
+
+            if !PhoneData.card.mine: ListRow {
+                title: PhoneData.card.favourite ? "Remove from favourites" : "Add to favourites";
                 icon: @image-url("../icons/sys/star.svg");
                 has-icon: true;
-                icon-tint: Data.people[current].favourite ? #f2c94c : Theme.text;
-                divider: false;
+                icon-tint: PhoneData.card.favourite ? #f2c94c : Theme.text;
+                clicked => { PhoneData.act("contact-favourite", PhoneData.card.id); }
+            }
+
+            if !PhoneData.card.mine && PhoneData.card.numbers.length > 0: ListRow {
+                title: "Assign speed dial";
+                icon: @image-url("../icons/sys/keypad.svg");
+                has-icon: true;
+                clicked => { PhoneData.act("contact-speed", PhoneData.card.id); }
+            }
+
+            HorizontalLayout {
+                padding: Theme.margin;
+                spacing: 10 * Theme.dp;
+                Button {
+                    text: "Edit";
+                    primary: false;
+                    clicked => {
+                        PhoneData.act("contact-edit", PhoneData.card.id);
+                        root.view = "edit";
+                    }
+                }
+                Button {
+                    text: "Delete";
+                    tint: Theme.danger;
+                    clicked => { root.view = "delete"; }
+                }
+            }
+        }
+    }
+
+    // "Delete?\n<name>" (Symbian^3), yes or no
+    if view == "delete": VerticalLayout {
+        padding: 24 * Theme.dp;
+        spacing: 16 * Theme.dp;
+        alignment: center;
+        Text {
+            text: "Delete?\n" + PhoneData.card.name;
+            font-family: "DejaVu Sans";
+            color: Theme.text;
+            font-size: Theme.font-title;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+        HorizontalLayout {
+            spacing: 10 * Theme.dp;
+            Button { text: "Cancel"; primary: false; clicked => { root.view = "card"; } }
+            Button {
+                text: "Delete";
+                tint: Theme.danger;
+                clicked => {
+                    PhoneData.act("contact-delete", PhoneData.card.id);
+                    root.view = "";
+                }
+            }
+        }
+    }
+
+    if view == "edit": NeoList {
+        VerticalLayout {
+            alignment: start;
+            padding: Theme.margin;
+            spacing: 10 * Theme.dp;
+            TextField { text <=> PhoneData.edit-first; placeholder: "First name"; }
+            TextField { text <=> PhoneData.edit-last; placeholder: "Last name"; }
+            TextField { text <=> PhoneData.edit-company; placeholder: "Company"; }
+            NumberField { index: 0; number <=> PhoneData.num0; }
+            if PhoneData.edit-numbers > 1: NumberField { index: 1; number <=> PhoneData.num1; }
+            if PhoneData.edit-numbers > 2: NumberField { index: 2; number <=> PhoneData.num2; }
+            if PhoneData.edit-numbers > 3: NumberField { index: 3; number <=> PhoneData.num3; }
+            if PhoneData.edit-numbers < 4: Text {
+                text: "+ Add number";
+                color: Theme.accent;
+                font-size: Theme.font-body;
+                TouchArea { clicked => { PhoneData.edit-numbers += 1; } }
+            }
+            TextField { text <=> PhoneData.edit-email; placeholder: "Email"; }
+            TextField { text <=> PhoneData.edit-note; placeholder: "Note"; }
+            HorizontalLayout {
+                spacing: 10 * Theme.dp;
+                Button {
+                    text: "Cancel";
+                    primary: false;
+                    clicked => { root.view = PhoneData.edit-id == 0 ? "" : "card"; }
+                }
+                Button {
+                    text: "Save";
+                    clicked => {
+                        PhoneData.act("contact-save", "");
+                        root.view = PhoneData.edit-id == 0 ? "" : "card";
+                    }
+                }
             }
         }
     }

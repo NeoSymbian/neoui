@@ -10,6 +10,8 @@ import "fonts/UbuntuMono-Regular.ttf";
 import "fonts/DejaVuSans.ttf";
 import { Theme } from "theme.slint";
 export { SystemSettings } from "system-settings.slint";
+export { PhoneData, MatchRow, LogRow, LogDetail, SpeedCell, PersonRow, NumberRow, CardView } from "phone-data.slint";
+import { PhoneData } from "phone-data.slint";
 export { Now } from "now.slint";
 export { Scroll } from "components/scroll.slint";
 import { StatusBar, Toolbar } from "components/frame.slint";
@@ -185,6 +187,10 @@ export component Shell inherits Window {
             root.shade-open = false;
         } else if (root.options-open) {
             root.options-open = false;
+        } else if (root.screen == "phone" && root.view == "logdetail") {
+            root.view = "log";
+        } else if (root.screen == "contacts" && (root.view == "delete" || (root.view == "edit" && PhoneData.edit-id != 0))) {
+            root.view = "card";
         } else if (root.view != "") {
             root.view = "";
         } else if (root.screen == "menu") {
@@ -195,12 +201,52 @@ export component Shell inherits Window {
         }
     }
 
+    // One line per app (titles and Options menus), so apps added in parallel don't collide on one long line.
     pure function screen-title(s: string, v: string) -> string {
-        s == "home" ? "" : s == "menu" ? "Menu" : s == "phone" ? (v == "call" ? "Call" : "Phone") : s == "messages" ? (v == "thread" ? "Ava Lindqvist" : "Messages") : s == "contacts" ? "Contacts" : s == "browser" ? "Browser" : s == "camera" ? "Camera" : s == "photos" ? "Photos" : s == "music" ? (v == "playing" ? "Now playing" : "Music") : s == "calendar" ? "Calendar" : s == "clock" ? "Clock" : s == "files" ? "Files" : s == "settings" ? (v == "" ? "Settings" : v == "connectivity" ? "Connectivity" : v == "wifi" ? "Wi-Fi" : v == "display" ? "Display" : v == "developer" ? "Developer options" : v == "battery" ? "Battery" : v == "keyboard" ? "Language & keyboard" : v == "datetime" ? "Date & time" : v == "sounds" ? "Sounds" : "About phone") : s == "terminal" ? "Terminal" : s == "devtools" ? "Dev tools" : s == "legacy" ? "Old apps" : s == "switcher" ? "Open apps" : s
+        s == "home" ? ""
+        : s == "menu" ? "Menu"
+        : s == "phone" ? (v == "call" ? "Call" : v == "log" ? "Recent calls" : v == "logdetail" ? "Call details" : v == "speed" ? "Speed dial" : "Phone")
+        : s == "messages" ? (v == "thread" ? "Ava Lindqvist" : "Messages")
+        : s == "contacts" ? (v == "card" ? "Contact" : v == "edit" ? "Edit contact" : v == "delete" ? "Delete" : "Contacts")
+        : s == "browser" ? "Browser"
+        : s == "camera" ? "Camera"
+        : s == "photos" ? "Photos"
+        : s == "music" ? (v == "playing" ? "Now playing" : "Music")
+        : s == "calendar" ? "Calendar"
+        : s == "clock" ? "Clock"
+        : s == "files" ? "Files"
+        : s == "settings" ? settings-title(v)
+        : s == "terminal" ? "Terminal"
+        : s == "devtools" ? "Dev tools"
+        : s == "legacy" ? "Old apps"
+        : s == "switcher" ? "Open apps"
+        : s
     }
 
-    pure function options(s: string) -> [string] {
-        s == "messages" ? ["New message", "Mark all as read", "Delete conversations", "Settings"] : s == "contacts" ? ["New contact", "Import from SIM", "Groups", "Settings"] : s == "phone" ? ["Call settings", "Speed dial", "Voicemail"] : s == "photos" ? ["Slideshow", "Select", "Sort by date"] : s == "files" ? ["New folder", "Sort", "Show hidden files"] : s == "browser" ? ["New tab", "Bookmarks", "History", "Share page"] : s == "music" ? ["Shuffle all", "Playlists", "Sleep timer"] : ["Settings", "Help", "About"]
+    pure function settings-title(v: string) -> string {
+        v == "" ? "Settings"
+        : v == "connectivity" ? "Connectivity"
+        : v == "wifi" ? "Wi-Fi"
+        : v == "display" ? "Display"
+        : v == "developer" ? "Developer options"
+        : v == "battery" ? "Battery"
+        : v == "keyboard" ? "Language & keyboard"
+        : v == "datetime" ? "Date & time"
+        : v == "sounds" ? "Sounds"
+        : v == "phone" ? "Phone"
+        : "About phone"
+    }
+
+    pure function options(s: string, v: string) -> [string] {
+        s == "messages" ? ["New message", "Mark all as read", "Delete conversations", "Settings"]
+        : s == "contacts" ? ["New contact", "Import vCards", "Export vCards", "Contacts settings"]
+        : s == "phone" && v == "log" ? ["Clear list", "Call settings"]
+        : s == "phone" ? ["Recent calls", "Speed dial", "Voice mailbox", "Call settings"]
+        : s == "photos" ? ["Slideshow", "Select", "Sort by date"]
+        : s == "files" ? ["New folder", "Sort", "Show hidden files"]
+        : s == "browser" ? ["New tab", "Bookmarks", "History", "Share page"]
+        : s == "music" ? ["Shuffle all", "Playlists", "Sleep timer"]
+        : ["Settings", "Help", "About"]
     }
 
     // The current screen
@@ -398,6 +444,9 @@ export component Shell inherits Window {
         action => {
             if (root.screen == "messages") {
                 root.view = "thread";
+            } else if (root.screen == "contacts") {
+                PhoneData.act("contact-new", "");
+                root.view = "edit";
             } else if (root.screen == "menu") {
                 root.open("switcher");
             }
@@ -407,13 +456,33 @@ export component Shell inherits Window {
     OptionsMenu {
         y: body-y;
         height: body-h;
-        items: options(screen);
+        items: options(screen, view);
         open: options-open;
         dismissed => { root.options-open = false; }
         selected(i) => {
             root.options-open = false;
             if (i == "Settings") {
                 root.open("settings");
+            } else if (i == "Call settings" || i == "Contacts settings") {
+                root.open("settings");
+                root.view = "phone";
+                PhoneData.act("waiting", "query");
+            } else if (i == "Recent calls") {
+                root.view = "log";
+                PhoneData.act("log-tab", PhoneData.log-tab);
+            } else if (i == "Speed dial") {
+                root.view = "speed";
+            } else if (i == "Voice mailbox") {
+                PhoneData.act("key-long", "1");
+            } else if (i == "Clear list") {
+                PhoneData.act("log-clear", "tab");
+            } else if (i == "New contact") {
+                PhoneData.act("contact-new", "");
+                root.view = "edit";
+            } else if (i == "Import vCards") {
+                PhoneData.act("contact-import", "");
+            } else if (i == "Export vCards") {
+                PhoneData.act("contact-export", "");
             }
         }
     }

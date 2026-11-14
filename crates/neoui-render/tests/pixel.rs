@@ -8,11 +8,14 @@ const SCREENS: &[(&str, &str)] = &[
     ("menu", ""),
     ("phone", ""),
     ("phone", "log"),
+    ("phone", "logdetail"),
+    ("phone", "speed"),
     ("phone", "call"),
     ("messages", ""),
     ("messages", "thread"),
     ("contacts", ""),
     ("contacts", "card"),
+    ("contacts", "edit"),
     ("browser", ""),
     ("browser", "page"),
     ("camera", ""),
@@ -30,6 +33,7 @@ const SCREENS: &[(&str, &str)] = &[
     ("settings", "wifi"),
     ("settings", "display"),
     ("settings", "keyboard"),
+    ("settings", "phone"),
     ("settings", "about"),
     ("terminal", ""),
 ];
@@ -39,6 +43,75 @@ fn pixel() {
     let (w, h) = (1080, 2160);
     let mut r = common::renderer(w, h);
     let mut buf = vec![0u32; (w * h) as usize];
+    // C8 data for the Phone and Contacts views (invented names; 555-01xx is the fictional range)
+    r.set_people(
+        &[
+            neoui_render::PersonItem {
+                id: 1,
+                name: "Ava Lindqvist",
+                detail: "+1 555 0142",
+                favourite: true,
+            },
+            neoui_render::PersonItem {
+                id: 2,
+                name: "Անի Պետրոսյան",
+                detail: "+1 555 0118",
+                favourite: false,
+            },
+        ],
+        2,
+        true,
+    );
+    r.set_card(&neoui_render::CardItem {
+        id: 1,
+        name: "Ava Lindqvist",
+        company: "Example Co",
+        numbers: &[
+            ("Mobile", "+1 555 0142"),
+            ("Telephone (work)", "+1 555 0177"),
+        ],
+        email: "ava@example.org",
+        note: "",
+        favourite: true,
+    });
+    r.set_log(&[
+        neoui_render::LogItem {
+            id: 3,
+            title: "Ava Lindqvist",
+            subtitle: "Mobile",
+            when: "21:03",
+            kind: 3,
+            count: 2,
+        },
+        neoui_render::LogItem {
+            id: 1,
+            title: "+1 555 0123",
+            subtitle: "",
+            when: "Yesterday",
+            kind: 3,
+            count: 1,
+        },
+    ]);
+    r.set_log_detail(&neoui_render::LogDetailItem {
+        id: 3,
+        title: "Ava Lindqvist",
+        number: "+1 555 0142",
+        direction: "Missed",
+        when: "Today 21:03",
+        duration: "",
+        known: true,
+    });
+    r.set_speed(&[
+        ("Ava Lindqvist", "+1 555 0142"),
+        ("", ""),
+        ("", ""),
+        ("", ""),
+        ("", ""),
+        ("", ""),
+        ("", ""),
+        ("", ""),
+    ]);
+    r.set_dial("26", &[(1, "Anna Smith", "+1 555 0150")]);
     for (screen, view) in SCREENS {
         common::snapshot(&mut r, &mut buf, screen, view, "pixel", w, h);
     }

@@ -1,0 +1,58 @@
+// SPDX-License-Identifier: Apache-2.0
+// Phone and Contacts data (telephony C8): the UI server (symbian/src/phone.rs, contacts.rs) fills these; every
+// button reports through `act(action, value)`. Screens read and write this global directly, so nothing is threaded
+// through the shell.
+
+// a smart-dial match above the dialer's keypad
+export struct MatchRow { id: int, name: string, number: string }
+// one row of Recents; `kind` 1 dialled, 2 received, 3 missed, 4 rejected; `count` > 1 for repeated calls
+export struct LogRow { id: int, title: string, subtitle: string, when: string, kind: int, count: int }
+export struct LogDetail { id: int, title: string, number: string, direction: string, when: string, duration: string, known: bool }
+// a speed-dial key 2..9 (1 is the voice mailbox)
+export struct SpeedCell { key: int, name: string, number: string }
+// a contact in the list
+export struct PersonRow { id: int, name: string, initials: string, tint: color, favourite: bool, detail: string }
+export struct NumberRow { label: string, number: string }
+export struct CardView { id: int, name: string, initials: string, tint: color, favourite: bool, company: string, numbers: [NumberRow], email: string, note: string, mine: bool }
+
+export global PhoneData {
+    // the dialer's number (the UI server edits it: keys, backspace, the * + p w cycle)
+    in property <string> number;
+    in property <[MatchRow]> matches;
+    // Recents: the tab (0 missed, 1 received, 2 dialled), its rows, the opened entry
+    in-out property <int> log-tab;
+    in property <[LogRow]> log;
+    in property <LogDetail> detail;
+    in property <[SpeedCell]> speed;
+    // a short note over the Phone and Contacts screens ("Number assigned for key 2"); "" = none
+    in property <string> note;
+    // the in-call screen's second line (the number under the caller's name) and its connected time
+    in property <string> call-detail;
+    in property <string> call-time;
+    // call waiting on the network: 0 unknown, 1 asking, 2 on, 3 off, 4 failed
+    in property <int> waiting;
+    // Contacts
+    in property <[PersonRow]> people;
+    in property <int> people-total;
+    in-out property <string> search;
+    in property <bool> has-my-card;
+    in property <CardView> card;
+    // the editor: which contact (0 = new, -1 = my card) and its fields; up to 4 numbers
+    in-out property <int> edit-id;
+    in-out property <string> edit-first;
+    in-out property <string> edit-last;
+    in-out property <string> edit-company;
+    in-out property <string> edit-email;
+    in-out property <string> edit-note;
+    in-out property <[string]> edit-labels: ["Mobile", "Mobile", "Mobile", "Mobile"];
+    in-out property <string> num0;
+    in-out property <string> num1;
+    in-out property <string> num2;
+    in-out property <string> num3;
+    in-out property <int> edit-numbers: 1;
+    // picking a contact for a speed-dial key (0 = not picking)
+    in-out property <int> assigning;
+
+    callback act(string, string);
+    changed search => { act("contact-search", search); }
+}

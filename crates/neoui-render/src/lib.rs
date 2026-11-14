@@ -42,6 +42,85 @@ pub struct CallView<'a> {
 
 slint::include_modules!();
 
+/// A contact row of the list (telephony C8).
+pub struct PersonItem<'a> {
+    pub id: u32,
+    pub name: &'a str,
+    /// the second line: the first number, the company, ...
+    pub detail: &'a str,
+    pub favourite: bool,
+}
+
+/// The contact card.
+pub struct CardItem<'a> {
+    /// -1 = my card
+    pub id: i32,
+    pub name: &'a str,
+    pub company: &'a str,
+    /// (label, number)
+    pub numbers: &'a [(&'a str, &'a str)],
+    pub email: &'a str,
+    pub note: &'a str,
+    pub favourite: bool,
+}
+
+/// The contact editor's fields: which contact (0 new, -1 my card) and (label, number) pairs, at most 4.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Editor {
+    pub id: i32,
+    pub first: String,
+    pub last: String,
+    pub company: String,
+    pub email: String,
+    pub note: String,
+    pub numbers: Vec<(String, String)>,
+}
+
+/// A row of Recents: `kind` 1 dialled, 2 received, 3 missed, 4 rejected.
+pub struct LogItem<'a> {
+    pub id: u32,
+    pub title: &'a str,
+    pub subtitle: &'a str,
+    pub when: &'a str,
+    pub kind: u8,
+    pub count: u32,
+}
+
+/// One opened call of Recents.
+pub struct LogDetailItem<'a> {
+    pub id: u32,
+    pub title: &'a str,
+    pub number: &'a str,
+    pub direction: &'a str,
+    pub when: &'a str,
+    pub duration: &'a str,
+    /// the number is a contact's
+    pub known: bool,
+}
+
+/// The initials an avatar shows: the first letters of the first two words.
+fn initials(name: &str) -> String {
+    let i: String = name
+        .split_whitespace()
+        .take(2)
+        .filter_map(|w| w.chars().next())
+        .flat_map(char::to_uppercase)
+        .collect();
+    if i.is_empty() { "#".into() } else { i }
+}
+
+/// An avatar colour that stays with the contact.
+fn tint(id: i32) -> slint::Color {
+    const TINTS: [u32; 8] = [
+        0x2f80ed, 0x22b46a, 0xe04e9b, 0xf2994a, 0x8656e8, 0x1fa9c4, 0xe5484d, 0x14a37f,
+    ];
+    slint::Color::from_argb_encoded(0xff00_0000 | TINTS[id.unsigned_abs() as usize % TINTS.len()])
+}
+
+fn model<T: Clone + 'static>(rows: Vec<T>) -> slint::ModelRc<T> {
+    slint::ModelRc::new(slint::VecModel::from(rows))
+}
+
 /// One XRGB8888 pixel, `0xFFRRGGBB` (alpha byte always 0xFF).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(transparent)]
@@ -164,6 +243,11 @@ impl Renderer {
         let phone: Rc<RefCell<Vec<(String, String)>>> = Rc::default();
         let sink = phone.clone();
         ui.on_phone_action(move |a, n| {
+            sink.borrow_mut()
+                .push((a.as_str().into(), n.as_str().into()))
+        });
+        let sink = phone.clone();
+        ui.global::<PhoneData>().on_act(move |a, n| {
             sink.borrow_mut()
                 .push((a.as_str().into(), n.as_str().into()))
         });
@@ -581,8 +665,209 @@ impl Renderer {
         self.ui.set_view("call".into());
     }
 
-    /// What the Phone screen asked since the last call: ("dial", number), ("answer", ""), ("hangup", ""),
-    /// ("mute" | "speaker", "1" | "0"), ("dtmf", key).
+    /// The dialer's number and the contacts its digits spell: (id, name, number).
+    pub fn set_dial(&mut self, number: &str, matches: &[(u32, &str, &str)]) {
+        let g = self.ui.global::<PhoneData>();
+        g.set_number(number.into());
+        g.set_matches(model(
+            matches
+                .iter()
+                .map(|(id, name, number)| MatchRow {
+                    id: *id as i32,
+                    name: (*name).into(),
+                    number: (*number).into(),
+                })
+                .collect(),
+        ));
+    }
+
+    /// Recents' tab: 0 missed, 1 received, 2 dialled.
+    pub fn log_tab(&self) -> i32 {
+        self.ui.global::<PhoneData>().get_log_tab()
+    }
+
+    pub fn set_log(&mut self, rows: &[LogItem<'_>]) {
+        self.ui.global::<PhoneData>().set_log(model(
+            rows.iter()
+                .map(|r| LogRow {
+                    id: r.id as i32,
+                    title: r.title.into(),
+                    subtitle: r.subtitle.into(),
+                    when: r.when.into(),
+                    kind: i32::from(r.kind),
+                    count: r.count as i32,
+                })
+                .collect(),
+        ));
+    }
+
+    pub fn set_log_detail(&mut self, d: &LogDetailItem<'_>) {
+        self.ui.global::<PhoneData>().set_detail(LogDetail {
+            id: d.id as i32,
+            title: d.title.into(),
+            number: d.number.into(),
+            direction: d.direction.into(),
+            when: d.when.into(),
+            duration: d.duration.into(),
+            known: d.known,
+        });
+    }
+
+    /// Speed-dial keys 2..=9: (name, number), empty when unassigned.
+    pub fn set_speed(&mut self, cells: &[(&str, &str)]) {
+        self.ui.global::<PhoneData>().set_speed(model(
+            cells
+                .iter()
+                .enumerate()
+                .map(|(i, (name, number))| SpeedCell {
+                    key: i as i32 + 2,
+                    name: (*name).into(),
+                    number: (*number).into(),
+                })
+                .collect(),
+        ));
+    }
+
+    /// The speed-dial key a contact is being picked for (0 = none).
+    pub fn assigning(&self) -> i32 {
+        self.ui.global::<PhoneData>().get_assigning()
+    }
+
+    pub fn set_assigning(&mut self, key: i32) {
+        self.ui.global::<PhoneData>().set_assigning(key);
+    }
+
+    /// A short note over the Phone and Contacts screens ("" hides it).
+    pub fn set_note(&mut self, text: &str) {
+        self.ui.global::<PhoneData>().set_note(text.into());
+    }
+
+    /// The call screen's second line (the number under a contact's name) and its connected time ("" = none).
+    pub fn set_call_extra(&mut self, detail: &str, time: &str) {
+        let g = self.ui.global::<PhoneData>();
+        g.set_call_detail(detail.into());
+        g.set_call_time(time.into());
+    }
+
+    /// Only the call screen's connected time ("" = none).
+    pub fn set_call_time(&mut self, time: &str) {
+        self.ui.global::<PhoneData>().set_call_time(time.into());
+    }
+
+    /// Call waiting as the network last said: 0 unknown, 1 asking, 2 on, 3 off, 4 failed.
+    pub fn set_waiting(&mut self, state: i32) {
+        self.ui.global::<PhoneData>().set_waiting(state);
+    }
+
+    /// The contact list (already searched and sorted), how many contacts there are, and whether My Card exists.
+    pub fn set_people(&mut self, rows: &[PersonItem<'_>], total: usize, has_my_card: bool) {
+        let g = self.ui.global::<PhoneData>();
+        g.set_people(model(
+            rows.iter()
+                .map(|p| PersonRow {
+                    id: p.id as i32,
+                    name: p.name.into(),
+                    initials: initials(p.name).as_str().into(),
+                    tint: tint(p.id as i32),
+                    favourite: p.favourite,
+                    detail: p.detail.into(),
+                })
+                .collect(),
+        ));
+        g.set_people_total(total as i32);
+        g.set_has_my_card(has_my_card);
+    }
+
+    /// The list's search text.
+    pub fn contact_search(&self) -> String {
+        self.ui.global::<PhoneData>().get_search().as_str().into()
+    }
+
+    pub fn set_card(&mut self, c: &CardItem<'_>) {
+        self.ui.global::<PhoneData>().set_card(CardView {
+            id: c.id,
+            name: c.name.into(),
+            initials: initials(c.name).as_str().into(),
+            tint: tint(c.id),
+            favourite: c.favourite,
+            company: c.company.into(),
+            numbers: model(
+                c.numbers
+                    .iter()
+                    .map(|(l, n)| NumberRow {
+                        label: (*l).into(),
+                        number: (*n).into(),
+                    })
+                    .collect(),
+            ),
+            email: c.email.into(),
+            note: c.note.into(),
+            mine: c.id < 0,
+        });
+    }
+
+    /// Fill the contact editor.
+    pub fn set_editor(&mut self, e: &Editor) {
+        let g = self.ui.global::<PhoneData>();
+        g.set_edit_id(e.id);
+        g.set_edit_first(e.first.as_str().into());
+        g.set_edit_last(e.last.as_str().into());
+        g.set_edit_company(e.company.as_str().into());
+        g.set_edit_email(e.email.as_str().into());
+        g.set_edit_note(e.note.as_str().into());
+        let get = |i: usize| e.numbers.get(i).cloned().unwrap_or_default();
+        let mut labels = Vec::new();
+        for i in 0..4 {
+            let (l, _) = get(i);
+            labels.push(slint::SharedString::from(if l.is_empty() {
+                "Mobile"
+            } else {
+                l.as_str()
+            }));
+        }
+        g.set_edit_labels(model(labels));
+        g.set_num0(get(0).1.as_str().into());
+        g.set_num1(get(1).1.as_str().into());
+        g.set_num2(get(2).1.as_str().into());
+        g.set_num3(get(3).1.as_str().into());
+        g.set_edit_numbers(e.numbers.len().clamp(1, 4) as i32);
+    }
+
+    /// What the editor holds now (numbers beyond the rows shown are dropped).
+    pub fn editor(&self) -> Editor {
+        let g = self.ui.global::<PhoneData>();
+        let labels = g.get_edit_labels();
+        let nums = [g.get_num0(), g.get_num1(), g.get_num2(), g.get_num3()];
+        let shown = g.get_edit_numbers().clamp(1, 4) as usize;
+        Editor {
+            id: g.get_edit_id(),
+            first: g.get_edit_first().as_str().into(),
+            last: g.get_edit_last().as_str().into(),
+            company: g.get_edit_company().as_str().into(),
+            email: g.get_edit_email().as_str().into(),
+            note: g.get_edit_note().as_str().into(),
+            numbers: (0..shown)
+                .map(|i| {
+                    (
+                        labels.row_data(i).unwrap_or_default().as_str().into(),
+                        nums[i].as_str().into(),
+                    )
+                })
+                .collect(),
+        }
+    }
+
+    /// Show `label` on the editor's number `index`.
+    pub fn set_edit_label(&mut self, index: usize, label: &str) {
+        let labels = self.ui.global::<PhoneData>().get_edit_labels();
+        if index < labels.row_count() {
+            labels.set_row_data(index, label.into());
+        }
+    }
+
+    /// What the Phone and Contacts screens asked since the last call: the in-call buttons ("answer", "hangup",
+    /// "mute" | "speaker" + "1" | "0", "dtmf" + key, ...) and PhoneData's actions (the dialer, Recents, speed dial,
+    /// contacts: see ui/phone-data.slint).
     pub fn take_phone(&mut self) -> Vec<(String, String)> {
         core::mem::take(&mut *self.phone.borrow_mut())
     }

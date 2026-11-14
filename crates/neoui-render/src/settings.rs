@@ -35,6 +35,23 @@ macro_rules! bool_binding {
     };
 }
 
+/// An `int` setting shown by an `int` property.
+macro_rules! int_binding {
+    ($key:expr, $get:ident, $set:ident) => {
+        Binding {
+            key: key_name::<i32>($key),
+            read: |g| Value::Int(g.$get()),
+            write: |g, v| match v {
+                Value::Int(i) => {
+                    g.$set(*i);
+                    true
+                }
+                _ => false,
+            },
+        }
+    };
+}
+
 const fn key_name<T: Setting>(key: Key<T>) -> &'static str {
     key.name()
 }
@@ -125,6 +142,35 @@ pub(crate) static BINDINGS: &[Binding] = &[
             _ => false,
         },
     },
+    int_binding!(keys::PHONE_CLIR, get_phone_clir, set_phone_clir),
+    bool_binding!(
+        keys::PHONE_SHOW_DURATION,
+        get_phone_show_duration,
+        set_phone_show_duration
+    ),
+    bool_binding!(keys::PHONE_SUMMARY, get_phone_summary, set_phone_summary),
+    int_binding!(keys::PHONE_LOG_DAYS, get_phone_log_days, set_phone_log_days),
+    bool_binding!(
+        keys::PHONE_SMART_DIAL,
+        get_phone_smart_dial,
+        set_phone_smart_dial
+    ),
+    Binding {
+        key: key_name::<alloc::string::String>(keys::PHONE_VOICEMAIL),
+        read: |g| Value::Str(g.get_phone_voicemail().as_str().into()),
+        write: |g, v| match v {
+            Value::Str(s) => {
+                g.set_phone_voicemail(s.as_str().into());
+                true
+            }
+            _ => false,
+        },
+    },
+    int_binding!(
+        keys::CONTACTS_NAME_ORDER,
+        get_contacts_name_order,
+        set_contacts_name_order
+    ),
     Binding {
         key: key_name::<i32>(keys::DISPLAY_TIMEOUT),
         read: |g| Value::Int(g.get_screen_timeout()),

@@ -13,6 +13,18 @@ fn a_scrolled_list_shifts_and_matches_a_full_redraw() {
     let mut r = common::renderer(w, h);
     let mut buf = vec![0u32; (w * h) as usize];
     r.set_server_transitions(true);
+    let names: Vec<String> = (0..40).map(|i| format!("Contact {i:02}")).collect();
+    let rows: Vec<neoui_render::PersonItem> = names
+        .iter()
+        .enumerate()
+        .map(|(i, n)| neoui_render::PersonItem {
+            id: i as u32 + 1,
+            name: n,
+            detail: "+37491000000",
+            favourite: false,
+        })
+        .collect();
+    r.set_people(&rows, rows.len(), false);
     r.show("contacts", "");
     common::frame(&mut r, &mut buf, w, "contacts");
 

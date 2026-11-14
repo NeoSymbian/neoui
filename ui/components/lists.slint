@@ -14,6 +14,8 @@ export component Avatar inherits Rectangle {
     background: tint;
     Text {
         text: initials;
+        // contacts' names come in any keyboard language (Armenian, Cyrillic)
+        font-family: "DejaVu Sans";
         color: white;
         font-size: size * 0.38;
         font-weight: 600;

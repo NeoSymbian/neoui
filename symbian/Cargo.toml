@@ -22,6 +22,9 @@ e32 = { workspace = true }
 neoapp = { workspace = true }
 # NeoSymbian/telephony: the NeoModem server's contract (MODEMD.EXE; Apache-2.0)
 modem-ipc = { workspace = true }
+# telephony C8: dial-string rules and the caller line (Apache-2.0); the contacts model
+phone-rules = { workspace = true }
+neoui-contacts = { workspace = true }
 # NeoSymbian/neolink: the WPA2-PSK supplicant handshakes (Wi-Fi W4; Apache-2.0)
 wpa = { git = "https://github.com/NeoSymbian/neolink", rev = "3c19f03858e48dfbec42a3e29c52f59117d7eff3" }
 # NeoSymbian/neolink: the NeoNet client (NEONET.EXE, the IP stack over Wi-Fi, W5; Apache-2.0).
@@ -37,7 +40,9 @@ neoui-proto = { path = "../crates/neoui-proto" }
 slint = { version = "=1.18.1", default-features = false, features = ["compat-1-2", "unsafe-single-threaded", "libm", "renderer-software"] }
 slint-build = { version = "=1.18.1", features = ["sdf-fonts"] }
 neoapp = { path = "neoapp" }
-modem-ipc = { git = "https://github.com/NeoSymbian/telephony", rev = "d2d04398c6c80ffa23306630ac59b72551e3f39a" }
+modem-ipc = { git = "https://github.com/NeoSymbian/telephony", rev = "a58dfe6c69ccff8fcd04bf6407906f9bfe182de3" }
+phone-rules = { git = "https://github.com/NeoSymbian/telephony", rev = "a58dfe6c69ccff8fcd04bf6407906f9bfe182de3" }
+neoui-contacts = { path = "../crates/neoui-contacts" }
 neoui-term = { path = "../crates/neoui-term" }
 neoui-files = { path = "../crates/neoui-files" }
 

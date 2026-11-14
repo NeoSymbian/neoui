@@ -7,6 +7,7 @@
 
 extern crate alloc;
 
+pub mod recents;
 pub mod t9;
 pub mod vcard;
 

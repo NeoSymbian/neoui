@@ -59,6 +59,9 @@ jobs:
           cd e32-rs && cargo arm -p neotest
           cp target/armv5te-none-eabi/release/libneotest.a ../build/rust/
           grep '^NEOTEST.EXE' symbian/exes.txt >> ../build/rust/exes.txt
+          # Syborg's moving memory model takes at most 80 KB of user stack; the phone's default (128 KB, build
+          # 9213007) is refused with KErrTooBig and SYSSTART never runs
+          sed -i '/^[A-Z].*\.a$/ s/$/ stack=0x14000/' ../build/rust/exes.txt
 
       - name: Fetch the Symbian sources
         working-directory: build
