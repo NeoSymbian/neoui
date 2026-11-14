@@ -40,8 +40,8 @@ neoui-proto = { path = "../crates/neoui-proto" }
 slint = { version = "=1.18.1", default-features = false, features = ["compat-1-2", "unsafe-single-threaded", "libm", "renderer-software"] }
 slint-build = { version = "=1.18.1", features = ["sdf-fonts"] }
 neoapp = { path = "neoapp" }
-modem-ipc = { git = "https://github.com/NeoSymbian/telephony", rev = "a58dfe6c69ccff8fcd04bf6407906f9bfe182de3" }
-phone-rules = { git = "https://github.com/NeoSymbian/telephony", rev = "a58dfe6c69ccff8fcd04bf6407906f9bfe182de3" }
+modem-ipc = { git = "https://github.com/NeoSymbian/telephony", rev = "89370ebd983997c25ebb2f09126a6f1aac42f52d" }
+phone-rules = { git = "https://github.com/NeoSymbian/telephony", rev = "89370ebd983997c25ebb2f09126a6f1aac42f52d" }
 neoui-contacts = { path = "../crates/neoui-contacts" }
 neoui-term = { path = "../crates/neoui-term" }
 neoui-files = { path = "../crates/neoui-files" }

@@ -141,6 +141,9 @@ pub struct Phone {
     /// a contact's number waiting for its speed-dial key (Contacts -> Assign speed dial)
     speed_pending: Option<String>,
     waiting_shown: u8,
+    /// a dial MODEMD accepted whose call hasn't appeared yet: if the network refuses it, no call ever shows and the
+    /// call view must still close
+    dialing: bool,
 }
 
 /// Tones after a number (docs/symbian-phone-sources.md §4): `p` pauses, `w` waits for the user.
@@ -195,6 +198,7 @@ impl Phone {
             note_until: 0,
             speed_pending: None,
             waiting_shown: waiting::UNKNOWN,
+            dialing: false,
         }
     }
 
@@ -374,7 +378,10 @@ impl Phone {
         let old = self.shown;
         if live(&s) {
             self.close_at = None;
-        } else if old.is_some_and(|x| live(&x)) {
+            self.dialing = false;
+        } else if old.is_some_and(|x| live(&x)) || (self.dialing && !s.pending && s.result < 0) {
+            // the call ended, or the network refused the dial before any call existed
+            self.dialing = false;
             self.close_at = Some(now_ms + CLOSE_MS);
         }
         let incoming = s
@@ -803,6 +810,7 @@ impl Phone {
                     return Some(format!("Call failed ({r})"));
                 }
                 self.dtmf_after = (!dtmf.is_empty()).then_some(dtmf);
+                self.dialing = true;
                 ui.show_call();
                 None
             }
