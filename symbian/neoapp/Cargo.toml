@@ -6,10 +6,6 @@ version = "0.1.0"
 edition = "2024"
 license = "GPL-3.0-only"
 publish = false
-# exports the neoui `ui/` folder (theme, fonts, components) to apps in other repos as DEP_NEOAPP_UI (their build.rs
-# gives it to slint-build as the `@neoui` library)
-links = "neoapp"
-build = "build.rs"
 
 [dependencies]
 e32.workspace = true

@@ -5,3 +5,7 @@ description = "neoui wire types: rects, damage, input events, surface ids"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+# exports neoui's `ui/` folder (theme, fonts, components) as DEP_NEOUI_UI to crates that depend on this one: apps in
+# other repos (NeoSymbian/phone) give it to slint-build as the `@neoui` library, so there is one theme
+links = "neoui"
+build = "build.rs"
