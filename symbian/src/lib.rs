@@ -420,10 +420,13 @@ fn main() -> i32 {
             let mut repaint_all = modal_changed;
             let ms = time::millis();
             for key in host.reap(ms) {
-                if ui.screen() == key {
+                if ui.screen() == key && !host::LAUNCHERS.contains(&key) {
                     ui.show("home", "");
                 }
                 repaint_all = true;
+            }
+            if let Some(key) = host.requested_screen.take() {
+                ui.show(key, "");
             }
             let now = ui.screen();
             if now != screen {
@@ -444,6 +447,12 @@ fn main() -> i32 {
                 screen = now;
             }
             host.keep_resident(ms);
+            for id in ui.take_entries() {
+                host.open_entry("legacy", id, ms);
+            }
+            if core::mem::take(&mut host.entries_changed) {
+                ui.set_old_apps(host.entries("legacy"));
+            }
             // an icon, notification or Settings row opening an app's page: the app is told, and the view is cleared
             // so the same page can be asked for again
             let view = ui.view();

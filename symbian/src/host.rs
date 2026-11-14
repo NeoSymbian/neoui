@@ -9,6 +9,8 @@
 //! Apps keep running when the shell moves away (R10): the one whose key is the current screen is the foreground app
 //! (its surface is shown, it gets input and its keyboard/toolbar claims apply); the others are told they are hidden.
 //! They end when closed in the switcher, or when more than [`MAX_RUNNING`] run (the least recently used).
+//! Launcher apps start hidden behind the shell grid; ENTRY data outlives their process, and FRONT switches
+//! between that grid and their surface. A tile tap queues Entry even before the restarted app connects.
 
 use crate::settings::{self, Settings};
 use alloc::collections::VecDeque;
@@ -26,6 +28,7 @@ use neoui_proto::recents::Recents;
 use neoui_proto::settings::value::ENCODED_MAX;
 use neoui_proto::settings::{Caller, KEY_MAX, Value, kerr};
 use neoui_proto::{InputEvent, TouchPhase};
+use neoui_render::LauncherEntry;
 
 /// Screen keys that are separate processes: their EXEs and command lines.
 // shortcut: a fixed table; a registry of installed apps comes with app installation.
@@ -34,11 +37,15 @@ pub const APPS: &[(&str, &str, &str)] = &[
     ("terminal", "neoterm", ""),
     ("files", "neofiles", ""),
     ("devtools", "neodev", ""),
-    // a 2010 Symbian GUI program through the guest window server (build's apps/legacy/legacy.cpp)
-    ("legacy", "legacy", "grid"),
+    // S60 apps through the guest window server (NeoSymbian/legacy host/legacy.cpp)
+    ("legacy", "legacy", ""),
     // Phone and Contacts: one process (NeoSymbian/phone), see ALIASES and PAGES
     ("phone", "neophone", ""),
 ];
+
+/// Apps whose shell screen is a launcher grid until they request FRONT(1).
+// shortcut: a fixed table like APPS; apps declare launcher support when apps are installable.
+pub const LAUNCHERS: &[&str] = &["legacy"];
 
 /// Screens another app's process serves on one of its pages: (screen, app key, page). The switcher shows the app once.
 pub const ALIASES: &[(&str, &str, u16)] = &[("contacts", "phone", 1)];
@@ -151,8 +158,15 @@ pub struct Host {
     /// the user had put it away.
     pub reopen: bool,
     apps: Recents<App>,
-    /// The current screen when it is an app's key.
+    /// The selected shell screen when it is an app's key (including a hidden launcher).
+    screen: Option<&'static str>,
+    /// The app whose surface is in front.
     front: Option<&'static str>,
+    /// FRONT asks the main loop to select the calling app's screen.
+    pub requested_screen: Option<&'static str>,
+    /// Kept by app key, not process: installed entries survive exit and restart.
+    entries: Vec<(&'static str, Vec<LauncherEntry>)>,
+    pub entries_changed: bool,
     next_session: u32,
     /// The foreground app's damage not yet shown (surface coordinates).
     pub blits: Vec<Rect>,
@@ -183,7 +197,11 @@ impl Host {
             keyboard_h,
             reopen: false,
             apps: Recents::default(),
+            screen: None,
             front: None,
+            requested_screen: None,
+            entries: Vec::new(),
+            entries_changed: false,
             next_session: 1,
             blits: Vec::new(),
             refresh: false,
@@ -279,31 +297,47 @@ impl Host {
             .iter()
             .find(|(k, _, _)| *k == screen)
             .map(|(k, _, _)| *k);
+        if self.screen == key {
+            return;
+        }
+        self.screen = key;
+        self.set_front(key.filter(|k| !LAUNCHERS.contains(k)));
+        let Some(key) = key else { return };
+        self.start(key);
+        self.limit_running(key, now_ms);
+    }
+
+    /// Switch surface visibility independently of the shell's selected screen.
+    fn set_front(&mut self, key: Option<&'static str>) {
         if self.front == key {
             return;
         }
         if let Some(old) = self.front.take()
-            && let Some(app) = self.apps.find_mut(|a| a.key == old)
+            && let Some(app) = self.apps.find_mut(|a| a.key == old && a.quit_at.is_none())
         {
             app.send(AppEvent::Visible(false));
         }
         self.blits.clear();
         self.release_frames();
-        let Some(key) = key else { return };
-        self.front = Some(key);
-        if self.apps.touch(|a| a.key == key && a.quit_at.is_none()) {
-            if let Some(app) = self.apps.find_mut(|a| a.key == key) {
-                app.shown = true;
-                app.send(AppEvent::Visible(true));
-            }
-            self.refresh = true;
-            dprintln!("neoui: app {} resumed", key);
-        } else {
-            self.launch(key);
-            if let Some(app) = self.apps.find_mut(|a| a.key == key) {
-                app.shown = true;
-            }
+        self.front = key;
+        if let Some(key) = key
+            && let Some(app) = self.apps.find_mut(|a| a.key == key && a.quit_at.is_none())
+        {
+            app.send(AppEvent::Visible(true));
         }
+        self.refresh = true;
+    }
+
+    fn start(&mut self, key: &'static str) {
+        if !self.apps.touch(|a| a.key == key && a.quit_at.is_none()) {
+            self.launch(key);
+        }
+        if let Some(app) = self.apps.find_mut(|a| a.key == key && a.quit_at.is_none()) {
+            app.shown = true;
+        }
+    }
+
+    fn limit_running(&mut self, key: &str, now_ms: u64) {
         let over: Vec<&'static str> = self
             .apps
             .over_limit(MAX_RUNNING, |a| {
@@ -332,7 +366,8 @@ impl Host {
                     process,
                     surface: None,
                     waiting: None,
-                    queue: VecDeque::new(),
+                    // A launcher (like a resident) starts hidden, even if its grid is selected.
+                    queue: VecDeque::from([AppEvent::Visible(self.front == Some(key))]),
                     quit_at: None,
                     keyboard: 0,
                     keyboard_h: 0,
@@ -344,6 +379,26 @@ impl Host {
             }
             Err(e) => dprintln!("neoui: app {} failed to start ({})", key, e),
         }
+    }
+
+    pub fn entries(&self, key: &str) -> &[LauncherEntry] {
+        self.entries
+            .iter()
+            .find(|(k, _)| *k == key)
+            .map_or(&[], |(_, entries)| entries.as_slice())
+    }
+
+    /// A cached tile can restart its owner; the normal event queue holds the UID until it connects.
+    pub fn open_entry(&mut self, key: &str, id: u32, now_ms: u64) {
+        let Some((key, _, _)) = APPS.iter().find(|(k, _, _)| *k == key) else {
+            return;
+        };
+        if !self.entries(key).iter().any(|entry| entry.id == id) {
+            return;
+        }
+        self.start(key);
+        self.post(key, AppEvent::Entry { id });
+        self.limit_running(key, now_ms);
     }
 
     /// Sends `e` to app `key` (queued until it asks for events); false when it is not running (or leaving).
@@ -364,7 +419,7 @@ impl Host {
 
     /// Ask app `key` to quit (the switcher's ×, or too many running).
     pub fn close(&mut self, key: &str, now_ms: u64) {
-        if let Some(app) = self.apps.find_mut(|a| a.key == key) {
+        if let Some(app) = self.apps.find_mut(|a| a.key == key && a.quit_at.is_none()) {
             app.quit(now_ms);
         }
     }
@@ -391,6 +446,17 @@ impl Host {
             }
         }
         let gone = self.apps.remove(|a| a.process.exit_info().is_some());
+        // A cached tile can restart an app while its previous process is still quitting. Reaping the old
+        // process must not hide the replacement's surface.
+        if let Some(key) = self.front
+            && gone.iter().any(|a| a.key == key)
+            && self
+                .apps
+                .find(|a| a.key == key && a.quit_at.is_none())
+                .is_none()
+        {
+            self.set_front(None);
+        }
         gone.iter()
             .map(|app| {
                 let (t, r) = app.process.exit_info().unwrap_or((0, 0));
@@ -412,6 +478,47 @@ fn read_text(m: &Message, param: usize, max: usize) -> Result<String, i32> {
         return Err(kerr::TOO_BIG);
     }
     String::from_utf8(m.read8_vec(param)?).map_err(|_| kerr::ARGUMENT)
+}
+
+/// Validate descriptors before changing the cache, including removals and replacements at capacity.
+fn entry(
+    entries: &mut Vec<(&'static str, Vec<LauncherEntry>)>,
+    key: &'static str,
+    m: &Message,
+) -> Result<i32, i32> {
+    let icon_max = 4 + usize::from(proto::ENTRY_ICON_MAX).pow(2) * 4;
+    if m.des_len(1).map_err(|_| kerr::ARGUMENT)? > proto::TITLE_MAX
+        || m.des_len(2).map_err(|_| kerr::ARGUMENT)? > icon_max
+    {
+        return Err(kerr::ARGUMENT);
+    }
+    let caption = String::from_utf8(m.read8_vec(1).map_err(|_| kerr::ARGUMENT)?)
+        .map_err(|_| kerr::ARGUMENT)?;
+    let icon = m.read8_vec(2).map_err(|_| kerr::ARGUMENT)?;
+    proto::decode_entry_icon(&icon).map_err(|_| kerr::ARGUMENT)?;
+    let id = m.int(0) as u32;
+    let index = match entries.iter().position(|(k, _)| *k == key) {
+        Some(index) => index,
+        None if caption.is_empty() => return Ok(0),
+        None => {
+            entries.push((key, Vec::new()));
+            entries.len() - 1
+        }
+    };
+    let entries = &mut entries[index].1;
+    if let Some(index) = entries.iter().position(|entry| entry.id == id) {
+        if caption.is_empty() {
+            entries.remove(index);
+        } else {
+            entries[index] = LauncherEntry { id, caption, icon };
+        }
+    } else if !caption.is_empty() {
+        if entries.len() >= proto::ENTRIES_MAX {
+            return Err(kerr::OVERFLOW);
+        }
+        entries.push(LauncherEntry { id, caption, icon });
+    }
+    Ok(0)
 }
 
 /// `SETTING_GET [key, out value]` → the value's length.
@@ -559,6 +666,36 @@ impl Service for Host {
             proto::SETTING_WATCH => {
                 let r = setting_watch(&mut self.settings, *id, &m);
                 m.complete(r.unwrap_or_else(|e| e));
+            }
+            proto::ENTRY => {
+                let r = entry(&mut self.entries, app.key, &m);
+                if r.is_ok() {
+                    self.entries_changed = true;
+                }
+                m.complete(r.unwrap_or_else(|e| e));
+            }
+            proto::FRONT => {
+                if app.quit_at.is_some() {
+                    return m.complete(err::KERR_CANCEL);
+                }
+                let show = match m.int(0) {
+                    0 => false,
+                    1 => true,
+                    _ => return m.complete(kerr::ARGUMENT),
+                };
+                let key = app.key;
+                // Select the caller's shell screen without briefly foregrounding an ordinary app on FRONT(0).
+                let was_front = self.front == Some(key);
+                self.screen = Some(key);
+                self.set_front(if show { Some(key) } else { None });
+                if show == was_front {
+                    // set_front only sends visibility changes; each FRONT also acknowledges its caller's state.
+                    self.post(key, AppEvent::Visible(show));
+                }
+                self.start(key);
+                self.limit_running(key, e32::time::millis());
+                self.requested_screen = Some(key);
+                m.complete(0);
             }
             proto::NEXT_EVENT => match app.queue.pop_front() {
                 Some(e) => deliver(m, e),
