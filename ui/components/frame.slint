@@ -211,32 +211,97 @@ export component ToolbarButton inherits Rectangle {
     }
 }
 
-// Back on the left, an optional action in the middle, Options on the right (Belle's toolbar).
+// A toolbar button with a label beside its icon, optionally a green pill (Call).
+component LabelButton inherits Rectangle {
+    in property <image> icon;
+    in property <string> label;
+    in property <bool> pill;
+    in property <bool> enabled: true;
+    callback clicked;
+    width: Theme.toolbar-button-w;
+    height: Theme.toolbar-h;
+    opacity: enabled ? 1 : 0;
+    Rectangle {
+        width: min(parent.width - 8 * Theme.dp, row.preferred-width + 28 * Theme.dp);
+        height: 40 * Theme.dp;
+        border-radius: self.height / 2;
+        background: pill ? (touch.pressed ? Theme.ok.darker(20%) : @linear-gradient(180deg, Theme.ok.brighter(15%) 0%, Theme.ok.darker(10%) 100%))
+            : touch.pressed && enabled ? Theme.pressed : transparent;
+        row := HorizontalLayout {
+            alignment: center;
+            spacing: 6 * Theme.dp;
+            Glyph {
+                source: icon;
+                size: pill ? 20 * Theme.dp : 22 * Theme.dp;
+                y: (parent.height - self.height) / 2;
+            }
+
+            if label != "": Text {
+                text: label;
+                color: Theme.text;
+                font-size: 14 * Theme.dp;
+                font-weight: 600;
+                vertical-alignment: center;
+            }
+        }
+    }
+
+    touch := TouchArea {
+        enabled: root.enabled;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+// Back on the left, an optional action in the middle, Options on the right (Belle's toolbar). An app can give the
+// action a label and a green pill (the dialer's Call), turn Back into "Cancel" (an editor), or empty the toolbar (a
+// full-screen call view).
 export component Toolbar inherits Rectangle {
     in property <image> action-icon;
     in property <bool> has-action;
+    in property <string> action-label;
+    in property <bool> action-pill;
+    in property <bool> back-cancel;
+    in property <bool> empty;
     callback back;
     callback action;
     callback options;
     height: Theme.toolbar-h;
-    background: @linear-gradient(180deg, Theme.toolbar-top 0%, Theme.toolbar-bottom 100%);
-    Rectangle {
+    background: empty ? Theme.bg : @linear-gradient(180deg, Theme.toolbar-top 0%, Theme.toolbar-bottom 100%);
+    if !empty: Rectangle {
         y: 0;
         height: max(1px, Theme.dp / 2);
         background: Theme.hairline;
     }
 
-    HorizontalLayout {
+    if !empty: HorizontalLayout {
         alignment: space-between;
-        ToolbarButton {
+        if !back-cancel: ToolbarButton {
             icon: @image-url("../icons/sys/back.svg");
             clicked => {
                 root.back();
             }
         }
+        if back-cancel: LabelButton {
+            icon: @image-url("../icons/sys/close.svg");
+            label: "Cancel";
+            clicked => {
+                root.back();
+            }
+        }
 
-        ToolbarButton {
+        if action-label == "" && !action-pill: ToolbarButton {
             icon: action-icon;
+            enabled: has-action;
+            clicked => {
+                root.action();
+            }
+        }
+        if action-label != "" || action-pill: LabelButton {
+            icon: action-icon;
+            label: action-label;
+            pill: action-pill;
             enabled: has-action;
             clicked => {
                 root.action();

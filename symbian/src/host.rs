@@ -36,7 +36,40 @@ pub const APPS: &[(&str, &str, &str)] = &[
     ("devtools", "neodev", ""),
     // a 2010 Symbian GUI program through the guest window server (build's apps/legacy/legacy.cpp)
     ("legacy", "legacy", "grid"),
+    // Phone and Contacts: one process (NeoSymbian/phone), see ALIASES and PAGES
+    ("phone", "neophone", ""),
 ];
+
+/// Screens another app's process serves on one of its pages: (screen, app key, page). The switcher shows the app once.
+pub const ALIASES: &[(&str, &str, u16)] = &[("contacts", "phone", 1)];
+
+/// Shell views that open an app on a page (`ui.show(app, view)`, from icons, notifications, Settings): (app, view,
+/// page). The app's own numbering (NeoSymbian/phone `Page`).
+// shortcut: a fixed table like APPS; apps declare their pages when apps are installable.
+pub const PAGES: &[(&str, &str, u16)] = &[
+    ("phone", "dial", 0),
+    ("phone", "contacts", 1),
+    ("phone", "recents", 2),
+    ("phone", "call", 3),
+    ("phone", "settings", 4),
+    ("phone", "speed", 5),
+];
+
+/// Apps started (hidden) at boot and never closed for room: an incoming call must show at once.
+pub const RESIDENT: &[&str] = &["phone"];
+/// A resident app that ended is started again after this long.
+const RESIDENT_RETRY_MS: u64 = 10_000;
+
+/// The app key and page that screen `screen` with view `view` opens, if it is an app page.
+pub fn page_for(screen: &str, view: &str) -> Option<(&'static str, u16)> {
+    if let Some((_, key, page)) = ALIASES.iter().find(|(s, _, _)| *s == screen) {
+        return Some((key, *page));
+    }
+    PAGES
+        .iter()
+        .find(|(k, v, _)| *k == screen && *v == view)
+        .map(|(k, _, p)| (*k, *p))
+}
 
 /// Most apps kept running; starting one more asks the least recently used to quit.
 // shortcut: a fixed count; size it by free RAM when the kernel reports it (a surface is ~2 MB on Syborg, ~7 MB on
@@ -62,6 +95,11 @@ pub struct App {
     keyboard_h: u32,
     /// Toolbar buttons it claimed (`NAV_BACK | NAV_OPTIONS`); apply while it is in front.
     pub nav: i32,
+    /// Its status-bar title and toolbar middle button (`TITLE`, `TOOLBAR`: icon, style, label); apply while in front.
+    pub title: String,
+    pub tool: (i32, i32, String),
+    /// It has been on screen (the switcher lists only those; a resident app starts hidden).
+    shown: bool,
 }
 
 impl App {
@@ -123,6 +161,8 @@ pub struct Host {
     /// The settings store apps read, write and watch (`proto::SETTING_*`); the shell's own view syncs with it in
     /// the main loop.
     pub settings: Settings,
+    /// When resident apps were last started.
+    resident_at: Option<u64>,
 }
 
 impl Host {
@@ -139,6 +179,30 @@ impl Host {
             frames: Vec::new(),
             power: None,
             settings,
+            resident_at: None,
+        }
+    }
+
+    /// Start the [`RESIDENT`] apps that aren't running (hidden), at most every [`RESIDENT_RETRY_MS`]. Call once per
+    /// frame.
+    pub fn keep_resident(&mut self, now_ms: u64) {
+        if self
+            .resident_at
+            .is_some_and(|t| now_ms.saturating_sub(t) < RESIDENT_RETRY_MS)
+        {
+            return;
+        }
+        let missing: Vec<&'static str> = RESIDENT
+            .iter()
+            .copied()
+            .filter(|k| self.apps.find(|a| a.key == *k).is_none())
+            .collect();
+        if missing.is_empty() {
+            return;
+        }
+        self.resident_at = Some(now_ms);
+        for key in missing {
+            self.launch(key);
         }
     }
 
@@ -195,6 +259,10 @@ impl Host {
 
     /// The shell moved to `screen`: hide the app that was in front, and show (or start) the one for `screen`.
     pub fn set_screen(&mut self, screen: &str, now_ms: u64) {
+        let screen = ALIASES
+            .iter()
+            .find(|(s, _, _)| *s == screen)
+            .map_or(screen, |(_, k, _)| *k);
         let key = APPS
             .iter()
             .find(|(k, _, _)| *k == screen)
@@ -213,16 +281,22 @@ impl Host {
         self.front = Some(key);
         if self.apps.touch(|a| a.key == key && a.quit_at.is_none()) {
             if let Some(app) = self.apps.find_mut(|a| a.key == key) {
+                app.shown = true;
                 app.send(AppEvent::Visible(true));
             }
             self.refresh = true;
             dprintln!("neoui: app {} resumed", key);
         } else {
             self.launch(key);
+            if let Some(app) = self.apps.find_mut(|a| a.key == key) {
+                app.shown = true;
+            }
         }
         let over: Vec<&'static str> = self
             .apps
-            .over_limit(MAX_RUNNING, |a| a.key == key || a.quit_at.is_some())
+            .over_limit(MAX_RUNNING, |a| {
+                a.key == key || a.quit_at.is_some() || RESIDENT.contains(&a.key)
+            })
             .map(|a| a.key)
             .collect();
         for k in over {
@@ -251,6 +325,9 @@ impl Host {
                     keyboard: 0,
                     keyboard_h: 0,
                     nav: 0,
+                    title: String::new(),
+                    tool: (proto::TOOL_NONE, 0, String::new()),
+                    shown: false,
                 });
             }
             Err(e) => dprintln!("neoui: app {} failed to start ({})", key, e),
@@ -280,11 +357,11 @@ impl Host {
         }
     }
 
-    /// Running apps, most recent first (not those leaving), for the switcher.
+    /// Running apps, most recent first (not those leaving, nor a resident app never opened), for the switcher.
     pub fn running(&self) -> Vec<&'static str> {
         self.apps
             .newest_first()
-            .filter(|a| a.quit_at.is_none())
+            .filter(|a| a.quit_at.is_none() && a.shown)
             .map(|a| a.key)
             .collect()
     }
@@ -435,6 +512,20 @@ impl Service for Host {
                 app.nav = m.int(0) & (proto::NAV_BACK | proto::NAV_OPTIONS);
                 m.complete(0);
             }
+            proto::TITLE => match read_text(&m, 0, proto::TITLE_MAX) {
+                Ok(t) => {
+                    app.title = t;
+                    m.complete(0);
+                }
+                Err(e) => m.complete(e),
+            },
+            proto::TOOLBAR => match read_text(&m, 2, proto::TITLE_MAX) {
+                Ok(label) => {
+                    app.tool = (m.int(0), m.int(1), label);
+                    m.complete(0);
+                }
+                Err(e) => m.complete(e),
+            },
             proto::POWER => {
                 dprintln!("neoui: power {} asked by {}", m.int(0), app.key);
                 self.power = Some(m.int(0));

@@ -293,6 +293,25 @@ impl App {
         self.server.send_receive(proto::NAV, &args).map(drop)
     }
 
+    /// The status bar's title while this app is in front (empty: the shell's own).
+    pub fn title(&self, title: &str) -> Result<(), i32> {
+        let t = TPtrC8::new(clip(title).as_bytes());
+        let mut args = TIpcArgs::new();
+        args.desc8(0, &t);
+        self.server.send_receive(proto::TITLE, &args).map(drop)
+    }
+
+    /// The toolbar's middle button (`proto::TOOL_*`, `proto::TOOLBAR_*` style bits, a label); a tap sends
+    /// `AppEvent::Action`.
+    pub fn toolbar(&self, icon: i32, style: i32, label: &str) -> Result<(), i32> {
+        let l = TPtrC8::new(clip(label).as_bytes());
+        let mut args = TIpcArgs::new();
+        args.int(0, icon);
+        args.int(1, style);
+        args.desc8(2, &l);
+        self.server.send_receive(proto::TOOLBAR, &args).map(drop)
+    }
+
     /// A key from the server (a hardware key or the system keyboard: Unicode, Enter 13, Backspace 8, Escape 27, Tab 9,
     /// the arrows 0xF807-0xF80A) as a Slint key press and release, for text fields.
     pub fn dispatch_key(&self, code: u32) {
@@ -333,4 +352,13 @@ impl App {
             }
         }
     }
+}
+
+/// `s` cut to at most `proto::TITLE_MAX` bytes on a character boundary.
+fn clip(s: &str) -> &str {
+    let mut end = s.len().min(proto::TITLE_MAX);
+    while !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
 }

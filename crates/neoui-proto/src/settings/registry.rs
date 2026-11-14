@@ -208,30 +208,37 @@ registry! {
     /// Settings -> Phone (telephony C8): caller ID on our calls: 0 set by the network, 1 hidden, 2 shown (MODEMD
     /// prefixes `#31#`/`*31#`).
     PHONE_CLIR: i32 = "phone.clir", default DefaultValue::Int(0),
-        limit Limit::Range { min: 0, max: 2 }, owner Owner::Shell;
+        limit Limit::Range { min: 0, max: 2 }, owner Owner::App("phone");
     /// The call screen counts the connected time.
     PHONE_SHOW_DURATION: bool = "phone.show_duration", default DefaultValue::Bool(false), limit Limit::None,
-        owner Owner::Shell;
+        owner Owner::App("phone");
     /// A note with the call's duration when it ends.
-    PHONE_SUMMARY: bool = "phone.summary", default DefaultValue::Bool(false), limit Limit::None, owner Owner::Shell;
+    PHONE_SUMMARY: bool = "phone.summary", default DefaultValue::Bool(false), limit Limit::None, owner Owner::App("phone");
     /// How many days the call log keeps a call: 0 (no log), 1, 10 or 30.
     PHONE_LOG_DAYS: i32 = "phone.log_days", default DefaultValue::Int(30),
-        limit Limit::Range { min: 0, max: 30 }, owner Owner::Shell;
+        limit Limit::Range { min: 0, max: 30 }, owner Owner::App("phone");
     /// The dialer offers contacts whose names the typed digits spell ("Contact search").
     PHONE_SMART_DIAL: bool = "phone.smart_dial", default DefaultValue::Bool(true), limit Limit::None,
-        owner Owner::Shell;
+        owner Owner::App("phone");
     /// The voice mailbox number (key 1 held in the dialer); typed by hand until it is read from the SIM.
     PHONE_VOICEMAIL: alloc::string::String = "phone.voicemail", default DefaultValue::Str(""),
-        limit Limit::MaxLen(48), owner Owner::Shell;
+        limit Limit::MaxLen(48), owner Owner::App("phone");
     /// Speed dial: the numbers of keys 2..=9, '\n'-separated (empty = unassigned).
     PHONE_SPEED: Bytes = "phone.speed", default DefaultValue::Bytes(&[]), limit Limit::MaxLen(400),
-        owner Owner::Shell;
+        owner Owner::App("phone");
     /// The newest call-log entry the user has seen in Recents: missed calls after it count as new.
     PHONE_MISSED_SEEN: i32 = "phone.missed_seen", default DefaultValue::Int(0),
-        limit Limit::Range { min: 0, max: i32::MAX }, owner Owner::Shell;
+        limit Limit::Range { min: 0, max: i32::MAX }, owner Owner::App("phone");
+    /// The Phone app (NEOPHONE, its own process) owns `phone.*` and `contacts.*`; the shell still reads them.
     /// Contacts show names "First Last" (0) or "Last First" (1).
     CONTACTS_NAME_ORDER: i32 = "contacts.name_order", default DefaultValue::Int(0),
-        limit Limit::Range { min: 0, max: 1 }, owner Owner::Shell;
+        limit Limit::Range { min: 0, max: 1 }, owner Owner::App("phone");
+    /// The number type a new contact's first number gets (phone_core's label list: 0 Mobile).
+    CONTACTS_DEFAULT_LABEL: i32 = "contacts.default_label", default DefaultValue::Int(0),
+        limit Limit::Range { min: 0, max: 15 }, owner Owner::App("phone");
+    /// The Phone app has copied the shell's contacts file (C:\private\e0002001\contacts.dat) into its own.
+    CONTACTS_MIGRATED: bool = "contacts.migrated", default DefaultValue::Bool(false), limit Limit::None,
+        owner Owner::App("phone");
     /// The Clock app's face: 0 digital, 1 analog (Clock settings).
     CLOCK_FACE: i32 = "clock.face", default DefaultValue::Int(0),
         limit Limit::Range { min: 0, max: 1 }, owner Owner::App("clock");

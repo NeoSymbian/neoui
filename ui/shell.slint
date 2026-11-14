@@ -114,6 +114,13 @@ export component Shell inherits Window {
     // in: an app process is in front: the shell's own mock of that screen stays hidden (an overlay shows over a dark
     // body, not over a mock), and unclaimed toolbar buttons do nothing
     in property <bool> app-front;
+    // in: what the foreground app put in the status bar's title and the toolbar's middle button (ipc 1.4 TITLE,
+    // TOOLBAR: icon 0 none, 1 call, 2 add, 3 person_add, 4 edit, 5 check, 6 delete; style bits 1 pill, 2 Back is
+    // Cancel, 4 empty); the middle button reports through app-nav(4)
+    in property <string> app-title;
+    in property <int> app-action;
+    in property <string> app-action-label;
+    in property <int> app-toolbar-style;
     callback app-nav(int);
     // in: the apps the UI server keeps running, most recent first (R10); out: the switcher's close button
     in property <[string]> running;
@@ -199,6 +206,15 @@ export component Shell inherits Window {
             root.screen = root.origin;
             root.origin = "home";
         }
+    }
+
+    pure function app-icon(i: int) -> image {
+        i == 1 ? @image-url("icons/sys/call.svg")
+        : i == 2 ? @image-url("icons/sys/add.svg")
+        : i == 3 ? @image-url("icons/sys/person_add.svg")
+        : i == 4 ? @image-url("icons/sys/edit.svg")
+        : i == 5 ? @image-url("icons/sys/check.svg")
+        : @image-url("icons/sys/delete.svg")
     }
 
     // One line per app (titles and Options menus), so apps added in parallel don't collide on one long line.
@@ -411,7 +427,7 @@ export component Shell inherits Window {
         rat: root.rat;
         wifi-bars: root.wifi-link.connected ? root.wifi-link.bars : -1;
         wifi-band: root.wifi-link.band;
-        title: screen-title(screen, view);
+        title: root.app-front && root.app-title != "" ? root.app-title : screen-title(screen, view);
         tapped => {
             root.shade-open = !root.shade-open;
         }
@@ -422,8 +438,12 @@ export component Shell inherits Window {
 
     if has-toolbar: Toolbar {
         y: root.height - Theme.toolbar-h;
-        has-action: !root.app-front && (screen == "messages" || screen == "contacts" || screen == "browser" || screen == "clock" || screen == "menu");
-        action-icon: screen == "contacts" ? @image-url("icons/sys/person_add.svg") : screen == "browser" ? @image-url("icons/sys/refresh.svg") : screen == "menu" ? @image-url("icons/sys/tabs.svg") : @image-url("icons/sys/add.svg");
+        has-action: root.app-front ? root.app-action > 0 : (screen == "messages" || screen == "contacts" || screen == "browser" || screen == "clock" || screen == "menu");
+        action-icon: root.app-front ? app-icon(root.app-action) : screen == "contacts" ? @image-url("icons/sys/person_add.svg") : screen == "browser" ? @image-url("icons/sys/refresh.svg") : screen == "menu" ? @image-url("icons/sys/tabs.svg") : @image-url("icons/sys/add.svg");
+        action-label: root.app-front ? root.app-action-label : "";
+        action-pill: root.app-front && mod(root.app-toolbar-style, 2) == 1;
+        back-cancel: root.app-front && mod(floor(root.app-toolbar-style / 2), 2) == 1;
+        empty: root.app-front && mod(floor(root.app-toolbar-style / 4), 2) == 1;
         back => {
             if (root.app-back && !root.shade-open && !root.options-open) {
                 root.app-nav(1);
@@ -442,7 +462,11 @@ export component Shell inherits Window {
             }
         }
         action => {
-            if (root.screen == "messages") {
+            if (root.app-front) {
+                if (!root.shade-open) {
+                    root.app-nav(4);
+                }
+            } else if (root.screen == "messages") {
                 root.view = "thread";
             } else if (root.screen == "contacts") {
                 PhoneData.act("contact-new", "");

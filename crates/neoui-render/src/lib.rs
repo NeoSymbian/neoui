@@ -396,7 +396,16 @@ impl Renderer {
         self.ui.set_app_options(options);
     }
 
-    /// Claimed toolbar buttons pressed since the last call: 1 = Back, 2 = Options (`neoui_proto::ipc::NAV_*`).
+    /// The foreground app's title and toolbar middle button (`neoui_proto::ipc::TITLE`, `TOOLBAR`).
+    pub fn set_app_chrome(&mut self, title: &str, action: i32, style: i32, label: &str) {
+        self.ui.set_app_title(title.into());
+        self.ui.set_app_action(action);
+        self.ui.set_app_toolbar_style(style);
+        self.ui.set_app_action_label(label.into());
+    }
+
+    /// Claimed toolbar buttons pressed since the last call: 1 = Back, 2 = Options, 4 = the app's middle button
+    /// (`neoui_proto::ipc::NAV_*`).
     pub fn take_nav(&mut self) -> Vec<i32> {
         core::mem::take(&mut *self.nav.borrow_mut())
     }

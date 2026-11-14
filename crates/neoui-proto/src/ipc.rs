@@ -6,14 +6,16 @@
 //! Since 1.1 an app also reads, writes and watches settings ([`SETTING_GET`], [`SETTING_SET`], [`SETTING_WATCH`],
 //! [`AppEvent::Settings`]; the model is [`crate::settings`]). Since 1.2 the server wakes the Clock app for a due
 //! alarm ([`AppEvent::Alarm`]). Since 1.3 the system keyboard has modes ([`KEYBOARD_TEXT`], [`KEYBOARD_TERMINAL`]) and
-//! a height that changes with its language and settings ([`AppEvent::Keyboard`]).
+//! a height that changes with its language and settings ([`AppEvent::Keyboard`]). Since 1.4 an app sets its title
+//! ([`TITLE`]) and the toolbar's middle button ([`TOOLBAR`], [`AppEvent::Action`]), and the server opens one of its
+//! pages ([`AppEvent::Page`]): the Phone app is one process behind the Phone and Contacts icons.
 
 use crate::{InputEvent, TouchPhase};
 
 /// The server's name (no leading `!`: that needs ProtServ).
 pub const SERVER: &str = "NeoUi";
 /// Protocol version (major, minor); a connect with another major is refused.
-pub const VERSION: (u8, u8) = (1, 3);
+pub const VERSION: (u8, u8) = (1, 4);
 
 /// `[Des8 out: GEOMETRY_LEN bytes = width, height, dp × 256 (u32 LE)]` → 0. `dp` is the shell's design unit in
 /// pixels (`min(screen w, h) / 360`), so apps size things like the shell does.
@@ -57,6 +59,29 @@ pub const SETTING_SET: i32 = 9;
 /// `[Des8 prefix]` → 0: send [`AppEvent::Settings`] when a key starting with `prefix` changes (empty: any key). At
 /// most [`crate::settings::service::WATCHES_MAX`] prefixes per session (`KErrOverflow`).
 pub const SETTING_WATCH: i32 = 10;
+/// `[Des8 title]` (UTF-8, at most [`TITLE_MAX`] bytes) → 0: the status bar shows it while the app is in front; empty
+/// gives the shell's title for the app back.
+pub const TITLE: i32 = 11;
+pub const TITLE_MAX: usize = 48;
+/// `[icon: TOOL_*, style: TOOLBAR_* bits, Des8 label]` → 0: the toolbar's middle button while the app is in front
+/// ([`TOOL_NONE`]: none). A tap sends [`AppEvent::Action`]. The label (at most [`TITLE_MAX`] bytes) shows beside the
+/// icon.
+pub const TOOLBAR: i32 = 12;
+pub const TOOL_NONE: i32 = 0;
+pub const TOOL_CALL: i32 = 1;
+pub const TOOL_ADD: i32 = 2;
+pub const TOOL_PERSON_ADD: i32 = 3;
+pub const TOOL_EDIT: i32 = 4;
+pub const TOOL_CHECK: i32 = 5;
+pub const TOOL_DELETE: i32 = 6;
+/// The middle button is a green pill (the dialer's Call).
+pub const TOOLBAR_PILL: i32 = 1;
+/// Back shows as "Cancel" (an editor); it still sends Back (claim it with [`NAV`]).
+pub const TOOLBAR_CANCEL: i32 = 2;
+/// No buttons at all: the toolbar is an empty strip (full-screen call views).
+pub const TOOLBAR_EMPTY: i32 = 4;
+/// The toolbar's middle button as the shell reports it with the claimed Back/Options ([`NAV_BACK`], [`NAV_OPTIONS`]).
+pub const NAV_ACTION: i32 = 4;
 
 /// Encoded size of an [`AppEvent`].
 pub const EVENT_LEN: usize = 16;
@@ -81,6 +106,10 @@ pub enum AppEvent {
     Alarm { id: u16 },
     /// The open system keyboard now covers `h` pixels of the surface's bottom (its language or settings changed).
     Keyboard { h: u32 },
+    /// Show page `page` (the app's own numbering): the user opened it from an icon, a notification or Settings.
+    Page { page: u16 },
+    /// The toolbar's middle button ([`TOOLBAR`]).
+    Action,
 }
 
 const KIND_TOUCH: u32 = 1;
@@ -92,6 +121,8 @@ const KIND_VISIBLE: u32 = 6;
 const KIND_SETTINGS: u32 = 7;
 const KIND_ALARM: u32 = 8;
 const KIND_KEYBOARD: u32 = 9;
+const KIND_PAGE: u32 = 10;
+const KIND_ACTION: u32 = 11;
 
 impl AppEvent {
     /// `[kind, a, b, c]` as little-endian u32s: touch = (phase | id << 8, x, y), key = (down, code, 0).
@@ -113,6 +144,8 @@ impl AppEvent {
             AppEvent::Settings { seq } => [KIND_SETTINGS, seq, 0, 0],
             AppEvent::Alarm { id } => [KIND_ALARM, u32::from(id), 0, 0],
             AppEvent::Keyboard { h } => [KIND_KEYBOARD, h, 0, 0],
+            AppEvent::Page { page } => [KIND_PAGE, u32::from(page), 0, 0],
+            AppEvent::Action => [KIND_ACTION, 0, 0, 0],
         };
         let mut out = [0u8; EVENT_LEN];
         for (i, v) in w.iter().enumerate() {
@@ -148,6 +181,10 @@ impl AppEvent {
                 id: u16::try_from(w(1)).ok()?,
             },
             KIND_KEYBOARD => AppEvent::Keyboard { h: w(1) },
+            KIND_PAGE => AppEvent::Page {
+                page: u16::try_from(w(1)).ok()?,
+            },
+            KIND_ACTION => AppEvent::Action,
             _ => return None,
         })
     }
@@ -181,10 +218,16 @@ mod tests {
             AppEvent::Alarm { id: u16::MAX },
             AppEvent::Keyboard { h: 0 },
             AppEvent::Keyboard { h: 369 },
+            AppEvent::Page { page: 1 },
+            AppEvent::Page { page: u16::MAX },
+            AppEvent::Action,
         ];
         for e in all {
             assert_eq!(AppEvent::decode(&e.encode()), Some(e));
         }
         assert_eq!(AppEvent::decode(&[0; EVENT_LEN]), None);
+        let mut big_page = AppEvent::Page { page: 0 }.encode();
+        big_page[6] = 1; // page 65536
+        assert_eq!(AppEvent::decode(&big_page), None);
     }
 }

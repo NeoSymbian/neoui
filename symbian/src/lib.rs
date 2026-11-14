@@ -24,6 +24,7 @@ mod settings;
 mod usb_debug;
 mod wifi;
 
+use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::future::Future;
@@ -152,6 +153,10 @@ fn main() -> i32 {
     phone.show_speed(&mut ui, &contacts, &host.settings);
     let mut keyboard_shown = 0;
     let mut nav_shown = 0;
+    // the foreground app's title and toolbar button as last given to the shell
+    let mut chrome_shown: (String, (i32, i32, String)) = Default::default();
+    // the screen and view last checked for an app page (host::page_for)
+    let mut page_shown = (String::new(), String::new());
     let mut running_shown: Vec<&'static str> = Vec::new();
     let mut clockwork = clockwork::Clockwork::boot();
     let mut netclock = netclock::NetClock::default();
@@ -359,10 +364,10 @@ fn main() -> i32 {
                                         }));
                                     }
                                     for b in ui.take_nav() {
-                                        host.send(if b == proto::NAV_BACK {
-                                            AppEvent::Back
-                                        } else {
-                                            AppEvent::Options
+                                        host.send(match b {
+                                            proto::NAV_BACK => AppEvent::Back,
+                                            proto::NAV_ACTION => AppEvent::Action,
+                                            _ => AppEvent::Options,
                                         });
                                     }
                                     for key in ui.take_closed() {
@@ -448,6 +453,20 @@ fn main() -> i32 {
                 host.set_screen(&now, ms);
                 screen = now;
             }
+            host.keep_resident(ms);
+            // an icon, notification or Settings row opening an app's page: the app is told, and the view is cleared
+            // so the same page can be asked for again
+            let view = ui.view();
+            if (screen.as_str(), view.as_str()) != (page_shown.0.as_str(), page_shown.1.as_str()) {
+                if let Some((key, page)) = host::page_for(&screen, &view) {
+                    dprintln!("neoui: {} page {}", key, page);
+                    // without the app (not in this ROM) the shell's own screen keeps its view
+                    if host.post(key, AppEvent::Page { page }) && !view.is_empty() {
+                        ui.show(&screen, "");
+                    }
+                }
+                page_shown = (screen.clone(), ui.view());
+            }
             let running = host.running();
             if running != running_shown {
                 ui.set_running(&running);
@@ -475,6 +494,15 @@ fn main() -> i32 {
             } else {
                 host.front().map_or(0, |a| a.nav)
             };
+            let want_chrome = match host.front() {
+                Some(a) if !phone_modal => (a.title.clone(), a.tool.clone()),
+                _ => Default::default(),
+            };
+            if want_chrome != chrome_shown {
+                let (title, (icon, style, label)) = &want_chrome;
+                ui.set_app_chrome(title, *icon, *style, label);
+                chrome_shown = want_chrome;
+            }
             if want_nav != nav_shown {
                 ui.set_app_nav(
                     want_nav & proto::NAV_BACK != 0,
