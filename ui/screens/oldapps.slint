@@ -1,0 +1,68 @@
+// SPDX-License-Identifier: Apache-2.0
+// Installed S60 apps, supplied by the launcher process; the shell owns the grid and its navigation.
+import { Theme } from "../theme.slint";
+import { NeoList } from "../components/scroll.slint";
+
+export struct OldApp { id: int, name: string, icon: image, has-icon: bool }
+
+export component OldAppsScreen inherits Rectangle {
+    in property <[OldApp]> entries;
+    callback open-entry(int);
+    in-out property <int> selected: -1;
+    property <int> cols: self.width > self.height ? 4 : 3;
+    property <length> cell-w: self.width / cols;
+    property <int> rows: Math.ceil(root.entries.length / cols);
+    if root.entries.length == 0: Text {
+        text: "No old apps installed";
+        color: Theme.text-secondary;
+        font-size: Theme.font-label;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    NeoList {
+        content-height: 12 * Theme.dp + rows * Theme.app-row-h;
+        for app[i] in root.entries: Rectangle {
+            x: Math.mod(i, cols) * cell-w;
+            y: 12 * Theme.dp + Math.floor(i / cols) * Theme.app-row-h;
+            width: cell-w;
+            height: Theme.app-row-h;
+
+            // Selection: a soft plate behind the icon
+            Rectangle {
+                x: (parent.width - Theme.app-icon) / 2 - 8 * Theme.dp;
+                y: 4 * Theme.dp;
+                width: Theme.app-icon + 16 * Theme.dp;
+                height: Theme.app-icon + 16 * Theme.dp;
+                border-radius: Theme.radius + 6 * Theme.dp;
+                background: i == selected ? Theme.selected : (touch.pressed ? Theme.pressed : transparent);
+                border-width: i == selected ? max(1px, 1.5 * Theme.dp) : 0;
+                border-color: Theme.hairline;
+            }
+
+            Image {
+                x: (parent.width - Theme.app-icon) / 2;
+                y: 12 * Theme.dp;
+                width: Theme.app-icon;
+                height: Theme.app-icon;
+                source: app.has-icon ? app.icon : @image-url("../icons/apps/legacy.svg");
+                image-fit: contain;
+            }
+
+            Text {
+                y: 12 * Theme.dp + Theme.app-icon + Theme.app-label-gap;
+                width: parent.width;
+                text: app.name;
+                color: i == selected ? Theme.text : Theme.text-secondary;
+                font-size: Theme.font-label;
+                horizontal-alignment: center;
+            }
+
+            touch := TouchArea {
+                clicked => {
+                    root.selected = i;
+                    root.open-entry(app.id);
+                }
+            }
+        }
+    }
+}

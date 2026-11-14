@@ -33,6 +33,14 @@ pub const HOME_PAGES: i32 = 3;
 
 slint::include_modules!();
 
+/// One installed app advertised by a launcher process. `icon` is the protocol's encoded ARGB icon (or empty).
+#[derive(Clone, Debug)]
+pub struct LauncherEntry {
+    pub id: u32,
+    pub caption: String,
+    pub icon: Vec<u8>,
+}
+
 /// One XRGB8888 pixel, `0xFFRRGGBB` (alpha byte always 0xFF).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(transparent)]
@@ -75,6 +83,7 @@ pub struct Renderer {
     ui: Shell,
     typed: Rc<RefCell<Vec<u32>>>,
     nav: Rc<RefCell<Vec<i32>>>,
+    entries: Rc<RefCell<Vec<u32>>>,
     closed: Rc<RefCell<Vec<alloc::string::String>>>,
     power: Rc<RefCell<Vec<i32>>>,
     phone: Rc<RefCell<Vec<(String, String)>>>,
@@ -146,6 +155,10 @@ impl Renderer {
         let nav: Rc<RefCell<Vec<i32>>> = Rc::default();
         let sink = nav.clone();
         ui.on_app_nav(move |b| sink.borrow_mut().push(b));
+        let entries: Rc<RefCell<Vec<u32>>> = Rc::default();
+        let sink = entries.clone();
+        // Slint uses signed ints; preserve all 32 UID bits on the round trip.
+        ui.on_open_entry(move |id| sink.borrow_mut().push(id as u32));
         let closed: Rc<RefCell<Vec<alloc::string::String>>> = Rc::default();
         let sink = closed.clone();
         ui.on_close_app(move |k| sink.borrow_mut().push(k.as_str().into()));
@@ -184,6 +197,7 @@ impl Renderer {
             ui,
             typed,
             nav,
+            entries,
             closed,
             power,
             phone,
@@ -207,6 +221,29 @@ impl Renderer {
         self.ui.set_view(view.into());
         self.ui.set_options_open(false);
         self.ui.set_shade_open(false);
+    }
+
+    /// Rebuilds the Old apps model after its launcher's entries change.
+    pub fn set_old_apps(&mut self, entries: &[LauncherEntry]) {
+        let rows: Vec<OldApp> = entries
+            .iter()
+            .map(|entry| {
+                let icon = entry_image(&entry.icon);
+                OldApp {
+                    id: entry.id as i32,
+                    name: entry.caption.as_str().into(),
+                    has_icon: icon.is_some(),
+                    icon: icon.unwrap_or_default(),
+                }
+            })
+            .collect();
+        self.ui
+            .set_old_apps(slint::ModelRc::new(slint::VecModel::from(rows)));
+    }
+
+    /// Launcher tile taps, queued until the server can start the app and deliver `AppEvent::Entry`.
+    pub fn take_entries(&mut self) -> Vec<u32> {
+        core::mem::take(&mut *self.entries.borrow_mut())
     }
 
     /// The current screen key: "home", "menu" or an app key such as "clock".
@@ -695,9 +732,39 @@ impl Renderer {
     }
 }
 
+/// Convert straight-alpha ARGB words (little endian BGRA bytes) to Slint's straight-alpha RGBA image.
+fn entry_image(bytes: &[u8]) -> Option<slint::Image> {
+    let (w, h, pixels) = neoui_proto::ipc::decode_entry_icon(bytes).ok()?;
+    if w == 0 || h == 0 {
+        return None;
+    }
+    let mut buffer = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(u32::from(w), u32::from(h));
+    for (dst, src) in buffer
+        .make_mut_bytes()
+        .as_chunks_mut::<4>()
+        .0
+        .iter_mut()
+        .zip(pixels.as_chunks::<4>().0.iter())
+    {
+        dst.copy_from_slice(&[src[2], src[1], src[0], src[3]]);
+    }
+    Some(slint::Image::from_rgba8(buffer))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn entry_icon_keeps_straight_alpha() {
+        let encoded = [2, 0, 1, 0, 0x20, 0x90, 0xf0, 0x80, 0x56, 0x34, 0x12, 0];
+        let pixels = entry_image(&encoded).unwrap().to_rgba8().unwrap();
+        assert_eq!(
+            pixels.as_bytes(),
+            &[0xf0, 0x90, 0x20, 0x80, 0x12, 0x34, 0x56, 0]
+        );
+        assert!(entry_image(&[]).is_none());
+    }
 
     #[test]
     fn pixel_blend() {

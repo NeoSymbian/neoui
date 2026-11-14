@@ -24,6 +24,7 @@ import { KeyboardFocus } from "components/keyboard/focus.slint";
 import { PowerMenu } from "components/powermenu.slint";
 import { HomeScreen } from "screens/home.slint";
 import { MenuScreen } from "screens/menu.slint";
+import { OldAppsScreen, OldApp } from "screens/oldapps.slint";
 import { MessagesScreen } from "screens/messages.slint";
 import { BrowserScreen } from "screens/browser.slint";
 import { CameraScreen } from "screens/camera.slint";
@@ -116,6 +117,9 @@ export component Shell inherits Window {
     // in: an app process is in front: the shell's own mock of that screen stays hidden (an overlay shows over a dark
     // body, not over a mock), and unclaimed toolbar buttons do nothing
     in property <bool> app-front;
+    // Installed apps advertised by LEGACY; tile taps keep the grid visible until it asks for FRONT(1).
+    in property <[OldApp]> old-apps;
+    callback open-entry(int);
     // in: what the foreground app put in the status bar's title and the toolbar's middle button (ipc 1.4 TITLE,
     // TOOLBAR: icon 0 none, 1 call, 2 add, 3 person_add, 4 edit, 5 check, 6 delete; style bits 1 pill, 2 Back is
     // Cancel, 4 empty); the middle button reports through app-nav(4)
@@ -342,6 +346,14 @@ export component Shell inherits Window {
         Slot {
             active: screen == "clock" && !root.app-front;
             ClockScreen { }
+        }
+
+        Slot {
+            active: screen == "legacy" && !root.app-front;
+            OldAppsScreen {
+                entries: root.old-apps;
+                open-entry(id) => { root.open-entry(id); }
+            }
         }
 
         Slot {
