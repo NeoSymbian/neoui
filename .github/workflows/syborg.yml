@@ -52,6 +52,14 @@ jobs:
           mkdir -p ../../build/rust
           cp target/armv5te-none-eabi/release/{libneoui_symbian,libneoclock,libneoterm,libneofiles,libneodevtools}.a exes.txt ../../build/rust/
 
+      # NEOPHONE.EXE (NeoSymbian/phone: Phone and Contacts), which the UI server starts hidden at boot (host::RESIDENT)
+      - name: NeoSymbian/phone
+        run: |
+          git clone -q --depth 1 https://github.com/NeoSymbian/phone.git
+          cd phone/symbian && cargo arm
+          cp target/armv5te-none-eabi/release/libneophone.a ../../build/rust/
+          grep '^NEOPHONE.EXE' exes.txt >> ../../build/rust/exes.txt
+
       # NEOTEST.EXE (e32-rs's on-device tests), so ESHELL in the Terminal app has a 2010-style text program to run
       - name: e32-rs neotest
         run: |
@@ -60,7 +68,7 @@ jobs:
           cp target/armv5te-none-eabi/release/libneotest.a ../build/rust/
           grep '^NEOTEST.EXE' symbian/exes.txt >> ../build/rust/exes.txt
           # Syborg's moving memory model takes at most 80 KB of user stack; the phone's default (128 KB, build
-          # 9213007) is refused with KErrTooBig and SYSSTART never runs
+          # 9213007) is refused with KErrTooBig and SYSSTART never runs (every line, NEOPHONE's too: appended above)
           sed -i '/^[A-Z].*\.a$/ s/$/ stack=0x14000/' ../build/rust/exes.txt
 
       - name: Fetch the Symbian sources
@@ -192,8 +200,10 @@ jobs:
       # P2 (legacy apps): "Old apps" in the menu (270,930) starts LEGACY.EXE (NeoSymbian/build apps/legacy), which runs
       # the stock 2010 window server as a guest in a shared buffer (graphics fork: scnew.cpp, WSTOP.CPP, EVENT.CPP) and
       # the Symbian Foundation's MiniGUI grid.exe in it; a tap in its window reaches it as a raw pointer event. grid
-      # draws for 3 s and exits, and LEGACY with it.
-      - name: Boot again; Old apps (a 2010 window-server program inside neoui)
+      # draws for 3 s and exits, and LEGACY with it. Then NEOPHONE: Phone in the dock (54,1000) opens it on the dialer
+      # (page 0); Back (88,1033: unclaimed on the dialer) goes home; Apps (270,1000) -> Contacts in the menu (449,125,
+      # row 0 of the grid whose row 2 holds Clock at y 530) opens it on Contacts (page 1).
+      - name: Boot again; Old apps (a 2010 window-server program inside neoui); Phone and Contacts (NEOPHONE)
         working-directory: build
         run: |
           cp out/serial.log out/serial-main.log
@@ -203,7 +213,10 @@ jobs:
           tap 270 930; expect "create grid"
           tap 200 300; expect "legacy: raw"
           expect "neoui: app legacy exited"
-          MON_GAP=0.1 MONITOR="$M" SECS=120 ./boot.sh
+          tap 54 1000; expect "neophone: page 0 view"
+          tap 88 1033
+          tap 270 1000; tap 449 125; expect "neophone: page 1 view"
+          MON_GAP=0.1 MONITOR="$M" SECS=180 ./boot.sh
           s=out/serial.log
           grep -a 'neoui: app legacy started' $s
           grep -a '\[proc\] create EWSRV.EXE' $s
@@ -212,6 +225,10 @@ jobs:
           grep -aE 'legacy: raw 10 [0-9]+ [0-9]+' $s
           grep -a 'legacy: closing' $s
           grep -a 'neoui: app legacy exited (type 0, reason 0)' $s
+          grep -a 'neoui: phone page 0' $s
+          grep -a 'neophone: page 0 view' $s
+          grep -a 'neoui: phone page 1' $s
+          grep -a 'neophone: page 1 view' $s
           ! grep -aq 'K::Fault\|Kern::Fault\|\[EKERN\] panic\|rust panic' $s
 
       - uses: actions/upload-artifact@v4
