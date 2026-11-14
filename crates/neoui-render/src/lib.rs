@@ -229,6 +229,17 @@ impl Renderer {
         )
     }
 
+    /// Where an app's surface shows: the body of an app screen (status bar above, toolbar below), whatever shows now.
+    pub fn app_body(&self) -> Rect {
+        let size = self.window.size();
+        Rect::new(
+            0,
+            self.ui.get_body_y() as i32,
+            size.width,
+            self.ui.get_app_body_h() as u32,
+        )
+    }
+
     /// The home screen's pages band, where its swipe works (physical pixels; smooth-ui S2c).
     pub fn home_strip(&self) -> Rect {
         Rect::new(

@@ -95,6 +95,9 @@ export component Shell inherits Window {
     in-out property <int> home-page <=> home.page;
     out property <length> home-strip-h: home.strip-h;
     out property <length> body-h: self.height - Theme.status-h - (has-toolbar ? Theme.toolbar-h : 0);
+    // an app screen's body (they always have the toolbar): app surfaces are this size, also for an app started
+    // while home shows (a resident app)
+    out property <length> app-body-h: self.height - Theme.status-h - Theme.toolbar-h;
     // in: the UI server shows the system keyboard over the bottom of the body for an app that asked (R6c), in the
     // mode it asked for (0 hidden; proto::KEYBOARD's 1 text, 2 terminal), and forwards what it types; out: its
     // height in each mode, for the server to tell the app (it changes with the language and the settings)

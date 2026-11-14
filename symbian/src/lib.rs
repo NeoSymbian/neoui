@@ -145,7 +145,7 @@ fn main() -> i32 {
     };
     // the shell's design unit (theme.slint: min(w, h) / 360), in 1/256 px
     let dp256 = (w.min(h) * 256 / 360) as u32;
-    let mut host = Host::new(ui.body(), dp256, ui.keyboard_heights(), settings);
+    let mut host = Host::new(ui.app_body(), dp256, ui.keyboard_heights(), settings);
     let mut keyboard_shown = 0;
     let mut nav_shown = 0;
     // the foreground app's title and toolbar button as last given to the shell
@@ -440,8 +440,6 @@ fn main() -> i32 {
                         w * h * 4
                     );
                 }
-                // The body depends on the screen (app screens have a toolbar): take it before an app is shown.
-                host.body = ui.body();
                 host.set_screen(&now, ms);
                 screen = now;
             }
