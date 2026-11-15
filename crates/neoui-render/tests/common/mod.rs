@@ -106,7 +106,7 @@ fn tile_center(i: usize, w: u32, h: u32) -> (i32, i32) {
     )
 }
 
-/// The menu at this size: writes `menu-<name>.png`; a tap on tile 1 opens Messages (`menu-<name>-tapped.png`).
+/// The menu at this size: writes `menu-<name>.png`; a tap on tile 3 opens Browser (`menu-<name>-tapped.png`).
 /// The tap must change a large part of the frame, and the reported damage must cover every changed pixel.
 pub fn menu_tap(r: &mut Renderer, buf: &mut [u32], name: &str, w: u32, h: u32) {
     r.show("menu", "");
@@ -114,7 +114,7 @@ pub fn menu_tap(r: &mut Renderer, buf: &mut [u32], name: &str, w: u32, h: u32) {
     write_png(&format!("menu-{name}.png"), buf, w, h);
 
     let before = buf.to_vec();
-    let (x, y) = tile_center(1, w, h);
+    let (x, y) = tile_center(3, w, h);
     tap(r, x, y);
     let mut damage = r.render(buf, w as usize);
     for _ in 0..3 {
@@ -130,7 +130,7 @@ pub fn menu_tap(r: &mut Renderer, buf: &mut [u32], name: &str, w: u32, h: u32) {
         .count();
     assert!(
         changed > (w * h / 10) as usize,
-        "{name}: tapping Messages changed only {changed} pixels"
+        "{name}: tapping Browser changed only {changed} pixels"
     );
     let b = damage.bounds();
     for (i, (a, c)) in before.iter().zip(buf.iter()).enumerate() {

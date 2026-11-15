@@ -127,6 +127,8 @@ pub struct Phone {
     log_revision: Option<u32>,
     /// (modem failed, new missed calls) as last shown
     availability: Option<(bool, u32)>,
+    /// the SMS revision the shade's unread line was read at (C9)
+    sms_revision: Option<u32>,
 }
 
 impl Phone {
@@ -156,6 +158,7 @@ impl Phone {
             log: Vec::new(),
             log_revision: None,
             availability: None,
+            sms_revision: None,
         }
     }
 
@@ -273,7 +276,7 @@ impl Phone {
         };
         let rings = ringing(&s) && !old.as_ref().is_some_and(ringing);
         let starts = live(&s) && !old.as_ref().is_some_and(live);
-        let app_in_front = matches!(ui.screen().as_str(), "phone" | "contacts");
+        let app_in_front = matches!(ui.screen().as_str(), "phone" | "contacts" | "messages");
         if rings {
             self.rang = true;
         }
@@ -330,6 +333,18 @@ impl Phone {
             self.log_revision = Some(s.log_revision);
         }
         // (no earpiece blanking until there is a proximity sensor: the screen is main's screen.rs alone)
+        // unread messages (C9): the envelope and the shade's line for the newest one
+        if self.sms_revision != Some(s.sms_revision) {
+            let line = if s.sms_unread > 0 {
+                self.newest_unread()
+            } else {
+                Some(alloc::string::String::new())
+            };
+            if let Some(line) = line {
+                self.sms_revision = Some(s.sms_revision);
+                ui.set_unread_messages(u32::from(s.sms_unread), &line);
+            }
+        }
         self.shown = Some(s);
     }
 
@@ -372,6 +387,37 @@ impl Phone {
             }
             _ => {}
         }
+    }
+
+    /// "+374 91 234567: Running late…" for the newest unread message; `None` when it couldn't be read.
+    fn newest_unread(&mut self) -> Option<alloc::string::String> {
+        if self.session.is_none() {
+            self.session = connect().ok();
+        }
+        let session = self.session.as_ref()?;
+        let mut bytes = alloc::vec![0u8; modem_ipc::SmsEntry::HEAD + 2 + modem_ipc::sms::MAX_TEXT];
+        let mut d = TPtr8::new(&mut bytes);
+        let mut args = TIpcArgs::new();
+        args.des8(0, &mut d);
+        args.int(1, 0);
+        args.int(2, modem_ipc::sms::READ_NEWEST_UNREAD);
+        if session
+            .send_receive(op::SMS_READ, &args)
+            .unwrap_or_else(|e| e)
+            < 0
+        {
+            return None;
+        }
+        let n = d.len();
+        let Some((e, text, _)) = modem_ipc::SmsEntry::read(&bytes[..n]) else {
+            return Some(alloc::string::String::new());
+        };
+        let line: alloc::string::String = text
+            .chars()
+            .map(|c| if c.is_control() { ' ' } else { c })
+            .take(60)
+            .collect();
+        Some(format!("{}: {line}", e.number.as_str()))
     }
 
     /// MODEMD's call log (C8); false when it couldn't be read.

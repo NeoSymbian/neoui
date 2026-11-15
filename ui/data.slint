@@ -3,8 +3,6 @@
 
 export struct Person { name: string, initials: string, tint: color, number: string, label: string, favourite: bool }
 export struct Call { name: string, initials: string, tint: color, kind: string, when: string }
-export struct Conversation { name: string, initials: string, tint: color, snippet: string, when: string, unread: bool }
-export struct Message { text: string, mine: bool, when: string }
 export struct FileItem { name: string, kind: string, detail: string }
 // one scanned Wi-Fi network (neoui-proto wifi::Network): name, "Secured · 5 GHz · -46 dBm", 0..4 bars
 // the current Wi-Fi link (symbian/src/wifi.rs from the kernel's HAL WlanLink; neoui-proto wifi::LinkView)
@@ -38,21 +36,6 @@ export global Data {
         { name: "Grace Nakamura", initials: "GN", tint: #e5484d, kind: "in", when: "Yesterday" },
         { name: "Ben Okafor", initials: "BO", tint: #22b46a, kind: "out", when: "Wed" },
         { name: "Elena Sargsyan", initials: "ES", tint: #8656e8, kind: "missed", when: "Tue" },
-    ];
-    out property <[Conversation]> conversations: [
-        { name: "Ava Lindqvist", initials: "AL", tint: #2f80ed, snippet: "Running late, see you at 7?", when: "10:05", unread: true },
-        { name: "Ben Okafor", initials: "BO", tint: #22b46a, snippet: "The build passed on the phone!", when: "09:48", unread: true },
-        { name: "Grace Nakamura", initials: "GN", tint: #e5484d, snippet: "Photos from Sunday", when: "Yesterday", unread: false },
-        { name: "Dario Rossi", initials: "DR", tint: #f2994a, snippet: "Ok, thanks", when: "Wed", unread: false },
-        { name: "Felix Wagner", initials: "FW", tint: #1fa9c4, snippet: "Can you send the address?", when: "Mon", unread: false },
-        { name: "Iris Novak", initials: "IN", tint: #e2a92a, snippet: "Happy birthday!", when: "2 Nov", unread: false },
-    ];
-    out property <[Message]> thread: [
-        { text: "Hey! Are we still on for dinner tonight?", mine: false, when: "09:51" },
-        { text: "Yes. 7 at the usual place?", mine: true, when: "09:53" },
-        { text: "Perfect. I'll book a table.", mine: false, when: "09:54" },
-        { text: "Great, see you there", mine: true, when: "09:55" },
-        { text: "Running late, see you at 7?", mine: false, when: "10:05" },
     ];
     out property <[FileItem]> drives: [
         { name: "Phone memory", kind: "phone", detail: "9.4 GB of 16 GB used" },

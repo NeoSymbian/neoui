@@ -6,8 +6,6 @@ mod common;
 const SCREENS: &[(&str, &str)] = &[
     ("home", ""),
     ("menu", ""),
-    ("messages", ""),
-    ("messages", "thread"),
     ("browser", ""),
     ("browser", "page"),
     ("camera", ""),
@@ -72,8 +70,8 @@ fn pixel() {
 
     // Overlays, opened by real taps: Options (toolbar, right button) and the notification shade (status bar).
     let d = common::dp(w, h);
-    r.show("messages", "");
-    common::frame(&mut r, &mut buf, w, "messages");
+    r.show("browser", "");
+    common::frame(&mut r, &mut buf, w, "browser");
     common::tap(
         &mut r,
         (w as f32 - 58.0 * d) as i32,
@@ -82,6 +80,8 @@ fn pixel() {
     common::frame(&mut r, &mut buf, w, "options");
     common::write_png("options-pixel.png", &buf, w, h);
     r.show("home", "");
+    // two unread messages (C9): the status bar's envelope, the shade's row
+    r.set_unread_messages(2, "+374 91 234567: Running late, see you at 7?");
     common::frame(&mut r, &mut buf, w, "home");
     common::tap(&mut r, (w / 2) as i32, (12.0 * d) as i32);
     common::frame(&mut r, &mut buf, w, "shade");

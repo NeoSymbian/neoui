@@ -39,7 +39,7 @@ pub const APPS: &[(&str, &str, &str)] = &[
     ("devtools", "neodev", ""),
     // S60 apps through the guest window server (NeoSymbian/legacy host/legacy.cpp)
     ("legacy", "legacy", ""),
-    // Phone and Contacts: one process (NeoSymbian/phone), see ALIASES and PAGES
+    // Phone, Contacts and Messages: one process (NeoSymbian/phone), see ALIASES and PAGES
     ("phone", "neophone", ""),
 ];
 
@@ -48,7 +48,7 @@ pub const APPS: &[(&str, &str, &str)] = &[
 pub const LAUNCHERS: &[&str] = &["legacy"];
 
 /// Screens another app's process serves on one of its pages: (screen, app key, page). The switcher shows the app once.
-pub const ALIASES: &[(&str, &str, u16)] = &[("contacts", "phone", 1)];
+pub const ALIASES: &[(&str, &str, u16)] = &[("contacts", "phone", 1), ("messages", "phone", 6)];
 
 /// Shell views that open an app on a page (`ui.show(app, view)`, from icons, notifications, Settings): (app, view,
 /// page). The app's own numbering (NeoSymbian/phone `Page`).
@@ -60,6 +60,7 @@ pub const PAGES: &[(&str, &str, u16)] = &[
     ("phone", "call", 3),
     ("phone", "settings", 4),
     ("phone", "speed", 5),
+    ("phone", "messages", 6),
 ];
 
 /// Apps started (hidden) at boot and never closed for room: an incoming call must show at once.

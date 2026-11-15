@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // The notification shade: tap the status bar. Quick toggles, then notifications (Belle's pull-down, modernized).
 import { Theme } from "../theme.slint";
-import { Data } from "../data.slint";
 import { Glyph } from "frame.slint";
 import { ListRow } from "lists.slint";
 import { Slider } from "controls.slint";
@@ -47,6 +46,9 @@ export component Shade inherits Rectangle {
     callback dismissed;
     callback open-app(string);
     in property <int> missed;
+    // unread messages and the newest one's line
+    in property <int> unread;
+    in property <string> unread-line;
     in property <bool> active-call;
     callback return-call;
     // an app on one of its pages (app key, view: host::PAGES)
@@ -168,9 +170,9 @@ export component Shade inherits Rectangle {
                 clicked => { root.open-view("phone", "recents"); }
             }
 
-            ListRow {
-                title: "2 new messages";
-                subtitle: Data.conversations[0].name + ": " + Data.conversations[0].snippet;
+            if unread > 0: ListRow {
+                title: unread == 1 ? "New message" : unread + " new messages";
+                subtitle: unread-line;
                 icon: @image-url("../icons/sys/message.svg");
                 has-icon: true;
                 icon-tint: Theme.accent;

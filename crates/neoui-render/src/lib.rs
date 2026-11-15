@@ -612,6 +612,13 @@ impl Renderer {
         self.ui.set_missed_calls(missed.min(i32::MAX as u32) as i32);
     }
 
+    /// Unread messages (C9): the status bar's envelope and the shade's row with the newest one's `line`.
+    pub fn set_unread_messages(&mut self, count: u32, line: &str) {
+        self.ui
+            .set_unread_messages(count.min(i32::MAX as u32) as i32);
+        self.ui.set_unread_line(line.into());
+    }
+
     /// What the SIM prompt and the modem banner asked since the last call: "pin" + PIN, "sim-dismiss", "dial" +
     /// number (the prompt's emergency call), "retry".
     pub fn take_phone(&mut self) -> Vec<(String, String)> {

@@ -87,11 +87,12 @@ surface (a global chunk shared by handle, mapped at the same address in both pro
 into it and reports damage. The server shows the surface in the shell's body, between the live status bar and
 toolbar. Touches in the body go to the app; Back makes the server send `Quit`, and the app exits.
 
-**Phone and Contacts are an app: `NEOPHONE.EXE` in [NeoSymbian/phone](https://github.com/NeoSymbian/phone)** (its
-contacts model is that repo's `crates/contacts`). The UI server starts it hidden at boot and keeps it running
-(`host::RESIDENT`); the Phone and Contacts icons, the Settings row, the shade and a ringing call open it on one of its
-pages (`host::PAGES`, `ALIASES`). The shell keeps only a phone service (`symbian/src/phone.rs`): MODEMD's status for
-the status bar, the SIM PIN prompt, the "Modem unavailable" banner, the shade's missed calls and "return to call",
+**Phone, Contacts and Messages are an app: `NEOPHONE.EXE` in [NeoSymbian/phone](https://github.com/NeoSymbian/phone)**
+(its contacts model is that repo's `crates/contacts`). The UI server starts it hidden at boot and keeps it running
+(`host::RESIDENT`); the Phone, Contacts and Messages icons, the Settings row, the shade and a ringing call open it on
+one of its pages (`host::PAGES`, `ALIASES`). The shell keeps only a phone service (`symbian/src/phone.rs`): MODEMD's
+status for the status bar, the SIM PIN prompt, the "Modem unavailable" banner, the shade's missed calls, unread
+messages (and the status bar's envelope) and "return to call",
 the screen during calls, the volume keys in a call, the radio and ring settings and the network time.
 
 **A Terminal app (R6b): ESHELL and the 2010 text programs inside the Rust UI.** `NEOTERM.EXE`

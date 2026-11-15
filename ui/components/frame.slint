@@ -26,6 +26,7 @@ export component StatusBar inherits Rectangle {
     // Wi-Fi bars 0..4 while connected, -1 = not connected (no icon); its band ("2.4", "5") as a small label
     in property <int> wifi-bars: -1;
     in property <string> wifi-band;
+    in property <bool> unread;
     callback tapped;
     // a swipe down on the bar (the shade opens)
     callback pulled;
@@ -80,6 +81,15 @@ export component StatusBar inherits Rectangle {
             Glyph {
                 source: @image-url("../icons/sys/signal.svg");
                 size: Theme.status-icon;
+            }
+        }
+        // unread messages (C9): an envelope until they are read
+        if unread: VerticalLayout {
+            alignment: center;
+            Glyph {
+                source: @image-url("../icons/sys/message.svg");
+                size: Theme.status-icon;
+                colorize: Theme.text;
             }
         }
         if wifi-bars >= 0: VerticalLayout {
