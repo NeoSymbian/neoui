@@ -204,16 +204,17 @@ jobs:
       # (page 0); Back (88,1033: unclaimed on the dialer) goes home; Apps (270,1000) -> Contacts in the menu (449,125,
       # row 0 of the grid whose row 2 holds Clock at y 530) opens it on Contacts (page 1); Back goes home again and
       # Messages in the dock (162,1000) opens it on Messages (page 6).
-      - name: Boot again; Old apps (a 2010 window-server program inside neoui); Phone, Contacts and Messages (NEOPHONE)
+      - name: Boot again; Old apps (the AppArc grid, its first app); Phone, Contacts and Messages (NEOPHONE)
         working-directory: build
         run: |
           cp out/serial.log out/serial-main.log
           export SCREEN=539x1079
           . ../neoui/symbian/taps.sh
           tap 270 1000
-          tap 270 930; expect "create grid"
-          tap 200 300; expect "legacy: raw"
-          expect "neoui: app legacy exited"
+          tap 270 930; expect "legacy: app "
+          wait_s 3; tap 90 130; expect "legacy: start app"
+          wait_s 5; tap 200 300; expect "legacy: raw"
+          tap 88 1033; wait_s 2; tap 88 1033; expect "neoui: app legacy exited"
           tap 54 1000; expect "neophone: page 0 view"
           tap 88 1033
           tap 270 1000; tap 449 125; expect "neophone: page 1 view"
@@ -224,7 +225,10 @@ jobs:
           grep -a 'neoui: app legacy started' $s
           grep -a '\[proc\] create EWSRV.EXE' $s
           grep -aE 'legacy: guest wserv 360x640 up, surface 539x[0-9]+' $s
-          grep -a '\[proc\] create grid.exe' $s
+          # protocol 1.6: the AppArc apps as Old apps tiles; the first one starts, takes a touch, Back closes it, and
+          # Back on the grid ends LEGACY
+          grep -aE "legacy: app [0-9a-f]{8} '" $s
+          grep -aE 'legacy: start app [0-9a-f]{8}: 0' $s
           grep -aE 'legacy: raw 10 [0-9]+ [0-9]+' $s
           grep -a 'legacy: closing' $s
           grep -a 'neoui: app legacy exited (type 0, reason 0)' $s
