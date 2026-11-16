@@ -93,13 +93,15 @@ export component Shell inherits Window {
     // an app's full-screen page hides the status bar and the strip (the UI server draws the app over both)
     property <bool> full: app-front && app-full;
     // Classic shows the strip everywhere, home too; Gestures home has none (its dock has Apps)
-    property <bool> has-strip: !full && (SystemSettings.nav-mode != 1 || screen != "home");
+    // in: Classic's strip shows for a moment over a full-screen page (the UI server, on a tap)
+    in property <bool> strip-peek;
+    property <bool> has-strip: (!full || strip-peek) && (SystemSettings.nav-mode != 1 || screen != "home");
     // out: the Symbian UI server places app processes' surfaces in this body rectangle (NeoSymbian R6)
     out property <length> body-y: Theme.status-h;
     // the home screen's pages, for the UI server's swipe (smooth-ui S2c): which one shows, and the band they fill
     in-out property <int> home-page <=> home.page;
     out property <length> home-strip-h: home.strip-h;
-    out property <length> body-h: self.height - Theme.status-h - (has-strip ? Theme.strip-h : 0);
+    out property <length> body-h: self.height - Theme.status-h - (has-strip && !full ? Theme.strip-h : 0);
     // an app screen's body (the strip is the same height in both modes): app surfaces are this size, also for an app
     // started while home shows (a resident app)
     out property <length> app-body-h: self.height - Theme.status-h - Theme.strip-h;

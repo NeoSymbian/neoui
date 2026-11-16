@@ -440,6 +440,11 @@ impl Renderer {
         }
     }
 
+    /// Show Classic's strip over a full-screen page (a tap asked for it), or hide it again.
+    pub fn set_strip_peek(&mut self, on: bool) {
+        self.ui.set_strip_peek(on);
+    }
+
     /// Is the strip on screen? (Not on Gestures home, not under a full-screen page.)
     pub fn strip_shown(&self) -> bool {
         self.ui.get_body_h() < self.ui.get_app_body_h() + 1.0

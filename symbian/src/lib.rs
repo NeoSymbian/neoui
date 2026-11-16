@@ -54,6 +54,8 @@ const TRANSITION_MS: u32 = 250;
 const SWIPE_MS: u32 = 250;
 /// How long Power is held before the Power menu opens (H3a).
 const POWER_HOLD_MS: u64 = 1000;
+/// How long a tap shows Classic's strip over a full-screen page.
+const PEEK_MS: u64 = 3000;
 /// `EHalGroupDisplay` and its `TDisplayHalFunction`s (`u32hal.h`): screen on/off and the panel's brightness (D2).
 const HAL_DISPLAY: i32 = 4;
 const DISPLAY_MAX_BRIGHTNESS: i32 = 12;
@@ -146,10 +148,19 @@ fn main() -> i32 {
     };
     // the shell's design unit (theme.slint: min(w, h) / 360), in 1/256 px
     let dp256 = (w.min(h) * 256 / 360) as u32;
-    let mut host = Host::new(ui.app_body(), dp256, ui.keyboard_heights(), settings);
+    let mut host = Host::new(
+        ui.app_body(),
+        h as u32,
+        dp256,
+        ui.keyboard_heights(),
+        settings,
+    );
     let mut keyboard_shown = 0;
     // the foreground app's title and toolbar button as last given to the shell
     let mut chrome_shown: (neoui_render::Page, bool) = Default::default();
+    let mut query_shown: Option<neoui_render::Query> = None;
+    // when Classic's strip, shown over a full-screen page by a tap, goes again
+    let mut peek_until = 0;
     // the screen and view last checked for an app page (host::page_for)
     let mut page_shown = (String::new(), String::new());
     let mut running_shown: Vec<&'static str> = Vec::new();
@@ -326,7 +337,7 @@ fn main() -> i32 {
                         let app_on_screen = host.front().is_some() && !phone.modal();
                         match event {
                             InputEvent::Touch { id, x, y, phase } => {
-                                let body = host.body;
+                                let body = host.surface_rect();
                                 if phase == TouchPhase::Down {
                                     swallow = swipe.is_some();
                                     // the shade over home takes its own drags: no page slide under it
@@ -345,6 +356,20 @@ fn main() -> i32 {
                                         && !power_menu
                                         && !ui.overlay_open()
                                         && contains(&host.app_area(), x, y);
+                                    // Classic over a full-screen page: the first tap shows the strip for a moment
+                                    // (docs gestures.md rule 8), the app doesn't get it
+                                    if to_app
+                                        && !host.peek
+                                        && host.front_full()
+                                        && host.settings.get(keys::NAV_MODE).unwrap_or(0) != 1
+                                    {
+                                        host.peek = true;
+                                        peek_until = time::millis() + PEEK_MS;
+                                        host.refresh = true;
+                                        ui.set_strip_peek(true);
+                                        to_app = false;
+                                        swallow = true;
+                                    }
                                 }
                                 if phase == TouchPhase::Up {
                                     let down = down_at.take();
@@ -571,6 +596,19 @@ fn main() -> i32 {
                 ui.set_app_page(&want_page.0, want_page.1);
                 chrome_shown = want_page;
             }
+            let want_query = match host.front() {
+                Some(a) if !phone_modal => a.query.clone(),
+                _ => None,
+            };
+            if want_query != query_shown {
+                ui.set_app_query(want_query.as_ref());
+                query_shown = want_query;
+            }
+            if host.peek && (!host.front_full() || ms >= peek_until) {
+                host.peek = false;
+                host.refresh = true;
+                ui.set_strip_peek(false);
+            }
             let overlay = ui.overlay_open();
             if overlay_shown && !overlay {
                 host.refresh = true; // the app's surface again, whole
@@ -737,12 +775,12 @@ fn poll_now<F: Future>(mut f: Pin<&mut F>) -> Option<F::Output> {
 fn front_surface(host: &Host) -> Option<(&[u32], usize, Rect)> {
     let body = host.body;
     let surface = host.front()?.surface.as_ref()?;
-    // SAFETY: the chunk is `body.w * body.h * 4` bytes, committed at creation and mapped here; the app only writes
-    // pixels.
+    // SAFETY: the chunk is `body.w * surface_rows * 4` bytes, committed at creation and mapped here; the app only
+    // writes pixels.
     let src = unsafe {
         core::slice::from_raw_parts(
             surface.base().cast::<u32>(),
-            body.w as usize * body.h as usize,
+            body.w as usize * host.surface_rows(),
         )
     };
     Some((src, body.w as usize, host.app_area()))
@@ -889,7 +927,8 @@ fn contains(r: &Rect, x: i32, y: i32) -> bool {
 /// under it, else the rectangles the app reported.
 fn compose(host: &mut Host, shell_damage: &Damage, display: &Display) -> usize {
     let blits = core::mem::take(&mut host.blits);
-    let body = host.body;
+    let body = host.surface_rect();
+    let rows = host.surface_rows();
     let area = host.app_area();
     // the visible part of the surface, in surface coordinates
     let shown = Rect::new(0, 0, area.w, area.h);
@@ -897,9 +936,9 @@ fn compose(host: &mut Host, shell_damage: &Damage, display: &Display) -> usize {
     let Some(surface) = host.front().and_then(|a| a.surface.as_ref()) else {
         return 0;
     };
-    let (bw, bh) = (body.w as usize, body.h as usize);
-    // SAFETY: the chunk is `bw * bh * 4` bytes, committed at creation and mapped here; the app only writes pixels.
-    let src = unsafe { core::slice::from_raw_parts(surface.base().cast::<u32>(), bw * bh) };
+    let bw = body.w as usize;
+    // SAFETY: the chunk is `bw * rows * 4` bytes, committed at creation and mapped here; the app only writes pixels.
+    let src = unsafe { core::slice::from_raw_parts(surface.base().cast::<u32>(), bw * rows) };
     let mut px = 0;
     let mut to_screen = |r: Rect| {
         let r = r.intersection(&shown);

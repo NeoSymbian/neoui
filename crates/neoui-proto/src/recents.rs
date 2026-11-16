@@ -42,10 +42,20 @@ impl<T> Recents<T> {
     }
 
     /// The items that make the list longer than `limit`, oldest first, skipping those `keep` protects; they stay in
-    /// the list (the caller asks them to quit and removes them once they have).
-    pub fn over_limit(&self, limit: usize, keep: impl Fn(&T) -> bool) -> impl Iterator<Item = &T> {
-        let excess = self.items.len().saturating_sub(limit);
-        self.items.iter().filter(move |i| !keep(i)).take(excess)
+    /// the list (the caller asks them to quit and removes them once they have). Items already `leaving` neither
+    /// count nor are picked again.
+    pub fn over_limit(
+        &self,
+        limit: usize,
+        leaving: impl Fn(&T) -> bool,
+        keep: impl Fn(&T) -> bool,
+    ) -> impl Iterator<Item = &T> {
+        let staying = self.items.iter().filter(|i| !leaving(i)).count();
+        let excess = staying.saturating_sub(limit);
+        self.items
+            .iter()
+            .filter(move |i| !leaving(i) && !keep(i))
+            .take(excess)
     }
 
     pub fn find(&self, f: impl Fn(&T) -> bool) -> Option<&T> {
@@ -104,11 +114,17 @@ mod tests {
             r.push(k);
         }
         // one too many: the oldest goes, unless it is protected (e.g. the foreground app)
-        let over: Vec<_> = r.over_limit(4, |_| false).copied().collect();
+        let none = |_: &&str| false;
+        let over: Vec<_> = r.over_limit(4, none, none).copied().collect();
         assert_eq!(over, ["a"]);
-        let over: Vec<_> = r.over_limit(4, |k| *k == "a").copied().collect();
+        let over: Vec<_> = r.over_limit(4, none, |k| *k == "a").copied().collect();
         assert_eq!(over, ["b"]);
-        assert_eq!(r.over_limit(5, |_| false).count(), 0);
+        assert_eq!(r.over_limit(5, none, none).count(), 0);
+        // room for a fifth before it starts: two go; one already leaving neither counts nor goes twice
+        let over: Vec<_> = r.over_limit(3, none, none).copied().collect();
+        assert_eq!(over, ["a", "b"]);
+        let over: Vec<_> = r.over_limit(3, |k| *k == "a", none).copied().collect();
+        assert_eq!(over, ["b"]);
         assert_eq!(r.remove(|k| *k == "a" || *k == "c"), vec!["a", "c"]);
         assert_eq!(list(&r), ["e", "d", "b"]);
         assert!(r.remove(|_| false).is_empty());
