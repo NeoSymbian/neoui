@@ -219,7 +219,7 @@ jobs:
           tap 54 1000; expect "neophone: page 0 view"
           tap 88 1033
           tap 270 1000; tap 449 125; expect "neophone: page 1 view"
-          tap 88 1033
+          tap 88 1033; wait_s 2; tap 88 1033; wait_s 2   # Contacts -> the menu (where it was opened) -> home
           tap 162 1000; expect "neophone: page 6 view"
           MON_GAP=0.1 MONITOR="$M" SECS=180 ./boot.sh
           s=out/serial.log
