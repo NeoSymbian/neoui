@@ -92,10 +92,12 @@ export component Shell inherits Window {
 
     // an app's full-screen page hides the status bar and the strip (the UI server draws the app over both)
     property <bool> full: app-front && app-full;
-    // Classic shows the strip everywhere, home too; Gestures home has none (its dock has Apps)
     // in: Classic's strip shows for a moment over a full-screen page (the UI server, on a tap)
     in property <bool> strip-peek;
-    property <bool> has-strip: (!full || strip-peek) && (SystemSettings.nav-mode != 1 || screen != "home");
+    // Classic shows the strip everywhere, home too. Gestures: a shell screen with nothing in the strip (home, the Apps
+    // menu, Settings) has none; an app keeps its body (its strip is plain black when empty)
+    property <bool> has-strip: (!full || strip-peek) && (SystemSettings.nav-mode != 1 || app-front || page-busy);
+    property <bool> page-busy: page-has-primary || sheet-items.length > 0;
     // out: the Symbian UI server places app processes' surfaces in this body rectangle (NeoSymbian R6)
     out property <length> body-y: Theme.status-h;
     // the home screen's pages, for the UI server's swipe (smooth-ui S2c): which one shows, and the band they fill
@@ -337,7 +339,7 @@ export component Shell inherits Window {
     // The shell's own pages (rule 5: ⋮ only where there are options, one primary action): Classic home's Apps, Open
     // apps' Home and Close all
     property <[string]> sheet-items: app-front ? app-options : screen == "switcher" && running.length > 0 ? ["Close all"] : [];
-    property <bool> page-has-primary: app-front ? app-has-primary : screen == "home" || screen == "switcher";
+    property <bool> page-has-primary: app-front ? app-has-primary : (screen == "home" && SystemSettings.nav-mode != 1) || screen == "switcher";
 
     // A tap that no row, button or field takes lands here: the focused field lets go, so the keyboard closes.
     TouchArea {

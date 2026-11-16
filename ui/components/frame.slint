@@ -344,8 +344,10 @@ export component Strip inherits Rectangle {
     callback primary;
     callback options;
     height: Theme.strip-h;
-    background: @linear-gradient(180deg, Theme.toolbar-top 0%, Theme.toolbar-bottom 100%);
-    Rectangle {
+    // Gestures with nothing of the page's: no bar at all, just the screen's black
+    property <bool> blank: gestures && !cancel && !has-primary && !has-options;
+    background: blank ? Theme.bg : @linear-gradient(180deg, Theme.toolbar-top 0%, Theme.toolbar-bottom 100%);
+    if !blank: Rectangle {
         y: 0;
         height: max(1px, Theme.dp / 2);
         background: Theme.hairline;
