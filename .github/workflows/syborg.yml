@@ -248,7 +248,7 @@ jobs:
       # at 516) -> Navigation (129) turns gestures on. Then: the left edge goes Back (the sub-view, then Settings'
       # origin); up from the bottom goes Home, and from home to the menu; Clock (449,530) and the left edge hides it;
       # the right edge opens Open apps; a long swipe up the menu; Clock again, and a tap in the bottom zone still
-      # reaches the strip (Clock's ⋮ with Settings, alone in the middle of the strip in Gestures). Back to Classic at the end, so
+      # reaches the strip (Clock's ⋮, alone in the middle of the strip in Gestures: the shell's sheet, Settings at 932). Back to Classic at the end, so
       # later boots tap ←.
       - name: Boot again; gesture navigation
         working-directory: build
@@ -267,7 +267,8 @@ jobs:
           wait_s 1; swipe 534 540 340 540; expect "neoui: screen switcher"
           wait_s 1; swipe 270 1075 270 400; expect "neoui: gesture menu"
           wait_s 1; tap 449 530; expect "clock: visible true"
-          wait_s 1; tap 270 1070; expect "neoui: nav Option(0)"
+          wait_s 1; tap 270 1070; wait_s 1   # Clock's ⋮ opens the shell's sheet
+          tap 270 932; expect "neoui: nav Option(0)"   # its one item, Settings
           wait_s 1; swipe 270 1075 270 400; expect "neoui: screen menu"
           wait_s 1; tap 270 735; tap 270 516; tap 270 129; wait_s 2
           MON_GAP=0.1 MONITOR="$M" SECS=180 ./boot.sh
