@@ -215,7 +215,7 @@ jobs:
           wait_s 3; tap 90 130; expect "legacy: start app"
           wait_s 5; tap 200 300; expect "legacy: raw"
           tap 88 1033; expect "neoui: app legacy front false"
-          tap 88 1033; tap 88 1033; expect "neoui: screen home"
+          wait_s 2; tap 88 1033; wait_s 2; tap 88 1033; expect "neoui: screen home"   # the grid, then the menu
           tap 54 1000; expect "neophone: page 0 view"
           tap 88 1033
           tap 270 1000; tap 449 125; expect "neophone: page 1 view"
