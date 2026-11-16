@@ -214,7 +214,8 @@ jobs:
           tap 270 930; expect "legacy: app "
           wait_s 3; tap 90 130; expect "legacy: start app"
           wait_s 5; tap 200 300; expect "legacy: raw"
-          tap 88 1033; wait_s 2; tap 88 1033; expect "neoui: app legacy exited"
+          tap 88 1033; expect "neoui: app legacy front false"
+          tap 88 1033; tap 88 1033; expect "neoui: screen home"
           tap 54 1000; expect "neophone: page 0 view"
           tap 88 1033
           tap 270 1000; tap 449 125; expect "neophone: page 1 view"
@@ -225,13 +226,13 @@ jobs:
           grep -a 'neoui: app legacy started' $s
           grep -a '\[proc\] create EWSRV.EXE' $s
           grep -aE 'legacy: guest wserv 360x640 up, surface 539x[0-9]+' $s
-          # protocol 1.6: the AppArc apps as Old apps tiles; the first one starts, takes a touch, Back closes it, and
-          # Back on the grid ends LEGACY
+          # protocol 1.6: the AppArc apps as Old apps tiles; the first one starts (FRONT 1), takes a touch, and Back closes
+          # it (FRONT 0); LEGACY stays resident behind the grid
           grep -aE "legacy: app [0-9a-f]{8} '" $s
           grep -aE 'legacy: start app [0-9a-f]{8}: 0' $s
           grep -aE 'legacy: raw 10 [0-9]+ [0-9]+' $s
-          grep -a 'legacy: closing' $s
-          grep -a 'neoui: app legacy exited (type 0, reason 0)' $s
+          grep -a 'neoui: app legacy front true' $s
+          grep -a 'neoui: app legacy front false' $s
           grep -a 'neoui: phone page 0' $s
           grep -a 'neophone: page 0 view' $s
           grep -a 'neoui: phone page 1' $s

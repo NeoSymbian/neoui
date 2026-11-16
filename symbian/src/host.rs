@@ -689,6 +689,7 @@ impl Service for Host {
                 let key = app.key;
                 // Select the caller's shell screen without briefly foregrounding an ordinary app on FRONT(0).
                 let was_front = self.front == Some(key);
+                dprintln!("neoui: app {} front {}", key, show);
                 self.screen = Some(key);
                 self.set_front(if show { Some(key) } else { None });
                 if show == was_front {
