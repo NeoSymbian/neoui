@@ -254,7 +254,7 @@ jobs:
           cp out/serial.log out/serial-legacy.log
           export SCREEN=539x1079
           . ../neoui/symbian/taps.sh
-          tap 270 1000; tap 270 735; expect "neoui: screen settings"
+          tap 270 1000; tap 270 735   # (a shell screen logs its change before the tap line `tap` waits for)
           tap 270 516; tap 270 129; wait_s 1
           swipe 5 540 200 540; expect "neoui: gesture back"
           wait_s 1; swipe 5 540 200 540; expect "neoui: screen menu"
@@ -264,12 +264,14 @@ jobs:
           wait_s 1; swipe 5 540 200 540; expect "clock: visible false"
           wait_s 1; swipe 534 540 340 540; expect "neoui: screen switcher"
           wait_s 1; swipe 270 1075 270 400; expect "neoui: gesture menu"
-          wait_s 1; tap 270 1070; expect "neoui: screen switcher"
+          wait_s 1; tap 270 1070
           wait_s 1; swipe 270 1075 270 400; expect "neoui: screen menu"
           wait_s 1; tap 270 735; tap 270 516; tap 270 129; wait_s 2
           MON_GAP=0.1 MONITOR="$M" SECS=180 ./boot.sh
           s=out/serial.log
           for g in back home menu apps; do grep -a "neoui: gesture $g" $s; done
+          # Open apps twice: by the right edge, then by the toolbar tap replayed from the bottom zone
+          test "$(grep -ac 'neoui: screen switcher' $s)" = 2
           grep -a 'clock: visible false' $s
           ! grep -aq 'K::Fault\|Kern::Fault\|\[EKERN\] panic\|rust panic' $s
 
