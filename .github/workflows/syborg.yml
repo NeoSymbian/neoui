@@ -268,7 +268,7 @@ jobs:
           wait_s 1; swipe 270 1075 270 400; expect "neoui: gesture menu"
           wait_s 1; tap 449 530; expect "clock: visible true"
           wait_s 1; tap 270 1070; wait_s 1   # Clock's ⋮ opens the shell's sheet
-          tap 270 932; expect "neoui: nav Option(0)"   # its one item, Settings
+          tap 270 932; expect "clock: view settings"   # its one item, Settings (nav logs before the tap line)
           wait_s 1; swipe 270 1075 270 400; expect "neoui: screen menu"
           wait_s 1; tap 270 735; tap 270 516; tap 270 129; wait_s 2
           MON_GAP=0.1 MONITOR="$M" SECS=180 ./boot.sh
