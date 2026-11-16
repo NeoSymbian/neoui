@@ -330,7 +330,9 @@ impl Host {
     }
 
     fn start(&mut self, key: &'static str) {
-        if !self.apps.touch(|a| a.key == key && a.quit_at.is_none()) {
+        if self.apps.touch(|a| a.key == key && a.quit_at.is_none()) {
+            dprintln!("neoui: app {} resumed", key);
+        } else {
             self.launch(key);
         }
         if let Some(app) = self.apps.find_mut(|a| a.key == key && a.quit_at.is_none()) {
@@ -687,6 +689,7 @@ impl Service for Host {
                 let key = app.key;
                 // Select the caller's shell screen without briefly foregrounding an ordinary app on FRONT(0).
                 let was_front = self.front == Some(key);
+                dprintln!("neoui: app {} front {}", key, show);
                 self.screen = Some(key);
                 self.set_front(if show { Some(key) } else { None });
                 if show == was_front {
