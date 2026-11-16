@@ -330,9 +330,11 @@ fn main() -> i32 {
                                 let body = host.body;
                                 if phase == TouchPhase::Down {
                                     swallow = swipe.is_some();
+                                    // the shade over home takes its own drags: no page slide under it
                                     home_press = (screen == "home"
                                         && !app_on_screen
                                         && !power_menu
+                                        && !ui.overlay_open()
                                         && !phone.modal()
                                         && transition.is_none()
                                         && !swallow
