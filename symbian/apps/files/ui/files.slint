@@ -8,7 +8,7 @@ import "../../../../ui/fonts/DejaVuSans.ttf";
 import "../../../../ui/fonts/DejaVuSansMono.ttf";
 import { Alphabets } from "../../../../ui/components/keyboard/glyphs.slint";
 import { Theme } from "../../../../ui/theme.slint";
-import { Card, Button, OptionsMenu } from "../../../../ui/components/controls.slint";
+import { Card, Button } from "../../../../ui/components/controls.slint";
 import { ListRow } from "../../../../ui/components/lists.slint";
 import { Glyph } from "../../../../ui/components/frame.slint";
 import { NeoList, Scroll } from "../../../../ui/components/scroll.slint";
@@ -31,8 +31,6 @@ export component FilesApp inherits Window {
     // a hint over the list ("Tap an item to rename") and a one-line message (errors)
     in property <string> banner;
     in property <string> toast;
-    in property <[string]> options;
-    in property <bool> options-open;
     // "" (none), "name" (a text field) or "confirm"
     in property <string> dialog;
     in property <string> dialog-title;
@@ -43,8 +41,6 @@ export component FilesApp inherits Window {
 
     callback drive(int);
     callback open-row(int);
-    callback option(string);
-    callback options-dismissed;
     callback dialog-done(bool);
 
     Alphabets { }
@@ -192,16 +188,6 @@ export component FilesApp inherits Window {
         }
     }
 
-    OptionsMenu {
-        items: options;
-        open: options-open;
-        dismissed => {
-            root.options-dismissed();
-        }
-        selected(s) => {
-            root.option(s);
-        }
-    }
 
     // a modal card above the keyboard
     if dialog != "": Rectangle {

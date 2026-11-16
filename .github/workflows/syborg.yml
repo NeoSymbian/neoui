@@ -95,8 +95,8 @@ jobs:
       # `neotest` on hardware keys; the keyboard covers the strip, so its hide key (kb_hide) and then ←. Then Files
       # (R8), from the menu (89,735): Z: card (270,315) -> Sys (row 2, y 358: private, Resource, Sys, System) -> Bin
       # (row 0, y 142), ← -> Data (row 1) -> estart.txt (row 0) in the viewer, ← x4 to the drives; C: card
-      # (270,135) -> ⋮ (Files' own menu) -> New folder (270,756) -> `neo` on the keyboard; ⋮ -> Delete (270,924)
-      # -> the neo row (row 0) -> Delete in the dialog (430,553); ← x2 (C:\ -> drives -> the app closes).
+      # (270,135) -> ⋮ (the shell's sheet) -> New folder (270,756) -> `neo` on the keyboard; ⋮ -> Delete (270,924)
+      # -> the neo row (row 0) -> Delete in the shell's dialog (297,566); ← x2 (C:\ -> drives -> the app closes).
       # R10: apps keep running -- ← returns to the menu, so each app is opened from the menu directly; then Terminal
       # is reopened (resumed, not restarted), and Open apps (▢) closes all three with the first card's x (227,88).
       - name: Boot at 539x1079; Clock; Terminal (ESHELL, dir by touch, neotest); Files; resume; Open apps closes all
@@ -119,7 +119,7 @@ jobs:
           tap 39 1037; expect "files: drives"
           tap 270 135; expect "files: list"; tap 500 1037; tap 270 756
           kb_type neo; expect "files: mkdir"
-          tap 500 1037; tap 270 924; tap 270 142; tap 430 553; expect "files: delete"
+          tap 500 1037; tap 270 924; tap 270 142; tap 297 566; expect "files: delete"
           tap 500 1037; tap 270 756; kb_globe; kb_globe
           kb_tap 2 8.5 12; kb_tap 2 6.5 12; kb_tap 1 5 12; kb_enter; expect "files: mkdir"
           tap 39 1037; expect "files: drives"; tap 39 1037
@@ -248,7 +248,7 @@ jobs:
       # at 516) -> Navigation (129) turns gestures on. Then: the left edge goes Back (the sub-view, then Settings'
       # origin); up from the bottom goes Home, and from home to the menu; Clock (449,530) and the left edge hides it;
       # the right edge opens Open apps; a long swipe up the menu; Clock again, and a tap in the bottom zone still
-      # reaches the strip (Clock's ⋮, alone in the middle of the strip in Gestures). Back to Classic at the end, so
+      # reaches the strip (Clock's ⋮ with Settings, alone in the middle of the strip in Gestures). Back to Classic at the end, so
       # later boots tap ←.
       - name: Boot again; gesture navigation
         working-directory: build
@@ -267,7 +267,7 @@ jobs:
           wait_s 1; swipe 534 540 340 540; expect "neoui: screen switcher"
           wait_s 1; swipe 270 1075 270 400; expect "neoui: gesture menu"
           wait_s 1; tap 449 530; expect "clock: visible true"
-          wait_s 1; tap 270 1070; expect "neoui: nav Options"
+          wait_s 1; tap 270 1070; expect "neoui: nav Option(0)"
           wait_s 1; swipe 270 1075 270 400; expect "neoui: screen menu"
           wait_s 1; tap 270 735; tap 270 516; tap 270 129; wait_s 2
           MON_GAP=0.1 MONITOR="$M" SECS=180 ./boot.sh
@@ -275,7 +275,7 @@ jobs:
           for g in back home menu apps; do grep -a "neoui: gesture $g" $s; done
           # Open apps by the right edge; the bottom zone's tap replayed to the strip
           test "$(grep -ac 'neoui: screen switcher' $s)" = 1
-          grep -a 'neoui: nav Options' $s
+          grep -a 'neoui: nav Option(0)' $s
           grep -a 'clock: visible false' $s
           ! grep -aq 'K::Fault\|Kern::Fault\|\[EKERN\] panic\|rust panic' $s
 

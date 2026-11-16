@@ -49,7 +49,7 @@ fn main() -> i32 {
 
 fn run() -> Result<(), i32> {
     let app = App::connect()?;
-    dprintln!("clock: surface {}x{} mapped", app.width, app.height);
+    dprintln!("clock: surface {}x{} mapped", app.width, app.height());
     let ui = ClockApp::new().map_err(|_| -2)?;
     ui.global::<Theme>().set_dp(app.dp);
     ui.show().map_err(|_| -2)?;
@@ -65,7 +65,7 @@ fn run() -> Result<(), i32> {
         analog: RefCell::default(),
     });
     pages::bind(&ctx, &ui);
-    ctx.open(View::None); // shows everything, and claims Options (the Clock settings)
+    ctx.open(View::None); // shows everything, and describes the page (⋮: the Clock settings)
     ctx.draw()?;
 
     // In the background (R10) the clock neither ticks nor draws.
@@ -130,7 +130,7 @@ fn run() -> Result<(), i32> {
                     pages::ring(&ctx, id);
                     ctx.draw()?;
                 }
-                Some(AppEvent::Options) => {
+                Some(AppEvent::Options | AppEvent::Option { .. }) => {
                     // Options opens the Clock settings, or closes them
                     let to = if ctx.model.borrow().view == View::Settings {
                         View::None

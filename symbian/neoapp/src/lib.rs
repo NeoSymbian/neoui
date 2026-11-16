@@ -13,13 +13,14 @@ pub mod sys;
 use alloc::boxed::Box;
 use alloc::rc::Rc;
 use alloc::vec;
-use core::cell::RefCell;
+use core::cell::{Cell, RefCell};
 use core::time::Duration;
 use e32::chunk::Chunk;
 use e32::ipc::{Session, TIpcArgs, TVersion};
 use e32::sys::{TPtr8, TPtrC8};
 use e32::time;
 use neoui_proto::ipc as proto;
+pub use neoui_proto::page::{Action, Page, Query};
 use neoui_proto::settings::value::ENCODED_MAX;
 use neoui_proto::settings::{Key as SettingKey, Setting, Value, kerr};
 use neoui_proto::{InputEvent, Rect, ScrollPlan, Scrolling, TouchPhase};
@@ -101,7 +102,8 @@ impl Platform for AppPlatform {
 pub struct App {
     pub server: Session,
     pub width: usize,
-    pub height: usize,
+    /// The surface's rows in use: the body, or the whole screen for a full-screen page ([`App::page`]).
+    height: Cell<usize>,
     /// The shell's design unit in pixels (set it on the app's `Theme.dp`).
     pub dp: f32,
     pub window: Rc<MinimalSoftwareWindow>,
@@ -139,12 +141,17 @@ impl App {
         Ok(Self {
             server,
             width,
-            height,
+            height: Cell::new(height),
             dp,
             window,
             surface,
             scrolling: RefCell::default(),
         })
+    }
+
+    /// The window's height in pixels: the body, or the screen while a full-screen page shows.
+    pub fn height(&self) -> usize {
+        self.height.get()
     }
 
     /// Render what changed into the surface and tell the server which rectangles to show.
@@ -162,10 +169,10 @@ impl App {
         let px = unsafe {
             core::slice::from_raw_parts_mut(
                 self.surface.base().cast::<Xrgb8888>(),
-                self.width * self.height,
+                self.width * self.height.get(),
             )
         };
-        let screen = Rect::new(0, 0, self.width as u32, self.height as u32);
+        let screen = Rect::new(0, 0, self.width as u32, self.height.get() as u32);
         let plan = self
             .scrolling
             .borrow_mut()
@@ -282,6 +289,42 @@ impl App {
         self.server
             .send_receive(proto::SETTING_WATCH, &args)
             .map(drop)
+    }
+
+    /// Describe the page on show (protocol 1.7, docs `gestures.md` Five places): the shell draws its title, the strip
+    /// (Cancel, the primary action, ⋮) and the Options sheet, and sends `AppEvent::Primary`, `Cancel`, `Option`, and
+    /// `Back` while `can_back`. Send it again when any of it changes. A full-screen page makes the window as tall as
+    /// the screen (and the body again when it ends); redraw after a change of height.
+    pub fn page(&self, page: &Page) -> Result<(), i32> {
+        let b = page.encode().map_err(|_| kerr::ARGUMENT)?;
+        let d = TPtrC8::new(&b);
+        let mut args = TIpcArgs::new();
+        args.desc8(0, &d);
+        let h = self.server.send_receive(proto::PAGE, &args)? as usize;
+        if h != self.height.get() && h > 0 {
+            self.height.set(h);
+            self.window
+                .set_size(PhysicalSize::new(self.width as u32, h as u32));
+        }
+        Ok(())
+    }
+
+    /// Ask with a shell dialog; the answer comes as `AppEvent::Answer` with the button's index (Back answers the last).
+    pub fn query(&self, query: &Query) -> Result<(), i32> {
+        let b = query.encode().map_err(|_| kerr::ARGUMENT)?;
+        self.send_query(&b)
+    }
+
+    /// Take the open dialog away unanswered.
+    pub fn close_query(&self) -> Result<(), i32> {
+        self.send_query(&[])
+    }
+
+    fn send_query(&self, b: &[u8]) -> Result<(), i32> {
+        let d = TPtrC8::new(b);
+        let mut args = TIpcArgs::new();
+        args.desc8(0, &d);
+        self.server.send_receive(proto::QUERY, &args).map(drop)
     }
 
     /// Take over the toolbar's Back and/or Options: the server then sends `AppEvent::Back` / `AppEvent::Options`.
