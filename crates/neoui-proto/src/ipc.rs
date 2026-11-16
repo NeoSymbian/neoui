@@ -13,13 +13,16 @@
 //! the toolbar's keyboard button: the app then gets [`AppEvent::Keyboard`] with `h = 0` (its whole body back) while
 //! its mode stays; any [`KEYBOARD`] request with a mode above 0 brings it back. Since 1.6 an app supplies launcher
 //! entries ([`ENTRY`], [`AppEvent::Entry`]) and switches between its surface and the shell's screen ([`FRONT`]).
+//! Since 1.7 an app describes its page ([`PAGE`], [`crate::page`]) and the shell draws the strip, the Options sheet
+//! and dialogs ([`QUERY`]): [`AppEvent::Primary`], [`AppEvent::Cancel`], [`AppEvent::Option`] and
+//! [`AppEvent::Answer`] come back. [`NAV`], [`TITLE`] and [`TOOLBAR`] still work for apps that never send a page.
 
 use crate::{InputEvent, TouchPhase};
 
 /// The server's name (no leading `!`: that needs ProtServ).
 pub const SERVER: &str = "NeoUi";
 /// Protocol version (major, minor); a connect with another major is refused.
-pub const VERSION: (u8, u8) = (1, 6);
+pub const VERSION: (u8, u8) = (1, 7);
 
 /// `[Des8 out: GEOMETRY_LEN bytes = width, height, dp × 256 (u32 LE)]` → 0. `dp` is the shell's design unit in
 /// pixels (`min(screen w, h) / 360`), so apps size things like the shell does.
@@ -104,6 +107,13 @@ pub const ENTRIES_MAX: usize = 64;
 /// `[front: 0 | 1]` → 0: 1 shows the calling app's surface on its screen and sends [`AppEvent::Visible`] with `true`;
 /// 0 shows the shell's screen for its key again and sends `Visible(false)`. The app keeps running.
 pub const FRONT: i32 = 14;
+/// `[Des8 page]` ([`crate::page::Page`], at most [`crate::page::PAGE_MAX`] bytes) → the height in pixels of the
+/// app's area: the body, or the whole screen for a full-screen page. Replaces whatever [`NAV`], [`TITLE`] and
+/// [`TOOLBAR`] said. A malformed page gives `KErrArgument`.
+pub const PAGE: i32 = 15;
+/// `[Des8 query]` ([`crate::page::Query`], at most [`crate::page::QUERY_MAX`] bytes) → 0: show a dialog over the
+/// app; the answer comes as [`AppEvent::Answer`]. An empty descriptor takes the open dialog away unanswered.
+pub const QUERY: i32 = 16;
 
 /// A malformed [`ENTRY`] icon (`KErrArgument`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -160,6 +170,14 @@ pub enum AppEvent {
     Action,
     /// The user tapped launcher entry `id` ([`ENTRY`]).
     Entry { id: u32 },
+    /// The page's primary action ([`PAGE`]).
+    Primary,
+    /// The page's Cancel ([`PAGE`]).
+    Cancel,
+    /// Item `i` of the page's Options sheet ([`PAGE`]).
+    Option { i: u16 },
+    /// Button `i` of the dialog ([`QUERY`]); Back answers the last button.
+    Answer { i: u16 },
 }
 
 const KIND_TOUCH: u32 = 1;
@@ -174,6 +192,10 @@ const KIND_KEYBOARD: u32 = 9;
 const KIND_PAGE: u32 = 10;
 const KIND_ACTION: u32 = 11;
 const KIND_ENTRY: u32 = 12;
+const KIND_PRIMARY: u32 = 13;
+const KIND_CANCEL: u32 = 14;
+const KIND_OPTION: u32 = 15;
+const KIND_ANSWER: u32 = 16;
 
 impl AppEvent {
     /// `[kind, a, b, c]` as little-endian u32s: touch = (phase | id << 8, x, y), key = (down, code, 0).
@@ -198,6 +220,10 @@ impl AppEvent {
             AppEvent::Page { page } => [KIND_PAGE, u32::from(page), 0, 0],
             AppEvent::Action => [KIND_ACTION, 0, 0, 0],
             AppEvent::Entry { id } => [KIND_ENTRY, id, 0, 0],
+            AppEvent::Primary => [KIND_PRIMARY, 0, 0, 0],
+            AppEvent::Cancel => [KIND_CANCEL, 0, 0, 0],
+            AppEvent::Option { i } => [KIND_OPTION, u32::from(i), 0, 0],
+            AppEvent::Answer { i } => [KIND_ANSWER, u32::from(i), 0, 0],
         };
         let mut out = [0u8; EVENT_LEN];
         for (i, v) in w.iter().enumerate() {
@@ -238,6 +264,14 @@ impl AppEvent {
             },
             KIND_ACTION => AppEvent::Action,
             KIND_ENTRY => AppEvent::Entry { id: w(1) },
+            KIND_PRIMARY => AppEvent::Primary,
+            KIND_CANCEL => AppEvent::Cancel,
+            KIND_OPTION => AppEvent::Option {
+                i: u16::try_from(w(1)).ok()?,
+            },
+            KIND_ANSWER => AppEvent::Answer {
+                i: u16::try_from(w(1)).ok()?,
+            },
             _ => return None,
         })
     }
@@ -276,6 +310,10 @@ mod tests {
             AppEvent::Action,
             AppEvent::Entry { id: 0 },
             AppEvent::Entry { id: u32::MAX },
+            AppEvent::Primary,
+            AppEvent::Cancel,
+            AppEvent::Option { i: 11 },
+            AppEvent::Answer { i: 2 },
         ];
         for e in all {
             assert_eq!(AppEvent::decode(&e.encode()), Some(e));
@@ -284,6 +322,9 @@ mod tests {
         let mut big_page = AppEvent::Page { page: 0 }.encode();
         big_page[6] = 1; // page 65536
         assert_eq!(AppEvent::decode(&big_page), None);
+        let mut big_option = AppEvent::Option { i: 0 }.encode();
+        big_option[6] = 1;
+        assert_eq!(AppEvent::decode(&big_option), None);
     }
 
     #[test]

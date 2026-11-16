@@ -176,6 +176,9 @@ registry! {
     /// Settings -> Home screen & navigation: 0 Classic (the toolbar's Back), 1 Gestures (edge swipes, docs
     /// `gestures.md`).
     NAV_MODE: i32 = "nav.mode", default DefaultValue::Int(0), limit Limit::Range { min: 0, max: 1 }, owner Owner::Shell;
+    /// Settings -> Home screen & navigation, Classic only: where the strip's ← ⌂ ▢ sit. 0 left (the page's buttons
+    /// right), 1 right, 2 split (← ⌂ left, ▢ right).
+    NAV_STRIP: i32 = "nav.strip", default DefaultValue::Int(0), limit Limit::Range { min: 0, max: 2 }, owner Owner::Shell;
     /// Settings -> Date & time: the network (the modem's NITZ, else an HTTP Date) sets the clock.
     TIME_AUTO: bool = "time.auto", default DefaultValue::Bool(true), limit Limit::None, owner Owner::Shell;
     /// The mobile network's time zone (NITZ) sets the offset; off, the Time zone row picks it.
