@@ -28,7 +28,7 @@ use neoui_proto::recents::Recents;
 use neoui_proto::settings::value::ENCODED_MAX;
 use neoui_proto::settings::{Caller, KEY_MAX, Value, kerr};
 use neoui_proto::{InputEvent, TouchPhase};
-use neoui_render::LauncherEntry;
+use neoui_render::{Action, LauncherEntry, Nav, Page};
 
 /// Screen keys that are separate processes: their EXEs and command lines.
 // shortcut: a fixed table; a registry of installed apps comes with app installation.
@@ -102,11 +102,14 @@ pub struct App {
     pub keyboard: u8,
     /// The keyboard height it was last told (the `KEYBOARD` reply or `AppEvent::Keyboard`).
     keyboard_h: u32,
-    /// Toolbar buttons it claimed (`NAV_BACK | NAV_OPTIONS`); apply while it is in front.
-    pub nav: i32,
-    /// Its status-bar title and toolbar middle button (`TITLE`, `TOOLBAR`: icon, style, label); apply while in front.
-    pub title: String,
-    pub tool: (i32, i32, String),
+    /// The page it declared (`PAGE`, protocol 1.7); applies while it is in front. Older apps declare none: their
+    /// page is built from what they said with `NAV`, `TITLE` and `TOOLBAR` ([`App::page`]).
+    pub declared: Option<Page>,
+    /// Buttons it claimed (`NAV_BACK | NAV_OPTIONS`).
+    nav: i32,
+    /// Its status-bar title and middle button (`TITLE`, `TOOLBAR`: icon, style, label).
+    title: String,
+    tool: (i32, i32, String),
     /// It has been on screen (the switcher lists only those; a resident app starts hidden).
     shown: bool,
 }
@@ -136,6 +139,41 @@ impl App {
                 }
                 self.queue.push_back(e);
             }
+        }
+    }
+
+    /// What the strip shows for it, and whether ⋮ is an older app's own Options (`NAV_OPTIONS`).
+    pub fn page(&self) -> (Page, bool) {
+        if let Some(p) = &self.declared {
+            return (p.clone(), false);
+        }
+        let (icon, style, label) = &self.tool;
+        let empty = style & proto::TOOLBAR_EMPTY != 0;
+        let page = Page {
+            title: self.title.clone(),
+            can_back: self.nav & proto::NAV_BACK != 0,
+            primary: (*icon != proto::TOOL_NONE && !empty).then(|| Action {
+                icon: *icon,
+                label: label.clone(),
+            }),
+            cancel: style & proto::TOOLBAR_CANCEL != 0 && !empty,
+            ..Page::default()
+        };
+        (page, self.nav & proto::NAV_OPTIONS != 0)
+    }
+
+    /// A tap on its page as the event it understands: an older app hears its toolbar's (Cancel was its Back).
+    pub fn event(&self, n: Nav) -> AppEvent {
+        let old = self.declared.is_none();
+        match n {
+            Nav::Back => AppEvent::Back,
+            Nav::Options => AppEvent::Options,
+            Nav::Primary if old => AppEvent::Action,
+            Nav::Primary => AppEvent::Primary,
+            Nav::Cancel if old => AppEvent::Back,
+            Nav::Cancel => AppEvent::Cancel,
+            Nav::Option(i) => AppEvent::Option { i },
+            Nav::Answer(i) => AppEvent::Answer { i },
         }
     }
 
@@ -374,6 +412,7 @@ impl Host {
                     quit_at: None,
                     keyboard: 0,
                     keyboard_h: 0,
+                    declared: None,
                     nav: 0,
                     title: String::new(),
                     tool: (proto::TOOL_NONE, 0, String::new()),
@@ -413,6 +452,14 @@ impl Host {
     }
 
     /// Input and claimed toolbar buttons go to the foreground app.
+    /// A tap on the front app's page (the strip, the sheet, a dialog, Back).
+    pub fn send_nav(&mut self, n: Nav) {
+        dprintln!("neoui: nav {:?}", n);
+        if let Some(e) = self.front().map(|a| a.event(n)) {
+            self.send(e);
+        }
+    }
+
     pub fn send(&mut self, e: AppEvent) {
         let Some(key) = self.front else { return };
         if let Some(app) = self.apps.find_mut(|a| a.key == key && a.quit_at.is_none()) {

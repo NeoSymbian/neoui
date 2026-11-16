@@ -80,12 +80,13 @@ fn old_apps_grid_and_empty_state() {
     assert_eq!(
         buf[toolbar_start..],
         toolbar,
-        "the empty grid keeps the shell toolbar"
+        "the empty grid keeps the shell strip"
     );
     common::write_png("oldapps-empty-pixel.png", &buf, w, h);
     common::tap(&mut r, (w / 6) as i32, y);
     assert!(r.take_entries().is_empty());
-    common::tap(&mut r, (58.0 * d) as i32, (h as f32 - 30.5 * d) as i32);
+    let at = common::strip(w, h);
+    common::tap(&mut r, at.back, at.y);
     assert_ne!(
         r.screen(),
         "legacy",

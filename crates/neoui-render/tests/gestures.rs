@@ -5,9 +5,10 @@ mod common;
 
 use neoui_proto::gesture::Gesture;
 use neoui_proto::settings::Value;
+use neoui_render::{Nav, Page};
 
-/// Edge gestures (docs gestures.md G1) do what the toolbar and the menus do, and gesture mode hides the Back arrow
-/// but leaves its place empty.
+/// Edge gestures (docs gestures.md G1) do what the strip and the menus do, and gesture mode takes ← ⌂ ▢ out of the
+/// strip.
 #[test]
 fn gestures_take_the_shells_paths() {
     let (w, h) = (1080, 2160);
@@ -17,11 +18,15 @@ fn gestures_take_the_shells_paths() {
     // Back: a claimed Back goes to the app, else the shell goes back
     r.show("files", "");
     r.set_app_front(true);
-    r.set_app_nav(true, false);
+    let inside = Page {
+        can_back: true,
+        ..Page::default()
+    };
+    r.set_app_page(&inside, false);
     r.gesture(Gesture::Back);
-    assert_eq!(r.take_nav(), [1]);
-    assert_eq!(r.screen(), "files", "a claimed Back must not navigate");
-    r.set_app_nav(false, false);
+    assert_eq!(r.take_nav(), [Nav::Back]);
+    assert_eq!(r.screen(), "files", "Back inside the app must not navigate");
+    r.set_app_page(&Page::default(), false);
     r.gesture(Gesture::Back);
     assert!(r.take_nav().is_empty());
     assert_eq!(r.screen(), "home");
@@ -53,12 +58,11 @@ fn gestures_take_the_shells_paths() {
     r.gesture(Gesture::AppsMenu);
     assert_eq!(r.screen(), "menu");
 
-    // gesture mode: the toolbar's Back arrow is gone (a tap there does nothing), Options stays
+    // gesture mode: ← ⌂ ▢ leave the strip (a tap where ← was does nothing); Settings has no buttons of its own
     assert!(r.apply_setting("nav.mode", &Value::Int(1)));
     common::snapshot(&mut r, &mut buf, "settings", "navigation", "pixel", w, h);
-    let d = common::dp(w, h);
-    let y = (h as f32 - 30.5 * d) as i32;
-    common::tap(&mut r, (58.0 * d) as i32, y);
+    let at = common::strip(w, h);
+    common::tap(&mut r, at.back, at.y);
     common::settle();
     r.render(&mut buf, w as usize);
     assert_eq!(

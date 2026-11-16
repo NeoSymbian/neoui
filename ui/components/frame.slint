@@ -27,6 +27,9 @@ export component StatusBar inherits Rectangle {
     in property <int> wifi-bars: -1;
     in property <string> wifi-band;
     in property <bool> unread;
+    // sideways pages (Phone | Contacts): dots beside the title, `dot` of `dots` lit (docs gestures.md rule 11)
+    in property <int> dots;
+    in property <int> dot;
     callback tapped;
     // a swipe down on the bar (the shade opens)
     callback pulled;
@@ -42,9 +45,22 @@ export component StatusBar inherits Rectangle {
             font-size: Theme.font-status;
             font-weight: 600;
             vertical-alignment: center;
-            horizontal-stretch: 1;
+            horizontal-stretch: dots > 1 ? 0 : 1;
             min-width: 0px;
             overflow: elide;
+        }
+        if dots > 1: HorizontalLayout {
+            horizontal-stretch: 1;
+            alignment: start;
+            spacing: 4 * Theme.dp;
+            padding-left: 2 * Theme.dp;
+            for i in dots: Rectangle {
+                y: (parent.height - self.height) / 2;
+                width: 5 * Theme.dp;
+                height: self.width;
+                border-radius: self.width / 2;
+                background: i == dot ? Theme.text : Theme.text-dim;
+            }
         }
         // the radio technology and its bars as one cluster: fixed widths, so the title takes all the spare room
         if bars >= 0: HorizontalLayout {
@@ -200,179 +216,206 @@ export component StatusBar inherits Rectangle {
     }
 }
 
-export component ToolbarButton inherits Rectangle {
+// One of the strip's system buttons (← ⌂ ▢) or its ⋮: an icon, dimmed when there is nowhere for it to go.
+component StripButton inherits Rectangle {
     in property <image> icon;
-    in property <bool> enabled: true;
+    in property <bool> dim;
     callback clicked;
-    width: Theme.toolbar-button-w;
-    height: Theme.toolbar-h;
-    background: touch.pressed && enabled ? Theme.pressed : transparent;
-    opacity: enabled ? 1 : 0;
+    width: 44 * Theme.dp;
+    height: Theme.strip-h;
+    background: touch.pressed ? Theme.pressed : transparent;
     Glyph {
         source: icon;
         size: Theme.toolbar-icon;
+        opacity: dim ? 0.4 : 1;
     }
 
     touch := TouchArea {
-        enabled: root.enabled;
         clicked => {
             root.clicked();
         }
     }
 }
 
-// A toolbar button with a label beside its icon, optionally a green pill (Call).
+// The page's Cancel (a word) or its primary action (a green pill with an icon and a label).
 component LabelButton inherits Rectangle {
     in property <image> icon;
+    in property <bool> has-icon;
     in property <string> label;
     in property <bool> pill;
-    in property <bool> enabled: true;
     callback clicked;
-    width: Theme.toolbar-button-w;
-    height: Theme.toolbar-h;
-    opacity: enabled ? 1 : 0;
+    width: min(150 * Theme.dp, row.preferred-width + (pill ? 36 : 20) * Theme.dp);
+    height: Theme.strip-h;
     Rectangle {
-        width: min(parent.width - 8 * Theme.dp, row.preferred-width + 28 * Theme.dp);
-        height: 40 * Theme.dp;
+        x: 4 * Theme.dp;
+        width: parent.width - 8 * Theme.dp;
+        height: 38 * Theme.dp;
         border-radius: self.height / 2;
-        background: pill ? (touch.pressed ? Theme.ok.darker(20%) : @linear-gradient(180deg, Theme.ok.brighter(15%) 0%, Theme.ok.darker(10%) 100%))
-            : touch.pressed && enabled ? Theme.pressed : transparent;
+        // solid: the software renderer draws a gradient without the rounded corners
+        background: pill ? (touch.pressed ? Theme.ok.darker(20%) : Theme.ok) : touch.pressed ? Theme.pressed : transparent;
         row := HorizontalLayout {
             alignment: center;
             spacing: 6 * Theme.dp;
-            Glyph {
+            if has-icon: Glyph {
                 source: icon;
-                size: pill ? 20 * Theme.dp : 22 * Theme.dp;
+                size: 20 * Theme.dp;
                 y: (parent.height - self.height) / 2;
             }
 
-            if label != "": Text {
+            Text {
                 text: label;
                 color: Theme.text;
                 font-size: 14 * Theme.dp;
                 font-weight: 600;
                 vertical-alignment: center;
+                overflow: elide;
             }
         }
     }
 
     touch := TouchArea {
-        enabled: root.enabled;
         clicked => {
             root.clicked();
         }
     }
 }
 
-// Back on the left, an optional action in the middle, Options on the right (Belle's toolbar). An app can give the
-// action a label and a green pill (the dialer's Call), turn Back into "Cancel" (an editor), or empty the toolbar (a
-// full-screen call view). While a field uses the system keyboard a keyboard button that hides and shows it comes
-// after Back: Back | keyboard | Options, or Back | keyboard | action | Options (four narrower buttons).
-export component Toolbar inherits Rectangle {
-    in property <image> action-icon;
-    in property <bool> has-action;
-    in property <bool> has-keyboard;
-    in property <bool> keyboard-shown;
-    in property <string> action-label;
-    in property <bool> action-pill;
-    in property <bool> back-cancel;
-    in property <bool> empty;
-    // gesture navigation: no Back arrow (its place stays empty, so the other buttons don't move)
-    in property <bool> no-back;
-    callback back;
-    callback action;
+// The page's group: Cancel, the primary action, ⋮ (only what the page has).
+component PageGroup inherits HorizontalLayout {
+    in property <bool> cancel;
+    in property <bool> has-primary;
+    in property <image> primary-icon;
+    in property <bool> primary-has-icon;
+    in property <string> primary-label;
+    in property <bool> has-options;
+    callback cancelled;
+    callback primary;
     callback options;
-    callback keyboard-toggled;
-    property <length> button-w: has-keyboard && has-action ? 90 * Theme.dp : Theme.toolbar-button-w;
-    height: Theme.toolbar-h;
-    background: empty ? Theme.bg : @linear-gradient(180deg, Theme.toolbar-top 0%, Theme.toolbar-bottom 100%);
-    if !empty: Rectangle {
+    if cancel: LabelButton {
+        label: "Cancel";
+        clicked => {
+            root.cancelled();
+        }
+    }
+    if has-primary: LabelButton {
+        icon: primary-icon;
+        has-icon: primary-has-icon;
+        label: primary-label;
+        pill: true;
+        clicked => {
+            root.primary();
+        }
+    }
+    if has-options: StripButton {
+        icon: @image-url("../icons/sys/more.svg");
+        clicked => {
+            root.options();
+        }
+    }
+}
+
+component Divider inherits Rectangle {
+    width: max(1px, Theme.dp / 2);
+    Rectangle {
+        height: 26 * Theme.dp;
+        background: Theme.hairline;
+    }
+}
+
+// The bottom strip, drawn by the shell for every page (docs gestures.md, Five places): the system group ← ⌂ ▢ and
+// the page's group Cancel (primary) ⋮. Classic arranges them: 0 system left, 1 system right, 2 split (← ⌂ at the
+// left end, ▢ at the right). Gestures leaves the system group to the screen edges and spreads the page's group over
+// the whole strip.
+export component Strip inherits Rectangle {
+    in property <bool> gestures;
+    in property <int> arrangement;
+    // ← goes up a page (else, dimmed, back to where the user came from)
+    in property <bool> can-back;
+    in property <bool> cancel;
+    in property <bool> has-primary;
+    in property <image> primary-icon;
+    in property <bool> primary-has-icon: true;
+    in property <string> primary-label;
+    in property <bool> has-options;
+    callback back;
+    callback home;
+    callback apps;
+    callback cancelled;
+    callback primary;
+    callback options;
+    height: Theme.strip-h;
+    background: @linear-gradient(180deg, Theme.toolbar-top 0%, Theme.toolbar-bottom 100%);
+    Rectangle {
         y: 0;
         height: max(1px, Theme.dp / 2);
         background: Theme.hairline;
     }
 
-    if !empty: HorizontalLayout {
-        alignment: space-between;
-        if !back-cancel && no-back: Rectangle {
-            width: root.button-w;
-        }
-        if !back-cancel && !no-back: ToolbarButton {
-            width: root.button-w;
+    HorizontalLayout {
+        padding-left: 4 * Theme.dp;
+        padding-right: 4 * Theme.dp;
+        if !gestures && arrangement != 1: StripButton {
             icon: @image-url("../icons/sys/back.svg");
+            dim: !can-back;
             clicked => {
                 root.back();
             }
         }
-        if back-cancel: LabelButton {
-            width: root.button-w;
-            icon: @image-url("../icons/sys/close.svg");
-            label: "Cancel";
+        if !gestures && arrangement != 1: StripButton {
+            icon: @image-url("../icons/sys/home.svg");
+            clicked => {
+                root.home();
+            }
+        }
+        if !gestures && arrangement == 0: StripButton {
+            icon: @image-url("../icons/sys/tabs.svg");
+            clicked => {
+                root.apps();
+            }
+        }
+        if !gestures && arrangement != 1: Divider { }
+        HorizontalLayout {
+            horizontal-stretch: 1;
+            alignment: gestures ? space-around : arrangement == 0 ? end : arrangement == 1 ? start : center;
+            PageGroup {
+                spacing: gestures ? 24 * Theme.dp : 2 * Theme.dp;
+                cancel: root.cancel;
+                has-primary: root.has-primary;
+                primary-icon: root.primary-icon;
+                primary-has-icon: root.primary-has-icon;
+                primary-label: root.primary-label;
+                has-options: root.has-options;
+                cancelled => {
+                    root.cancelled();
+                }
+                primary => {
+                    root.primary();
+                }
+                options => {
+                    root.options();
+                }
+            }
+        }
+
+        if !gestures && arrangement != 0: Divider { }
+        if !gestures && arrangement == 1: StripButton {
+            icon: @image-url("../icons/sys/back.svg");
+            dim: !can-back;
             clicked => {
                 root.back();
             }
         }
-
-        if has-keyboard: ToolbarButton {
-            width: root.button-w;
-            icon: keyboard-shown ? @image-url("../icons/sys/keyboard_hide.svg") : @image-url("../icons/sys/keyboard.svg");
+        if !gestures && arrangement == 1: StripButton {
+            icon: @image-url("../icons/sys/home.svg");
             clicked => {
-                root.keyboard-toggled();
+                root.home();
             }
         }
-
-        // without an action the keyboard button takes the middle
-        if (action-label == "" && !action-pill) && (has-action || !has-keyboard): ToolbarButton {
-            width: root.button-w;
-            icon: action-icon;
-            enabled: has-action;
+        if !gestures && arrangement != 0: StripButton {
+            icon: @image-url("../icons/sys/tabs.svg");
             clicked => {
-                root.action();
+                root.apps();
             }
-        }
-        if (action-label != "" || action-pill) && (has-action || !has-keyboard): LabelButton {
-            width: root.button-w;
-            icon: action-icon;
-            label: action-label;
-            pill: action-pill;
-            enabled: has-action;
-            clicked => {
-                root.action();
-            }
-        }
-
-        ToolbarButton {
-            width: root.button-w;
-            icon: @image-url("../icons/sys/options.svg");
-            clicked => {
-                root.options();
-            }
-        }
-    }
-}
-
-// A screen's heading: large title, optional subtitle.
-export component TitleBar inherits Rectangle {
-    in property <string> title;
-    in property <string> subtitle;
-    height: Theme.title-h;
-    VerticalLayout {
-        padding-left: Theme.margin + 4 * Theme.dp;
-        padding-right: Theme.margin;
-        alignment: center;
-        Text {
-            text: title;
-            color: Theme.text;
-            font-size: Theme.font-title * 1.15;
-            font-weight: 700;
-            overflow: elide;
-        }
-
-        if subtitle != "": Text {
-            text: subtitle;
-            color: Theme.text-dim;
-            font-size: Theme.font-label;
-            overflow: elide;
         }
     }
 }

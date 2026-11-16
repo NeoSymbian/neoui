@@ -148,9 +148,8 @@ fn main() -> i32 {
     let dp256 = (w.min(h) * 256 / 360) as u32;
     let mut host = Host::new(ui.app_body(), dp256, ui.keyboard_heights(), settings);
     let mut keyboard_shown = 0;
-    let mut nav_shown = 0;
     // the foreground app's title and toolbar button as last given to the shell
-    let mut chrome_shown: (String, (i32, i32, String)) = Default::default();
+    let mut chrome_shown: (neoui_render::Page, bool) = Default::default();
     // the screen and view last checked for an app page (host::page_for)
     let mut page_shown = (String::new(), String::new());
     let mut running_shown: Vec<&'static str> = Vec::new();
@@ -314,8 +313,8 @@ fn main() -> i32 {
                                 hint = None;
                                 dprintln!("neoui: gesture {}", g.name());
                                 ui.gesture(g);
-                                for b in ui.take_nav() {
-                                    host.send(nav_event(b));
+                                for n in ui.take_nav() {
+                                    host.send_nav(n);
                                 }
                             }
                             Step::Cancel => hint = None,
@@ -417,8 +416,8 @@ fn main() -> i32 {
                                             down: true,
                                         }));
                                     }
-                                    for b in ui.take_nav() {
-                                        host.send(nav_event(b));
+                                    for n in ui.take_nav() {
+                                        host.send_nav(n);
                                     }
                                     for key in ui.take_closed() {
                                         dprintln!("neoui: app {} closed", key);
@@ -564,26 +563,13 @@ fn main() -> i32 {
                 ui.set_app_front(front);
                 front_shown = front;
             }
-            let want_nav = if phone_modal {
-                0
-            } else {
-                host.front().map_or(0, |a| a.nav)
-            };
-            let want_chrome = match host.front() {
-                Some(a) if !phone_modal => (a.title.clone(), a.tool.clone()),
+            let want_page = match host.front() {
+                Some(a) if !phone_modal => a.page(),
                 _ => Default::default(),
             };
-            if want_chrome != chrome_shown {
-                let (title, (icon, style, label)) = &want_chrome;
-                ui.set_app_chrome(title, *icon, *style, label);
-                chrome_shown = want_chrome;
-            }
-            if want_nav != nav_shown {
-                ui.set_app_nav(
-                    want_nav & proto::NAV_BACK != 0,
-                    want_nav & proto::NAV_OPTIONS != 0,
-                );
-                nav_shown = want_nav;
+            if want_page != chrome_shown {
+                ui.set_app_page(&want_page.0, want_page.1);
+                chrome_shown = want_page;
             }
             let overlay = ui.overlay_open();
             if overlay_shown && !overlay {
@@ -826,15 +812,6 @@ fn slide(
     for y in y0..(y0 + strip.h as usize).min(frame.len() / w) {
         layer::slide_row(out, &old[y * w..][..w], &frame[y * w..][..w], offset);
         display.blit_to(out, w, (0, 0, w, 1), (0, y));
-    }
-}
-
-/// A claimed toolbar button (`NAV_*`) as the event its app gets.
-fn nav_event(b: i32) -> AppEvent {
-    match b {
-        proto::NAV_BACK => AppEvent::Back,
-        proto::NAV_ACTION => AppEvent::Action,
-        _ => AppEvent::Options,
     }
 }
 

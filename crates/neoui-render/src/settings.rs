@@ -137,6 +137,17 @@ pub(crate) static BINDINGS: &[Binding] = &[
         },
     },
     Binding {
+        key: key_name::<i32>(keys::NAV_STRIP),
+        read: |g| Value::Int(g.get_nav_strip()),
+        write: |g, v| match v {
+            Value::Int(i) => {
+                g.set_nav_strip(*i);
+                true
+            }
+            _ => false,
+        },
+    },
+    Binding {
         key: key_name::<i32>(keys::DISPLAY_TIMEOUT),
         read: |g| Value::Int(g.get_screen_timeout()),
         write: |g, v| match v {

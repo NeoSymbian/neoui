@@ -11,11 +11,10 @@ const H: u32 = 1079;
 
 /// Centre of the key `at`..`at + units` (in `cols` key widths) of row `k` counted up from the bottom row (0) of the
 /// open keyboard; mirrors ui/components/keyboard/keyboard.slint (row k centred 27 + 48 k dp above the keyboard's
-/// bottom, the body's). `symbian/taps.sh` uses the same numbers.
-fn key(r: &Renderer, k: usize, at: f32, units: f32, cols: f32) -> (i32, i32) {
+/// bottom, the screen's). `symbian/taps.sh` uses the same numbers.
+fn key(_r: &Renderer, k: usize, at: f32, units: f32, cols: f32) -> (i32, i32) {
     let d = common::dp(W, H);
-    let body = r.body();
-    let bottom = (body.y + body.h as i32) as f32;
+    let bottom = H as f32; // the keyboard sits at the screen's bottom, over the strip
     (
         ((at + units / 2.0) * W as f32 / cols) as i32,
         (bottom - (27.0 + k as f32 * 48.0) * d) as i32,
@@ -53,7 +52,8 @@ impl Kb {
         common::frame(&mut self.r, &mut self.buf, W, key);
         let _ = self.r.take_setting_edits(); // the applied value echoes back
     }
-    /// The keyboard's height in dp (to the nearest one: pixels are truncated).
+    /// How much of an app's body the keyboard covers: its rows, the 30 dp hide band, less the 56 dp strip under it
+    /// (dp, to the nearest one: pixels are truncated).
     fn h_dp(&self) -> u32 {
         (self.r.keyboard_h() as f32 / common::dp(W, H)).round() as u32
     }
@@ -73,7 +73,7 @@ fn keyboard() {
     kb.r.set_keyboard(1);
     kb.snapshot("keyboard-en");
     // all languages on, all as tall as Armenian's four letter rows: English gets the digit row (5 rows)
-    assert_eq!(kb.h_dp(), 246);
+    assert_eq!(kb.h_dp(), 220);
 
     // English: rows 3 (qwerty) .. 1 (zxcv), 10 wide; the digit row is 4
     kb.letter(2, 0.5 + 2.0, 10.0); // d
@@ -102,7 +102,7 @@ fn keyboard() {
         [("keyboard.layout", Value::Int(1))]
     );
     kb.snapshot("keyboard-hy");
-    assert_eq!(kb.h_dp(), 246);
+    assert_eq!(kb.h_dp(), 220);
     kb.letter(4, 1.0, 12.0); // է (ten keys, centred)
     kb.letter(3, 0.0, 12.0); // ք
     kb.tap(1, 0.0, 1.5, 12.0); // shift
@@ -113,7 +113,7 @@ fn keyboard() {
     // Russian: 12 wide, three letter rows plus the digit row
     kb.globe();
     kb.snapshot("keyboard-ru");
-    assert_eq!(kb.h_dp(), 246);
+    assert_eq!(kb.h_dp(), 220);
     kb.letter(3, 0.0, 12.0); // й
     kb.letter(1, 1.0, 12.0); // ё (after a one-key-wide shift)
     kb.letter(2, 0.5 + 3.0, 12.0); // а
@@ -127,7 +127,7 @@ fn keyboard() {
 
     // Armenian off: English and Russian are three rows again, and the globe skips Armenian
     kb.set("keyboard.hy", Value::Bool(false));
-    assert_eq!(kb.h_dp(), 198);
+    assert_eq!(kb.h_dp(), 172);
     kb.globe();
     kb.letter(3, 0.0, 12.0);
     kb.globe();
@@ -138,22 +138,22 @@ fn keyboard() {
     // each language its own height
     kb.set("keyboard.hy", Value::Bool(true));
     kb.set("keyboard.same_height", Value::Bool(false));
-    assert_eq!(kb.h_dp(), 198);
+    assert_eq!(kb.h_dp(), 172);
     kb.globe();
-    assert_eq!(kb.h_dp(), 246, "Armenian");
+    assert_eq!(kb.h_dp(), 220, "Armenian");
     kb.globe();
-    assert_eq!(kb.h_dp(), 198, "Russian");
+    assert_eq!(kb.h_dp(), 172, "Russian");
     kb.globe();
     let _ = kb.r.take_setting_edits();
 
     // terminal mode: Esc, Tab and the arrows in a row on top (English: row 4 here), six across
     kb.r.set_keyboard(2);
     kb.snapshot("keyboard-term");
-    assert_eq!(kb.h_dp(), 246);
+    assert_eq!(kb.h_dp(), 220);
     assert_eq!(
         kb.r.keyboard_heights()
             .map(|h| (h as f32 / common::dp(W, H)).round() as u32),
-        [0, 198, 246, 198, 246]
+        [0, 172, 220, 172, 220]
     );
     for i in 0..6 {
         kb.letter(4, i as f32, 6.0);

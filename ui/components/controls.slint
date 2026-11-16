@@ -286,6 +286,8 @@ export component OptionsMenu inherits Rectangle {
     in property <bool> open;
     callback dismissed;
     callback selected(string);
+    // the same tap, by position (the shell reports an app's option by index)
+    callback picked(int);
     visible: self.opacity > 0.01;
     opacity: open ? 1 : 0;
     animate opacity { duration: Theme.popup; easing: ease-out-quad; }
@@ -313,7 +315,7 @@ export component OptionsMenu inherits Rectangle {
         VerticalLayout {
             padding-top: 6 * Theme.dp;
             padding-bottom: 6 * Theme.dp;
-            for item in items: Rectangle {
+            for item[i] in items: Rectangle {
                 height: Theme.list-row-h;
                 background: t.pressed ? Theme.pressed : transparent;
                 Text {
@@ -327,6 +329,67 @@ export component OptionsMenu inherits Rectangle {
                 t := TouchArea {
                     clicked => {
                         root.selected(item);
+                        root.picked(i);
+                    }
+                }
+            }
+        }
+    }
+}
+
+// A shell dialog (ipc 1.7 QUERY): a question and up to three buttons in a row, the first one red when the action
+// destroys something. A tap outside does nothing; Back answers the last button (the shell's nav-back).
+export component QueryDialog inherits Rectangle {
+    in property <bool> open;
+    in property <string> text;
+    in property <[string]> buttons;
+    in property <bool> destructive;
+    callback answered(int);
+    visible: open;
+    Rectangle {
+        background: Theme.scrim;
+        TouchArea { }
+    }
+
+    Rectangle {
+        x: 24 * Theme.dp;
+        width: parent.width - 48 * Theme.dp;
+        height: box.preferred-height;
+        y: (parent.height - self.height) / 2;
+        border-radius: Theme.radius + 4 * Theme.dp;
+        background: #1b1e23;
+        border-width: max(1px, Theme.dp / 2);
+        border-color: Theme.card-border;
+        box := VerticalLayout {
+            padding: 20 * Theme.dp;
+            spacing: 18 * Theme.dp;
+            Text {
+                text: root.text;
+                color: Theme.text;
+                font-size: Theme.font-body;
+                wrap: word-wrap;
+            }
+
+            HorizontalLayout {
+                alignment: end;
+                spacing: 8 * Theme.dp;
+                for b[i] in buttons: Rectangle {
+                    width: max(72 * Theme.dp, t.preferred-width + 28 * Theme.dp);
+                    height: 40 * Theme.dp;
+                    border-radius: self.height / 2;
+                    background: i == 0 && destructive ? (touch.pressed ? Theme.danger.darker(20%) : Theme.danger)
+                        : touch.pressed ? Theme.pressed : #2a2e35;
+                    t := Text {
+                        text: b;
+                        color: Theme.text;
+                        font-size: 14 * Theme.dp;
+                        font-weight: 600;
+                    }
+
+                    touch := TouchArea {
+                        clicked => {
+                            root.answered(i);
+                        }
                     }
                 }
             }

@@ -32,12 +32,12 @@ type_text() {
 	add "sendkey ret"
 }
 # kb_type WORD: tap WORD (lowercase letters and spaces) on the system keyboard in English, then its Enter key. The
-# keyboard is open over an app screen (toolbar 61 dp); key geometry mirrors ui/components/keyboard/keyboard.slint,
+# keyboard is open at the screen's bottom, over the strip; key geometry mirrors ui/components/keyboard/keyboard.slint,
 # counted up from the keyboard's bottom (row k centred 27 + 48 k dp above it, whatever rows are above), as
 # crates/neoui-render/tests/keyboard.rs does. The bottom row is 10 units: space spans 3.5-7.5 with the globe key.
 kb_key() {
 	awk -v c="$1" -v W="$SW" -v H="$SH" 'BEGIN {
-		d = (W < H ? W : H) / 360; bottom = H - 61 * d; u = W / 10; w = 1
+		d = (W < H ? W : H) / 360; bottom = H; u = W / 10; w = 1
 		if ((i = index("qwertyuiop", c))) { row = 3; at = i - 1 }
 		else if ((i = index("asdfghjkl", c))) { row = 2; at = i - 0.5 }
 		else if ((i = index("zxcvbnm", c))) { row = 1; at = i + 0.5 }
@@ -55,7 +55,16 @@ kb_tap() {
 	# shellcheck disable=SC2046 # "x y"
 	tap $(awk -v k="$1" -v at="$2" -v cols="$3" -v W="$SW" -v H="$SH" 'BEGIN {
 		d = (W < H ? W : H) / 360
-		printf "%d %d\n", (at + 0.5) * W / cols, H - 61 * d - (27 + k * 48) * d
+		printf "%d %d\n", (at + 0.5) * W / cols, H - (27 + k * 48) * d
+	}')
+}
+# kb_hide [term]: the keyboard's hide key, the right end of its 30 dp top band, for the English letters with the
+# digit row (all languages on, as tall as the tallest: 5 rows of 48 dp + 6 dp), and the terminal's extra row
+kb_hide() {
+	# shellcheck disable=SC2046 # "x y"
+	tap $(awk -v t="$1" -v W="$SW" -v H="$SH" 'BEGIN {
+		d = (W < H ? W : H) / 360; h = 30 + 6 + 5 * 48 + (t == "term" ? 48 : 0)
+		printf "%d %d\n", W - 32 * d, H - (h - 15) * d
 	}')
 }
 # kb_globe: the next language on (English -> Armenian -> Russian -> English by default)

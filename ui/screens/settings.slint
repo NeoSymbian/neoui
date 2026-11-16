@@ -97,7 +97,7 @@ component WifiSheet inherits Rectangle {
         width: root.width;
         height: card.preferred-height;
         // above the system keyboard while the password field has it up
-        y: root.height - self.height - (KeyboardFocus.open && !KeyboardFocus.dismissed ? KeyboardFocus.text-h : 0);
+        y: root.height - self.height - (KeyboardFocus.open && !KeyboardFocus.dismissed ? max(0, KeyboardFocus.text-h - Theme.strip-h) : 0);
         background: Theme.bg-raised;
         border-top-left-radius: Theme.radius;
         border-top-right-radius: Theme.radius;
@@ -488,12 +488,13 @@ export component SettingsScreen inherits Rectangle {
         }
     }
 
-    // Home screen & navigation (docs gestures.md): Classic keeps the toolbar's Back; Gestures moves Back, Home, the
-    // Apps menu and Open apps to edge swipes. Later stages add Home style, Open apps columns and swipe-to-close here.
+    // Home screen & navigation (docs gestures.md, Five places): Classic keeps ← ⌂ ▢ in the strip, arranged three
+    // ways; Gestures moves them to edge swipes and gives the page's buttons the whole strip. Later stages add Home
+    // style, Open apps columns and swipe-to-close here.
     if view == "navigation": NeoList {
         VerticalLayout {
             SectionHeader { text: "Navigation"; }
-            // a tap steps to the other choice (no picker widget yet)
+            // a tap steps to the next choice (no picker widget yet)
             ListRow {
                 title: "Navigation";
                 value: SystemSettings.nav-mode == 1 ? "Gestures" : "Classic";
@@ -529,11 +530,15 @@ export component SettingsScreen inherits Rectangle {
             }
 
             if SystemSettings.nav-mode != 1: ListRow {
-                title: "Back, Options and actions";
-                subtitle: "On the toolbar at the bottom";
+                title: "Back, Home, Open apps";
+                value: SystemSettings.nav-strip == 1 ? "Right" : SystemSettings.nav-strip == 2 ? "Split" : "Left";
+                subtitle: "Where they sit in the bottom strip";
                 has-icon: true;
                 icon: @image-url("../icons/sys/back.svg");
                 divider: false;
+                clicked => {
+                    SystemSettings.nav-strip = mod(SystemSettings.nav-strip + 1, 3);
+                }
             }
         }
     }
