@@ -25,20 +25,16 @@ fn switcher() {
     let (w, h) = (539, 1079);
     let mut r = common::renderer(w, h);
     let mut buf = vec![0u32; (w * h) as usize];
-    let d = common::dp(w, h);
     let tap = |r: &mut Renderer, buf: &mut [u32], (x, y): (i32, i32)| {
         common::tap(r, x, y);
         common::settle();
         r.render(buf, w as usize);
     };
 
-    // the Apps menu's toolbar button (middle) opens the switcher
+    // the strip's ▢ opens the switcher
     r.show("menu", "");
-    tap(
-        &mut r,
-        &mut buf,
-        (w as i32 / 2, (h as f32 - 30.5 * d) as i32),
-    );
+    let at = common::strip(w, h);
+    tap(&mut r, &mut buf, (at.apps, at.y));
     assert_eq!(r.screen(), "switcher");
 
     // empty: no cards to close or open

@@ -100,8 +100,10 @@ export component Keyboard inherits Rectangle {
     property <bool> digits: SystemSettings.keyboard-same-height && layout.rows.length < Layouts.tallest;
     property <int> rows: layout.rows.length + (digits ? 1 : 0);
     property <length> pitch: 48 * Theme.dp;
+    // the top band with the hide key (docs gestures.md: the keyboard covers the strip and puts itself away)
+    property <length> bar: 30 * Theme.dp;
     // out: the height in each mode, for the UI server to tell apps (it changes with the language and settings)
-    out property <length> text-h: 6 * Theme.dp + (rows + 1) * pitch;
+    out property <length> text-h: bar + 6 * Theme.dp + (rows + 1) * pitch;
     out property <length> term-h: text-h + pitch;
     out property <length> number-h: pad-h(Pads.all[0]);
     out property <length> phone-h: pad-h(Pads.all[1]);
@@ -110,7 +112,7 @@ export component Keyboard inherits Rectangle {
     property <bool> letters;
     property <bool> pad-on: mode >= 3 && mode < 3 + Pads.all.length && !letters;
     property <[[PadKey]]> pad: pad-on ? Pads.all[mode - 3].rows : [];
-    height: mode == 2 ? term-h : pad-on ? 6 * Theme.dp + pad.length * pitch : text-h;
+    height: mode == 2 ? term-h : pad-on ? bar + 6 * Theme.dp + pad.length * pitch : text-h;
     changed mode => {
         letters = false;
     }
@@ -123,7 +125,7 @@ export component Keyboard inherits Rectangle {
     }
 
     pure function pad-h(p: Pad) -> length {
-        6 * Theme.dp + p.rows.length * pitch
+        bar + 6 * Theme.dp + p.rows.length * pitch
     }
 
     // the language changed: start in its letters, lower case
@@ -150,6 +152,27 @@ export component Keyboard inherits Rectangle {
             letters = true;
         } else {
             typed(k.text != "" ? k.text : k.label);
+        }
+    }
+
+    // the hide key, at the right of the top band
+    Rectangle {
+        x: root.width - self.width;
+        y: 0;
+        width: 64 * Theme.dp;
+        height: bar;
+        background: hide.pressed ? Theme.pressed : transparent;
+        Image {
+            source: @image-url("../../icons/sys/chevron_down.svg");
+            width: 22 * Theme.dp;
+            height: self.width;
+            colorize: Theme.text-secondary;
+        }
+
+        hide := TouchArea {
+            clicked => {
+                KeyboardFocus.dismissed = true;
+            }
         }
     }
 

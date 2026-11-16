@@ -9,9 +9,9 @@ export global Theme {
 
     // Frame (measured: thin status pane 25, toolbar 61 at 360x640)
     out property <length> status-h: 25 * dp;
-    out property <length> toolbar-h: 61 * dp;
-    out property <length> toolbar-button-w: 116 * dp;
-    out property <length> toolbar-icon: 28 * dp;
+    // the bottom strip (docs gestures.md, Five places): the same height in Classic and Gestures
+    out property <length> strip-h: 56 * dp;
+    out property <length> toolbar-icon: 26 * dp;
     out property <length> status-icon: 15 * dp;
 
     // App grid (Belle menu: 3 columns, 135 dp row pitch, ~76 dp icon); modernized: a little more air

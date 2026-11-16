@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Home: widget pages you swipe between (Belle's home screens), page dots, and a dock.
 import { Theme } from "../theme.slint";
+import { SystemSettings } from "../system-settings.slint";
 import { Data } from "../data.slint";
 import { Card, PageDots } from "../components/controls.slint";
 import { ClockWidget } from "../components/widgets.slint";
@@ -368,13 +369,6 @@ export component HomeScreen inherits Rectangle {
 
             DockIcon {
                 compact: landscape;
-                icon: @image-url("../icons/apps/menu.svg");
-                label: "Apps";
-                clicked => { root.open-app("menu"); }
-            }
-
-            DockIcon {
-                compact: landscape;
                 icon: @image-url("../icons/apps/browser.svg");
                 label: "Browser";
                 clicked => { root.open-app("browser"); }
@@ -385,6 +379,14 @@ export component HomeScreen inherits Rectangle {
                 icon: @image-url("../icons/apps/camera.svg");
                 label: "Camera";
                 clicked => { root.open-app("camera"); }
+            }
+
+            // Gestures home has no strip, so Apps sits in the dock; Classic home's strip has it
+            if SystemSettings.nav-mode == 1: DockIcon {
+                compact: landscape;
+                icon: @image-url("../icons/apps/menu.svg");
+                label: "Apps";
+                clicked => { root.open-app("menu"); }
             }
         }
     }

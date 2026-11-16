@@ -10,10 +10,9 @@ const H: u32 = 1079;
 
 /// Centre of the one-unit key at `at` (of 10 per row) in keyboard row `k`, counted up from the bottom row (0); as
 /// tests/keyboard.rs.
-fn key(r: &Renderer, k: usize, at: f32, units: f32) -> (i32, i32) {
+fn key(_r: &Renderer, k: usize, at: f32, units: f32) -> (i32, i32) {
     let d = common::dp(W, H);
-    let body = r.body();
-    let bottom = (body.y + body.h as i32) as f32;
+    let bottom = H as f32; // the keyboard sits at the screen's bottom, over the strip
     (
         ((at + units / 2.0) * W as f32 / 10.0) as i32,
         (bottom - (27.0 + k as f32 * 48.0) * d) as i32,
@@ -67,22 +66,20 @@ fn shell_fields_use_the_system_keyboard() {
     common::frame(&mut r, &mut buf, W, "wifi password");
     common::write_png("wifi-password-539x1079.png", &buf, W, H);
 
-    // The toolbar's keyboard button (the middle one: Settings has no action) puts the keyboard away while the
-    // field keeps the focus and its text, and brings it back
+    // The keyboard's hide key (the top band's right end) puts it away while the field keeps the focus and its text
     let body = r.body();
     let body_bottom = (body.y + body.h as i32) as f32;
-    let kb_button = ((W / 2) as i32, (H as f32 - 30.0 * d) as i32);
+    let kb_button = (
+        (W as f32 - 32.0 * d) as i32,
+        (H as f32 - kb as f32 - (56.0 - 15.0) * d) as i32,
+    );
     tap(&mut r, &mut buf, kb_button);
     assert!(r.keyboard_dismissed());
-    assert_eq!(r.keyboard_h(), 0, "the keyboard button hides it");
+    assert_eq!(r.keyboard_h(), 0, "the hide key hides it");
     common::frame(&mut r, &mut buf, W, "wifi keyboard away");
-    tap(&mut r, &mut buf, kb_button);
-    assert_eq!(r.keyboard_h(), kb, "and shows it again");
 
-    // put away again, a tap on the field brings it back (the card sits at the body's bottom without it: the field
-    // is 100 dp above, over the buttons' row)
-    tap(&mut r, &mut buf, kb_button);
-    assert_eq!(r.keyboard_h(), 0);
+    // put away, a tap on the field brings it back (the card sits at the body's bottom without it: the field is
+    // 100 dp above, over the buttons' row)
     tap(
         &mut r,
         &mut buf,

@@ -19,6 +19,7 @@ use core::time::Duration;
 
 use neoui_proto::clock::face::Face;
 use neoui_proto::ipc::KEYBOARD_MODES;
+pub use neoui_proto::page::{Action, Page, Query};
 use neoui_proto::settings::Value;
 use neoui_proto::{Damage, InputEvent, Rect, ScrollPlan, Scrolling, TouchPhase};
 use slint::platform::software_renderer::{
@@ -73,6 +74,21 @@ impl Platform for NeoPlatform {
     }
 }
 
+/// A tap on the foreground app's page, for the app (`neoui_proto::ipc::AppEvent`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Nav {
+    /// Back stays inside the app (its page said `can_back`).
+    Back,
+    /// ⋮ of an older app that draws its own menu (`NAV_OPTIONS`).
+    Options,
+    Primary,
+    Cancel,
+    /// An item of the shell's Options sheet.
+    Option(u16),
+    /// A dialog button.
+    Answer(u16),
+}
+
 /// Owns the Slint platform and the launcher UI.
 ///
 /// Slint's platform is a process-wide singleton (and with
@@ -82,7 +98,7 @@ pub struct Renderer {
     window: Rc<MinimalSoftwareWindow>,
     ui: Shell,
     typed: Rc<RefCell<Vec<u32>>>,
-    nav: Rc<RefCell<Vec<i32>>>,
+    nav: Rc<RefCell<Vec<Nav>>>,
     entries: Rc<RefCell<Vec<u32>>>,
     closed: Rc<RefCell<Vec<alloc::string::String>>>,
     power: Rc<RefCell<Vec<i32>>>,
@@ -152,9 +168,19 @@ impl Renderer {
         let typed: Rc<RefCell<Vec<u32>>> = Rc::default();
         let sink = typed.clone();
         ui.on_typed(move |s| sink.borrow_mut().extend(s.chars().map(u32::from)));
-        let nav: Rc<RefCell<Vec<i32>>> = Rc::default();
+        let nav: Rc<RefCell<Vec<Nav>>> = Rc::default();
         let sink = nav.clone();
-        ui.on_app_nav(move |b| sink.borrow_mut().push(b));
+        ui.on_app_nav(move |kind, i| {
+            let i = u16::try_from(i).unwrap_or(0);
+            sink.borrow_mut().push(match kind.as_str() {
+                "back" => Nav::Back,
+                "options" => Nav::Options,
+                "primary" => Nav::Primary,
+                "cancel" => Nav::Cancel,
+                "option" => Nav::Option(i),
+                _ => Nav::Answer(i),
+            })
+        });
         let entries: Rc<RefCell<Vec<u32>>> = Rc::default();
         let sink = entries.clone();
         // Slint uses signed ints; preserve all 32 UID bits on the round trip.
@@ -162,6 +188,14 @@ impl Renderer {
         let closed: Rc<RefCell<Vec<alloc::string::String>>> = Rc::default();
         let sink = closed.clone();
         ui.on_close_app(move |k| sink.borrow_mut().push(k.as_str().into()));
+        let sink = closed.clone();
+        let shell = ui.as_weak();
+        ui.on_close_all(move || {
+            if let Some(ui) = shell.upgrade() {
+                sink.borrow_mut()
+                    .extend(ui.get_running().iter().map(|k| k.as_str().into()));
+            }
+        });
         let power: Rc<RefCell<Vec<i32>>> = Rc::default();
         let sink = power.clone();
         ui.on_power(move |a| sink.borrow_mut().push(a));
@@ -364,28 +398,75 @@ impl Renderer {
         core::mem::take(&mut *self.typed.borrow_mut())
     }
 
-    /// Whether the foreground app handles the toolbar's Back and Options itself.
-    /// An app process is in front (the shell hides its own mock of the screen and unclaimed toolbar buttons).
+    /// An app process is in front (the shell hides its own mock of the screen; the strip shows the app's page).
     pub fn set_app_front(&mut self, front: bool) {
         self.ui.set_app_front(front);
     }
 
-    pub fn set_app_nav(&mut self, back: bool, options: bool) {
-        self.ui.set_app_back(back);
-        self.ui.set_app_options(options);
+    /// The foreground app's page (`neoui_proto::ipc::PAGE`). `legacy_options`: an older app claimed Options
+    /// (`NAV_OPTIONS`) to draw its own menu; ⋮ then sends [`Nav::Options`] while the page has no options.
+    pub fn set_app_page(&mut self, page: &Page, legacy_options: bool) {
+        let ui = &self.ui;
+        ui.set_app_title(page.title.as_str().into());
+        ui.set_app_back(page.can_back);
+        ui.set_app_has_primary(page.primary.is_some());
+        let (icon, label) = page
+            .primary
+            .as_ref()
+            .map_or((0, ""), |a| (a.icon, a.label.as_str()));
+        ui.set_app_primary_icon(icon);
+        ui.set_app_primary_label(label.into());
+        ui.set_app_cancel(page.cancel);
+        let options: Vec<slint::SharedString> =
+            page.options.iter().map(|o| o.as_str().into()).collect();
+        ui.set_app_options(Rc::new(slint::VecModel::from(options)).into());
+        ui.set_app_legacy_options(legacy_options);
+        let (n, at) = page.dots.unwrap_or((0, 0));
+        ui.set_app_dots(i32::from(n));
+        ui.set_app_dot(i32::from(at));
+        ui.set_app_full(page.full);
     }
 
-    /// The foreground app's title and toolbar middle button (`neoui_proto::ipc::TITLE`, `TOOLBAR`).
-    pub fn set_app_chrome(&mut self, title: &str, action: i32, style: i32, label: &str) {
-        self.ui.set_app_title(title.into());
-        self.ui.set_app_action(action);
-        self.ui.set_app_toolbar_style(style);
-        self.ui.set_app_action_label(label.into());
+    /// The foreground app's dialog (`neoui_proto::ipc::QUERY`), or none.
+    pub fn set_app_query(&mut self, query: Option<&Query>) {
+        let ui = &self.ui;
+        ui.set_query_open(query.is_some());
+        if let Some(q) = query {
+            ui.set_query_text(q.text.as_str().into());
+            let buttons: Vec<slint::SharedString> =
+                q.buttons.iter().map(|b| b.as_str().into()).collect();
+            ui.set_query_buttons(Rc::new(slint::VecModel::from(buttons)).into());
+            ui.set_query_destructive(q.destructive);
+        }
     }
 
-    /// Claimed toolbar buttons pressed since the last call: 1 = Back, 2 = Options, 4 = the app's middle button
-    /// (`neoui_proto::ipc::NAV_*`).
-    pub fn take_nav(&mut self) -> Vec<i32> {
+    /// Show Classic's strip over a full-screen page (a tap asked for it), or hide it again.
+    pub fn set_strip_peek(&mut self, on: bool) {
+        self.ui.set_strip_peek(on);
+    }
+
+    /// Is the strip on screen? (Not on Gestures home, not under a full-screen page.)
+    pub fn strip_shown(&self) -> bool {
+        self.ui.get_body_h() < self.ui.get_app_body_h() + 1.0
+    }
+
+    /// Do what a finished edge gesture asks (docs `gestures.md`). Back runs the strip's Back, so an app whose page goes
+    /// back inside it hears of it through [`Renderer::take_nav`]. Home from home opens the Apps menu (the bottom edge
+    /// goes on to it).
+    pub fn gesture(&mut self, g: neoui_proto::gesture::Gesture) {
+        use neoui_proto::gesture::Gesture;
+        let screen = self.screen();
+        match g {
+            Gesture::Back => self.ui.invoke_nav_back(),
+            Gesture::OpenApps if screen != "switcher" => self.ui.invoke_open("switcher".into()),
+            Gesture::Home if screen != "home" => self.show("home", ""),
+            Gesture::OpenApps => {}
+            Gesture::Home | Gesture::AppsMenu => self.show("menu", ""),
+        }
+    }
+
+    /// What the user did to the foreground app's page since the last call (the strip, the sheet, the dialog, Back).
+    pub fn take_nav(&mut self) -> Vec<Nav> {
         core::mem::take(&mut *self.nav.borrow_mut())
     }
 
@@ -401,10 +482,12 @@ impl Renderer {
         core::mem::take(&mut *self.closed.borrow_mut())
     }
 
-    /// Is the status shade open over the app area? The UI server neither composes the app's surface over it nor
-    /// gives it the touches meanwhile. (The shell's Options menu never opens over an app: its Options is the app's.)
+    /// Is the shade, the Options sheet or a dialog open over the app area? The UI server neither composes the app's
+    /// surface over it nor gives it the touches meanwhile.
     pub fn overlay_open(&self) -> bool {
         self.ui.get_shade_open()
+            || self.ui.get_options_open()
+            || (self.ui.get_app_front() && self.ui.get_query_open())
     }
 
     /// Show or hide the Power menu (the UI server opens it when Power is held).

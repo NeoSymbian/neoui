@@ -24,11 +24,12 @@ use e32::server::{Message, Service};
 use e32::sys::{TVersion, err};
 use neoui_proto::Rect;
 use neoui_proto::ipc::{self as proto, AppEvent};
+use neoui_proto::page::{PAGE_MAX, QUERY_MAX};
 use neoui_proto::recents::Recents;
 use neoui_proto::settings::value::ENCODED_MAX;
 use neoui_proto::settings::{Caller, KEY_MAX, Value, kerr};
 use neoui_proto::{InputEvent, TouchPhase};
-use neoui_render::LauncherEntry;
+use neoui_render::{Action, LauncherEntry, Nav, Page, Query};
 
 /// Screen keys that are separate processes: their EXEs and command lines.
 // shortcut: a fixed table; a registry of installed apps comes with app installation.
@@ -102,11 +103,16 @@ pub struct App {
     pub keyboard: u8,
     /// The keyboard height it was last told (the `KEYBOARD` reply or `AppEvent::Keyboard`).
     keyboard_h: u32,
-    /// Toolbar buttons it claimed (`NAV_BACK | NAV_OPTIONS`); apply while it is in front.
-    pub nav: i32,
-    /// Its status-bar title and toolbar middle button (`TITLE`, `TOOLBAR`: icon, style, label); apply while in front.
-    pub title: String,
-    pub tool: (i32, i32, String),
+    /// The page it declared (`PAGE`, protocol 1.7); applies while it is in front. Older apps declare none: their
+    /// page is built from what they said with `NAV`, `TITLE` and `TOOLBAR` ([`App::page`]).
+    pub declared: Option<Page>,
+    /// Its open dialog (`QUERY`); shown while it is in front.
+    pub query: Option<Query>,
+    /// Buttons it claimed (`NAV_BACK | NAV_OPTIONS`).
+    nav: i32,
+    /// Its status-bar title and middle button (`TITLE`, `TOOLBAR`: icon, style, label).
+    title: String,
+    tool: (i32, i32, String),
     /// It has been on screen (the switcher lists only those; a resident app starts hidden).
     shown: bool,
 }
@@ -139,6 +145,41 @@ impl App {
         }
     }
 
+    /// What the strip shows for it, and whether ⋮ is an older app's own Options (`NAV_OPTIONS`).
+    pub fn page(&self) -> (Page, bool) {
+        if let Some(p) = &self.declared {
+            return (p.clone(), false);
+        }
+        let (icon, style, label) = &self.tool;
+        let empty = style & proto::TOOLBAR_EMPTY != 0;
+        let page = Page {
+            title: self.title.clone(),
+            can_back: self.nav & proto::NAV_BACK != 0,
+            primary: (*icon != proto::TOOL_NONE && !empty).then(|| Action {
+                icon: *icon,
+                label: label.clone(),
+            }),
+            cancel: style & proto::TOOLBAR_CANCEL != 0 && !empty,
+            ..Page::default()
+        };
+        (page, self.nav & proto::NAV_OPTIONS != 0)
+    }
+
+    /// A tap on its page as the event it understands: an older app hears its toolbar's (Cancel was its Back).
+    pub fn event(&self, n: Nav) -> AppEvent {
+        let old = self.declared.is_none();
+        match n {
+            Nav::Back => AppEvent::Back,
+            Nav::Options => AppEvent::Options,
+            Nav::Primary if old => AppEvent::Action,
+            Nav::Primary => AppEvent::Primary,
+            Nav::Cancel if old => AppEvent::Back,
+            Nav::Cancel => AppEvent::Cancel,
+            Nav::Option(i) => AppEvent::Option { i },
+            Nav::Answer(i) => AppEvent::Answer { i },
+        }
+    }
+
     fn quit(&mut self, now_ms: u64) {
         if self.quit_at.is_none() {
             self.quit_at = Some(now_ms);
@@ -150,6 +191,10 @@ impl App {
 pub struct Host {
     /// Where app surfaces go on the screen (the shell's body on an app screen).
     pub body: Rect,
+    /// The whole screen's height: a full-screen page's surface (surfaces are allocated this tall).
+    screen_h: u32,
+    /// Classic's strip shown for a moment over a full-screen page (a tap asked for it).
+    pub peek: bool,
     /// The shell's design unit in 1/256 px, for apps.
     pub dp256: u32,
     /// The keyboard's height in pixels in each mode ([0, text, terminal, number, phone]); it changes with the
@@ -188,12 +233,15 @@ pub struct Host {
 impl Host {
     pub fn new(
         body: Rect,
+        screen_h: u32,
         dp256: u32,
         keyboard_h: [u32; proto::KEYBOARD_MODES],
         settings: Settings,
     ) -> Self {
         Self {
             body,
+            screen_h,
+            peek: false,
             dp256,
             keyboard_h,
             reopen: false,
@@ -261,13 +309,40 @@ impl Host {
             .find(|a| a.key == key && a.quit_at.is_none() && a.surface.is_some())
     }
 
-    /// The part of the body the app's surface shows in (screen coordinates): all of it but the open keyboard.
+    /// Whether the front app shows a full-screen page (no status bar, no strip).
+    pub fn front_full(&self) -> bool {
+        self.front()
+            .is_some_and(|a| a.declared.as_ref().is_some_and(|p| p.full))
+    }
+
+    /// Where the front app's surface starts and how tall it shows (screen coordinates): the body, or the whole
+    /// screen for a full-screen page (less Classic's strip while it peeks).
+    pub fn surface_rect(&self) -> Rect {
+        let b = self.body;
+        if !self.front_full() {
+            return b;
+        }
+        let strip = self.screen_h - (b.y.max(0) as u32 + b.h);
+        Rect::new(
+            b.x,
+            0,
+            b.w,
+            self.screen_h - if self.peek { strip } else { 0 },
+        )
+    }
+
+    /// The part of the screen the app's surface shows in: [`Host::surface_rect`] but the open keyboard.
     pub fn app_area(&self) -> Rect {
         let covered = self
             .front()
             .map_or(0, |a| self.keyboard_h[usize::from(a.keyboard)]);
-        let b = self.body;
-        Rect::new(b.x, b.y, b.w, b.h.saturating_sub(covered))
+        let r = self.surface_rect();
+        Rect::new(r.x, r.y, r.w, r.h.saturating_sub(covered))
+    }
+
+    /// The front app's surface (`body.w` per row, [`Host::surface_rows`] rows).
+    pub fn surface_rows(&self) -> usize {
+        self.screen_h as usize
     }
 
     /// The keyboard's heights now ([`Renderer::keyboard_heights`](neoui_render::Renderer::keyboard_heights)): each
@@ -304,8 +379,8 @@ impl Host {
         self.screen = key;
         self.set_front(key.filter(|k| !LAUNCHERS.contains(k)));
         let Some(key) = key else { return };
-        self.start(key);
         self.limit_running(key, now_ms);
+        self.start(key);
     }
 
     /// Switch surface visibility independently of the shell's selected screen.
@@ -340,12 +415,21 @@ impl Host {
         }
     }
 
+    /// Close the apps used longest ago (never a resident) so that `key` runs within [`MAX_RUNNING`]: before
+    /// starting it, so the new app has the memory (the closed ones get [`QUIT_GRACE_MS`] to save).
     fn limit_running(&mut self, key: &str, now_ms: u64) {
+        let running = self
+            .apps
+            .find(|a| a.key == key && a.quit_at.is_none())
+            .is_some();
+        let limit = MAX_RUNNING - usize::from(!running);
         let over: Vec<&'static str> = self
             .apps
-            .over_limit(MAX_RUNNING, |a| {
-                a.key == key || a.quit_at.is_some() || RESIDENT.contains(&a.key)
-            })
+            .over_limit(
+                limit,
+                |a| a.quit_at.is_some(),
+                |a| a.key == key || RESIDENT.contains(&a.key),
+            )
             .map(|a| a.key)
             .collect();
         for k in over {
@@ -374,6 +458,8 @@ impl Host {
                     quit_at: None,
                     keyboard: 0,
                     keyboard_h: 0,
+                    declared: None,
+                    query: None,
                     nav: 0,
                     title: String::new(),
                     tool: (proto::TOOL_NONE, 0, String::new()),
@@ -399,9 +485,9 @@ impl Host {
         if !self.entries(key).iter().any(|entry| entry.id == id) {
             return;
         }
+        self.limit_running(key, now_ms);
         self.start(key);
         self.post(key, AppEvent::Entry { id });
-        self.limit_running(key, now_ms);
     }
 
     /// Sends `e` to app `key` (queued until it asks for events); false when it is not running (or leaving).
@@ -413,6 +499,19 @@ impl Host {
     }
 
     /// Input and claimed toolbar buttons go to the foreground app.
+    /// A tap on the front app's page (the strip, the sheet, a dialog, Back).
+    pub fn send_nav(&mut self, n: Nav) {
+        dprintln!("neoui: nav {:?}", n);
+        let Some(key) = self.front else { return };
+        if let Some(app) = self.apps.find_mut(|a| a.key == key && a.quit_at.is_none()) {
+            if let Nav::Answer(_) = n {
+                app.query = None; // answered: the shell closed it
+            }
+            let e = app.event(n);
+            app.send(e);
+        }
+    }
+
     pub fn send(&mut self, e: AppEvent) {
         let Some(key) = self.front else { return };
         if let Some(app) = self.apps.find_mut(|a| a.key == key && a.quit_at.is_none()) {
@@ -420,10 +519,16 @@ impl Host {
         }
     }
 
-    /// Ask app `key` to quit (the switcher's ×, or too many running).
+    /// Ask app `key` to quit (the switcher's ×, or too many running). A resident app (the phone) is only
+    /// dismissed: it leaves Open apps and keeps running.
     pub fn close(&mut self, key: &str, now_ms: u64) {
         if let Some(app) = self.apps.find_mut(|a| a.key == key && a.quit_at.is_none()) {
-            app.quit(now_ms);
+            if RESIDENT.contains(&app.key) {
+                dprintln!("neoui: app {} dismissed", app.key);
+                app.shown = false;
+            } else {
+                app.quit(now_ms);
+            }
         }
     }
 
@@ -473,6 +578,14 @@ impl Host {
 fn deliver(m: Message, e: AppEvent) {
     let r = m.write8(0, &e.encode(), 0);
     m.complete(r.map_or_else(|e| e, |()| 0));
+}
+
+/// Reads descriptor argument `param`: at most `max` bytes.
+fn read_bytes(m: &Message, param: usize, max: usize) -> Result<Vec<u8>, i32> {
+    if m.des_len(param)? > max {
+        return Err(kerr::TOO_BIG);
+    }
+    m.read8_vec(param)
 }
 
 /// Reads descriptor argument `param` as text of at most `max` bytes.
@@ -582,6 +695,7 @@ impl Service for Host {
 
     fn message(&mut self, id: &mut u32, m: Message) {
         let (body, dp256, keyboard_h, front) = (self.body, self.dp256, self.keyboard_h, self.front);
+        let screen_h = self.screen_h;
         let Some(app) = self.apps.find_mut(|a| a.session == Some(*id)) else {
             return m.complete(err::KERR_NOT_SUPPORTED);
         };
@@ -596,7 +710,8 @@ impl Service for Host {
             }
             proto::SURFACE => {
                 if app.surface.is_none() {
-                    match Chunk::create_global(body.w as usize * body.h as usize * 4) {
+                    // as tall as the screen: a full-screen page draws there too (GEOMETRY still gives the body)
+                    match Chunk::create_global(body.w as usize * screen_h as usize * 4) {
                         Ok(c) => app.surface = Some(c),
                         Err(e) => return m.complete(e),
                     }
@@ -653,6 +768,35 @@ impl Service for Host {
                 }
                 Err(e) => m.complete(e),
             },
+            proto::PAGE => match read_bytes(&m, 0, PAGE_MAX)
+                .and_then(|b| Page::decode(&b).map_err(|_| kerr::ARGUMENT))
+            {
+                Ok(p) => {
+                    let h = if p.full { screen_h } else { body.h };
+                    if front == Some(app.key)
+                        && app.declared.as_ref().map(|d| d.full) != Some(p.full)
+                    {
+                        self.refresh = true; // the surface moves (full screen or back)
+                    }
+                    app.declared = Some(p);
+                    m.complete(h as i32);
+                }
+                Err(e) => m.complete(e),
+            },
+            proto::QUERY => match read_bytes(&m, 0, QUERY_MAX) {
+                Ok(b) if b.is_empty() => {
+                    app.query = None;
+                    m.complete(0);
+                }
+                Ok(b) => match Query::decode(&b) {
+                    Ok(q) => {
+                        app.query = Some(q);
+                        m.complete(0);
+                    }
+                    Err(_) => m.complete(kerr::ARGUMENT),
+                },
+                Err(e) => m.complete(e),
+            },
             proto::POWER => {
                 dprintln!("neoui: power {} asked by {}", m.int(0), app.key);
                 self.power = Some(m.int(0));
@@ -696,8 +840,8 @@ impl Service for Host {
                     // set_front only sends visibility changes; each FRONT also acknowledges its caller's state.
                     self.post(key, AppEvent::Visible(show));
                 }
-                self.start(key);
                 self.limit_running(key, e32::time::millis());
+                self.start(key);
                 self.requested_screen = Some(key);
                 m.complete(0);
             }

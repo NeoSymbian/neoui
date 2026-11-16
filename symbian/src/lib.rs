@@ -5,7 +5,7 @@
 //!   the frame buffer (`e32::display`; video RAM is uncached, and the renderer reads back the previous frame);
 //! - registers as the window server and takes raw pointer/key events from the kernel (`e32::event`);
 //! - runs apps as separate processes (R6, [`host`]): the `NeoUi` IPC server, a shared surface per app shown in the
-//!   shell's body, input routed to the app, `Quit` when the shell navigates away;
+//!   shell's body, input routed to the app, `Visible` as the shell's screen changes and `Quit` when one is closed;
 //! - reports over the debug port (`neoui: ...` lines, checked by CI).
 #![no_std]
 
@@ -35,6 +35,7 @@ use e32::rt::{self, Either};
 use e32::server::{self, Server};
 use e32::{dprintln, time};
 use host::Host;
+use neoui_proto::gesture::{Edge, Recognizer, Step};
 use neoui_proto::ipc::{self as proto, AppEvent};
 use neoui_proto::settings::keys;
 use neoui_proto::{Damage, InputEvent, Rect, TouchPhase, coalesce_moves, next_deadline};
@@ -53,6 +54,8 @@ const TRANSITION_MS: u32 = 250;
 const SWIPE_MS: u32 = 250;
 /// How long Power is held before the Power menu opens (H3a).
 const POWER_HOLD_MS: u64 = 1000;
+/// How long a tap shows Classic's strip over a full-screen page.
+const PEEK_MS: u64 = 3000;
 /// `EHalGroupDisplay` and its `TDisplayHalFunction`s (`u32hal.h`): screen on/off and the panel's brightness (D2).
 const HAL_DISPLAY: i32 = 4;
 const DISPLAY_MAX_BRIGHTNESS: i32 = 12;
@@ -145,11 +148,19 @@ fn main() -> i32 {
     };
     // the shell's design unit (theme.slint: min(w, h) / 360), in 1/256 px
     let dp256 = (w.min(h) * 256 / 360) as u32;
-    let mut host = Host::new(ui.app_body(), dp256, ui.keyboard_heights(), settings);
+    let mut host = Host::new(
+        ui.app_body(),
+        h as u32,
+        dp256,
+        ui.keyboard_heights(),
+        settings,
+    );
     let mut keyboard_shown = 0;
-    let mut nav_shown = 0;
     // the foreground app's title and toolbar button as last given to the shell
-    let mut chrome_shown: (String, (i32, i32, String)) = Default::default();
+    let mut chrome_shown: (neoui_render::Page, bool) = Default::default();
+    let mut query_shown: Option<neoui_render::Query> = None;
+    // when Classic's strip, shown over a full-screen page by a tap, goes again
+    let mut peek_until = 0;
     // the screen and view last checked for an app page (host::page_for)
     let mut page_shown = (String::new(), String::new());
     let mut running_shown: Vec<&'static str> = Vec::new();
@@ -195,6 +206,12 @@ fn main() -> i32 {
         let mut swallow = false;
         let mut phone_modal = false;
         let (slop, turn) = ((8 * dp256 / 256) as i32, (60 * dp256 / 256) as i32);
+        // gesture navigation (docs gestures.md G1): the edge recognizer, the touches it holds back (the press and the
+        // latest move), the hint it asks for (edge, progress, the finger across the edge) and where it was drawn
+        let mut gest = Recognizer::new(w as u32, h as u32, dp256);
+        let mut held: Vec<InputEvent> = Vec::new();
+        let mut hint: Option<(Edge, u32, i32)> = None;
+        let mut hint_drawn: Option<Rect> = None;
         loop {
             // a dark screen draws nothing: no frame pacing for animations or a pending draw
             let wait = if scr.is_on()
@@ -261,17 +278,73 @@ fn main() -> i32 {
                         }
                         next = poll_now(input.as_mut());
                     }
+                    // Edge gestures see every move (before they are merged: a merged move could hide the
+                    // direction); what they don't take is routed as usual below.
+                    let gestures = host.settings.get(keys::NAV_MODE).unwrap_or(0) == 1
+                        && !power_menu
+                        && !phone.modal()
+                        && !ui.overlay_open()
+                        && transition.is_none()
+                        && swipe.is_none();
+                    // home keeps its left edge for the pages (Back does nothing there)
+                    let live: &[Edge] = match (gestures, screen.as_str()) {
+                        (false, _) => &[],
+                        (true, "home") => &[Edge::Right, Edge::Bottom],
+                        _ => &[Edge::Left, Edge::Right, Edge::Bottom],
+                    };
+                    let ms = time::millis();
+                    let mut routed = Vec::with_capacity(evs.len());
+                    for ev in evs {
+                        let InputEvent::Touch { x, y, phase, .. } = ev else {
+                            routed.push(ev);
+                            continue;
+                        };
+                        match gest.feed(phase, x, y, ms, live) {
+                            Step::Pass => routed.push(ev),
+                            Step::Hold => {
+                                if phase == TouchPhase::Move && held.len() > 1 {
+                                    held.pop();
+                                }
+                                held.push(ev);
+                            }
+                            Step::Replay => {
+                                routed.append(&mut held);
+                                routed.push(ev);
+                            }
+                            Step::Drop => {}
+                            Step::Track { edge, progress } => {
+                                held.clear();
+                                hint = Some((
+                                    edge,
+                                    progress,
+                                    if edge == Edge::Bottom { x } else { y },
+                                ));
+                            }
+                            Step::Commit(g) => {
+                                hint = None;
+                                dprintln!("neoui: gesture {}", g.name());
+                                ui.gesture(g);
+                                for n in ui.take_nav() {
+                                    host.send_nav(n);
+                                }
+                            }
+                            Step::Cancel => hint = None,
+                        }
+                    }
+                    let mut evs = routed;
                     coalesce_moves(&mut evs);
                     for event in evs {
                         let app_on_screen = host.front().is_some() && !phone.modal();
                         match event {
                             InputEvent::Touch { id, x, y, phase } => {
-                                let body = host.body;
+                                let body = host.surface_rect();
                                 if phase == TouchPhase::Down {
                                     swallow = swipe.is_some();
+                                    // the shade over home takes its own drags: no page slide under it
                                     home_press = (screen == "home"
                                         && !app_on_screen
                                         && !power_menu
+                                        && !ui.overlay_open()
                                         && !phone.modal()
                                         && transition.is_none()
                                         && !swallow
@@ -283,6 +356,20 @@ fn main() -> i32 {
                                         && !power_menu
                                         && !ui.overlay_open()
                                         && contains(&host.app_area(), x, y);
+                                    // Classic over a full-screen page: the first tap shows the strip for a moment
+                                    // (docs gestures.md rule 8), the app doesn't get it
+                                    if to_app
+                                        && !host.peek
+                                        && host.front_full()
+                                        && host.settings.get(keys::NAV_MODE).unwrap_or(0) != 1
+                                    {
+                                        host.peek = true;
+                                        peek_until = time::millis() + PEEK_MS;
+                                        host.refresh = true;
+                                        ui.set_strip_peek(true);
+                                        to_app = false;
+                                        swallow = true;
+                                    }
                                 }
                                 if phase == TouchPhase::Up {
                                     let down = down_at.take();
@@ -354,12 +441,8 @@ fn main() -> i32 {
                                             down: true,
                                         }));
                                     }
-                                    for b in ui.take_nav() {
-                                        host.send(match b {
-                                            proto::NAV_BACK => AppEvent::Back,
-                                            proto::NAV_ACTION => AppEvent::Action,
-                                            _ => AppEvent::Options,
-                                        });
+                                    for n in ui.take_nav() {
+                                        host.send_nav(n);
                                     }
                                     for key in ui.take_closed() {
                                         dprintln!("neoui: app {} closed", key);
@@ -404,6 +487,12 @@ fn main() -> i32 {
                 home_press = None;
                 to_app = false;
             }
+            // a gesture under way ends when the screen changes under it (a call, an alarm, the PIN prompt)
+            if modal || ui.screen() != screen {
+                gest.reset();
+                held.clear();
+                hint = None;
+            }
             if modal_changed {
                 host.refresh = true;
             }
@@ -431,6 +520,9 @@ fn main() -> i32 {
             let now = ui.screen();
             if now != screen {
                 dprintln!("neoui: screen {}", now);
+                gest.reset();
+                held.clear();
+                hint = None;
                 // what is on screen now (the old app with it, before set_screen hides it) fades out; when memory is
                 // short there is no fade, the new screen just appears (the Pixel's kernel has 87 MB of RAM for now)
                 if old.len() == w * h || old.try_reserve_exact(w * h).is_ok() {
@@ -496,26 +588,26 @@ fn main() -> i32 {
                 ui.set_app_front(front);
                 front_shown = front;
             }
-            let want_nav = if phone_modal {
-                0
-            } else {
-                host.front().map_or(0, |a| a.nav)
-            };
-            let want_chrome = match host.front() {
-                Some(a) if !phone_modal => (a.title.clone(), a.tool.clone()),
+            let want_page = match host.front() {
+                Some(a) if !phone_modal => a.page(),
                 _ => Default::default(),
             };
-            if want_chrome != chrome_shown {
-                let (title, (icon, style, label)) = &want_chrome;
-                ui.set_app_chrome(title, *icon, *style, label);
-                chrome_shown = want_chrome;
+            if want_page != chrome_shown {
+                ui.set_app_page(&want_page.0, want_page.1);
+                chrome_shown = want_page;
             }
-            if want_nav != nav_shown {
-                ui.set_app_nav(
-                    want_nav & proto::NAV_BACK != 0,
-                    want_nav & proto::NAV_OPTIONS != 0,
-                );
-                nav_shown = want_nav;
+            let want_query = match host.front() {
+                Some(a) if !phone_modal => a.query.clone(),
+                _ => None,
+            };
+            if want_query != query_shown {
+                ui.set_app_query(want_query.as_ref());
+                query_shown = want_query;
+            }
+            if host.peek && (!host.front_full() || ms >= peek_until) {
+                host.peek = false;
+                host.refresh = true;
+                ui.set_strip_peek(false);
             }
             let overlay = ui.overlay_open();
             if overlay_shown && !overlay {
@@ -629,6 +721,7 @@ fn main() -> i32 {
                 Some(e) => {
                     perf.frame(render_us, 0, 0, px);
                     let m = perf.mark();
+                    hint_drawn = None; // the fade writes the whole screen
                     fade(&old, &frame, &host, e, (w, h), &mut rows, &display);
                     perf.layer(perf.since(&m));
                 }
@@ -651,6 +744,10 @@ fn main() -> i32 {
                     } else {
                         compose(&mut host, &damage, &display)
                     };
+                    if hint.is_some() || hint_drawn.is_some() {
+                        let r = hint.map(|(e, p, at)| hint_rect(e, p, at, (w, h), dp256));
+                        draw_hint(r, &mut hint_drawn, &frame, &host, w, &mut rows.1, &display);
+                    }
                     perf.frame(render_us, copy_us, perf.since(&m), px + app_px);
                 }
             }
@@ -678,12 +775,12 @@ fn poll_now<F: Future>(mut f: Pin<&mut F>) -> Option<F::Output> {
 fn front_surface(host: &Host) -> Option<(&[u32], usize, Rect)> {
     let body = host.body;
     let surface = host.front()?.surface.as_ref()?;
-    // SAFETY: the chunk is `body.w * body.h * 4` bytes, committed at creation and mapped here; the app only writes
-    // pixels.
+    // SAFETY: the chunk is `body.w * surface_rows * 4` bytes, committed at creation and mapped here; the app only
+    // writes pixels.
     let src = unsafe {
         core::slice::from_raw_parts(
             surface.base().cast::<u32>(),
-            body.w as usize * body.h as usize,
+            body.w as usize * host.surface_rows(),
         )
     };
     Some((src, body.w as usize, host.app_area()))
@@ -756,6 +853,72 @@ fn slide(
     }
 }
 
+/// The edge gesture's hint (docs gestures.md G1): a 4 dp bar along the edge, longer as the finger goes in, in the
+/// accent colour once letting go acts, white past the bottom edge's Apps menu point (`progress` 512).
+fn hint_rect(
+    edge: Edge,
+    progress: u32,
+    at: i32,
+    (w, h): (usize, usize),
+    dp256: u32,
+) -> (Rect, u32) {
+    let dp = |n: usize| n * dp256 as usize / 256;
+    let t = dp(4);
+    let p = progress.min(512) as usize;
+    let colour = match p {
+        512.. => 0x00ff_ffff,
+        256.. => 0x003d_8bfd, // Theme.accent
+        _ => 0x007d_838c,     // Theme.text-dim
+    };
+    let r = match edge {
+        Edge::Left | Edge::Right => {
+            let len = (dp(32) + dp(96) * p.min(256) / 256).min(h);
+            let y = (at.max(0) as usize).saturating_sub(len / 2).min(h - len);
+            let x = if edge == Edge::Left { 0 } else { w - t };
+            Rect::new(x as i32, y as i32, t as u32, len as u32)
+        }
+        Edge::Bottom => {
+            let len = (dp(48) + w.saturating_sub(dp(48)) * p / 512).min(w);
+            Rect::new(((w - len) / 2) as i32, (h - t) as i32, len as u32, t as u32)
+        }
+    };
+    (r, colour)
+}
+
+/// Put back what the last hint covered (the frame with the front app over it), then draw the new one, if any,
+/// straight to the screen. `row` is a screen-wide scratch row.
+fn draw_hint(
+    hint: Option<(Rect, u32)>,
+    drawn: &mut Option<Rect>,
+    frame: &[u32],
+    host: &Host,
+    w: usize,
+    row: &mut [u32],
+    display: &Display,
+) {
+    let rows = |r: Rect| r.y.max(0) as usize..r.y.max(0) as usize + r.h as usize;
+    if let Some(r) = drawn.take() {
+        let app = front_surface(host);
+        for y in rows(r) {
+            row.copy_from_slice(&frame[y * w..][..w]);
+            app_row(app, y, row);
+            display.blit_to(
+                row,
+                w,
+                (r.x as usize, 0, r.w as usize, 1),
+                (r.x as usize, y),
+            );
+        }
+    }
+    if let Some((r, colour)) = hint {
+        row[..r.w as usize].fill(colour);
+        for y in rows(r) {
+            display.blit_to(row, w, (0, 0, r.w as usize, 1), (r.x as usize, y));
+        }
+        *drawn = Some(r);
+    }
+}
+
 fn contains(r: &Rect, x: i32, y: i32) -> bool {
     x >= r.x && y >= r.y && x < r.x + r.w as i32 && y < r.y + r.h as i32
 }
@@ -764,7 +927,8 @@ fn contains(r: &Rect, x: i32, y: i32) -> bool {
 /// under it, else the rectangles the app reported.
 fn compose(host: &mut Host, shell_damage: &Damage, display: &Display) -> usize {
     let blits = core::mem::take(&mut host.blits);
-    let body = host.body;
+    let body = host.surface_rect();
+    let rows = host.surface_rows();
     let area = host.app_area();
     // the visible part of the surface, in surface coordinates
     let shown = Rect::new(0, 0, area.w, area.h);
@@ -772,9 +936,9 @@ fn compose(host: &mut Host, shell_damage: &Damage, display: &Display) -> usize {
     let Some(surface) = host.front().and_then(|a| a.surface.as_ref()) else {
         return 0;
     };
-    let (bw, bh) = (body.w as usize, body.h as usize);
-    // SAFETY: the chunk is `bw * bh * 4` bytes, committed at creation and mapped here; the app only writes pixels.
-    let src = unsafe { core::slice::from_raw_parts(surface.base().cast::<u32>(), bw * bh) };
+    let bw = body.w as usize;
+    // SAFETY: the chunk is `bw * rows * 4` bytes, committed at creation and mapped here; the app only writes pixels.
+    let src = unsafe { core::slice::from_raw_parts(surface.base().cast::<u32>(), bw * rows) };
     let mut px = 0;
     let mut to_screen = |r: Rect| {
         let r = r.intersection(&shown);

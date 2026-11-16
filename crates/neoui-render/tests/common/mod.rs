@@ -89,6 +89,36 @@ pub fn tap(r: &mut Renderer, x: i32, y: i32) {
     }
 }
 
+/// The strip's buttons (ui/components/frame.slint `Strip`, Classic with ← ⌂ ▢ on the left): (x, y) centres. The
+/// strip is 56 dp high with 4 dp of padding at both ends; the system buttons are 44 dp wide, ⋮ too.
+#[allow(dead_code)] // each test uses some of them
+pub struct StripAt {
+    pub y: i32,
+    pub back: i32,
+    pub home: i32,
+    pub apps: i32,
+    /// ⋮ at the right end
+    pub options: i32,
+    /// the page's last button when it has no ⋮ (the primary pill's right part)
+    pub last: i32,
+    /// the page's first button with ← ⌂ ▢ on the right (`nav.strip` 1): Cancel's left part
+    pub first: i32,
+}
+
+#[allow(dead_code)]
+pub fn strip(w: u32, h: u32) -> StripAt {
+    let d = dp(w, h);
+    StripAt {
+        y: (h as f32 - 28.0 * d) as i32,
+        back: (26.0 * d) as i32,
+        home: (70.0 * d) as i32,
+        apps: (114.0 * d) as i32,
+        options: (w as f32 - 26.0 * d) as i32,
+        last: (w as f32 - 18.0 * d) as i32,
+        first: (18.0 * d) as i32,
+    }
+}
+
 /// 1 dp at this window size, as ui/shell.slint computes it.
 pub fn dp(w: u32, h: u32) -> f32 {
     w.min(h) as f32 / 360.0

@@ -61,7 +61,7 @@ SDF text breaks up at clock sizes (about 200 px), so the large clocks use `BigCl
 - `shade.slint`: the notification shade (quick toggles, brightness, notifications).
 
 ## Screens (`ui/screens/`, run by `ui/shell.slint`)
-The shell keeps `screen` (an app, `home` or `menu`) and `view` (a sub-view; `""` is the app's main view). Back closes an overlay, then leaves the sub-view, then returns to where the app was opened from. Screen changes fade and rise in with `open` (0.25 s).
+The shell keeps `screen` (an app, `home` or `menu`) and `view` (a sub-view; `""` is the app's main view). Back closes an overlay, then leaves the sub-view, then returns to where the app was opened from. In gesture mode (Settings → Home screen & navigation, `nav.mode`) Back is a swipe in from the left edge instead of the toolbar's arrow, and the right and bottom edges open Open apps, Home and the Apps menu ([docs/gestures.md](https://github.com/NeoSymbian/docs/blob/main/gestures.md)). Screen changes fade and rise in with `open` (0.25 s).
 
 | Screen | Views |
 |---|---|
@@ -77,7 +77,7 @@ The shell keeps `screen` (an app, `home` or `menu`) and `view` (a sub-view; `""`
 | calendar | month + today, day (`day`) |
 | clock | clock face, alarms, world (tabs) |
 | files | drives, folder (`folder`) |
-| settings | grouped list, `connectivity`, `display`, `about` |
+| settings | grouped list, `connectivity`, `display`, `navigation`, `about` |
 | terminal | console with an extra-keys row (Ubuntu Mono, UFL) |
 
 All the sample data (`ui/data.slint`) is invented. Phone numbers use the fictional 555-01xx range.

@@ -58,7 +58,7 @@ fn run() -> Result<(), i32> {
     let (cell_w, cell_h) = (font_px * 1233.0 / 2048.0, round(font_px * 1.45));
     let pad = round(8.0 * dp);
     let cols = ((app.width as f32 - 2.0 * pad) / cell_w) as usize;
-    let rows = ((app.height as f32 - kb_h - 2.0 * pad) / cell_h) as usize;
+    let rows = ((app.height() as f32 - kb_h - 2.0 * pad) / cell_h) as usize;
     ui.set_font_px(font_px);
     ui.set_cell_w(cell_w);
     ui.set_cell_h(cell_h);
@@ -74,7 +74,7 @@ fn run() -> Result<(), i32> {
         cols,
         rows,
         app.width,
-        app.height
+        app.height()
     );
 
     let mut con = console::Console::new(cols, rows);

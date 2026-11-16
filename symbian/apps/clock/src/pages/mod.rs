@@ -98,12 +98,21 @@ impl Ctx {
         self.show(&now);
     }
 
-    /// Opens a sub-view over the tabs (or closes it with [`View::None`]); while one is open, Back closes it. Options
-    /// is always the app's: it opens (or closes) the Clock settings.
+    /// Opens a sub-view over the tabs (or closes it with [`View::None`]); while one is open, Back closes it. The tabs'
+    /// ⋮ has Settings.
     pub fn open(&self, view: View) {
         self.model.borrow_mut().view = view;
-        if let Err(e) = self.app.claim_nav(view != View::None, true) {
-            dprintln!("clock: cannot claim Back ({})", e);
+        let page = neoapp::Page {
+            can_back: view != View::None,
+            options: if view == View::None {
+                alloc::vec!["Settings".into()]
+            } else {
+                alloc::vec![]
+            },
+            ..Default::default()
+        };
+        if let Err(e) = self.app.page(&page) {
+            dprintln!("clock: cannot describe the page ({})", e);
         }
         dprintln!("clock: view {}", view.name());
         self.show(&Now::read());

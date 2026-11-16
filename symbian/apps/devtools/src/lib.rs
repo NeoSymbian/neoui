@@ -73,7 +73,7 @@ fn run() -> Result<(), i32> {
     ui.global::<Theme>().set_dp(dp);
     let mono = round(MONO_DP * dp);
     let cell = round(mono * 1.25);
-    let console_rows = ((app.height as f32 - CONSOLE_CHROME_DP * dp) / cell).max(1.0) as usize;
+    let console_rows = ((app.height() as f32 - CONSOLE_CHROME_DP * dp) / cell).max(1.0) as usize;
     let state = ui.global::<DevState>();
     state.set_mono_px(mono);
     state.set_cell_h(cell);
@@ -87,7 +87,7 @@ fn run() -> Result<(), i32> {
     if let Err(e) = app.watch_settings("") {
         dprintln!("devtools: cannot watch settings ({})", e);
     }
-    let mut model = Model::new(console_rows, (app.width, app.height));
+    let mut model = Model::new(console_rows, (app.width, app.height()));
     model.cpus = neoapp::sys::cpus();
     model.cpu_khz = neoapp::sys::cpu_max_khz();
     let ctx = Rc::new(Ctx {

@@ -97,7 +97,7 @@ component WifiSheet inherits Rectangle {
         width: root.width;
         height: card.preferred-height;
         // above the system keyboard while the password field has it up
-        y: root.height - self.height - (KeyboardFocus.open && !KeyboardFocus.dismissed ? KeyboardFocus.text-h : 0);
+        y: root.height - self.height - (KeyboardFocus.open && !KeyboardFocus.dismissed ? max(0, KeyboardFocus.text-h - Theme.strip-h) : 0);
         background: Theme.bg-raised;
         border-top-left-radius: Theme.radius;
         border-top-right-radius: Theme.radius;
@@ -263,6 +263,14 @@ export component SettingsScreen inherits Rectangle {
                 icon: @image-url("../icons/sys/brightness.svg");
                 tint: #e2a92a;
                 clicked => { root.view = "display"; }
+            }
+
+            SettingRow {
+                title: "Home screen & navigation";
+                value: SystemSettings.nav-mode == 1 ? "Gestures" : "Classic";
+                icon: @image-url("../icons/sys/home.svg");
+                tint: #3d8bfd;
+                clicked => { root.view = "navigation"; }
             }
 
             SettingRow {
@@ -475,6 +483,61 @@ export component SettingsScreen inherits Rectangle {
                         : SystemSettings.screen-timeout == 30 ? 60 : SystemSettings.screen-timeout == 60 ? 120
                         : SystemSettings.screen-timeout == 120 ? 300 : SystemSettings.screen-timeout == 300 ? 600
                         : SystemSettings.screen-timeout == 600 ? 0 : 15;
+                }
+            }
+        }
+    }
+
+    // Home screen & navigation (docs gestures.md, Five places): Classic keeps ← ⌂ ▢ in the strip, arranged three
+    // ways; Gestures moves them to edge swipes and gives the page's buttons the whole strip. Later stages add Home
+    // style, Open apps columns and swipe-to-close here.
+    if view == "navigation": NeoList {
+        VerticalLayout {
+            SectionHeader { text: "Navigation"; }
+            // a tap steps to the next choice (no picker widget yet)
+            ListRow {
+                title: "Navigation";
+                value: SystemSettings.nav-mode == 1 ? "Gestures" : "Classic";
+                has-icon: true;
+                icon: @image-url("../icons/sys/home.svg");
+                clicked => {
+                    SystemSettings.nav-mode = SystemSettings.nav-mode == 1 ? 0 : 1;
+                }
+            }
+
+            if SystemSettings.nav-mode == 1: VerticalLayout {
+                ListRow {
+                    title: "From the left edge";
+                    subtitle: "Back";
+                    has-icon: true;
+                    icon: @image-url("../icons/sys/back.svg");
+                }
+
+                ListRow {
+                    title: "From the right edge";
+                    subtitle: "Open apps";
+                    has-icon: true;
+                    icon: @image-url("../icons/sys/tabs.svg");
+                }
+
+                ListRow {
+                    title: "Up from the bottom";
+                    subtitle: "Home; keep going for the app menu";
+                    has-icon: true;
+                    icon: @image-url("../icons/sys/apps.svg");
+                    divider: false;
+                }
+            }
+
+            if SystemSettings.nav-mode != 1: ListRow {
+                title: "Back, Home, Open apps";
+                value: SystemSettings.nav-strip == 1 ? "Right" : SystemSettings.nav-strip == 2 ? "Split" : "Left";
+                subtitle: "Where they sit in the bottom strip";
+                has-icon: true;
+                icon: @image-url("../icons/sys/back.svg");
+                divider: false;
+                clicked => {
+                    SystemSettings.nav-strip = mod(SystemSettings.nav-strip + 1, 3);
                 }
             }
         }

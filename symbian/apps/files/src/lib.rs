@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //! The Files app (`NEOFILES.EXE`, NeoSymbian R8): a neoui app process ([`neoapp`]) on Symbian's file server
 //! ([`e32::fs`]). It shows drives with their free space, folders, and text files, and makes, renames and deletes.
-//! It claims the toolbar's Back (up a level; at the drive list Back closes it as usual) and Options (folder actions).
+//! It describes its page to the shell (protocol 1.7): Back goes up a level (at the drive list it closes the app as
+//! usual), the shell's ⋮ sheet has the folder actions, and the shell asks before a delete.
 #![no_std]
 
 extern crate alloc;
@@ -15,7 +16,7 @@ use e32::dprintln;
 use e32::fs::{self, File, Fs};
 use e32::ipc::TIpcArgs;
 use e32::sys::TPtr8;
-use neoapp::App;
+use neoapp::{App, Page, Query};
 use neoui_files::{self as model, Item};
 use neoui_proto::ipc::{self as proto, AppEvent};
 use neoui_proto::{InputEvent, Rect};
@@ -39,8 +40,7 @@ fn main() -> i32 {
 enum Action {
     Drive(usize),
     Row(usize),
-    Option(SharedString),
-    OptionsDismissed,
+    Option(&'static str),
     DialogDone(bool),
 }
 
@@ -75,9 +75,8 @@ struct State {
     items: Vec<Item>,
     pick: Pick,
     dialog: Option<Dialog>,
-    options_open: bool,
-    /// What the toolbar claim is now: (back, options).
-    claims: (bool, bool),
+    /// The page last described to the shell.
+    page: Page,
 }
 
 const FOLDER_OPTIONS: [&str; 3] = ["New folder", "Rename", "Delete"];
@@ -86,21 +85,11 @@ fn run() -> Result<(), i32> {
     let app = App::connect()?;
     let ui = FilesApp::new().map_err(|_| -2)?;
     ui.global::<Theme>().set_dp(app.dp);
-    ui.set_options(ModelRc::from(Rc::new(VecModel::from(
-        FOLDER_OPTIONS
-            .iter()
-            .map(|s| SharedString::from(*s))
-            .collect::<Vec<_>>(),
-    ))));
     let actions: Rc<RefCell<VecDeque<Action>>> = Rc::default();
     let q = actions.clone();
     ui.on_drive(move |i| q.borrow_mut().push_back(Action::Drive(i as usize)));
     let q = actions.clone();
     ui.on_open_row(move |i| q.borrow_mut().push_back(Action::Row(i as usize)));
-    let q = actions.clone();
-    ui.on_option(move |s| q.borrow_mut().push_back(Action::Option(s)));
-    let q = actions.clone();
-    ui.on_options_dismissed(move || q.borrow_mut().push_back(Action::OptionsDismissed));
     let q = actions.clone();
     ui.on_dialog_done(move |ok| q.borrow_mut().push_back(Action::DialogDone(ok)));
     ui.show().map_err(|_| -2)?;
@@ -113,8 +102,7 @@ fn run() -> Result<(), i32> {
         items: Vec::new(),
         pick: Pick::None,
         dialog: None,
-        options_open: false,
-        claims: (false, false),
+        page: Page::default(),
     };
     show_drives(&ui, &mut st);
     app.draw()?;
@@ -133,9 +121,13 @@ fn run() -> Result<(), i32> {
                 return Ok(());
             }
             Some(AppEvent::Back) => back(&app, &ui, &mut st),
-            Some(AppEvent::Options) => {
-                st.options_open = !st.options_open && st.view == View::Folder;
-                ui.set_options_open(st.options_open);
+            Some(AppEvent::Option { i }) => {
+                if let Some(o) = FOLDER_OPTIONS.get(usize::from(i)) {
+                    actions.borrow_mut().push_back(Action::Option(o));
+                }
+            }
+            Some(AppEvent::Answer { i }) => {
+                actions.borrow_mut().push_back(Action::DialogDone(i == 0))
             }
             Some(AppEvent::Input(InputEvent::Key { code, down: true })) => app.dispatch_key(code),
             Some(AppEvent::Keyboard { h }) if ui.get_dialog() == "name" => ui.set_kb_h(h as f32),
@@ -149,13 +141,18 @@ fn run() -> Result<(), i32> {
                 None => break,
             }
         }
-        let claims = (
-            st.view != View::Drives || st.dialog.is_some(),
-            st.view == View::Folder,
-        );
-        if claims != st.claims {
-            app.claim_nav(claims.0, claims.1)?;
-            st.claims = claims;
+        let page = Page {
+            can_back: st.view != View::Drives || st.dialog.is_some() || st.pick != Pick::None,
+            options: if st.view == View::Folder && st.dialog.is_none() {
+                FOLDER_OPTIONS.iter().map(|o| (*o).into()).collect()
+            } else {
+                Vec::new()
+            },
+            ..Page::default()
+        };
+        if page != st.page {
+            app.page(&page)?;
+            st.page = page;
         }
         app.draw_scrolled(|| scrolled(&ui))?;
     }
@@ -199,23 +196,15 @@ fn act(app: &App, ui: &FilesApp, st: &mut State, a: Action) {
             }
             set_pick(ui, st, Pick::None);
         }
-        Action::Option(s) => {
-            st.options_open = false;
-            ui.set_options_open(false);
-            match s.as_str() {
-                "New folder" => {
-                    ui.set_name_text(SharedString::new());
-                    open_dialog(app, ui, st, Dialog::NewFolder);
-                }
-                "Rename" => set_pick(ui, st, Pick::Rename),
-                "Delete" => set_pick(ui, st, Pick::Delete),
-                _ => {}
+        Action::Option(s) => match s {
+            "New folder" => {
+                ui.set_name_text(SharedString::new());
+                open_dialog(app, ui, st, Dialog::NewFolder);
             }
-        }
-        Action::OptionsDismissed => {
-            st.options_open = false;
-            ui.set_options_open(false);
-        }
+            "Rename" => set_pick(ui, st, Pick::Rename),
+            "Delete" => set_pick(ui, st, Pick::Delete),
+            _ => {}
+        },
         Action::DialogDone(ok) => {
             let Some(d) = st.dialog.take() else { return };
             close_dialog(app, ui);
@@ -230,9 +219,6 @@ fn act(app: &App, ui: &FilesApp, st: &mut State, a: Action) {
 fn back(app: &App, ui: &FilesApp, st: &mut State) {
     if st.dialog.take().is_some() {
         close_dialog(app, ui);
-    } else if st.options_open {
-        st.options_open = false;
-        ui.set_options_open(false);
     } else if st.pick != Pick::None {
         set_pick(ui, st, Pick::None);
     } else if st.view == View::Text {
@@ -358,7 +344,18 @@ fn open_dialog(app: &App, ui: &FilesApp, st: &mut State, d: Dialog) {
     let (kind, title, ok) = match &d {
         Dialog::NewFolder => ("name", "New folder".to_string(), "Create"),
         Dialog::Rename(i) => ("name", alloc::format!("Rename {}", i.name), "Rename"),
-        Dialog::Delete(i) => ("confirm", alloc::format!("Delete {}?", i.name), "Delete"),
+        Dialog::Delete(i) => {
+            // the shell asks (QUERY); the answer comes back as AppEvent::Answer
+            let q = Query {
+                text: alloc::format!("Delete {}?", i.name),
+                buttons: alloc::vec!["Delete".into(), "Cancel".into()],
+                destructive: true,
+            };
+            if app.query(&q).is_ok() {
+                st.dialog = Some(d);
+            }
+            return;
+        }
     };
     if kind == "name" {
         let kb = app.keyboard(proto::KEYBOARD_TEXT).unwrap_or(0);

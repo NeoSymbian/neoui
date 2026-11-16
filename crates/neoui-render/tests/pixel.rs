@@ -68,17 +68,27 @@ fn pixel() {
     common::frame(&mut r, &mut buf, w, "wifi sheet");
     common::write_png("settings-wifi-sheet-pixel.png", &buf, w, h);
 
-    // Overlays, opened by real taps: Options (toolbar, right button) and the notification shade (status bar).
+    // Overlays, opened by real taps: Options (the strip's ⋮, an app page's items) and the notification shade
+    // (status bar).
     let d = common::dp(w, h);
-    r.show("browser", "");
-    common::frame(&mut r, &mut buf, w, "browser");
-    common::tap(
-        &mut r,
-        (w as f32 - 58.0 * d) as i32,
-        (h as f32 - 30.0 * d) as i32,
-    );
+    let at = common::strip(w, h);
+    r.show("files", "");
+    common::frame(&mut r, &mut buf, w, "files");
+    r.set_app_front(true);
+    let page = neoui_render::Page {
+        title: "Files".into(),
+        options: vec![
+            "New folder".into(),
+            "Sort".into(),
+            "Show hidden files".into(),
+        ],
+        ..Default::default()
+    };
+    r.set_app_page(&page, false);
+    common::tap(&mut r, at.options, at.y);
     common::frame(&mut r, &mut buf, w, "options");
     common::write_png("options-pixel.png", &buf, w, h);
+    r.set_app_front(false);
     r.show("home", "");
     // two unread messages (C9): the status bar's envelope, the shade's row
     r.set_unread_messages(2, "+374 91 234567: Running late, see you at 7?");

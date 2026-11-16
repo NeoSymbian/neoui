@@ -9,11 +9,10 @@ const W: u32 = 539;
 const H: u32 = 1079;
 
 /// Centre of key `i` of the `n` sharing pad row `k`, counted up from the bottom row (0); rows as the letter
-/// keyboard's (ui/components/keyboard/keyboard.slint: centred 27 + 48 k dp above the body's bottom).
-fn key(r: &Renderer, k: usize, i: usize, n: usize) -> (i32, i32) {
+/// keyboard's (ui/components/keyboard/keyboard.slint: centred 27 + 48 k dp above the screen's bottom).
+fn key(_r: &Renderer, k: usize, i: usize, n: usize) -> (i32, i32) {
     let d = common::dp(W, H);
-    let body = r.body();
-    let bottom = (body.y + body.h as i32) as f32;
+    let bottom = H as f32; // the keyboard sits at the screen's bottom, over the strip
     (
         ((i as f32 + 0.5) * W as f32 / n as f32) as i32,
         (bottom - (27.0 + k as f32 * 48.0) * d) as i32,
@@ -31,7 +30,7 @@ fn h_dp(r: &Renderer) -> u32 {
 }
 
 /// The number and phone pads (proto::KEYBOARD 3 and 4) type like the letter keyboard; the SIM prompt's PIN field
-/// brings up the number pad; the toolbar's keyboard button puts an app's keyboard away.
+/// brings up the number pad; the keyboard's hide key and Back put an app's keyboard away.
 #[test]
 fn pads() {
     let mut r = common::renderer(W, H);
@@ -43,7 +42,7 @@ fn pads() {
     r.set_keyboard(3);
     common::frame(&mut r, &mut buf, W, "number pad");
     common::write_png("keyboard-number-539x1079.png", &buf, W, H);
-    assert_eq!(h_dp(&r), 198);
+    assert_eq!(h_dp(&r), 172);
     assert_eq!(r.keyboard_h(), r.keyboard_heights()[3]);
     for (k, i) in [(3, 0), (3, 1), (2, 2), (1, 1), (0, 1), (0, 0), (0, 2)] {
         let at = key(&r, k, i, 3);
@@ -55,7 +54,7 @@ fn pads() {
     r.set_keyboard(4);
     common::frame(&mut r, &mut buf, W, "phone pad");
     common::write_png("keyboard-phone-539x1079.png", &buf, W, H);
-    assert_eq!(h_dp(&r), 246);
+    assert_eq!(h_dp(&r), 220);
     assert_eq!(r.keyboard_h(), r.keyboard_heights()[4]);
     for (k, i, n) in [
         (0, 0, 5),
@@ -102,29 +101,43 @@ fn pads() {
     common::frame(&mut r, &mut buf, W, "sim unlocked");
     assert_eq!(r.keyboard_h(), 0, "the pad goes with the prompt");
 
-    // An app editor in front (Cancel | keyboard | Save | Options, 90 dp each) with the text keyboard
+    // An app editor in front (Cancel and Save in the strip) with the text keyboard over the strip; its hide key (the
+    // top band's right end) puts it away
     r.set_app_front(true);
-    r.set_app_chrome("New contact", 5, 2, "Save");
+    let page = neoui_render::Page {
+        title: "New contact".into(),
+        can_back: true,
+        cancel: true,
+        primary: Some(neoui_render::Action {
+            icon: 5,
+            label: "Save".into(),
+        }),
+        ..Default::default()
+    };
+    r.set_app_page(&page, false);
     r.set_keyboard(1);
     common::frame(&mut r, &mut buf, W, "app editor");
-    common::write_png("toolbar-keyboard-539x1079.png", &buf, W, H);
+    common::write_png("strip-keyboard-539x1079.png", &buf, W, H);
     let kb = r.keyboard_h();
     assert!(kb > 0);
-    let kb_button = ((135.0 * d) as i32, (H as f32 - 30.0 * d) as i32);
-    tap(&mut r, &mut buf, kb_button);
+    let hide = (
+        (W as f32 - 32.0 * d) as i32,
+        (H as f32 - kb as f32 - (56.0 - 15.0) * d) as i32,
+    );
+    tap(&mut r, &mut buf, hide);
     assert!(r.keyboard_dismissed());
     assert_eq!(r.keyboard_h(), 0, "put away: the app gets its body back");
-    assert_eq!(r.take_nav(), [], "the keyboard button is the shell's");
-    tap(&mut r, &mut buf, kb_button);
-    assert_eq!(r.keyboard_h(), kb, "and back");
-    tap(&mut r, &mut buf, kb_button);
+    assert_eq!(r.take_nav(), [], "the hide key is the shell's");
     r.clear_keyboard_dismissed(); // the app asked for the keyboard again
     assert_eq!(r.keyboard_h(), kb);
-    // Save is still the action: the third button
-    tap(
-        &mut r,
-        &mut buf,
-        ((225.0 * d) as i32, (H as f32 - 30.0 * d) as i32),
-    );
-    assert_eq!(r.take_nav(), [4]);
+    // Back puts the keyboard away before it reaches the app
+    r.gesture(neoui_proto::gesture::Gesture::Back);
+    assert!(r.keyboard_dismissed());
+    assert_eq!(r.take_nav(), []);
+    r.gesture(neoui_proto::gesture::Gesture::Back);
+    assert_eq!(r.take_nav(), [neoui_render::Nav::Back]);
+    // Save ends the strip
+    let at = common::strip(W, H);
+    tap(&mut r, &mut buf, (at.last, at.y));
+    assert_eq!(r.take_nav(), [neoui_render::Nav::Primary]);
 }

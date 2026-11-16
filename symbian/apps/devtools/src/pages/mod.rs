@@ -65,8 +65,12 @@ impl Ctx {
     /// Opens a sub-view over the tabs (or closes it with [`View::None`]); while one is open, Back closes it.
     pub fn open(&self, view: View) {
         self.model.borrow_mut().view = view;
-        if let Err(e) = self.app.claim_nav(view != View::None, false) {
-            dprintln!("devtools: cannot claim Back ({})", e);
+        let page = neoapp::Page {
+            can_back: view != View::None,
+            ..Default::default()
+        };
+        if let Err(e) = self.app.page(&page) {
+            dprintln!("devtools: cannot describe the page ({})", e);
         }
         dprintln!("devtools: view {}", view.name());
         self.show();
