@@ -266,6 +266,14 @@ export component SettingsScreen inherits Rectangle {
             }
 
             SettingRow {
+                title: "Home screen & navigation";
+                value: SystemSettings.nav-mode == 1 ? "Gestures" : "Classic";
+                icon: @image-url("../icons/sys/home.svg");
+                tint: #3d8bfd;
+                clicked => { root.view = "navigation"; }
+            }
+
+            SettingRow {
                 title: "Sounds";
                 value: "Ringing";
                 icon: @image-url("../icons/sys/volume.svg");
@@ -476,6 +484,56 @@ export component SettingsScreen inherits Rectangle {
                         : SystemSettings.screen-timeout == 120 ? 300 : SystemSettings.screen-timeout == 300 ? 600
                         : SystemSettings.screen-timeout == 600 ? 0 : 15;
                 }
+            }
+        }
+    }
+
+    // Home screen & navigation (docs gestures.md): Classic keeps the toolbar's Back; Gestures moves Back, Home, the
+    // Apps menu and Open apps to edge swipes. Later stages add Home style, Open apps columns and swipe-to-close here.
+    if view == "navigation": NeoList {
+        VerticalLayout {
+            SectionHeader { text: "Navigation"; }
+            // a tap steps to the other choice (no picker widget yet)
+            ListRow {
+                title: "Navigation";
+                value: SystemSettings.nav-mode == 1 ? "Gestures" : "Classic";
+                has-icon: true;
+                icon: @image-url("../icons/sys/home.svg");
+                clicked => {
+                    SystemSettings.nav-mode = SystemSettings.nav-mode == 1 ? 0 : 1;
+                }
+            }
+
+            if SystemSettings.nav-mode == 1: VerticalLayout {
+                ListRow {
+                    title: "From the left edge";
+                    subtitle: "Back";
+                    has-icon: true;
+                    icon: @image-url("../icons/sys/back.svg");
+                }
+
+                ListRow {
+                    title: "From the right edge";
+                    subtitle: "Open apps";
+                    has-icon: true;
+                    icon: @image-url("../icons/sys/tabs.svg");
+                }
+
+                ListRow {
+                    title: "Up from the bottom";
+                    subtitle: "Home; keep going for the app menu";
+                    has-icon: true;
+                    icon: @image-url("../icons/sys/apps.svg");
+                    divider: false;
+                }
+            }
+
+            if SystemSettings.nav-mode != 1: ListRow {
+                title: "Back, Options and actions";
+                subtitle: "On the toolbar at the bottom";
+                has-icon: true;
+                icon: @image-url("../icons/sys/back.svg");
+                divider: false;
             }
         }
     }

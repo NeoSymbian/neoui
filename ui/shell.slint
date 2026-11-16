@@ -9,6 +9,7 @@ import "fonts/UbuntuMono-Regular.ttf";
 // Latin, Cyrillic and Armenian in one face: the Armenian keyboard (Slint draws a Text in one font, no fallback)
 import "fonts/DejaVuSans.ttf";
 import { Theme } from "theme.slint";
+import { SystemSettings } from "system-settings.slint";
 export { SystemSettings } from "system-settings.slint";
 export { Now } from "now.slint";
 export { Scroll } from "components/scroll.slint";
@@ -220,6 +221,16 @@ export component Shell inherits Window {
         }
     }
 
+    // Back from the toolbar or the left-edge gesture: the app's own Back when it claimed it and nothing covers it,
+    // else the shell's
+    public function nav-back() {
+        if (root.app-back && !root.shade-open && !root.options-open) {
+            root.app-nav(1);
+        } else {
+            root.back();
+        }
+    }
+
     pure function app-icon(i: int) -> image {
         i == 1 ? @image-url("icons/sys/call.svg")
         : i == 2 ? @image-url("icons/sys/add.svg")
@@ -255,6 +266,7 @@ export component Shell inherits Window {
         : v == "connectivity" ? "Connectivity"
         : v == "wifi" ? "Wi-Fi"
         : v == "display" ? "Display"
+        : v == "navigation" ? "Home screen & navigation"
         : v == "developer" ? "Developer options"
         : v == "battery" ? "Battery"
         : v == "keyboard" ? "Language & keyboard"
@@ -448,12 +460,10 @@ export component Shell inherits Window {
         keyboard-toggled => {
             KeyboardFocus.dismissed = !KeyboardFocus.dismissed;
         }
+        // gesture navigation (docs gestures.md) moves Back to the left edge; an editor's Cancel stays
+        no-back: SystemSettings.nav-mode == 1;
         back => {
-            if (root.app-back && !root.shade-open && !root.options-open) {
-                root.app-nav(1);
-            } else {
-                root.back();
-            }
+            root.nav-back();
         }
         options => {
             // an app in front owns Options (nothing when it didn't claim it); the shell's menu is for its own screens

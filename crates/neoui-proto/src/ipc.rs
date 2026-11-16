@@ -139,9 +139,9 @@ pub const EVENT_LEN: usize = 16;
 pub enum AppEvent {
     /// Input, positions relative to the surface.
     Input(InputEvent),
-    /// Leave now (the user went back or home); the app should exit.
+    /// Leave now (closed in Open apps, or more than `MAX_RUNNING` apps run); the app should exit.
     Quit,
-    /// The toolbar's Back, which the app claimed ([`NAV`]).
+    /// Back (the toolbar's, or the left-edge gesture), which the app claimed ([`NAV`]).
     Back,
     /// The toolbar's Options, which the app claimed ([`NAV`]).
     Options,

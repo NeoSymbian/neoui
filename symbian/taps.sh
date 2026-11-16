@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # Build a QEMU monitor script ($M) for NeoSymbian/build's boot.sh MONITOR, in screen pixels of SCREEN (WIDTHxHEIGHT,
-# default 768x640: QEMU's absolute pointer spans 0..0x7FFF per axis). Source it, call tap/drag/expect/wait_s, then
+# default 768x640: QEMU's absolute pointer spans 0..0x7FFF per axis). Source it, call tap/drag/swipe/expect/wait_s, then
 # run boot.sh with MON_GAP=0.1 MONITOR="$M" (and the same SCREEN). Each tap waits until neoui logs that it handled it
 # ("neoui: tap from Some((X, Y))"); `expect TEXT` waits for a later serial line, such as an app's reaction.
 M=""
@@ -11,12 +11,15 @@ at() { add "mouse_move $(((2 * $1 + 1) * 16384 / SW)) $(((2 * $2 + 1) * 16384 / 
 tap() { at "$1" "$2"; add "mouse_button 1"; add "mouse_button 0"; add "expect neoui: tap from Some(($1, $2))"; }
 # expect TEXT: wait until TEXT appears in the serial log after the previous expect's match (run-syborg EXPECT_MAX)
 expect() { add "expect $*"; }
-# drag X Y1 Y2: press at (X, Y1), move to (X, Y2) in 8 steps, release
-drag() {
+# swipe X1 Y1 X2 Y2: press at (X1, Y1), move to (X2, Y2) in 8 steps, release; an edge gesture (docs gestures.md)
+# starts within 16 dp of the edge
+swipe() {
 	at "$1" "$2"; add "mouse_button 1"
-	for k in 1 2 3 4 5 6 7 8; do at "$1" $(($2 + ($3 - $2) * k / 8)); done
+	for k in 1 2 3 4 5 6 7 8; do at $(($1 + ($3 - $1) * k / 8)) $(($2 + ($4 - $2) * k / 8)); done
 	add "mouse_button 0"
 }
+# drag X Y1 Y2: a vertical swipe
+drag() { swipe "$1" "$2" "$1" "$3"; }
 # wait_s N: N seconds, for what logs nothing (a drag settling)
 wait_s() { add "wait $1"; }
 # type WORD: one key per character (letters and digits, as QEMU names them), then Enter

@@ -277,6 +277,8 @@ export component Toolbar inherits Rectangle {
     in property <bool> action-pill;
     in property <bool> back-cancel;
     in property <bool> empty;
+    // gesture navigation: no Back arrow (its place stays empty, so the other buttons don't move)
+    in property <bool> no-back;
     callback back;
     callback action;
     callback options;
@@ -292,7 +294,10 @@ export component Toolbar inherits Rectangle {
 
     if !empty: HorizontalLayout {
         alignment: space-between;
-        if !back-cancel: ToolbarButton {
+        if !back-cancel && no-back: Rectangle {
+            width: root.button-w;
+        }
+        if !back-cancel && !no-back: ToolbarButton {
             width: root.button-w;
             icon: @image-url("../icons/sys/back.svg");
             clicked => {

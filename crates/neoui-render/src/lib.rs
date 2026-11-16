@@ -383,6 +383,21 @@ impl Renderer {
         self.ui.set_app_action_label(label.into());
     }
 
+    /// Do what a finished edge gesture asks (docs `gestures.md`). Back runs the toolbar Back's path, so an app that
+    /// claimed it hears of it through [`Renderer::take_nav`]. Home from home opens the Apps menu (the bottom edge
+    /// goes on to it).
+    pub fn gesture(&mut self, g: neoui_proto::gesture::Gesture) {
+        use neoui_proto::gesture::Gesture;
+        let screen = self.screen();
+        match g {
+            Gesture::Back => self.ui.invoke_nav_back(),
+            Gesture::OpenApps if screen != "switcher" => self.ui.invoke_open("switcher".into()),
+            Gesture::Home if screen != "home" => self.show("home", ""),
+            Gesture::OpenApps => {}
+            Gesture::Home | Gesture::AppsMenu => self.show("menu", ""),
+        }
+    }
+
     /// Claimed toolbar buttons pressed since the last call: 1 = Back, 2 = Options, 4 = the app's middle button
     /// (`neoui_proto::ipc::NAV_*`).
     pub fn take_nav(&mut self) -> Vec<i32> {
