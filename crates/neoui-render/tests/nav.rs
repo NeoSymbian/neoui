@@ -207,7 +207,10 @@ fn strip_snapshots(r: &mut Renderer, buf: &mut [u32], w: u32, h: u32) {
     for (screen, view) in [("menu", ""), ("settings", ""), ("settings", "display")] {
         r.show(screen, view);
         common::frame(r, buf, w, screen);
-        assert!(!r.strip_shown(), "Gestures: no empty strip on {screen} {view}");
+        assert!(
+            !r.strip_shown(),
+            "Gestures: no empty strip on {screen} {view}"
+        );
     }
     r.show("switcher", "");
     common::frame(r, buf, w, "switcher");
