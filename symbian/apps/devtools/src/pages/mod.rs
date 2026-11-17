@@ -24,7 +24,7 @@ use e32::{dprintln, time};
 use neoapp::{App, hal, sys};
 use neoui_proto::devtools::device::{State, component, merge};
 use neoui_proto::devtools::stats::{CpuSample, cpu_load};
-use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
+use slint::{ComponentHandle, Model as _, ModelRc, SharedString, VecModel};
 
 /// What the callbacks share.
 pub struct Ctx {
@@ -36,24 +36,27 @@ pub struct Ctx {
 }
 
 impl Ctx {
-    /// Render the change; a scrolled list moves its rows instead of being redrawn (smooth-ui S2d, as Files).
+    /// Render the change; a scrolled list moves its rows instead of being redrawn (smooth-ui S2d, as Files), through
+    /// the reader given to `App::set_scrolled` ([`scrolled`]).
     pub fn draw(&self) -> Result<(), i32> {
-        let Some(ui) = self.ui.upgrade() else {
-            return self.app.draw();
-        };
-        self.app.draw_scrolled(|| {
-            let sc = ui.global::<crate::Scroll>();
-            let moved = (sc.get_dy(), sc.get_lists());
-            sc.set_dy(0);
-            sc.set_lists(0);
-            let list = neoui_proto::Rect::new(
-                sc.get_x() as i32,
-                sc.get_y() as i32,
-                sc.get_width() as u32,
-                sc.get_height() as u32,
-            );
-            (moved, list)
-        })
+        self.app.redraw()
+    }
+
+    /// The window is `surface` now (`AppEvent::Area`): the Console shows `rows` lines.
+    pub fn resize_console(&self, rows: usize, surface: (usize, usize)) {
+        {
+            let mut m = self.model.borrow_mut();
+            m.console_rows = rows;
+            m.surface = surface;
+        }
+        let model = &self.console_rows;
+        while model.row_count() > rows {
+            model.remove(model.row_count() - 1);
+        }
+        while model.row_count() < rows {
+            model.push(SharedString::new());
+        }
+        self.show();
     }
 
     /// Changes the model, then shows the result.
@@ -256,6 +259,21 @@ impl Ctx {
         );
         m.checks = checks;
     }
+}
+
+/// Reads and clears the `Scroll` global: px moved, lists moved, and the list's place (`App::draw_scrolled`).
+pub fn scrolled(ui: &DevApp) -> ((i32, i32), neoui_proto::Rect) {
+    let sc = ui.global::<crate::Scroll>();
+    let moved = (sc.get_dy(), sc.get_lists());
+    sc.set_dy(0);
+    sc.set_lists(0);
+    let list = neoui_proto::Rect::new(
+        sc.get_x() as i32,
+        sc.get_y() as i32,
+        sc.get_width() as u32,
+        sc.get_height() as u32,
+    );
+    (moved, list)
 }
 
 /// Binds every page's callbacks.

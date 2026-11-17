@@ -24,14 +24,11 @@ mod state;
 
 use alloc::rc::Rc;
 use core::cell::RefCell;
-use core::pin::pin;
-use e32::ipc::TIpcArgs;
-use e32::rt::{self, Either};
-use e32::sys::TPtr8;
+use e32::rt;
 use e32::{dprintln, time};
-use neoapp::App;
-use neoui_proto::ipc::{self as proto, AppEvent};
-use neoui_proto::{InputEvent, TouchPhase};
+use neoapp::{App, Ticker};
+use neoui_proto::ipc::AppEvent;
+use neoui_proto::{InputEvent, Rect, TouchPhase};
 use pages::Ctx;
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 use state::{Model, Tab as DevTab, View};
@@ -41,9 +38,7 @@ slint::include_modules!();
 e32::main!(main);
 
 /// How often the loop wakes: the log is read each time.
-const TICK_US: i32 = 500_000;
-/// While an animation runs.
-const FRAME_US: i32 = 16_000;
+const TICK_US: u32 = 500_000;
 /// Memory, processes and the CPU load.
 const STATS_MS: u64 = 1_000;
 /// The probes and the kernel's device registry.
@@ -66,6 +61,11 @@ fn round(v: f32) -> f32 {
     (v + 0.5) as i32 as f32
 }
 
+/// Rows of log text that fit the Console in a window `h` px high.
+fn console_rows(h: usize, dp: f32, cell: f32) -> usize {
+    ((h as f32 - CONSOLE_CHROME_DP * dp) / cell).max(1.0) as usize
+}
+
 fn run() -> Result<(), i32> {
     let app = App::connect()?;
     let ui = DevApp::new().map_err(|_| -2)?;
@@ -73,12 +73,12 @@ fn run() -> Result<(), i32> {
     ui.global::<Theme>().set_dp(dp);
     let mono = round(MONO_DP * dp);
     let cell = round(mono * 1.25);
-    let console_rows = ((app.height() as f32 - CONSOLE_CHROME_DP * dp) / cell).max(1.0) as usize;
+    let rows_fit = console_rows(app.height(), dp, cell);
     let state = ui.global::<DevState>();
     state.set_mono_px(mono);
     state.set_cell_h(cell);
     let rows = Rc::new(VecModel::from(
-        (0..console_rows)
+        (0..rows_fit)
             .map(|_| SharedString::new())
             .collect::<alloc::vec::Vec<_>>(),
     ));
@@ -87,7 +87,13 @@ fn run() -> Result<(), i32> {
     if let Err(e) = app.watch_settings("") {
         dprintln!("devtools: cannot watch settings ({})", e);
     }
-    let mut model = Model::new(console_rows, (app.width, app.height()));
+    // neoapp's own frames (animations, Slint timers) move scrolled rows too, as Ctx::draw does
+    let weak = ui.as_weak();
+    app.set_scrolled(move || {
+        weak.upgrade()
+            .map_or(((0, 0), Rect::default()), |ui| pages::scrolled(&ui))
+    });
+    let mut model = Model::new(rows_fit, (app.width, app.height()));
     model.cpus = neoapp::sys::cpus();
     model.cpu_khz = neoapp::sys::cpu_max_khz();
     let ctx = Rc::new(Ctx {
@@ -102,113 +108,93 @@ fn run() -> Result<(), i32> {
     ctx.refresh_devices();
     {
         let m = ctx.model.borrow();
-        let kernel = m
-            .devices
-            .iter()
-            .filter(|d| d.source.label() == "kernel")
-            .count();
-        let probed = m
-            .devices
-            .iter()
-            .filter(|d| d.source.label() == "probe")
-            .count();
-        let logged = m
-            .devices
-            .iter()
-            .filter(|d| d.source.label() == "log")
-            .count();
+        let count = |src: &str| m.devices.iter().filter(|d| d.source.label() == src).count();
         dprintln!(
             "devtools: devices {} (kernel {}, probe {}, log {}); procs {} threads {}; {} console rows; {}",
             m.devices.len(),
-            kernel,
-            probed,
-            logged,
+            count("kernel"),
+            count("probe"),
+            count("log"),
             m.procs.len(),
             m.threads.len(),
-            console_rows,
+            rows_fit,
             m.build.first().map_or("", alloc::string::String::as_str)
         );
     }
-    ctx.show();
-    ctx.draw()?;
+    ctx.open(View::None); // shows the tabs and describes the page
+    ctx.draw()?; // nothing until Visible(true): neoapp asks for the surface when shown
 
     // In the background (R10) the app neither refreshes nor draws; the log is still followed (cheap, and the
     // kernel's ring would drop what it is not asked for).
-    let mut visible = true;
+    let mut visible = false;
     // a finger is down: the periodic refresh waits, since replacing the list models under a press loses the drag
     // (the Flickable takes it only after 8 px) and the list wouldn't scroll
     let mut touching = false;
     let (mut stats_at, mut devices_at) = (time::millis(), time::millis());
     rt::block_on(async {
         loop {
-            let mut ev = [0u8; proto::EVENT_LEN];
-            let got = {
-                let mut des = TPtr8::new(&mut ev);
-                let mut args = TIpcArgs::new();
-                args.des8(0, &mut des);
-                let mut next = pin!(ctx.app.server.send(proto::NEXT_EVENT, &args));
-                loop {
-                    // a running Slint animation (the tab underline) needs frames until it ends
-                    let animating = ctx.app.window.has_active_animations();
-                    let wait = if animating { FRAME_US } else { TICK_US };
-                    match rt::select(next.as_mut(), time::delay(wait)).await {
-                        Either::Left(r) => break r,
-                        Either::Right(()) => {
-                            // nor during a fling (Slint animates the list)
-                            let refresh = visible && !touching && !animating;
-                            if tick(&ctx, refresh, &mut stats_at, &mut devices_at) || animating {
-                                ctx.draw()?;
-                            }
-                        }
-                    }
+            // one NEXT_EVENT stays outstanding while the log is followed (neoapp's Ticker); Slint's timers and
+            // animations get their frames inside next_event
+            let mut ticker = || -> Result<(), i32> {
+                // nor during a fling (Slint animates the list)
+                let refresh = visible && !touching && !ctx.app.window.has_active_animations();
+                if tick(&ctx, refresh, &mut stats_at, &mut devices_at) {
+                    ctx.draw()?;
                 }
+                Ok(())
             };
-            got?;
-            match AppEvent::decode(&ev) {
-                Some(AppEvent::Quit) => {
+            let e = ctx
+                .app
+                .next_event(Some(Ticker {
+                    every_us: TICK_US,
+                    f: &mut ticker,
+                }))
+                .await?;
+            match e {
+                AppEvent::Quit => {
                     dprintln!("devtools: quit");
                     return Ok(());
                 }
-                Some(AppEvent::Visible(v)) => {
+                AppEvent::Visible(v) => {
                     dprintln!("devtools: visible {}", v);
-                    // neoapp draws only while shown (App::draw)
-                    ctx.app.handle(&AppEvent::Visible(v));
                     visible = v;
                     if v {
-                        (stats_at, devices_at) = (0, 0); // refresh at once
+                        // what the page shows, fresh, at once
+                        ctx.refresh_stats();
+                        ctx.refresh_devices();
+                        (stats_at, devices_at) = (time::millis(), time::millis());
+                        ctx.show();
                     }
                 }
-                Some(AppEvent::Settings { .. }) => {
+                AppEvent::Area { h } if h > 0 => {
+                    let n = console_rows(h as usize, dp, cell);
+                    dprintln!("devtools: area {} px, {} console rows", h, n);
+                    ctx.resize_console(n, (ctx.app.width, h as usize));
+                }
+                AppEvent::Settings { .. } => {
                     if ctx.model.borrow().view == View::Settings {
                         ctx.show();
-                        ctx.draw()?;
                     }
                 }
-                Some(AppEvent::Back) => {
-                    // kept only while a sub-view is open
-                    ctx.back();
-                    ctx.draw()?;
-                }
-                Some(AppEvent::Input(InputEvent::Key { code, down })) => {
+                // the kit's layers first (a menu, a sheet), then a sub-view (kept only while one is open)
+                AppEvent::Back if neoapp::kit_back!(ui) => {}
+                AppEvent::Back => ctx.back(),
+                // App::handle already gave the key to Slint (key-down only)
+                AppEvent::Input(InputEvent::Key { code, down }) => {
                     ctx.model.borrow_mut().last_key = Some((code, down));
                     dprintln!(
                         "devtools: key {:#x} {}",
                         code,
                         if down { "down" } else { "up" }
                     );
-                    ctx.app.dispatch_key(code);
                     ctx.show();
-                    ctx.draw()?;
                 }
-                Some(AppEvent::Input(input)) => {
-                    if let InputEvent::Touch { phase, .. } = input {
-                        touching = phase != TouchPhase::Up;
-                    }
-                    ctx.app.dispatch_touch(input);
-                    ctx.draw()?;
+                AppEvent::Input(InputEvent::Touch { phase, .. }) => {
+                    touching = phase != TouchPhase::Up;
                 }
                 _ => {}
             }
+            ctx.draw()?;
         }
     })
 }
