@@ -314,6 +314,9 @@ component MenusPage inherits Rectangle {
         at-y: Theme.header-h;
         items: ["New folder", "Rename", "Delete"];
         destructive: 2;
+        picked(i) => {
+            GalleryState.note("menu " + i);
+        }
     }
 
     ChoiceSheet {

@@ -177,6 +177,17 @@ fn the_kit() {
     ctrl("v");
     ctrl("v");
     shoot(&window, "kit-scratch");
+
+    // a ⋮ item reports its pick (the Menus page opens its menu): "Rename", the second item, 8 dp + 1.5 rows of 48 dp
+    // under the header, in the 220 dp card that ends 4 dp from the right
+    let notes: Rc<std::cell::RefCell<Vec<String>>> = Rc::default();
+    let sink = notes.clone();
+    g.on_note(move |n| sink.borrow_mut().push(n.into()));
+    g.set_page(3);
+    shoot(&window, "kit-scratch");
+    tap((1080.0 - 12.0 - 330.0) as f32, (48.0 + 8.0 + 72.0) * 3.0);
+    shoot(&window, "kit-scratch");
+    assert_eq!(*notes.borrow(), ["menu 1"], "the menu's item was picked");
     std::fs::remove_file(
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../snapshots/kit-scratch.png"),
     )

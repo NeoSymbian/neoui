@@ -287,6 +287,19 @@ impl App {
         Ok(e)
     }
 
+    /// How long an app's own loop may sleep before Slint needs it: the next Slint timer (a long-press, a toast's
+    /// Undo), or a frame (16 ms) while an animation runs (a switch flipping); `None` when Slint waits for nothing. A
+    /// loop that waits on more than `NEXT_EVENT` (MODEMD's status) takes the shorter of this and its own wake, then
+    /// calls [`App::redraw`], as [`App::next_event`] does.
+    pub fn wake_us(&self) -> Option<u64> {
+        let timer =
+            slint::platform::duration_until_next_timer_update().map(|d| d.as_micros() as u64);
+        if self.window.has_active_animations() {
+            return Some(timer.map_or(16_000, |t| t.min(16_000)));
+        }
+        timer
+    }
+
     /// The shell's part of an event: input goes to Slint, a new area height resizes the window. The app handles the
     /// rest (Back, Answer, Quit...).
     pub fn handle(&self, e: &AppEvent) {

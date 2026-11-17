@@ -73,8 +73,9 @@ export component Menu {
 
                     t := TouchArea {
                         clicked => {
-                            popup.close();
+                            // the pick first: closing tears down this item, and nothing after close() runs
                             root.picked(i);
+                            popup.close();
                         }
                     }
                 }
