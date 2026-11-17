@@ -344,6 +344,7 @@ pub fn actions(key: &str) -> Vec<&'static str> {
             "NeoAudio: media on both speakers",
             "NeoAudio: media on the bottom speaker",
             "NeoAudio: media on the earpiece",
+            "NeoAudio: find the microphones",
         ][..],
         "modem" => &["Refresh the status"][..],
         _ => &[][..],
@@ -538,14 +539,18 @@ pub fn neoaudio_play(what: i32) -> String {
         &[(440, 44_100, 2)]
     };
     for &(freq, rate, channels) in tones {
-        if let Err(e) = e32::thread::spawn(move || play_tone(freq, rate, channels)) {
+        if let Err(e) = e32::thread::spawn(move || play_tone_3s(freq, rate, channels)) {
             return format!("no thread for the tone ({e})");
         }
     }
     String::from("playing for 3 s through NeoAudio (the result is in the log)")
 }
 
-fn play_tone(freq: u32, rate: u32, channels: u32) -> i32 {
+fn play_tone_3s(freq: u32, rate: u32, channels: u32) -> i32 {
+    play_tone(freq, 3_000, rate, channels)
+}
+
+fn play_tone(freq: u32, ms: u32, rate: u32, channels: u32) -> i32 {
     let s = match audio_session() {
         Ok(s) => s,
         Err(e) => {
@@ -564,7 +569,7 @@ fn play_tone(freq: u32, rate: u32, channels: u32) -> i32 {
         );
         return e;
     }
-    let pcm = neoaudio::tone(freq, 3_000, rate, channels, 8_000);
+    let pcm = neoaudio::tone(freq, ms, rate, channels, 8_000);
     let t0 = time::millis();
     for chunk in pcm.chunks(8_192) {
         let des = TPtrC8::new(chunk);
@@ -606,6 +611,76 @@ fn play_tone(freq: u32, rate: u32, channels: u32) -> i32 {
         }
     );
     0
+}
+
+/// Which RT5514 input is the top microphone (docs/audio.md A7): a 1 kHz tone on the earpiece (top), then on the
+/// bottom speaker, recorded by DMIC1 and DMIC2 in turn; the mic closer to a speaker hears it louder. Four RMS levels
+/// go to the log ("devtools: mics ..."); the route and the mic go back to both speakers and DMIC1.
+pub fn neoaudio_find_mics() -> String {
+    match e32::thread::spawn(find_mics) {
+        Ok(_) => String::from("measuring for about 12 s (the result is in the log)"),
+        Err(e) => format!("no thread ({e})"),
+    }
+}
+
+fn find_mics() -> i32 {
+    let r = (|| -> Result<(), i32> {
+        let ctl = audio_session()?;
+        let set = |op: i32, v: i32| {
+            let mut a = TIpcArgs::new();
+            a.int(0, v);
+            ctl.send_receive(op, &a)
+        };
+        for (route, name) in [
+            (neoaudio::route::EARPIECE, "earpiece (top)"),
+            (neoaudio::route::BOTTOM, "bottom speaker"),
+        ] {
+            set(neoaudio::op::ROUTE, route)?;
+            for mic in 0..2 {
+                set(neoaudio::op::MIC, mic)?;
+                // the tone plays on its own thread while this one records
+                let player = e32::thread::spawn(|| play_tone(1_000, 2_500, 48_000, 1).max(0))?;
+                let rec = audio_session()?;
+                let mut a = TIpcArgs::new();
+                a.int(0, 48_000).int(1, 1).int(2, neoaudio::flag::RECORD);
+                rec.send_receive(neoaudio::op::OPEN, &a)?;
+                time::sleep(800_000); // the media path restarts with the mic (Duplex), the tone settles
+                let mut pcm = alloc::vec![0u8; 48_000];
+                let mut got = 0;
+                while got < pcm.len() {
+                    let mut des = TPtr8::new(&mut pcm[got..]);
+                    let mut a = TIpcArgs::new();
+                    a.des8(0, &mut des);
+                    got += rec.send_receive(neoaudio::op::READ, &a)? as usize;
+                }
+                drop(rec);
+                let s: Vec<i64> = pcm
+                    .as_chunks::<2>()
+                    .0
+                    .iter()
+                    .map(|b| i64::from(i16::from_le_bytes(*b)))
+                    .collect();
+                let mean = s.iter().sum::<i64>() / s.len() as i64;
+                let var = s.iter().map(|v| (v - mean).pow(2)).sum::<i64>() / s.len() as i64;
+                let mut rms = 0i64;
+                while (rms + 1) * (rms + 1) <= var {
+                    rms += 1;
+                }
+                dprintln!(
+                    "devtools: mics: DMIC{} hears the {}: rms {}",
+                    mic + 1,
+                    name,
+                    rms
+                );
+                player.join();
+            }
+        }
+        set(neoaudio::op::ROUTE, neoaudio::route::SPEAKER)?;
+        set(neoaudio::op::MIC, 0)?;
+        Ok(())
+    })();
+    dprintln!("devtools: mics done: {:?}", r);
+    r.map_or_else(|e| e, |_| 0)
 }
 
 /// NeoAudio's media route: where media plays when there is no call.

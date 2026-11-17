@@ -88,6 +88,9 @@ pub fn bind(ctx: &Rc<Ctx>, s: &DevState<'_>) {
                 };
                 c.model.borrow_mut().dev_result = probe::audio_test(what);
             }
+            Some("NeoAudio: find the microphones") => {
+                c.model.borrow_mut().dev_result = probe::neoaudio_find_mics();
+            }
             Some(a) if a.starts_with("NeoAudio: play") => {
                 c.model.borrow_mut().dev_result =
                     probe::neoaudio_play(if a.contains("two") { 2 } else { 1 });

@@ -230,18 +230,55 @@ fn record_test(state: State) -> i32 {
             got += r as usize;
         }
         drop(rec);
-        let peak = pcm
+        // the level after the first 0.5 s (the mic's start can pop): RMS, peak, clipped samples, the first peak's place
+        let samples: Vec<i32> = pcm
             .as_chunks::<2>()
             .0
             .iter()
-            .map(|b| i16::from_le_bytes(*b).unsigned_abs())
-            .max()
-            .unwrap_or(0);
-        dprintln!("neoui: sound test: recorded {} bytes, peak {}", got, peak);
+            .map(|b| i32::from(i16::from_le_bytes(*b)))
+            .collect();
+        let settled = &samples[samples.len().min(24_000)..];
+        let n = settled.len().max(1) as i64;
+        let mean = settled.iter().map(|&v| i64::from(v)).sum::<i64>() / n;
+        let var = settled
+            .iter()
+            .map(|&v| (i64::from(v) - mean).pow(2))
+            .sum::<i64>()
+            / n;
+        let rms = isqrt(var as u64);
+        let peak = settled.iter().map(|v| v.unsigned_abs()).max().unwrap_or(0);
+        let clipped = settled
+            .iter()
+            .filter(|v| v.unsigned_abs() >= 32_767)
+            .count();
+        let first_peak = samples
+            .iter()
+            .position(|v| v.unsigned_abs() >= 32_767)
+            .map_or(-1, |i| i as i64);
+        dprintln!(
+            "neoui: sound test: recorded {} bytes; after 0.5 s: dc {} rms {} peak {} clipped {}; first full-scale sample at {}",
+            got,
+            mean,
+            rms,
+            peak,
+            clipped,
+            first_peak
+        );
         *state.lock() = 3;
         let s = open(48_000, 1, false)?;
         play(&s, &pcm)
     })();
     dprintln!("neoui: sound test record -> {:?}", r);
     r.map_or_else(|e| e, |_| 0)
+}
+
+/// Integer square root (the level statistics; no float formatting needed).
+fn isqrt(v: u64) -> u64 {
+    let mut x = v;
+    let mut y = x.div_ceil(2);
+    while y < x {
+        x = y;
+        y = (x + v / x) / 2;
+    }
+    x
 }
