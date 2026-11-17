@@ -282,11 +282,11 @@ export component SettingsScreen inherits Rectangle {
             }
 
             SettingRow {
-                title: "Phone";
-                value: "Calls & contacts";
+                title: "Calls & Messages";
+                value: "Phone, Contacts, Messages";
                 icon: @image-url("../icons/sys/call.svg");
                 tint: #22b46a;
-                // the Phone app's own settings page (NEOPHONE, host::PAGES)
+                // the settings Phone, Contacts and Messages share, on NEOPHONE's page (host::PAGES)
                 clicked => { root.open-view("phone", "settings"); }
             }
 
