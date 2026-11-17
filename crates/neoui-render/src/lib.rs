@@ -142,6 +142,7 @@ pub struct Renderer {
     power: Rc<RefCell<Vec<i32>>>,
     phone: Rc<RefCell<Vec<(String, String)>>>,
     wifi_refresh: Rc<RefCell<bool>>,
+    sound_actions: Rc<RefCell<Vec<String>>>,
     zone_next: Rc<RefCell<bool>>,
     wifi_connect: Rc<RefCell<Option<(String, String)>>>,
     /// Disconnect (false) or Forget (true) pressed on the current network's details
@@ -249,6 +250,9 @@ impl Renderer {
         let wifi_refresh: Rc<RefCell<bool>> = Rc::default();
         let sink = wifi_refresh.clone();
         ui.on_wifi_refresh(move || *sink.borrow_mut() = true);
+        let sound_actions: Rc<RefCell<Vec<String>>> = Rc::default();
+        let sink = sound_actions.clone();
+        ui.on_sound_action(move |a| sink.borrow_mut().push(a.as_str().into()));
         let zone_next: Rc<RefCell<bool>> = Rc::default();
         let sink = zone_next.clone();
         ui.global::<Now>()
@@ -278,6 +282,7 @@ impl Renderer {
             power,
             phone,
             wifi_refresh,
+            sound_actions,
             zone_next,
             wifi_connect,
             wifi_leave,
@@ -703,6 +708,16 @@ impl Renderer {
     /// The status bar's time text, e.g. "09:41".
     pub fn set_clock(&mut self, text: &str) {
         self.ui.set_clock(text.into());
+    }
+
+    /// Sound -> Media's buttons pressed since the last call ("test", "record").
+    pub fn take_sound_actions(&mut self) -> Vec<String> {
+        core::mem::take(&mut *self.sound_actions.borrow_mut())
+    }
+
+    /// What Sound -> Media's last test did.
+    pub fn set_sound_feedback(&mut self, text: &str) {
+        self.ui.set_sound_feedback(text.into());
     }
 
     /// The Wi-Fi page's refresh button was pressed since the last call.

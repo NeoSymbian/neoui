@@ -2847,6 +2847,7 @@ dependencies = [
  "e32",
  "modem-ipc",
  "neoapp",
+ "neoaudio",
  "neoui-proto",
  "neoui-render",
  "net",

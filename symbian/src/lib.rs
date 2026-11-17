@@ -20,6 +20,7 @@ mod perf;
 mod phone;
 mod screen;
 mod settings;
+mod sound;
 mod usb_debug;
 mod wifi;
 
@@ -135,6 +136,7 @@ fn main() -> i32 {
     };
     dprintln!("neoui: boot OK -> {}", boot_ok);
     let mut phone = phone::Phone::start();
+    let mut sound = sound::Sound::new();
     // Settings -> Developer options -> USB debugging: fshell on a second USB port, on a worker thread (usb_debug.rs);
     // the UI only tells it the switch
     let usb_debugging =
@@ -286,7 +288,12 @@ fn main() -> i32 {
                             Ok(ev)
                                 if ev.i_type == raw::EKEY_DOWN
                                     && matches!(ev.scan_code(), SCAN_VOL_UP | SCAN_VOL_DOWN)
-                                    && phone.volume_key(ev.scan_code() == SCAN_VOL_UP) => {}
+                                    && (phone.volume_key(ev.scan_code() == SCAN_VOL_UP)
+                                        || sound.volume_key(
+                                            ev.scan_code() == SCAN_VOL_UP,
+                                            &mut host.settings,
+                                            time::millis(),
+                                        )) => {}
                             // a dark screen takes no touches or keys (the kernel's touchscreen sleeps too)
                             Ok(ev) if scr.is_on() => {
                                 scr.activity(time::millis());
@@ -731,6 +738,7 @@ fn main() -> i32 {
             );
             mirror.sync(&mut ui, &mut host.settings, ms);
             phone.sync_settings(&host.settings, ms); // (phone.poll runs right after the select, C7)
+            sound.poll(&host.settings, &mut ui, ms);
             if let Some(worker) = usb_debug.as_mut() {
                 worker.set(usb_debugging(&host.settings));
             }

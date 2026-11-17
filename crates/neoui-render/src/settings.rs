@@ -124,6 +124,8 @@ pub(crate) static BINDINGS: &[Binding] = &[
             _ => false,
         },
     },
+    int_binding!(keys::SOUND_MEDIA_VOLUME, get_media_volume, set_media_volume),
+    int_binding!(keys::SOUND_MEDIA_ROUTE, get_media_route, set_media_route),
     bool_binding!(keys::DISPLAY_DARK, get_dark, set_dark),
     bool_binding!(
         keys::DEVELOPER_USB_DEBUGGING,
