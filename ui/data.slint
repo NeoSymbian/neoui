@@ -3,7 +3,6 @@
 
 export struct Person { name: string, initials: string, tint: color, number: string, label: string, favourite: bool }
 export struct Call { name: string, initials: string, tint: color, kind: string, when: string }
-export struct FileItem { name: string, kind: string, detail: string }
 // one scanned Wi-Fi network (neoui-proto wifi::Network): name, "Secured · 5 GHz · -46 dBm", 0..4 bars
 // the current Wi-Fi link (symbian/src/wifi.rs from the kernel's HAL WlanLink; neoui-proto wifi::LinkView)
 export struct WifiDetail { label: string, value: string }
@@ -36,20 +35,6 @@ export global Data {
         { name: "Grace Nakamura", initials: "GN", tint: #e5484d, kind: "in", when: "Yesterday" },
         { name: "Ben Okafor", initials: "BO", tint: #22b46a, kind: "out", when: "Wed" },
         { name: "Elena Sargsyan", initials: "ES", tint: #8656e8, kind: "missed", when: "Tue" },
-    ];
-    out property <[FileItem]> drives: [
-        { name: "Phone memory", kind: "phone", detail: "9.4 GB of 16 GB used" },
-        { name: "Memory card", kind: "sd", detail: "21.2 GB of 32 GB used" },
-    ];
-    out property <[FileItem]> folder: [
-        { name: "Documents", kind: "folder", detail: "14 items" },
-        { name: "Music", kind: "folder", detail: "212 items" },
-        { name: "Pictures", kind: "folder", detail: "1,038 items" },
-        { name: "Videos", kind: "folder", detail: "26 items" },
-        { name: "trip-notes.txt", kind: "doc", detail: "4 KB · 3 Nov" },
-        { name: "boarding-pass.pdf", kind: "doc", detail: "212 KB · 1 Nov" },
-        { name: "sunset.jpg", kind: "image", detail: "3.1 MB · 29 Oct" },
-        { name: "voice-memo.m4a", kind: "note", detail: "1.2 MB · 27 Oct" },
     ];
     out property <[Song]> songs: [
         { title: "Northern Lights", artist: "The Harbour", length: "3:42" },

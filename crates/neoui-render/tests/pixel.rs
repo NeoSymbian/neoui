@@ -16,8 +16,6 @@ const SCREENS: &[(&str, &str)] = &[
     ("calendar", ""),
     ("calendar", "day"),
     ("clock", ""),
-    ("files", ""),
-    ("files", "folder"),
     ("settings", ""),
     ("settings", "connectivity"),
     ("settings", "wifi"),
