@@ -476,8 +476,9 @@ export component Shell inherits Window {
         mode: keyboard-mode > 0 ? keyboard-mode : KeyboardFocus.mode;
         // an app asked for it, or one of the shell's own fields has the focus, and the user didn't put it away
         visible: keyboard-wanted && !KeyboardFocus.dismissed;
-        // shortcut: the edit bar is for an app's fields only (the shell's own fields don't take the chords yet)
-        edit-bar: root.app-front && root.keyboard-mode > 0 && root.keyboard-mode < 3;
+        // shortcut: the edit bar is for an app's text fields only (the text keyboard: not the terminal, whose console
+        // would get Control as a raw key, nor the pads; the shell's own fields don't take the chords yet)
+        edit-bar: root.app-front && root.keyboard-mode == 1;
         typed(t) => { root.typed(t); }
     }
 
