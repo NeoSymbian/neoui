@@ -44,6 +44,8 @@ export global DevState {
     in property <int> tab;
     in property <string> view;
     callback tab-chosen(int);
+    // a sub-view's ←: what Back does (a test returns to its device, else the tabs)
+    callback back();
     callback open(string);  // a page from Home or More: "devices", "console", "procs", "settings", "tools", "about"
 
     // Home

@@ -17,6 +17,8 @@ pub enum Owner {
     Shell,
     /// The app with this key (`"clock"`), and the UI server.
     App(&'static str),
+    /// Any of these apps, and the UI server: a key apps share (Phone and Contacts: speed dial, the name order).
+    Apps(&'static [&'static str]),
 }
 
 /// What values a registered key accepts beyond its type.
@@ -173,12 +175,11 @@ registry! {
     /// Seconds without a touch before the screen turns off; 0 = never.
     DISPLAY_TIMEOUT: i32 = "display.timeout", default DefaultValue::Int(60),
         limit Limit::Range { min: 0, max: 600 }, owner Owner::Shell;
-    /// Settings -> Home screen & navigation: 0 Classic (the toolbar's Back), 1 Gestures (edge swipes, docs
-    /// `gestures.md`).
-    NAV_MODE: i32 = "nav.mode", default DefaultValue::Int(0), limit Limit::Range { min: 0, max: 1 }, owner Owner::Shell;
-    /// Settings -> Home screen & navigation, Classic only: where the strip's ← ⌂ ▢ sit. 0 left (the page's buttons
-    /// right), 1 right, 2 split (← ⌂ left, ▢ right).
-    NAV_STRIP: i32 = "nav.strip", default DefaultValue::Int(0), limit Limit::Range { min: 0, max: 2 }, owner Owner::Shell;
+    /// Settings -> Home screen & navigation (Navigation v2, D12 and D19): 0 Buttons (the key row ← ⌂ ▢, no edge
+    /// gestures), 1 Gestures (the Thumb map: Back from either side, up for Home, up and pause for Open apps, along the
+    /// band for the previous / next app), 2 N9 gestures (left Back, right Open apps, a right flick for the last app).
+    /// A stored 1 (v1's Gestures) becomes the Thumb map.
+    NAV_MODE: i32 = "nav.mode", default DefaultValue::Int(1), limit Limit::Range { min: 0, max: 2 }, owner Owner::Shell;
     /// Settings -> Date & time: the network (the modem's NITZ, else an HTTP Date) sets the clock.
     TIME_AUTO: bool = "time.auto", default DefaultValue::Bool(true), limit Limit::None, owner Owner::Shell;
     /// The mobile network's time zone (NITZ) sets the offset; off, the Time zone row picks it.
@@ -216,10 +217,10 @@ registry! {
     PHONE_CLIR: i32 = "phone.clir", default DefaultValue::Int(0),
         limit Limit::Range { min: 0, max: 2 }, owner Owner::App("phone");
     /// The call screen counts the connected time.
-    PHONE_SHOW_DURATION: bool = "phone.show_duration", default DefaultValue::Bool(false), limit Limit::None,
+    PHONE_SHOW_DURATION: bool = "phone.show_duration", default DefaultValue::Bool(true), limit Limit::None,
         owner Owner::App("phone");
     /// A note with the call's duration when it ends.
-    PHONE_SUMMARY: bool = "phone.summary", default DefaultValue::Bool(false), limit Limit::None, owner Owner::App("phone");
+    PHONE_SUMMARY: bool = "phone.summary", default DefaultValue::Bool(true), limit Limit::None, owner Owner::App("phone");
     /// How many days the call log keeps a call: 0 (no log), 1, 10 or 30.
     PHONE_LOG_DAYS: i32 = "phone.log_days", default DefaultValue::Int(30),
         limit Limit::Range { min: 0, max: 30 }, owner Owner::App("phone");
@@ -231,20 +232,20 @@ registry! {
         limit Limit::MaxLen(48), owner Owner::App("phone");
     /// Speed dial: the numbers of keys 2..=9, '\n'-separated (empty = unassigned).
     PHONE_SPEED: Bytes = "phone.speed", default DefaultValue::Bytes(&[]), limit Limit::MaxLen(400),
-        owner Owner::App("phone");
+        owner Owner::Apps(&["phone", "contacts"]);
     /// The newest call-log entry the user has seen in Recents: missed calls after it count as new.
     PHONE_MISSED_SEEN: i32 = "phone.missed_seen", default DefaultValue::Int(0),
         limit Limit::Range { min: 0, max: i32::MAX }, owner Owner::App("phone");
     /// The Phone app (NEOPHONE, its own process) owns `phone.*` and `contacts.*`; the shell still reads them.
     /// Contacts show names "First Last" (0) or "Last First" (1).
     CONTACTS_NAME_ORDER: i32 = "contacts.name_order", default DefaultValue::Int(0),
-        limit Limit::Range { min: 0, max: 1 }, owner Owner::App("phone");
+        limit Limit::Range { min: 0, max: 1 }, owner Owner::Apps(&["phone", "contacts"]);
     /// The number type a new contact's first number gets (phone_core's label list: 0 Mobile).
     CONTACTS_DEFAULT_LABEL: i32 = "contacts.default_label", default DefaultValue::Int(0),
-        limit Limit::Range { min: 0, max: 15 }, owner Owner::App("phone");
+        limit Limit::Range { min: 0, max: 15 }, owner Owner::Apps(&["phone", "contacts"]);
     /// The Phone app has copied the shell's contacts file (C:\private\e0002001\contacts.dat) into its own.
     CONTACTS_MIGRATED: bool = "contacts.migrated", default DefaultValue::Bool(false), limit Limit::None,
-        owner Owner::App("phone");
+        owner Owner::Apps(&["phone", "contacts"]);
     /// The Clock app's face: 0 digital, 1 analog (Clock settings).
     CLOCK_FACE: i32 = "clock.face", default DefaultValue::Int(0),
         limit Limit::Range { min: 0, max: 1 }, owner Owner::App("clock");

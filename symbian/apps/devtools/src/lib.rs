@@ -34,7 +34,7 @@ use neoui_proto::ipc::{self as proto, AppEvent};
 use neoui_proto::{InputEvent, TouchPhase};
 use pages::Ctx;
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
-use state::{Model, Tab, View};
+use state::{Model, Tab as DevTab, View};
 
 slint::include_modules!();
 
@@ -183,12 +183,8 @@ fn run() -> Result<(), i32> {
                     }
                 }
                 Some(AppEvent::Back) => {
-                    // claimed only while a sub-view is open; a test returns to its device
-                    let back_to = match ctx.model.borrow().view {
-                        View::TouchTest | View::DisplayTest => View::Device,
-                        _ => View::None,
-                    };
-                    ctx.open(back_to);
+                    // kept only while a sub-view is open
+                    ctx.back();
                     ctx.draw()?;
                 }
                 Some(AppEvent::Input(InputEvent::Key { code, down })) => {
@@ -229,12 +225,16 @@ fn tick(ctx: &Ctx, visible: bool, stats_at: &mut u64, devices_at: &mut u64) -> b
         let m = ctx.model.borrow();
         (m.tab, m.view)
     };
-    let mut changed = grew && matches!((tab, view), (Tab::Console, View::None) | (_, View::Device));
+    let mut changed = grew
+        && matches!(
+            (tab, view),
+            (DevTab::Console, View::None) | (_, View::Device)
+        );
     // Home shows everything; the other pages what they list
     let wants_stats =
-        view == View::None && matches!(tab, Tab::Home | Tab::Procs) || view == View::Proc;
+        view == View::None && matches!(tab, DevTab::Home | DevTab::Procs) || view == View::Proc;
     let wants_devices =
-        view == View::None && matches!(tab, Tab::Home | Tab::Devices) || view == View::Device;
+        view == View::None && matches!(tab, DevTab::Home | DevTab::Devices) || view == View::Device;
     if wants_stats && now.saturating_sub(*stats_at) >= STATS_MS {
         *stats_at = now;
         ctx.refresh_stats();

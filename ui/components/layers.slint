@@ -1,0 +1,32 @@
+// SPDX-License-Identifier: Apache-2.0
+// Back for the kit's layers (Navigation v2 rule 10, Back order step 1): a menu, a sheet, a picker, the header's search
+// and selection mode each count as a layer while open. The app puts `can_back: Kit.layers > 0 || ...` in its Page,
+// and on AppEvent::Back while layers > 0 it bumps `back-seq`: the top layer closes (and only it).
+
+export global Kit {
+    // how many kit layers are open now
+    in-out property <int> layers;
+    // the app bumps it on Back; the layer whose level is `layers` closes
+    in-out property <int> back-seq;
+    // the back-seq a layer already answered, so one Back closes one layer
+    in-out property <int> answered;
+
+    // a layer opened: its level (1 = the lowest)
+    public function push() -> int {
+        self.layers += 1;
+        self.layers
+    }
+
+    public function pop() {
+        self.layers = max(0, self.layers - 1);
+    }
+
+    // a layer at `level` sees back-seq change: true when it is the top one and nobody answered yet
+    public function take-back(level: int) -> bool {
+        if level > 0 && level == self.layers && self.answered != self.back-seq {
+            self.answered = self.back-seq;
+            return true;
+        }
+        false
+    }
+}

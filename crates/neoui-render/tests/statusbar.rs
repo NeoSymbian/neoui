@@ -43,14 +43,15 @@ fn modem_cluster_stays_right() {
     let bg = buf[0];
     let lit =
         |x0: usize, x1: usize| (0..bar_h).any(|y| (x0..x1).any(|x| buf[y * w as usize + x] != bg));
-    let (quarter, half) = (w as usize / 4, w as usize / 2);
-    assert!(lit(0, quarter), "the operator name is drawn at the left");
+    let (quarter, mid) = (w as usize / 4, w as usize * 45 / 100);
+    // v2 (rule 01): the clock at the left, the network's name beside the icons at the right
+    assert!(lit(0, quarter), "the clock is drawn at the left");
     assert!(
-        !lit(quarter, half + 20),
-        "the gap after a short operator name stays empty: the bars sit with the other icons"
+        !lit(quarter, mid),
+        "the gap after the clock stays empty: a short operator name sits with the icons"
     );
     assert!(
-        lit(half + 20, w as usize),
-        "LTE, bars, Wi-Fi, battery and time at the right"
+        lit(mid, w as usize),
+        "the operator, LTE, bars, Wi-Fi and battery at the right"
     );
 }

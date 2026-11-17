@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //! The Files app (`NEOFILES.EXE`, NeoSymbian R8): a neoui app process ([`neoapp`]) on Symbian's file server
 //! ([`e32::fs`]). It shows drives with their free space, folders, and text files, and makes, renames and deletes.
-//! It describes its page to the shell (protocol 1.7): Back goes up a level (at the drive list it closes the app as
-//! usual), the shell's ⋮ sheet has the folder actions, and the shell asks before a delete.
+//! It draws its own header with the kit (protocol 1.8): ← goes up a level, ⋮ has New folder, a long press picks rows
+//! (Rename, Delete), and the shell asks before a delete and shows the toasts.
 #![no_std]
 
 extern crate alloc;
@@ -14,12 +14,10 @@ use alloc::vec::Vec;
 use core::cell::RefCell;
 use e32::dprintln;
 use e32::fs::{self, File, Fs};
-use e32::ipc::TIpcArgs;
-use e32::sys::TPtr8;
-use neoapp::{App, Page, Query};
+use neoapp::{App, AppEvent, Page, Query};
 use neoui_files::{self as model, Item};
-use neoui_proto::ipc::{self as proto, AppEvent};
-use neoui_proto::{InputEvent, Rect};
+use neoui_proto::Rect;
+use neoui_proto::ipc as proto;
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 
 slint::include_modules!();
@@ -40,8 +38,15 @@ fn main() -> i32 {
 enum Action {
     Drive(usize),
     Row(usize),
-    Option(&'static str),
-    DialogDone(bool),
+    Toggle(usize),
+    Up,
+    NewFolder,
+    Rename,
+    Delete,
+    ClearSelection,
+    Refresh,
+    FormCancel,
+    FormSave,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -51,18 +56,17 @@ enum View {
     Text,
 }
 
-/// The next tap on a row picks it for this.
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum Pick {
-    None,
-    Rename,
-    Delete,
-}
-
-enum Dialog {
+/// The form page over the folder.
+enum Form {
     NewFolder,
     Rename(Item),
-    Delete(Item),
+}
+
+/// The shell's dialog that is open, and what its first button does.
+enum Ask {
+    /// Leave the form without its name.
+    Discard,
+    Delete(Vec<Item>),
 }
 
 struct State {
@@ -70,29 +74,46 @@ struct State {
     view: View,
     /// Drive letters in card order.
     drives: Vec<char>,
-    /// The open folder (`X:\dir\`) and its sorted entries.
+    /// The open folder (`X:\dir\`) and its sorted entries, with which are picked.
     dir: String,
     items: Vec<Item>,
-    pick: Pick,
-    dialog: Option<Dialog>,
+    checked: Vec<bool>,
+    form: Option<Form>,
+    asking: Option<Ask>,
     /// The page last described to the shell.
     page: Page,
 }
-
-const FOLDER_OPTIONS: [&str; 3] = ["New folder", "Rename", "Delete"];
 
 fn run() -> Result<(), i32> {
     let app = App::connect()?;
     let ui = FilesApp::new().map_err(|_| -2)?;
     ui.global::<Theme>().set_dp(app.dp);
     let actions: Rc<RefCell<VecDeque<Action>>> = Rc::default();
-    let q = actions.clone();
-    ui.on_drive(move |i| q.borrow_mut().push_back(Action::Drive(i as usize)));
-    let q = actions.clone();
-    ui.on_open_row(move |i| q.borrow_mut().push_back(Action::Row(i as usize)));
-    let q = actions.clone();
-    ui.on_dialog_done(move |ok| q.borrow_mut().push_back(Action::DialogDone(ok)));
+    let queue = |a: fn(i32) -> Action| {
+        let q = actions.clone();
+        move |i: i32| q.borrow_mut().push_back(a(i))
+    };
+    ui.on_drive(queue(|i| Action::Drive(i as usize)));
+    ui.on_open_row(queue(|i| Action::Row(i as usize)));
+    ui.on_toggle(queue(|i| Action::Toggle(i as usize)));
+    let plain = |a: fn() -> Action| {
+        let q = actions.clone();
+        move || q.borrow_mut().push_back(a())
+    };
+    ui.on_up(plain(|| Action::Up));
+    ui.on_new_folder(plain(|| Action::NewFolder));
+    ui.on_rename(plain(|| Action::Rename));
+    ui.on_delete(plain(|| Action::Delete));
+    ui.on_clear_selection(plain(|| Action::ClearSelection));
+    ui.on_refresh(plain(|| Action::Refresh));
+    ui.on_form_cancel(plain(|| Action::FormCancel));
+    ui.on_form_save(plain(|| Action::FormSave));
     ui.show().map_err(|_| -2)?;
+    let weak = ui.as_weak();
+    app.set_scrolled(move || {
+        weak.upgrade()
+            .map_or(((0, 0), Rect::default()), |ui| scrolled(&ui))
+    });
 
     let mut st = State {
         fs: Fs::connect()?,
@@ -100,38 +121,21 @@ fn run() -> Result<(), i32> {
         drives: Vec::new(),
         dir: String::new(),
         items: Vec::new(),
-        pick: Pick::None,
-        dialog: None,
+        checked: Vec::new(),
+        form: None,
+        asking: None,
         page: Page::default(),
     };
-    show_drives(&ui, &mut st);
+    show_drives(&app, &ui, &mut st);
+    describe(&app, &ui, &mut st)?;
     app.draw()?;
 
-    loop {
-        let mut ev = [0u8; proto::EVENT_LEN];
-        {
-            let mut des = TPtr8::new(&mut ev);
-            let mut args = TIpcArgs::new();
-            args.des8(0, &mut des);
-            app.server.send_receive(proto::NEXT_EVENT, &args)?;
-        }
-        match AppEvent::decode(&ev) {
-            Some(AppEvent::Quit) => {
-                dprintln!("files: quit");
-                return Ok(());
-            }
-            Some(AppEvent::Back) => back(&app, &ui, &mut st),
-            Some(AppEvent::Option { i }) => {
-                if let Some(o) = FOLDER_OPTIONS.get(usize::from(i)) {
-                    actions.borrow_mut().push_back(Action::Option(o));
-                }
-            }
-            Some(AppEvent::Answer { i }) => {
-                actions.borrow_mut().push_back(Action::DialogDone(i == 0))
-            }
-            Some(AppEvent::Input(InputEvent::Key { code, down: true })) => app.dispatch_key(code),
-            Some(AppEvent::Keyboard { h }) if ui.get_dialog() == "name" => ui.set_kb_h(h as f32),
-            Some(AppEvent::Input(touch @ InputEvent::Touch { .. })) => app.dispatch_touch(touch),
+    app.run(|e| {
+        match e {
+            AppEvent::Back if neoapp::kit_back!(ui) => {}
+            AppEvent::Back => back(&app, &ui, &mut st),
+            AppEvent::Answer { i } => answer(&app, &ui, &mut st, i == 0),
+            AppEvent::Keyboard { h } => ui.set_kb_h(h as f32),
             _ => {}
         }
         loop {
@@ -141,21 +145,27 @@ fn run() -> Result<(), i32> {
                 None => break,
             }
         }
-        let page = Page {
-            can_back: st.view != View::Drives || st.dialog.is_some() || st.pick != Pick::None,
-            options: if st.view == View::Folder && st.dialog.is_none() {
-                FOLDER_OPTIONS.iter().map(|o| (*o).into()).collect()
-            } else {
-                Vec::new()
-            },
-            ..Page::default()
-        };
-        if page != st.page {
-            app.page(&page)?;
-            st.page = page;
-        }
-        app.draw_scrolled(|| scrolled(&ui))?;
+        describe(&app, &ui, &mut st)?;
+        Ok(true)
+    })?;
+    dprintln!("files: quit");
+    Ok(())
+}
+
+/// The page: Back stays in the app below the drive list, in a form, or with a kit layer (selection, ⋮) open.
+fn describe(app: &App, ui: &FilesApp, st: &mut State) -> Result<(), i32> {
+    let page = Page {
+        title: "Files".into(),
+        can_back: st.view != View::Drives
+            || st.form.is_some()
+            || ui.global::<Kit>().get_layers() > 0,
+        ..Page::default()
+    };
+    if page != st.page {
+        app.page(&page)?;
+        st.page = page;
     }
+    Ok(())
 }
 
 /// What the lists scrolled since the last frame (smooth-ui S2d), cleared for the next.
@@ -174,67 +184,129 @@ fn scrolled(ui: &FilesApp) -> ((i32, i32), Rect) {
 }
 
 fn act(app: &App, ui: &FilesApp, st: &mut State, a: Action) {
-    ui.set_toast(SharedString::new());
     match a {
         Action::Drive(i) => {
             if let Some(&d) = st.drives.get(i) {
-                open_dir(ui, st, alloc::format!("{d}:\\"));
+                open_dir(app, ui, st, alloc::format!("{d}:\\"));
             }
         }
         Action::Row(i) => {
             let Some(item) = st.items.get(i).cloned() else {
                 return;
             };
-            match st.pick {
-                Pick::Rename => {
-                    ui.set_name_text(item.name.as_str().into());
-                    open_dialog(app, ui, st, Dialog::Rename(item));
-                }
-                Pick::Delete => open_dialog(app, ui, st, Dialog::Delete(item)),
-                Pick::None if item.is_dir => open_dir(ui, st, model::join_dir(&st.dir, &item.name)),
-                Pick::None => view_file(ui, st, &item),
-            }
-            set_pick(ui, st, Pick::None);
-        }
-        Action::Option(s) => match s {
-            "New folder" => {
-                ui.set_name_text(SharedString::new());
-                open_dialog(app, ui, st, Dialog::NewFolder);
-            }
-            "Rename" => set_pick(ui, st, Pick::Rename),
-            "Delete" => set_pick(ui, st, Pick::Delete),
-            _ => {}
-        },
-        Action::DialogDone(ok) => {
-            let Some(d) = st.dialog.take() else { return };
-            close_dialog(app, ui);
-            if ok {
-                change(ui, st, d);
+            if item.is_dir {
+                open_dir(app, ui, st, model::join_dir(&st.dir, &item.name));
+            } else {
+                view_file(app, ui, st, &item);
             }
         }
+        Action::Toggle(i) => {
+            if let Some(c) = st.checked.get_mut(i) {
+                *c = !*c;
+                show_rows(ui, st);
+            }
+        }
+        Action::ClearSelection => clear_selection(ui, st),
+        Action::Up => back(app, ui, st),
+        Action::NewFolder => open_form(app, ui, st, Form::NewFolder, ""),
+        Action::Rename => {
+            let picked = picked(st);
+            if let [one] = picked.as_slice() {
+                let name = one.name.clone();
+                clear_selection(ui, st);
+                open_form(app, ui, st, Form::Rename(picked[0].clone()), &name);
+            }
+        }
+        Action::Delete => {
+            let picked = picked(st);
+            let text = match picked.as_slice() {
+                [] => return,
+                [one] => alloc::format!("Delete {}?", one.name),
+                many => alloc::format!("Delete {} items?", many.len()),
+            };
+            ask(app, st, text, "Delete", Ask::Delete(picked));
+        }
+        Action::Refresh => {
+            let dir = st.dir.clone();
+            open_dir(app, ui, st, dir);
+        }
+        Action::FormCancel => cancel_form(app, ui, st),
+        Action::FormSave => save_form(app, ui, st),
     }
 }
 
-/// Back: close what is open, else go up a level (the drive list doesn't claim Back, so the shell closes the app).
+/// Back: the form (asking when a name was typed), else up a level (the drive list doesn't keep Back, so the shell
+/// closes the app). The kit's layers went first ([`neoapp::kit_back!`]).
 fn back(app: &App, ui: &FilesApp, st: &mut State) {
-    if st.dialog.take().is_some() {
-        close_dialog(app, ui);
-    } else if st.pick != Pick::None {
-        set_pick(ui, st, Pick::None);
+    if st.form.is_some() {
+        cancel_form(app, ui, st);
     } else if st.view == View::Text {
         let dir = st.dir.clone();
-        open_dir(ui, st, dir);
+        open_dir(app, ui, st, dir);
     } else if let Some(up) = model::parent(&st.dir) {
-        open_dir(ui, st, up);
+        open_dir(app, ui, st, up);
     } else {
-        show_drives(ui, st);
+        show_drives(app, ui, st);
     }
 }
 
-fn show_drives(ui: &FilesApp, st: &mut State) {
+fn picked(st: &State) -> Vec<Item> {
+    st.items
+        .iter()
+        .zip(&st.checked)
+        .filter(|(_, c)| **c)
+        .map(|(i, _)| i.clone())
+        .collect()
+}
+
+fn clear_selection(ui: &FilesApp, st: &mut State) {
+    st.checked.iter_mut().for_each(|c| *c = false);
+    show_rows(ui, st);
+}
+
+fn ask(app: &App, st: &mut State, text: String, yes: &str, what: Ask) {
+    let q = Query {
+        text,
+        buttons: alloc::vec![yes.into(), "Cancel".into()],
+        destructive: true,
+    };
+    if app.query(&q).is_ok() {
+        st.asking = Some(what);
+    }
+}
+
+/// The shell's dialog was answered (`yes`: its first button). Back answers the last, Cancel.
+fn answer(app: &App, ui: &FilesApp, st: &mut State, yes: bool) {
+    match st.asking.take() {
+        Some(Ask::Discard) if yes => close_form(app, ui, st),
+        Some(Ask::Delete(items)) if yes => {
+            clear_selection(ui, st);
+            let mut failed = None;
+            for i in &items {
+                let r = if i.is_dir {
+                    st.fs.rmdir(&model::join_dir(&st.dir, &i.name))
+                } else {
+                    st.fs.delete(&model::join_file(&st.dir, &i.name))
+                };
+                dprintln!("files: delete {} {}", i.name, r.err().unwrap_or(0));
+                failed = failed.or(r.err());
+            }
+            let dir = st.dir.clone();
+            open_dir(app, ui, st, dir);
+            match failed {
+                Some(e) => toast(app, "", e),
+                None if items.len() == 1 => note(app, &alloc::format!("{} deleted", items[0].name)),
+                None => note(app, &alloc::format!("{} items deleted", items.len())),
+            }
+        }
+        _ => {}
+    }
+}
+
+fn show_drives(app: &App, ui: &FilesApp, st: &mut State) {
     let list = match st.fs.drives() {
         Ok(l) => l,
-        Err(e) => return toast(ui, "drives", e),
+        Err(e) => return toast(app, "drives", e),
     };
     let mut rows = Vec::new();
     st.drives.clear();
@@ -264,12 +336,13 @@ fn show_drives(ui: &FilesApp, st: &mut State) {
     ui.set_view("drives".into());
 }
 
-fn open_dir(ui: &FilesApp, st: &mut State, dir: String) {
+fn open_dir(app: &App, ui: &FilesApp, st: &mut State, dir: String) {
+    ui.set_refreshing(false);
     let entries = match st.fs.read_dir(&dir) {
         Ok(e) => e,
         Err(e) => {
             dprintln!("files: list {} {}", dir, e);
-            return toast(ui, "", e);
+            return toast(app, "", e);
         }
     };
     let mut items: Vec<Item> = entries
@@ -283,26 +356,42 @@ fn open_dir(ui: &FilesApp, st: &mut State, dir: String) {
         .collect();
     model::sort(&mut items);
     dprintln!("files: list {} {}", dir, items.len());
-    let rows: Vec<FileRow> = items
-        .iter()
-        .map(|i| FileRow {
-            name: i.name.as_str().into(),
-            detail: model::detail_text(i).into(),
-            kind: model::kind(&i.name, i.is_dir).into(),
-        })
-        .collect();
-    ui.set_rows(ModelRc::from(Rc::new(VecModel::from(rows))));
-    ui.set_path(dir.as_str().into());
+    st.checked = alloc::vec![false; items.len()];
     st.items = items;
+    ui.set_path(dir.as_str().into());
+    ui.set_name(dir_name(&dir).into());
     st.dir = dir;
     st.view = View::Folder;
+    show_rows(ui, st);
     ui.set_view("folder".into());
 }
 
-fn view_file(ui: &FilesApp, st: &mut State, item: &Item) {
+/// The last part of `X:\a\b\` ("b"), or the drive ("X:").
+fn dir_name(dir: &str) -> &str {
+    let t = dir.trim_end_matches('\\');
+    t.rsplit('\\').next().unwrap_or(t)
+}
+
+fn show_rows(ui: &FilesApp, st: &State) {
+    let rows: Vec<FileRow> = st
+        .items
+        .iter()
+        .zip(&st.checked)
+        .map(|(i, c)| FileRow {
+            name: i.name.as_str().into(),
+            detail: model::detail_text(i).into(),
+            kind: model::kind(&i.name, i.is_dir).into(),
+            checked: *c,
+        })
+        .collect();
+    ui.set_selected(st.checked.iter().filter(|c| **c).count() as i32);
+    ui.set_rows(ModelRc::from(Rc::new(VecModel::from(rows))));
+}
+
+fn view_file(app: &App, ui: &FilesApp, st: &mut State, item: &Item) {
     let path = model::join_file(&st.dir, &item.name);
     if model::kind(&item.name, false) != "text" {
-        ui.set_toast(alloc::format!("No viewer for {}", item.name).into());
+        note(app, &alloc::format!("No viewer for {}", item.name));
         return;
     }
     let mut bytes = alloc::vec![0u8; model::PREVIEW_MAX + 1];
@@ -319,75 +408,68 @@ fn view_file(ui: &FilesApp, st: &mut State, item: &Item) {
     });
     let n = match read {
         Ok(n) => n,
-        Err(e) => return toast(ui, "", e),
+        Err(e) => return toast(app, "", e),
     };
     dprintln!("files: view {} {}", path, n);
     ui.set_text(model::text_preview(&bytes[..n]).into());
     ui.set_path(path.as_str().into());
+    ui.set_name(item.name.as_str().into());
     st.view = View::Text;
     ui.set_view("text".into());
 }
 
-fn set_pick(ui: &FilesApp, st: &mut State, p: Pick) {
-    st.pick = p;
-    ui.set_banner(
-        match p {
-            Pick::None => "",
-            Pick::Rename => "Tap an item to rename · Back cancels",
-            Pick::Delete => "Tap an item to delete · Back cancels",
+fn open_form(app: &App, ui: &FilesApp, st: &mut State, form: Form, name: &str) {
+    let kb = app.keyboard(proto::KEYBOARD_TEXT).unwrap_or(0);
+    ui.set_kb_h(kb as f32);
+    ui.set_name_text(name.into());
+    ui.set_form(
+        if matches!(form, Form::NewFolder) {
+            "new"
+        } else {
+            "rename"
         }
         .into(),
     );
+    st.form = Some(form);
 }
 
-fn open_dialog(app: &App, ui: &FilesApp, st: &mut State, d: Dialog) {
-    let (kind, title, ok) = match &d {
-        Dialog::NewFolder => ("name", "New folder".to_string(), "Create"),
-        Dialog::Rename(i) => ("name", alloc::format!("Rename {}", i.name), "Rename"),
-        Dialog::Delete(i) => {
-            // the shell asks (QUERY); the answer comes back as AppEvent::Answer
-            let q = Query {
-                text: alloc::format!("Delete {}?", i.name),
-                buttons: alloc::vec!["Delete".into(), "Cancel".into()],
-                destructive: true,
-            };
-            if app.query(&q).is_ok() {
-                st.dialog = Some(d);
-            }
-            return;
-        }
+/// ✕ or Back on the form: leave at once when nothing was typed, else ask (D14: the app asks, not the kit).
+fn cancel_form(app: &App, ui: &FilesApp, st: &mut State) {
+    let typed = ui.get_name_text();
+    let unchanged = match &st.form {
+        Some(Form::NewFolder) => typed.is_empty(),
+        Some(Form::Rename(i)) => typed.as_str() == i.name,
+        None => return,
     };
-    if kind == "name" {
-        let kb = app.keyboard(proto::KEYBOARD_TEXT).unwrap_or(0);
-        ui.set_kb_h(kb as f32);
+    if unchanged {
+        close_form(app, ui, st);
+    } else {
+        ask(app, st, "Discard the name?".into(), "Discard", Ask::Discard);
     }
-    ui.set_dialog_title(title.into());
-    ui.set_dialog_ok(ok.into());
-    ui.set_dialog(kind.into());
-    st.dialog = Some(d);
 }
 
-fn close_dialog(app: &App, ui: &FilesApp) {
-    if ui.get_dialog() == "name" {
-        let _ = app.keyboard(proto::KEYBOARD_HIDDEN);
-        ui.set_kb_h(0.0);
-    }
-    ui.set_dialog(SharedString::new());
+fn close_form(app: &App, ui: &FilesApp, st: &mut State) {
+    st.form = None;
+    let _ = app.keyboard(proto::KEYBOARD_HIDDEN);
+    ui.set_kb_h(0.0);
+    ui.set_form(SharedString::new());
 }
 
-/// Make, rename or delete, then show the folder again.
-fn change(ui: &FilesApp, st: &mut State, d: Dialog) {
+/// ✓: make or rename, then show the folder again.
+fn save_form(app: &App, ui: &FilesApp, st: &mut State) {
     let name = ui.get_name_text().trim().to_string();
-    let (what, path, r) = match d {
-        Dialog::NewFolder | Dialog::Rename(_) if !model::valid_name(&name) => {
-            return ui.set_toast("That name can't be used".into());
-        }
-        Dialog::NewFolder => {
+    if !model::valid_name(&name) {
+        return note(app, "That name can't be used");
+    }
+    let Some(form) = st.form.take() else { return };
+    close_form(app, ui, st);
+    let (what, path, r) = match form {
+        Form::NewFolder => {
             let p = model::join_dir(&st.dir, &name);
             let r = st.fs.mkdir(&p);
             ("mkdir", p, r)
         }
-        Dialog::Rename(i) => {
+        Form::Rename(i) => {
             let (from, to) = (
                 model::join_file(&st.dir, &i.name),
                 model::join_file(&st.dir, &name),
@@ -395,33 +477,31 @@ fn change(ui: &FilesApp, st: &mut State, d: Dialog) {
             let r = st.fs.rename(&from, &to);
             ("rename", from, r)
         }
-        Dialog::Delete(i) if i.is_dir => {
-            let p = model::join_dir(&st.dir, &i.name);
-            let r = st.fs.rmdir(&p);
-            ("delete", p, r)
-        }
-        Dialog::Delete(i) => {
-            let p = model::join_file(&st.dir, &i.name);
-            let r = st.fs.delete(&p);
-            ("delete", p, r)
-        }
     };
     dprintln!("files: {} {} {}", what, path, r.err().unwrap_or(0));
     let dir = st.dir.clone();
-    open_dir(ui, st, dir);
+    open_dir(app, ui, st, dir);
     if let Err(e) = r {
-        toast(ui, "", e);
+        toast(app, "", e);
     }
 }
 
-fn toast(ui: &FilesApp, what: &str, code: i32) {
+/// A short message as the shell's toast (NOTE).
+fn note(app: &App, text: &str) {
+    let mut t = String::from(text);
+    while t.len() > neoui_proto::page::NOTE_TEXT_MAX {
+        t.pop();
+    }
+    if let Err(e) = app.note(&t, "") {
+        dprintln!("files: note {}", e);
+    }
+}
+
+fn toast(app: &App, what: &str, code: i32) {
     let msg = model::error_text(code);
-    ui.set_toast(
-        if what.is_empty() {
-            msg
-        } else {
-            alloc::format!("{what}: {msg}")
-        }
-        .into(),
-    );
+    if what.is_empty() {
+        note(app, &msg);
+    } else {
+        note(app, &alloc::format!("{what}: {msg}"));
+    }
 }

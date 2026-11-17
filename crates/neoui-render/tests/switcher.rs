@@ -13,7 +13,8 @@ fn card(r: &Renderer, w: u32, h: u32, i: usize) -> ((i32, i32), (i32, i32)) {
     let card_w = (w as f32 - 3.0 * gap) / 2.0;
     let card_h = 160.0 * d;
     let x = gap + (i % 2) as f32 * (card_w + gap);
-    let y = r.body().y as f32 + gap + (i / 2) as f32 * (card_h + gap);
+    // below the 48 dp header
+    let y = r.body().y as f32 + 48.0 * d + gap + (i / 2) as f32 * (card_h + gap);
     (
         ((x + card_w / 2.0) as i32, (y + card_h / 2.0) as i32),
         ((x + card_w - 22.0 * d) as i32, (y + 22.0 * d) as i32),
@@ -33,7 +34,7 @@ fn switcher() {
 
     // the strip's ▢ opens the switcher
     r.show("menu", "");
-    let at = common::strip(w, h);
+    let at = common::keys(&mut r, w, h);
     tap(&mut r, &mut buf, (at.apps, at.y));
     assert_eq!(r.screen(), "switcher");
 

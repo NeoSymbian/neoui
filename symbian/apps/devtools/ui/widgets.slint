@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Dev tools' own small parts: state colours, the Home card, a device row, chips, a sub-view title and monospace
 // log lines. Everything else comes from the shell's components (ui/components).
-import { Theme } from "../../../../ui/theme.slint";
+import { Theme } from "@neoui/theme.slint";
+import { HeaderButton } from "@neoui/components/header.slint";
 import { DevState, StatCard, DeviceRow, Fact } from "state.slint";
 
 // Colours of a state level (DeviceRow.level): ok, partial, neutral, no driver, problem.
@@ -26,46 +27,58 @@ export component Dot inherits Rectangle {
     background: Level.color(level);
 }
 
-// A sub-view's title row, with the state as a coloured word on the right when given.
+// A sub-view's header (the kit's SubHeader look, Shell v2): ← (Back), the title, and the state as a coloured word
+// on the right when given.
 export component PageTitle inherits Rectangle {
     in property <string> title;
     in property <string> state;
     in property <int> level: 2;
-    height: Theme.title-h;
-    Text {
-        x: Theme.margin + 4 * Theme.dp;
-        width: parent.width - 2 * Theme.margin - 110 * Theme.dp;
-        text: root.title;
-        color: Theme.text;
-        font-size: Theme.font-title;
-        font-weight: 600;
-        overflow: elide;
-        vertical-alignment: center;
-    }
-
-    if root.state != "": HorizontalLayout {
-        x: parent.width - self.width - Theme.margin - 4 * Theme.dp;
-        width: self.preferred-width;
-        spacing: 6 * Theme.dp;
-        alignment: end;
-        Dot {
-            y: (parent.height - self.height) / 2;
-            level: root.level;
+    height: Theme.header-h;
+    background: Theme.bg;
+    HorizontalLayout {
+        padding-right: Theme.margin + 4 * Theme.dp;
+        spacing: 4 * Theme.dp;
+        HeaderButton {
+            icon: @image-url("@neoui/icons/sys/back.svg");
+            label: "Back";
+            tint: Theme.text;
+            clicked => {
+                DevState.back();
+            }
         }
 
         Text {
-            text: root.state;
-            color: Level.color(root.level);
-            font-size: Theme.font-label;
+            text: root.title;
+            color: Theme.text;
+            font-size: Theme.font-title;
             font-weight: 600;
+            overflow: elide;
             vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+
+        if root.state != "": HorizontalLayout {
+            spacing: 6 * Theme.dp;
+            alignment: end;
+            Dot {
+                y: (parent.height - self.height) / 2;
+                level: root.level;
+            }
+
+            Text {
+                text: root.state;
+                color: Level.color(root.level);
+                font-size: Theme.font-label;
+                font-weight: 600;
+                vertical-alignment: center;
+            }
         }
     }
 
     Rectangle {
         y: parent.height - self.height;
         height: max(1px, Theme.dp / 2);
-        background: Theme.hairline;
+        background: Theme.header-hairline;
     }
 }
 

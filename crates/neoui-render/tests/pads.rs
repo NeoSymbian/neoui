@@ -9,10 +9,11 @@ const W: u32 = 539;
 const H: u32 = 1079;
 
 /// Centre of key `i` of the `n` sharing pad row `k`, counted up from the bottom row (0); rows as the letter
-/// keyboard's (ui/components/keyboard/keyboard.slint: centred 27 + 48 k dp above the screen's bottom).
-fn key(_r: &Renderer, k: usize, i: usize, n: usize) -> (i32, i32) {
+/// keyboard's (ui/components/keyboard/keyboard.slint: centred 27 + 48 k dp above the body's bottom).
+fn key(r: &Renderer, k: usize, i: usize, n: usize) -> (i32, i32) {
     let d = common::dp(W, H);
-    let bottom = H as f32; // the keyboard sits at the screen's bottom, over the strip
+    // the keyboard sits on the body's bottom: above the key row or the gesture band (Navigation v2 rule 14)
+    let bottom = (r.app_body().y + r.app_body().h as i32) as f32;
     (
         ((i as f32 + 0.5) * W as f32 / n as f32) as i32,
         (bottom - (27.0 + k as f32 * 48.0) * d) as i32,
@@ -42,7 +43,7 @@ fn pads() {
     r.set_keyboard(3);
     common::frame(&mut r, &mut buf, W, "number pad");
     common::write_png("keyboard-number-539x1079.png", &buf, W, H);
-    assert_eq!(h_dp(&r), 172);
+    assert_eq!(h_dp(&r), 228);
     assert_eq!(r.keyboard_h(), r.keyboard_heights()[3]);
     for (k, i) in [(3, 0), (3, 1), (2, 2), (1, 1), (0, 1), (0, 0), (0, 2)] {
         let at = key(&r, k, i, 3);
@@ -54,7 +55,7 @@ fn pads() {
     r.set_keyboard(4);
     common::frame(&mut r, &mut buf, W, "phone pad");
     common::write_png("keyboard-phone-539x1079.png", &buf, W, H);
-    assert_eq!(h_dp(&r), 220);
+    assert_eq!(h_dp(&r), 276);
     assert_eq!(r.keyboard_h(), r.keyboard_heights()[4]);
     for (k, i, n) in [
         (0, 0, 5),
@@ -101,28 +102,24 @@ fn pads() {
     common::frame(&mut r, &mut buf, W, "sim unlocked");
     assert_eq!(r.keyboard_h(), 0, "the pad goes with the prompt");
 
-    // An app editor in front (Cancel and Save in the strip) with the text keyboard over the strip; its hide key (the
-    // top band's right end) puts it away
+    // An app editor in front (it draws its own [✕ New contact ✓] header) with the text keyboard above the key row;
+    // its hide key (the top band's right end) puts it away
+    let at = common::keys(&mut r, W, H);
     r.set_app_front(true);
     let page = neoui_render::Page {
         title: "New contact".into(),
         can_back: true,
-        cancel: true,
-        primary: Some(neoui_render::Action {
-            icon: 5,
-            label: "Save".into(),
-        }),
         ..Default::default()
     };
-    r.set_app_page(&page, false);
+    r.set_app_page(&page);
     r.set_keyboard(1);
     common::frame(&mut r, &mut buf, W, "app editor");
-    common::write_png("strip-keyboard-539x1079.png", &buf, W, H);
+    common::write_png("keys-keyboard-539x1079.png", &buf, W, H);
     let kb = r.keyboard_h();
     assert!(kb > 0);
     let hide = (
         (W as f32 - 32.0 * d) as i32,
-        (H as f32 - kb as f32 - (56.0 - 15.0) * d) as i32,
+        ((r.app_body().y + r.app_body().h as i32) as f32 - kb as f32 + 15.0 * d) as i32,
     );
     tap(&mut r, &mut buf, hide);
     assert!(r.keyboard_dismissed());
@@ -136,8 +133,49 @@ fn pads() {
     assert_eq!(r.take_nav(), []);
     r.gesture(neoui_proto::gesture::Gesture::Back);
     assert_eq!(r.take_nav(), [neoui_render::Nav::Back]);
-    // Save ends the strip
-    let at = common::strip(W, H);
-    tap(&mut r, &mut buf, (at.last, at.y));
-    assert_eq!(r.take_nav(), [neoui_render::Nav::Primary]);
+    // ˅ on the key row puts the keyboard away too (rule 14)
+    r.clear_keyboard_dismissed();
+    tap(&mut r, &mut buf, (at.back, at.y));
+    assert!(r.keyboard_dismissed());
+    assert_eq!(r.take_nav(), [], "˅ is the shell's");
+
+    // the edit bar on its top band (an app's field): Copy sends Control then c, which neoapp makes Ctrl+C
+    r.clear_keyboard_dismissed();
+    let top = (r.app_body().y + r.app_body().h as i32) as f32 - kb as f32 + 15.0 * d;
+    common::frame(&mut r, &mut buf, W, "edit bar");
+    common::write_png("keyboard-edit-bar-539x1079.png", &buf, W, H);
+    tap(&mut r, &mut buf, ((4.0 * d + 85.0 * d) as i32, top as i32)); // Copy, after Select all
+    assert_eq!(r.take_typed(), [0x11, u32::from('c')]);
+
+    // and a swipe down on the rest of the band (D20)
+    let x = (W as f32 * 0.6) as i32;
+    r.dispatch(neoui_proto::InputEvent::Touch {
+        id: 0,
+        x,
+        y: top as i32,
+        phase: neoui_proto::TouchPhase::Down,
+    });
+    for k in 1..=6 {
+        common::advance(17);
+        let y = top as i32 + k * (10.0 * d) as i32;
+        r.dispatch(neoui_proto::InputEvent::Touch {
+            id: 0,
+            x,
+            y,
+            phase: neoui_proto::TouchPhase::Move,
+        });
+    }
+    let y = top as i32 + (60.0 * d) as i32;
+    r.dispatch(neoui_proto::InputEvent::Touch {
+        id: 0,
+        x,
+        y,
+        phase: neoui_proto::TouchPhase::Up,
+    });
+    common::settle();
+    r.render(&mut buf, W as usize);
+    assert!(
+        r.keyboard_dismissed(),
+        "a swipe down on the band puts it away"
+    );
 }

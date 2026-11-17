@@ -30,19 +30,20 @@ wpa = { git = "https://github.com/NeoSymbian/neolink", rev = "3c19f03858e48dfbec
 net = { git = "https://github.com/NeoSymbian/neolink", rev = "3c19f03858e48dfbec42a3e29c52f59117d7eff3", features = ["client"] }
 
 [workspace]
-members = ["apps/clock", "apps/term", "apps/files", "apps/devtools", "neoapp"]
+members = ["apps/clock", "apps/term", "apps/files", "apps/devtools", "apps/kit", "neoapp"]
 
 [workspace.dependencies]
 # NeoSymbian/e32-rs: the Symbian user-side runtime (exec calls, heap, display, raw input, IPC, processes).
 e32 = { git = "https://github.com/NeoSymbian/e32-rs", rev = "e97e2ebcb242f5365d1b3f9d520646603e1e9056", features = ["critical-section"] }
 neoui-proto = { path = "../crates/neoui-proto" }
 slint = { version = "=1.18.1", default-features = false, features = ["compat-1-2", "unsafe-single-threaded", "libm", "renderer-software"] }
-slint-build = { version = "=1.18.1", features = ["sdf-fonts"] }
 neoapp = { path = "neoapp" }
-modem-ipc = { git = "https://github.com/NeoSymbian/telephony", rev = "b50763850b47373083e7cea82a3d30f40feb9cea" }
-phone-rules = { git = "https://github.com/NeoSymbian/telephony", rev = "b50763850b47373083e7cea82a3d30f40feb9cea" }
+modem-ipc = { git = "https://github.com/NeoSymbian/telephony", rev = "452a22ac5442d1976f589c14472ea87c4c6041b5" }
+phone-rules = { git = "https://github.com/NeoSymbian/telephony", rev = "452a22ac5442d1976f589c14472ea87c4c6041b5" }
 neoui-term = { path = "../crates/neoui-term" }
 neoui-files = { path = "../crates/neoui-files" }
+# the kit build helper (@neoui/kit.slint): every app's build.rs compiles its UI with it
+neoui-kit = { path = "../crates/neoui-kit" }
 
 [profile.release]
 panic = "abort"

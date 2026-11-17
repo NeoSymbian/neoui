@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // The Clock tab: the time (digital, or the analog face the app draws), the seconds and the date when enabled (Clock
 // settings), the next alarm; "Set time" opens the editor.
-import { Theme } from "../../../../../ui/theme.slint";
-import { BigClock, Button } from "../../../../../ui/components/controls.slint";
-import { Glyph } from "../../../../../ui/components/frame.slint";
+import { Theme } from "@neoui/theme.slint";
+import { BigClock, Button } from "@neoui/components/controls.slint";
+import { Glyph } from "@neoui/components/frame.slint";
 import { ClockState } from "../state.slint";
 
 export component FacePage inherits Rectangle {
@@ -60,7 +60,7 @@ export component FacePage inherits Rectangle {
             height: 20 * Theme.dp;
             Glyph {
                 visible: ClockState.next-alarm != "";
-                source: @image-url("../../../../../ui/icons/sys/alarm.svg");
+                source: @image-url("@neoui/icons/sys/alarm.svg");
                 size: 16 * Theme.dp;
                 colorize: Theme.text-dim;
             }

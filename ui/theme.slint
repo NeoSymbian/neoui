@@ -70,6 +70,36 @@ export global Theme {
     out property <int> battery-mid: 30;
     out property <color> scrim: #000000b3;
 
+    // v2 chrome (design canvas ds-tokens "Layout · v2 chrome"; Navigation v2 D12-D20, Shell v2 K01-K04)
+    out property <length> header-h: 48 * dp;
+    out property <length> footer-h: 48 * dp;
+    // header and footer buttons: 48 x 48 targets around a 24 dp glyph
+    out property <length> action: 48 * dp;
+    out property <length> action-glyph: 24 * dp;
+    out property <length> search-h: 40 * dp;
+    // Buttons mode: the key row (back, home, open apps); Gestures and N9: the band with the handle
+    out property <length> key-row-h: 56 * dp;
+    out property <length> band-h: 16 * dp;
+    out property <length> edge-zone: 16 * dp;
+    out property <length> pill-w: 56 * dp;
+    out property <length> pill-h: 32 * dp;
+    out property <length> badge: 16 * dp;
+    out property <length> menu-w: 220 * dp;
+    out property <color> sheet: #1b1e23;
+    out property <color> dialog-button: #2a2e35;
+    out property <color> track: #3a3f47;
+    out property <color> dot-off: #ffffff55;
+    out property <color> header-hairline: #ffffff12;
+    out property <color> header-alt: #0b0c0e;
+    out property <color> tab-pill: #3d8bfd29;
+    out property <color> bubble-failed: #3a2326;
+    out property <color> handle: #ffffff59;
+    out property <color> danger-text: #ff8a8d;
+    out property <color> toast: #2a2e35;
+    out property <color> toast-action: #8fbaff;
+    // disabled controls: 40 % and not focusable
+    out property <float> disabled: 0.4;
+
     // Motion, from the phone's transition effects (Belle: app start 0.25 s, exit 0.3 s, pop-ups 0.25 s,
     // options menu 0.3 s, page switch 0.35 s; mostly out-quad)
     out property <duration> fast: 150ms;

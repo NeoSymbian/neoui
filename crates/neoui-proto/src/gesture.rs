@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Edge gestures, the "N9 mix" (docs `gestures.md`, G1): swipe in from the left edge for Back, from the right edge
-//! for Open apps, up from the bottom edge for Home and on past half the screen for the Apps menu.
+//! Edge gestures (docs `gestures.md`, Navigation v2 rules 07 and 08), in two maps ([`Map`]):
+//! - the Thumb map (Gestures, the default): in from either side for Back; up from the bottom for Home, up and hold
+//!   still (about 300 ms, [`Recognizer::tick`]) for Open apps; along the bottom band for the previous / next app;
+//! - the N9 map (N9 gestures): in from the left for Back; from the right a drag for Open apps, a quick flick for the
+//!   last app; up from the bottom for Home and on past half the screen for the Apps menu.
 //!
 //! The UI server feeds every touch of the screen to [`Recognizer::feed`] and acts on the [`Step`] it returns. A
 //! press in an edge zone is held back until it either turns into an inward swipe (the gesture) or not (it is replayed
@@ -16,6 +19,14 @@ pub enum Edge {
     Bottom,
 }
 
+/// Which gestures the edges make (the `nav.mode` setting: 1 Thumb, 2 N9; Buttons has none).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Map {
+    #[default]
+    Thumb,
+    N9,
+}
+
 /// What a finished gesture asks for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Gesture {
@@ -23,6 +34,11 @@ pub enum Gesture {
     OpenApps,
     Home,
     AppsMenu,
+    /// N9: the app used before this one (a quick flick from the right).
+    LastApp,
+    /// Thumb: along the bottom band, rightwards (the older app) and leftwards (the newer one).
+    PrevApp,
+    NextApp,
 }
 
 impl Gesture {
@@ -33,6 +49,9 @@ impl Gesture {
             Gesture::OpenApps => "apps",
             Gesture::Home => "home",
             Gesture::AppsMenu => "menu",
+            Gesture::LastApp => "last",
+            Gesture::PrevApp => "prev",
+            Gesture::NextApp => "next",
         }
     }
 }
@@ -48,8 +67,8 @@ pub enum Step {
     Replay,
     /// Drop this touch (the rest of a gesture the server cancelled).
     Drop,
-    /// A gesture is under way: `progress` is 0..=256 up to the commit point; from the bottom edge it goes on to 512
-    /// at the Apps menu point.
+    /// A gesture is under way: `progress` is 0..=256 up to the commit point; from the bottom edge (N9) it goes on to
+    /// 512 at the Apps menu point, and (Thumb) it is 512 once the finger held still for Open apps.
     Track { edge: Edge, progress: u32 },
     /// The finger lifted past the commit point (or flung).
     Commit(Gesture),
@@ -63,6 +82,8 @@ const SLOP_DP: i32 = 8;
 const SIDE_DP: i32 = 72;
 const HOME_DP: i32 = 80;
 const FLING_DP: i32 = 24;
+/// Thumb: up from the bottom past Home's point and still this long = Open apps.
+const PAUSE_MS: u64 = 300;
 /// A fling: the last segment moved inward at 0.5 dp/ms or more, written as `d * 512 >= dt * dp256`.
 const FLING_NUM: i64 = 512;
 
@@ -86,6 +107,14 @@ enum State {
         /// the inward distance and time of the last sample with a later time, and whether it was a fling
         last: (i32, u64),
         fast: bool,
+        /// Thumb, bottom: where and since when the finger is still, and whether it held long enough (Open apps)
+        still: (i32, i32, u64),
+        paused: bool,
+    },
+    /// Thumb: a move along the bottom band (the previous / next app); `dx` so far.
+    Along {
+        x0: i32,
+        dx: i32,
     },
 }
 
@@ -99,6 +128,7 @@ pub struct Recognizer {
     menu: i32,
     fling: i32,
     dp256: i64,
+    map: Map,
     state: State,
 }
 
@@ -120,8 +150,37 @@ impl Recognizer {
             menu: (h / 2) as i32,
             fling: px(FLING_DP),
             dp256: dp256 as i64,
+            map: Map::default(),
             state: State::Idle,
         }
+    }
+
+    /// The gestures the edges make from the next press on.
+    pub fn set_map(&mut self, map: Map) {
+        self.map = map;
+    }
+
+    /// Time passing with the finger still (no moves come then): in the Thumb map, up from the bottom past Home's
+    /// point and held still for 300 ms becomes Open apps. Returns the step to act on, if any. Call each frame.
+    pub fn tick(&mut self, ms: u64) -> Option<Step> {
+        if let State::Tracking {
+            edge: Edge::Bottom,
+            last,
+            still,
+            paused: paused @ false,
+            ..
+        } = &mut self.state
+            && self.map == Map::Thumb
+            && last.0 >= self.home
+            && ms.saturating_sub(still.2) >= PAUSE_MS
+        {
+            *paused = true;
+            return Some(Step::Track {
+                edge: Edge::Bottom,
+                progress: 512,
+            });
+        }
+        None
     }
 
     /// The edge zones `x, y` is in, among `live`.
@@ -145,11 +204,17 @@ impl Recognizer {
         }
     }
 
+    fn along_progress(&self, dx: i32) -> u32 {
+        (dx.unsigned_abs() as i64 * 256 / self.side as i64).min(256) as u32
+    }
+
     fn progress(&self, edge: Edge, d: i32) -> u32 {
         let d = d.max(0) as i64;
         let p = match edge {
             Edge::Left | Edge::Right => d * 256 / self.side as i64,
-            Edge::Bottom if d <= self.home as i64 => d * 256 / self.home as i64,
+            Edge::Bottom if d <= self.home as i64 || self.map == Map::Thumb => {
+                (d * 256 / self.home as i64).min(256)
+            }
             Edge::Bottom => {
                 256 + (d - self.home as i64) * 256 / (self.menu - self.home).max(1) as i64
             }
@@ -159,7 +224,10 @@ impl Recognizer {
 
     /// Whether a touch is being held or tracked: the server must not start other touch handling meanwhile.
     pub fn busy(&self) -> bool {
-        matches!(self.state, State::Held { .. } | State::Tracking { .. })
+        matches!(
+            self.state,
+            State::Held { .. } | State::Tracking { .. } | State::Along { .. }
+        )
     }
 
     /// Forget the touch in progress (the screen changed under it): the server drops what it held, and the rest of
@@ -214,6 +282,11 @@ impl Recognizer {
                         let (a, c) = Self::along(e, dx, dy);
                         a >= self.slop && a > c.abs()
                     });
+                // Thumb: a move along the bottom band
+                let sideways = self.map == Map::Thumb
+                    && edges & bit(Edge::Bottom) != 0
+                    && dx.abs() >= self.slop
+                    && dx.abs() > dy.abs();
                 match locked {
                     Some(edge) if !up => {
                         let (d, _) = Self::along(edge, dx, dy);
@@ -223,10 +296,19 @@ impl Recognizer {
                             y0,
                             last: (d, ms),
                             fast: false,
+                            still: (x, y, ms),
+                            paused: false,
                         };
                         Step::Track {
                             edge,
                             progress: self.progress(edge, d),
+                        }
+                    }
+                    None if sideways && !up => {
+                        self.state = State::Along { x0, dx };
+                        Step::Track {
+                            edge: Edge::Bottom,
+                            progress: self.along_progress(dx),
                         }
                     }
                     // a tap in the zone, a move along the edge or outward, or a flick that lifted at once
@@ -236,6 +318,22 @@ impl Recognizer {
                     }
                 }
             }
+            (State::Along { x0, .. }, _) => {
+                let dx = x - x0;
+                if !up {
+                    self.state = State::Along { x0, dx };
+                    return Step::Track {
+                        edge: Edge::Bottom,
+                        progress: self.along_progress(dx),
+                    };
+                }
+                self.state = State::Idle;
+                match dx {
+                    _ if dx >= self.side => Step::Commit(Gesture::PrevApp),
+                    _ if dx <= -self.side => Step::Commit(Gesture::NextApp),
+                    _ => Step::Cancel,
+                }
+            }
             (
                 State::Tracking {
                     edge,
@@ -243,6 +341,8 @@ impl Recognizer {
                     y0,
                     last,
                     fast,
+                    still,
+                    paused,
                 },
                 _,
             ) => {
@@ -255,6 +355,13 @@ impl Recognizer {
                     fast
                 };
                 let last = if ms > last.1 { (d, ms) } else { last };
+                // the finger moved more than the slop since it was last still: it is not holding
+                let moved = (x - still.0).abs().max((y - still.1).abs()) >= self.slop;
+                let (still, paused) = if moved {
+                    ((x, y, ms), false)
+                } else {
+                    (still, paused)
+                };
                 if !up {
                     self.state = State::Tracking {
                         edge,
@@ -262,20 +369,27 @@ impl Recognizer {
                         y0,
                         last,
                         fast,
+                        still,
+                        paused,
                     };
                     return Step::Track {
                         edge,
-                        progress: self.progress(edge, d),
+                        progress: if paused { 512 } else { self.progress(edge, d) },
                     };
                 }
                 self.state = State::Idle;
                 let flung = fast && d >= self.fling;
-                match edge {
-                    Edge::Bottom if d >= self.menu => Step::Commit(Gesture::AppsMenu),
-                    // no fling from the bottom: a press on the toolbar that slips up fast must not go home
-                    Edge::Bottom if d >= self.home => Step::Commit(Gesture::Home),
-                    Edge::Left if d >= self.side || flung => Step::Commit(Gesture::Back),
-                    Edge::Right if d >= self.side || flung => Step::Commit(Gesture::OpenApps),
+                match (self.map, edge) {
+                    (Map::Thumb, Edge::Bottom) if paused => Step::Commit(Gesture::OpenApps),
+                    (Map::N9, Edge::Bottom) if d >= self.menu => Step::Commit(Gesture::AppsMenu),
+                    // no fling from the bottom: a press near the bottom that slips up fast must not go home
+                    (_, Edge::Bottom) if d >= self.home => Step::Commit(Gesture::Home),
+                    (_, Edge::Left) | (Map::Thumb, Edge::Right) if d >= self.side || flung => {
+                        Step::Commit(Gesture::Back)
+                    }
+                    // N9: a quick flick from the right is the last app, a drag Open apps
+                    (Map::N9, Edge::Right) if flung => Step::Commit(Gesture::LastApp),
+                    (Map::N9, Edge::Right) if d >= self.side => Step::Commit(Gesture::OpenApps),
                     _ => Step::Cancel,
                 }
             }
@@ -348,6 +462,7 @@ mod tests {
     #[test]
     fn side_swipes_commit_past_72_dp() {
         let mut r = pixel();
+        r.set_map(Map::N9);
         let back = run(
             &mut r,
             &[
@@ -442,6 +557,7 @@ mod tests {
     #[test]
     fn the_bottom_edge_goes_home_then_to_the_menu() {
         let mut r = pixel();
+        r.set_map(Map::N9);
         let home = run(
             &mut r,
             &[
@@ -515,5 +631,138 @@ mod tests {
         assert_eq!(r.feed(Down, 27, 300, 0, ALL), Step::Hold);
         r.feed(Up, 27, 300, 0, ALL);
         assert_eq!(r.feed(Down, 29, 300, 0, ALL), Step::Pass);
+    }
+
+    /// Thumb (Gestures, the default): both sides go Back; the right edge's drag is Back too.
+    #[test]
+    fn thumb_both_sides_go_back() {
+        let mut r = pixel();
+        for x in [(5, 230), (1075, 850)] {
+            let back = run(
+                &mut r,
+                &[
+                    (Down, x.0, 900, 0),
+                    (Move, (x.0 + x.1) / 2, 900, 100),
+                    (Move, x.1, 900, 400),
+                    (Up, x.1, 900, 500),
+                ],
+            );
+            assert_eq!(back, Step::Commit(Gesture::Back));
+        }
+    }
+
+    /// Thumb: up from the bottom is Home (never the Apps menu by distance); up past Home's point and held still for
+    /// 300 ms is Open apps, until the finger moves on.
+    #[test]
+    fn thumb_up_is_home_and_up_and_hold_is_open_apps() {
+        let mut r = pixel();
+        let far = run(
+            &mut r,
+            &[
+                (Down, 540, 2155, 0),
+                (Move, 540, 1500, 100),
+                (Move, 540, 1000, 200),
+                (Up, 540, 1000, 300),
+            ],
+        );
+        assert_eq!(far, Step::Commit(Gesture::Home));
+
+        r.feed(Down, 540, 2155, 0, ALL);
+        r.feed(Move, 540, 2000, 50, ALL);
+        r.feed(Move, 540, 1880, 100, ALL);
+        assert_eq!(r.tick(300), None, "not still for 300 ms yet");
+        assert_eq!(
+            r.tick(400),
+            Some(Step::Track {
+                edge: Edge::Bottom,
+                progress: 512
+            })
+        );
+        assert_eq!(r.tick(500), None, "once");
+        assert_eq!(
+            r.feed(Up, 540, 1880, 600, ALL),
+            Step::Commit(Gesture::OpenApps)
+        );
+
+        // short of Home's point, holding does nothing
+        r.feed(Down, 540, 2155, 0, ALL);
+        r.feed(Move, 540, 2080, 50, ALL);
+        assert_eq!(r.tick(1000), None);
+        assert_eq!(r.feed(Up, 540, 2080, 1100, ALL), Step::Cancel);
+
+        // held, then moved on: Home again
+        r.feed(Down, 540, 2155, 0, ALL);
+        r.feed(Move, 540, 1880, 100, ALL);
+        r.tick(500);
+        r.feed(Move, 540, 1700, 600, ALL);
+        assert_eq!(r.feed(Up, 540, 1700, 700, ALL), Step::Commit(Gesture::Home));
+    }
+
+    /// Thumb: along the bottom band, past 72 dp, the previous (rightwards) or next (leftwards) app; less cancels.
+    #[test]
+    fn thumb_along_the_band_switches_apps() {
+        let mut r = pixel();
+        let prev = run(
+            &mut r,
+            &[
+                (Down, 300, 2150, 0),
+                (Move, 340, 2150, 50),
+                (Move, 600, 2145, 150),
+                (Up, 600, 2145, 200),
+            ],
+        );
+        assert_eq!(prev, Step::Commit(Gesture::PrevApp));
+        let next = run(
+            &mut r,
+            &[
+                (Down, 800, 2150, 0),
+                (Move, 760, 2150, 50),
+                (Move, 500, 2150, 150),
+                (Up, 500, 2150, 200),
+            ],
+        );
+        assert_eq!(next, Step::Commit(Gesture::NextApp));
+        let short = run(
+            &mut r,
+            &[
+                (Down, 300, 2150, 0),
+                (Move, 340, 2150, 50),
+                (Move, 400, 2150, 150),
+                (Up, 400, 2150, 200),
+            ],
+        );
+        assert_eq!(short, Step::Cancel);
+        // the N9 map replays it, as v1 did
+        r.set_map(Map::N9);
+        r.feed(Down, 300, 2150, 0, ALL);
+        assert_eq!(r.feed(Move, 340, 2150, 50, ALL), Step::Replay);
+        r.feed(Up, 340, 2150, 60, ALL);
+    }
+
+    /// N9: a quick flick from the right is the last app; a slow drag Open apps.
+    #[test]
+    fn n9_right_flick_is_the_last_app() {
+        let mut r = pixel();
+        r.set_map(Map::N9);
+        let flick = run(
+            &mut r,
+            &[
+                (Down, 1075, 900, 0),
+                (Move, 1020, 900, 300),
+                (Move, 925, 900, 340),
+                (Up, 925, 900, 340),
+            ],
+        );
+        assert_eq!(flick, Step::Commit(Gesture::LastApp));
+        let drag = run(
+            &mut r,
+            &[
+                (Down, 1075, 900, 0),
+                (Move, 1000, 900, 300),
+                (Move, 850, 900, 800),
+                (Up, 850, 900, 900),
+            ],
+        );
+        assert_eq!(drag, Step::Commit(Gesture::OpenApps));
     }
 }

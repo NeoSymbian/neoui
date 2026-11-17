@@ -1,0 +1,206 @@
+// SPDX-License-Identifier: Apache-2.0
+// Row extras (kit-lists, kit-controls): swipe actions on a row, the A-Z fast scroll, a labelled form field, chips.
+import { Theme } from "../theme.slint";
+import { Glyph } from "frame.slint";
+import { TextField } from "controls.slint";
+import { Act } from "header.slint";
+
+// Swipe a row left to show its actions, 72 dp each (Archive, Delete); a full swipe runs the last one at once (the app
+// then offers Undo with a toast). The row is the child.
+export component RowActions inherits Rectangle {
+    in property <[Act]> actions;
+    // the last action is destructive (red)
+    in property <bool> destructive-last: true;
+    in-out property <bool> revealed;
+    callback action(int);
+    property <length> slot: 72 * Theme.dp;
+    property <length> open-w: root.actions.length * root.slot;
+    clip: true;
+
+    HorizontalLayout {
+        x: root.width - root.open-w;
+        width: root.open-w;
+        for a[i] in root.actions: Rectangle {
+            background: i == root.actions.length - 1 && root.destructive-last ? Theme.danger : Theme.track;
+            accessible-role: button;
+            accessible-label: a.label;
+            VerticalLayout {
+                alignment: center;
+                spacing: 4 * Theme.dp;
+                HorizontalLayout {
+                    alignment: center;
+                    Glyph {
+                        source: a.icon;
+                        size: 22 * Theme.dp;
+                        colorize: white;
+                    }
+                }
+
+                Text {
+                    text: a.label;
+                    color: white;
+                    font-size: 12 * Theme.dp;
+                    font-weight: 600;
+                    horizontal-alignment: center;
+                }
+            }
+
+            TouchArea {
+                clicked => {
+                    root.revealed = false;
+                    root.action(i);
+                }
+            }
+        }
+    }
+
+    // revealed: the handler stops short of the buttons, so a tap on them reaches them (the row still slides back)
+    swipe := SwipeGestureHandler {
+        x: 0;
+        width: root.revealed ? root.width - root.open-w : root.width;
+        handle-swipe-left: root.actions.length > 0 && !root.revealed;
+        handle-swipe-right: root.revealed;
+        property <length> d: self.swiping ? self.current-position.x - self.pressed-position.x : 0;
+        swiped => {
+            if !root.revealed {
+                if self.current-position.x - self.pressed-position.x < -root.width * 0.6 {
+                    root.action(root.actions.length - 1);
+                } else if self.current-position.x - self.pressed-position.x < -root.open-w / 2 {
+                    root.revealed = true;
+                }
+            } else if self.current-position.x - self.pressed-position.x > 24 * Theme.dp {
+                root.revealed = false;
+            }
+        }
+        Rectangle {
+            x: min(0, (root.revealed ? -root.open-w : 0) + swipe.d);
+            width: root.width;
+            background: Theme.bg;
+            animate x { duration: swipe.swiping || Theme.instant ? 0ms : Theme.fast; easing: ease-out-quad; }
+            @children
+        }
+    }
+}
+
+// The letter strip for sorted name lists (24 wide, at the list's right, clear of the 16 dp edge zone's inner edge):
+// drag it to jump; the bubble shows the letter.
+export component FastScroll inherits Rectangle {
+    in property <[string]> letters: [
+        "A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U",
+        "V", "W", "X", "Y", "Z", "#"
+    ];
+    callback jump(string);
+    width: 24 * Theme.dp;
+    property <length> cell: root.height / max(1, root.letters.length);
+    property <int> at: touch.pressed ? max(0, min(root.letters.length - 1, Math.floor(touch.mouse-y / root.cell))) : -1;
+    changed at => {
+        if self.at >= 0 {
+            root.jump(root.letters[self.at]);
+        }
+    }
+
+    VerticalLayout {
+        for l in root.letters: Text {
+            text: l;
+            color: Theme.text-dim;
+            font-size: 10 * Theme.dp;
+            font-weight: 600;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+
+    touch := TouchArea { }
+
+    if root.at >= 0: Rectangle {
+        x: -72 * Theme.dp;
+        y: max(0, min(root.height - self.height, touch.mouse-y - self.height / 2));
+        width: 56 * Theme.dp;
+        height: self.width;
+        border-radius: self.width / 2;
+        background: Theme.sheet;
+        Text {
+            text: root.letters[root.at];
+            color: Theme.text;
+            font-size: 24 * Theme.dp;
+            font-weight: 600;
+        }
+    }
+}
+
+// A form row: a label over a text field, 16 dp side padding.
+export component FormRow inherits VerticalLayout {
+    in property <string> label;
+    in-out property <string> text;
+    in property <string> placeholder;
+    in property <int> keys: 1;
+    in property <bool> password;
+    in property <string> error;
+    callback accepted(string);
+    padding-left: Theme.card-pad;
+    padding-right: Theme.card-pad;
+    padding-top: 8 * Theme.dp;
+    padding-bottom: root.error != "" ? 30 * Theme.dp : 8 * Theme.dp;
+    spacing: 6 * Theme.dp;
+    Text {
+        text: root.label;
+        color: Theme.text-dim;
+        font-size: Theme.font-label;
+    }
+
+    TextField {
+        text <=> root.text;
+        placeholder: root.placeholder;
+        keys: root.keys;
+        password: root.password;
+        error: root.error;
+        accepted(t) => {
+            root.accepted(t);
+        }
+    }
+}
+
+// A chip (alarm days, label presets, list filters): 32 high, r 16, 13.5/600; picked = a 16 % accent fill and an accent
+// border (ds-components). Multi pick by default; for a single pick the app turns the others off in `toggled`. `count`
+// adds a number after the text (Missed 2), red with `count-danger`.
+export component Chip inherits Rectangle {
+    in property <string> text;
+    in-out property <bool> on;
+    in property <int> count;
+    in property <bool> count-danger;
+    callback toggled(bool);
+    height: 32 * Theme.dp;
+    width: row.preferred-width + 24 * Theme.dp;
+    border-radius: self.height / 2;
+    background: root.on ? Theme.tab-pill : touch.pressed ? Theme.pressed : Theme.field;
+    border-width: max(1px, Theme.dp);
+    border-color: root.on ? Theme.accent : #ffffff14;
+    accessible-role: checkbox;
+    accessible-checked: root.on;
+    accessible-label: root.count > 0 ? root.text + " " + root.count : root.text;
+    row := HorizontalLayout {
+        alignment: center;
+        spacing: 6 * Theme.dp;
+        Text {
+            text: root.text;
+            color: root.on ? Theme.text : Theme.text-secondary;
+            font-size: 13.5 * Theme.dp;
+            font-weight: 500;
+            vertical-alignment: center;
+        }
+        if root.count > 0: Text {
+            text: root.count;
+            color: root.count-danger ? Theme.danger : Theme.text-secondary;
+            font-size: 13.5 * Theme.dp;
+            font-weight: 700;
+            vertical-alignment: center;
+        }
+    }
+
+    touch := TouchArea {
+        clicked => {
+            root.on = !root.on;
+            root.toggled(root.on);
+        }
+    }
+}

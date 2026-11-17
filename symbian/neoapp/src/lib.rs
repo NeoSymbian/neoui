@@ -1,7 +1,18 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! The app side of neoui's app model (NeoSymbian R6): connect to the `NeoUi` server, take the geometry and the
-//! surface chunk it hands over, render Slint into the surface and report damage, and turn input from the server into
-//! Slint events. Each app keeps one `NEXT_EVENT` outstanding in its own loop (see the Clock and Terminal apps).
+//! The neoui app API (protocol 1.8; docs `neoui-kit.md`): everything an app process does with the shell.
+//!
+//! - [`App::connect`]: the `NeoUi` session, the geometry, the surface chunk, and Slint's platform drawing into it.
+//! - [`App::next_event`]: the event loop's one outstanding `NEXT_EVENT`. While it waits it runs Slint's timers and
+//!   animations (the kit's long press, spinners, sheets) and an optional [`Ticker`]; when an event comes it dispatches
+//!   input to Slint, resizes the window for [`AppEvent::Area`], and draws what changed, then returns the event.
+//!   [`App::run`] is the whole loop for an app with nothing else to wait for.
+//! - The page ([`App::page`]: its name, Back, full screen), dialogs ([`App::query`]), toasts ([`App::note`]), the
+//!   shade ([`App::notify`]), launcher entries and badges ([`App::entry`], [`App::badge`]), the keyboard
+//!   ([`App::keyboard`]), settings ([`App::setting`]) and the clipboard (Slint's text fields use it).
+//!
+//! The app draws its header, footer and content with the kit (`@neoui/kit.slint`, built with the `neoui-kit` crate);
+//! [`kit_back!`] runs Back through the kit's layers (menus, sheets, search, selection) first. A new app starts as a
+//! copy of `symbian/apps/kit` (NEOKIT.EXE).
 #![no_std]
 
 extern crate alloc;
@@ -17,10 +28,12 @@ use core::cell::{Cell, RefCell};
 use core::time::Duration;
 use e32::chunk::Chunk;
 use e32::ipc::{Session, TIpcArgs, TVersion};
+use e32::rt::{self, Either};
 use e32::sys::{TPtr8, TPtrC8};
 use e32::time;
 use neoui_proto::ipc as proto;
-pub use neoui_proto::page::{Action, Page, Query};
+pub use neoui_proto::ipc::AppEvent;
+pub use neoui_proto::page::{Note, Notification, Page, Query};
 use neoui_proto::settings::value::ENCODED_MAX;
 use neoui_proto::settings::{Key as SettingKey, Setting, Value, kerr};
 use neoui_proto::{InputEvent, Rect, ScrollPlan, Scrolling, TouchPhase};
@@ -87,42 +100,105 @@ impl LineBufferProvider for ScrollLines<'_> {
     }
 }
 
-struct AppPlatform(Rc<MinimalSoftwareWindow>);
+struct AppPlatform {
+    window: Rc<MinimalSoftwareWindow>,
+    server: Rc<Session>,
+}
 
 impl Platform for AppPlatform {
     fn create_window_adapter(&self) -> Result<Rc<dyn WindowAdapter>, PlatformError> {
-        Ok(self.0.clone())
+        Ok(self.window.clone())
     }
     fn duration_since_start(&self) -> Duration {
         Duration::from_millis(time::millis())
     }
+    // the clipboard is the server's, shared by every app (CLIP_SET, CLIP_GET)
+    fn set_clipboard_text(&self, text: &str, clipboard: slint::platform::Clipboard) {
+        if clipboard == slint::platform::Clipboard::DefaultClipboard {
+            clip_set(&self.server, text);
+        }
+    }
+    fn clipboard_text(
+        &self,
+        clipboard: slint::platform::Clipboard,
+    ) -> Option<alloc::string::String> {
+        if clipboard != slint::platform::Clipboard::DefaultClipboard {
+            return None;
+        }
+        clip_get(&self.server)
+    }
 }
+
+/// The server's clipboard text (`proto::CLIP_GET`); `None` when empty.
+fn clip_get(server: &Session) -> Option<alloc::string::String> {
+    let mut buf = vec![0u8; proto::CLIP_MAX];
+    let len = {
+        let mut out = TPtr8::new(&mut buf);
+        let mut args = TIpcArgs::new();
+        args.des8(0, &mut out);
+        server.send_receive(proto::CLIP_GET, &args).ok()?;
+        out.len()
+    };
+    buf.truncate(len);
+    alloc::string::String::from_utf8(buf)
+        .ok()
+        .filter(|t| !t.is_empty())
+}
+
+/// Put `text` on the server's clipboard (`proto::CLIP_SET`); longer than `proto::CLIP_MAX` is refused.
+fn clip_set(server: &Session, text: &str) -> bool {
+    if text.len() > proto::CLIP_MAX {
+        return false;
+    }
+    let t = TPtrC8::new(text.as_bytes());
+    let mut args = TIpcArgs::new();
+    args.desc8(0, &t);
+    server.send_receive(proto::CLIP_SET, &args).is_ok()
+}
+
+/// Something an app does on its own clock while it waits for events (the Clock's seconds): `f` runs every
+/// `every_us` microseconds, between events, and may draw.
+pub struct Ticker<'a> {
+    pub every_us: u32,
+    pub f: &'a mut dyn FnMut() -> Result<(), i32>,
+}
+
+/// The read side of an app's `Scroll` global for [`App::draw_scrolled`]: px moved and the list's place.
+type Scrolled = dyn Fn() -> ((i32, i32), Rect);
 
 /// A connected app: its session with `NeoUi`, its surface and the Slint window that draws into it.
 pub struct App {
-    pub server: Session,
+    pub server: Rc<Session>,
     pub width: usize,
     /// The surface's rows in use: the body, or the whole screen for a full-screen page ([`App::page`]).
     height: Cell<usize>,
     /// The shell's design unit in pixels (set it on the app's `Theme.dp`).
     pub dp: f32,
     pub window: Rc<MinimalSoftwareWindow>,
-    surface: Chunk,
+    /// Asked for on the first frame drawn while the app is on screen: a resident app started hidden (Phone,
+    /// Messages) costs no surface (~7 MB on the phone) until it is first shown.
+    surface: RefCell<Option<Chunk>>,
+    /// The server's last `Visible`.
+    visible: Cell<bool>,
     scrolling: RefCell<Scrolling>,
+    /// How [`App::next_event`] reads the app's `Scroll` global when it draws ([`App::set_scrolled`]).
+    scrolled: RefCell<Option<Box<Scrolled>>>,
+    /// The keyboard's edit bar sent Control: the next key is a chord.
+    ctrl: Cell<bool>,
 }
 
 impl App {
     /// Connect, ask for the geometry and the surface, and install the Slint platform (create the UI after this).
     pub fn connect() -> Result<Self, i32> {
         let (major, minor) = proto::VERSION;
-        let server = Session::connect(
+        let server = Rc::new(Session::connect(
             proto::SERVER,
             TVersion {
                 major,
                 minor,
                 build: 0,
             },
-        )?;
+        )?);
         let mut geo = [0u8; proto::GEOMETRY_LEN];
         {
             let mut des = TPtr8::new(&mut geo);
@@ -134,9 +210,12 @@ impl App {
             u32::from_le_bytes([geo[i * 4], geo[i * 4 + 1], geo[i * 4 + 2], geo[i * 4 + 3]])
         };
         let (width, height, dp) = (word(0) as usize, word(1) as usize, word(2) as f32 / 256.0);
-        let surface = Chunk::from_handle(server.send_receive(proto::SURFACE, &TIpcArgs::new())?);
         let window = MinimalSoftwareWindow::new(RepaintBufferType::ReusedBuffer);
-        slint::platform::set_platform(Box::new(AppPlatform(window.clone()))).map_err(|_| -2)?;
+        slint::platform::set_platform(Box::new(AppPlatform {
+            window: window.clone(),
+            server: server.clone(),
+        }))
+        .map_err(|_| -2)?;
         window.set_size(PhysicalSize::new(width as u32, height as u32));
         Ok(Self {
             server,
@@ -144,9 +223,128 @@ impl App {
             height: Cell::new(height),
             dp,
             window,
-            surface,
+            surface: RefCell::new(None),
+            visible: Cell::new(false),
             scrolling: RefCell::default(),
+            scrolled: RefCell::default(),
+            ctrl: Cell::new(false),
         })
+    }
+
+    /// Tell [`App::next_event`] how to read the app's `Scroll` global (its kit lists), so the frames it draws move
+    /// scrolled pixels instead of redrawing them: `|| scrolled(&ui)` as Files does.
+    pub fn set_scrolled(&self, f: impl Fn() -> ((i32, i32), Rect) + 'static) {
+        *self.scrolled.borrow_mut() = Some(Box::new(f));
+    }
+
+    /// Draw what changed, through the reader given to [`App::set_scrolled`] if any.
+    pub fn redraw(&self) -> Result<(), i32> {
+        match self.scrolled.borrow().as_ref() {
+            Some(f) => self.draw_scrolled(f),
+            None => self.draw(),
+        }
+    }
+
+    /// Wait for the next event, keeping one `NEXT_EVENT` outstanding. Meanwhile Slint's timers and animations run and
+    /// their frames are drawn, and `tick` runs on its period. The event is handled as far as the shell's part goes
+    /// ([`App::handle`]) and what changed is drawn before it is returned; after acting on it, call
+    /// [`App::redraw`].
+    pub async fn next_event(&self, mut tick: Option<Ticker<'_>>) -> Result<AppEvent, i32> {
+        let mut ev = [0u8; proto::EVENT_LEN];
+        let got = {
+            let mut des = TPtr8::new(&mut ev);
+            let mut args = TIpcArgs::new();
+            args.des8(0, &mut des);
+            let mut next = core::pin::pin!(self.server.send(proto::NEXT_EVENT, &args));
+            let mut tick_at = time::millis();
+            loop {
+                let now = time::millis();
+                if let Some(t) = tick.as_mut()
+                    && now >= tick_at
+                {
+                    (t.f)()?;
+                    tick_at = now + u64::from(t.every_us / 1000).max(1);
+                }
+                let animating = self.window.has_active_animations();
+                // the soonest of: a frame (16 ms) while animating, a Slint timer, the ticker
+                let mut wait_us: u64 = if animating { 16_000 } else { 1_000_000 };
+                if let Some(d) = slint::platform::duration_until_next_timer_update() {
+                    wait_us = wait_us.min(d.as_micros() as u64);
+                }
+                if tick.is_some() {
+                    wait_us = wait_us.min(tick_at.saturating_sub(now) * 1000);
+                }
+                let idle = !animating
+                    && tick.is_none()
+                    && slint::platform::duration_until_next_timer_update().is_none();
+                let r = if idle {
+                    next.as_mut().await
+                } else {
+                    match rt::select(next.as_mut(), time::delay(wait_us.max(1000) as i32)).await {
+                        Either::Left(r) => r,
+                        Either::Right(()) => {
+                            self.redraw()?;
+                            continue;
+                        }
+                    }
+                };
+                break r;
+            }
+        };
+        got?;
+        let e = AppEvent::decode(&ev).ok_or(kerr::ARGUMENT)?;
+        self.handle(&e);
+        self.redraw()?;
+        Ok(e)
+    }
+
+    /// How long an app's own loop may sleep before Slint needs it: the next Slint timer (a long-press, a toast's
+    /// Undo), or a frame (16 ms) while an animation runs (a switch flipping); `None` when Slint waits for nothing. A
+    /// loop that waits on more than `NEXT_EVENT` (MODEMD's status) takes the shorter of this and its own wake, then
+    /// calls [`App::redraw`], as [`App::next_event`] does.
+    pub fn wake_us(&self) -> Option<u64> {
+        let timer =
+            slint::platform::duration_until_next_timer_update().map(|d| d.as_micros() as u64);
+        if self.window.has_active_animations() {
+            return Some(timer.map_or(16_000, |t| t.min(16_000)));
+        }
+        timer
+    }
+
+    /// The shell's part of an event: input goes to Slint, a new area height resizes the window. The app handles the
+    /// rest (Back, Answer, Quit...).
+    pub fn handle(&self, e: &AppEvent) {
+        match *e {
+            AppEvent::Input(InputEvent::Key { code, down: true }) => self.dispatch_key(code),
+            AppEvent::Input(t @ InputEvent::Touch { .. }) => self.dispatch_touch(t),
+            AppEvent::Area { h } if h > 0 => self.resize(h as usize),
+            AppEvent::Visible(v) => self.visible.set(v),
+            _ => {}
+        }
+    }
+
+    /// The whole event loop: `on_event` gets every event (after [`App::handle`]) and returns false to leave; Quit
+    /// leaves too. The app draws after each one.
+    pub fn run(&self, mut on_event: impl FnMut(AppEvent) -> Result<bool, i32>) -> Result<(), i32> {
+        rt::block_on(async {
+            loop {
+                let e = self.next_event(None).await?;
+                if e == AppEvent::Quit || !on_event(e)? {
+                    return Ok(());
+                }
+                self.redraw()?;
+            }
+        })
+    }
+
+    // the server sized the surface for the whole screen, so any height it gives fits
+    fn resize(&self, h: usize) {
+        if h != self.height.get() {
+            self.height.set(h);
+            self.window
+                .set_size(PhysicalSize::new(self.width as u32, h as u32));
+            self.window.request_redraw();
+        }
     }
 
     /// The window's height in pixels: the body, or the screen while a full-screen page shows.
@@ -164,14 +362,21 @@ impl App {
     pub fn draw_scrolled(&self, scrolled: impl FnOnce() -> ((i32, i32), Rect)) -> Result<(), i32> {
         slint::platform::update_timers_and_animations();
         let (moved, list) = scrolled();
-        // SAFETY: the server made the chunk `width * height * 4` bytes, committed; only this thread writes it and the
-        // server only reads it; the slice lives for this call.
-        let px = unsafe {
-            core::slice::from_raw_parts_mut(
-                self.surface.base().cast::<Xrgb8888>(),
-                self.width * self.height.get(),
-            )
-        };
+        if self.surface.borrow().is_none() {
+            if !self.visible.get() {
+                return Ok(()); // nothing to show yet: what changed stays dirty until the app is shown
+            }
+            let h = self.server.send_receive(proto::SURFACE, &TIpcArgs::new())?;
+            *self.surface.borrow_mut() = Some(Chunk::from_handle(h));
+        }
+        let base = self
+            .surface
+            .borrow()
+            .as_ref()
+            .map_or(core::ptr::null_mut(), |c| c.base().cast::<Xrgb8888>());
+        // SAFETY: the server made the chunk `width * screen height * 4` bytes, committed, and never frees it while
+        // the session lives; only this thread writes it and the server only reads it; the slice lives for this call.
+        let px = unsafe { core::slice::from_raw_parts_mut(base, self.width * self.height.get()) };
         let screen = Rect::new(0, 0, self.width as u32, self.height.get() as u32);
         let plan = self
             .scrolling
@@ -291,20 +496,18 @@ impl App {
             .map(drop)
     }
 
-    /// Describe the page on show (protocol 1.7, docs `gestures.md` Five places): the shell draws its title, the strip
-    /// (Cancel, the primary action, ⋮) and the Options sheet, and sends `AppEvent::Primary`, `Cancel`, `Option`, and
-    /// `Back` while `can_back`. Send it again when any of it changes. A full-screen page makes the window as tall as
-    /// the screen (and the body again when it ends); redraw after a change of height.
+    /// Describe the page on show (protocol 1.8): its name (Open apps), whether Back stays inside the app (a kit layer
+    /// open, a page to go up to: the app gets `AppEvent::Back`), full screen. The app draws its header and footer
+    /// itself (the kit). Send it again when any of it changes. A full-screen page makes the window as tall as the
+    /// screen (and the body again when it ends); redraw after a change of height.
     pub fn page(&self, page: &Page) -> Result<(), i32> {
         let b = page.encode().map_err(|_| kerr::ARGUMENT)?;
         let d = TPtrC8::new(&b);
         let mut args = TIpcArgs::new();
         args.desc8(0, &d);
         let h = self.server.send_receive(proto::PAGE, &args)? as usize;
-        if h != self.height.get() && h > 0 {
-            self.height.set(h);
-            self.window
-                .set_size(PhysicalSize::new(self.width as u32, h as u32));
+        if h > 0 {
+            self.resize(h);
         }
         Ok(())
     }
@@ -327,37 +530,122 @@ impl App {
         self.server.send_receive(proto::QUERY, &args).map(drop)
     }
 
-    /// Take over the toolbar's Back and/or Options: the server then sends `AppEvent::Back` / `AppEvent::Options`.
-    pub fn claim_nav(&self, back: bool, options: bool) -> Result<(), i32> {
-        let mut args = TIpcArgs::new();
-        let claims =
-            if back { proto::NAV_BACK } else { 0 } | if options { proto::NAV_OPTIONS } else { 0 };
-        args.int(0, claims);
-        self.server.send_receive(proto::NAV, &args).map(drop)
+    /// A toast above the key row or band for 3 s (`proto::NOTE`); a tap on `action` ("Undo"; "" = none) sends
+    /// `AppEvent::NoteAction`.
+    pub fn note(&self, text: &str, action: &str) -> Result<(), i32> {
+        let n = Note {
+            text: text.into(),
+            action: action.into(),
+        };
+        self.send_bytes(proto::NOTE, &n.encode().map_err(|_| kerr::ARGUMENT)?)
     }
 
-    /// The status bar's title while this app is in front (empty: the shell's own).
-    pub fn title(&self, title: &str) -> Result<(), i32> {
-        let t = TPtrC8::new(clip(title).as_bytes());
-        let mut args = TIpcArgs::new();
-        args.desc8(0, &t);
-        self.server.send_receive(proto::TITLE, &args).map(drop)
+    /// Take this app's toast away.
+    pub fn close_note(&self) -> Result<(), i32> {
+        self.note("", "")
     }
 
-    /// The toolbar's middle button (`proto::TOOL_*`, `proto::TOOLBAR_*` style bits, a label); a tap sends
-    /// `AppEvent::Action`.
-    pub fn toolbar(&self, icon: i32, style: i32, label: &str) -> Result<(), i32> {
-        let l = TPtrC8::new(clip(label).as_bytes());
+    /// Add or replace an entry in the shade (`proto::NOTIFY`); a tap brings the app to the front with
+    /// `AppEvent::Page { page }` then `AppEvent::Notified { id, action: 0 }`, a tap on action `i` with `Notified {
+    /// id, action: i + 1 }`.
+    pub fn notify(&self, n: &Notification) -> Result<(), i32> {
+        self.send_bytes(proto::NOTIFY, &n.encode().map_err(|_| kerr::ARGUMENT)?)
+    }
+
+    /// Remove the shade's entry `id`.
+    pub fn cancel_notify(&self, id: u32) -> Result<(), i32> {
+        self.notify(&Notification {
+            id,
+            ..Notification::default()
+        })
+    }
+
+    /// The badge counter `id` on the app's launcher icon (`proto::BADGE`; the counters are summed); 0 removes it.
+    pub fn badge(&self, id: u32, count: u32) -> Result<(), i32> {
         let mut args = TIpcArgs::new();
-        args.int(0, icon);
-        args.int(1, style);
-        args.desc8(2, &l);
-        self.server.send_receive(proto::TOOLBAR, &args).map(drop)
+        args.int(0, id as i32).int(1, count as i32);
+        self.server.send_receive(proto::BADGE, &args).map(drop)
+    }
+
+    /// Add or replace launcher entry `id` (`proto::ENTRY`): a caption (empty removes it) and an icon (empty: a
+    /// generic tile; else `w: u16, h: u16` LE then `w * h` ARGB u32 LE).
+    pub fn entry(&self, id: u32, caption: &str, icon: &[u8]) -> Result<(), i32> {
+        let (c, i) = (TPtrC8::new(caption.as_bytes()), TPtrC8::new(icon));
+        let mut args = TIpcArgs::new();
+        args.int(0, id as i32).desc8(1, &c).desc8(2, &i);
+        self.server.send_receive(proto::ENTRY, &args).map(drop)
+    }
+
+    /// Open app `key` (`"phone"`, `"contacts"`, `"messages"`...) on its page `page` with `arg` (a number; at most
+    /// `proto::ARG_MAX` bytes) (`proto::OPEN`): it gets `AppEvent::Open { page }` and reads `arg` with
+    /// [`App::arg`]; Back at its root comes back here.
+    pub fn open(&self, key: &str, page: u16, arg: &str) -> Result<(), i32> {
+        let (k, a) = (TPtrC8::new(key.as_bytes()), TPtrC8::new(arg.as_bytes()));
+        let mut args = TIpcArgs::new();
+        args.desc8(0, &k).int(1, i32::from(page)).desc8(2, &a);
+        self.server.send_receive(proto::OPEN, &args).map(drop)
+    }
+
+    /// The argument of the `OPEN` that sent the last `AppEvent::Open` (empty: none); reading takes it.
+    pub fn arg(&self) -> Result<alloc::string::String, i32> {
+        let mut buf = alloc::vec![0u8; proto::ARG_MAX];
+        let n = {
+            let mut des = TPtr8::new(&mut buf);
+            let mut args = TIpcArgs::new();
+            args.des8(0, &mut des);
+            self.server.send_receive(proto::ARG, &args)?
+        };
+        buf.truncate(n.max(0) as usize);
+        alloc::string::String::from_utf8(buf).map_err(|_| kerr::ARGUMENT)
+    }
+
+    /// The task the app was opened for is finished (a call ended): the shell shows where the user came from
+    /// (`proto::DONE`). The app keeps running.
+    pub fn done(&self) -> Result<(), i32> {
+        self.server
+            .send_receive(proto::DONE, &TIpcArgs::new())
+            .map(drop)
+    }
+
+    /// The clipboard's text, shared by every app and the shell (Copy text, Paste); `None` when empty.
+    pub fn clipboard(&self) -> Option<alloc::string::String> {
+        clip_get(&self.server)
+    }
+
+    /// Put `text` on the clipboard; false when it is over `proto::CLIP_MAX` bytes or the server refused.
+    pub fn set_clipboard(&self, text: &str) -> bool {
+        clip_set(&self.server, text)
+    }
+
+    /// Show the app's surface (true) or the shell's screen for its key (false) (`proto::FRONT`).
+    pub fn front(&self, front: bool) -> Result<(), i32> {
+        let mut args = TIpcArgs::new();
+        args.int(0, front as i32);
+        self.server.send_receive(proto::FRONT, &args).map(drop)
+    }
+
+    fn send_bytes(&self, op: i32, b: &[u8]) -> Result<(), i32> {
+        let d = TPtrC8::new(b);
+        let mut args = TIpcArgs::new();
+        args.desc8(0, &d);
+        self.server.send_receive(op, &args).map(drop)
     }
 
     /// A key from the server (a hardware key or the system keyboard: Unicode, Enter 13, Backspace 8, Escape 27, Tab 9,
     /// the arrows 0xF807-0xF80A) as a Slint key press and release, for text fields.
     pub fn dispatch_key(&self, code: u32) {
+        // Control (0x11, the keyboard's edit bar) holds for the next key: Ctrl+A, Ctrl+C, Ctrl+V
+        if code == 0x11 {
+            self.ctrl.set(true);
+            return;
+        }
+        let ctrl = self.ctrl.replace(false);
+        let control: SharedString = Key::Control.into();
+        if ctrl {
+            self.window.dispatch_event(WindowEvent::KeyPressed {
+                text: control.clone(),
+            });
+        }
         let text: SharedString = match code {
             13 | 10 => Key::Return.into(),
             8 => Key::Backspace.into(),
@@ -370,13 +658,23 @@ impl App {
             0xF80A => Key::DownArrow.into(),
             c => match char::from_u32(c) {
                 Some(ch) => ch.into(),
-                None => return,
+                None => {
+                    if ctrl {
+                        self.window
+                            .dispatch_event(WindowEvent::KeyReleased { text: control });
+                    }
+                    return;
+                }
             },
         };
         self.window
             .dispatch_event(WindowEvent::KeyPressed { text: text.clone() });
         self.window
             .dispatch_event(WindowEvent::KeyReleased { text });
+        if ctrl {
+            self.window
+                .dispatch_event(WindowEvent::KeyReleased { text: control });
+        }
     }
 
     /// A touch from the server (surface coordinates) as Slint pointer events; keys are the app's business.
@@ -397,11 +695,29 @@ impl App {
     }
 }
 
-/// `s` cut to at most `proto::TITLE_MAX` bytes on a character boundary.
-fn clip(s: &str) -> &str {
-    let mut end = s.len().min(proto::TITLE_MAX);
-    while !s.is_char_boundary(end) {
-        end -= 1;
-    }
-    &s[..end]
+/// Back through the kit's layers first (Navigation v2 rule 10): with a menu, sheet, search or selection open, the top
+/// one closes and this is true; otherwise false (the app goes up a page, or its page has `can_back` false and Back
+/// never came). A layer whose component went away while open is forgotten. Use in the app's crate, where its
+/// generated `Kit` global is: `Some(AppEvent::Back) if neoapp::kit_back!(ui) => {}`.
+#[macro_export]
+macro_rules! kit_back {
+    ($ui:expr) => {{
+        // bound first: `$ui` may be a temporary (`ctx.ui()`)
+        let ui = &$ui;
+        let kit = ui.global::<Kit>();
+        if kit.get_layers() > 0 {
+            let seq = kit.get_back_seq() + 1;
+            kit.set_back_seq(seq);
+            // the layers see back-seq change in their change handlers
+            slint::platform::update_timers_and_animations();
+            if kit.get_answered() == seq {
+                true
+            } else {
+                kit.set_layers(0);
+                false
+            }
+        } else {
+            false
+        }
+    }};
 }

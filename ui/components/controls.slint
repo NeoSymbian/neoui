@@ -7,7 +7,7 @@ import { KeyboardFocus } from "keyboard/focus.slint";
 // The typing part of a field: text in any of the keyboard's languages (DejaVu Sans: Latin, Cyrillic, Armenian; the
 // window must import the font), and focus shows the system keyboard (`keys`: proto::KEYBOARD's 1 text, 3 number,
 // 4 phone).
-component FieldInput inherits TextInput {
+export component FieldInput inherits TextInput {
     in property <int> keys: 1;
     // KeyboardFocus.seq when this field took the focus: a later field's focus wins over this one letting go
     property <int> took;
@@ -42,12 +42,21 @@ export component TextField inherits Rectangle {
     // masked as dots
     in property <bool> password;
     in property <bool> autofocus;
+    // a validation message under the field (the border turns red); the layout leaves 22 dp under the field for it
+    in property <string> error;
     callback accepted(string);
     height: Theme.field-h;
     border-radius: Theme.radius-small;
     background: Theme.field;
     border-width: max(1px, Theme.dp / 2);
-    border-color: input.has-focus ? Theme.accent : Theme.text-dim;
+    border-color: root.error != "" ? Theme.danger : input.has-focus ? Theme.accent : Theme.text-dim;
+    if root.error != "": Text {
+        x: 2 * Theme.dp;
+        y: parent.height + 4 * Theme.dp;
+        text: root.error;
+        color: Theme.danger;
+        font-size: Theme.font-label;
+    }
 
     if root.text == "": Text {
         x: 14 * Theme.dp;
@@ -81,20 +90,41 @@ export component TextField inherits Rectangle {
     }
 }
 
+// Primary (tint fill), secondary (`primary: false`, field fill), danger (`tint: Theme.danger`) or a quiet text button
+// (`flat`: no fill, accent label). Disabled: 40 %, no taps.
 export component Button inherits Rectangle {
     in property <string> text;
     in property <bool> primary: true;
+    in property <bool> flat;
+    in property <bool> enabled: true;
     in property <color> tint: Theme.accent;
+    // a glyph before the text (a card's Call / Message pills)
+    in property <image> icon;
+    in property <bool> has-icon;
     callback clicked;
     height: Theme.field-h;
     border-radius: self.height / 2;
-    background: primary ? (touch.pressed ? tint.darker(20%) : tint) : (touch.pressed ? Theme.pressed : Theme.field);
+    opacity: enabled ? 1 : Theme.disabled;
+    accessible-role: button;
+    accessible-label: root.text;
+    background: flat ? (touch.pressed ? Theme.pressed : transparent)
+        : primary ? (touch.pressed ? tint.darker(20%) : tint) : (touch.pressed ? Theme.pressed : Theme.field);
     HorizontalLayout {
         padding-left: 20 * Theme.dp;
         padding-right: 20 * Theme.dp;
+        spacing: 8 * Theme.dp;
+        alignment: center;
+        if root.has-icon: VerticalLayout {
+            alignment: center;
+            Glyph {
+                source: root.icon;
+                size: 22 * Theme.dp;
+                colorize: root.flat ? root.tint : white;
+            }
+        }
         Text {
             text: root.text;
-            color: white;
+            color: root.flat ? root.tint : white;
             font-size: Theme.font-body;
             font-weight: 600;
             horizontal-alignment: center;
@@ -103,6 +133,7 @@ export component Button inherits Rectangle {
     }
 
     touch := TouchArea {
+        enabled: root.enabled;
         clicked => {
             root.clicked();
         }
@@ -231,7 +262,7 @@ export component Slider inherits Rectangle {
     Rectangle {
         height: 4 * Theme.dp;
         border-radius: self.height / 2;
-        background: #3a3f47;
+        background: Theme.track;
     }
 
     Rectangle {
@@ -275,7 +306,7 @@ export component PageDots inherits HorizontalLayout {
         width: i == current ? 18 * Theme.dp : 7 * Theme.dp;
         height: 7 * Theme.dp;
         border-radius: self.height / 2;
-        background: i == current ? Theme.text : #ffffff55;
+        background: i == current ? Theme.text : Theme.dot-off;
         animate width { duration: Theme.instant ? 0ms : Theme.fast; }
     }
 }
@@ -307,7 +338,7 @@ export component OptionsMenu inherits Rectangle {
         y: parent.height - self.height - 8 * Theme.dp + (open ? 0 : 24 * Theme.dp);
         animate y { duration: Theme.popup; easing: ease-out-quad; }
         border-radius: Theme.radius + 4 * Theme.dp;
-        background: #1b1e23;
+        background: Theme.sheet;
         border-width: max(1px, Theme.dp / 2);
         border-color: Theme.card-border;
         TouchArea { }
@@ -357,7 +388,7 @@ export component QueryDialog inherits Rectangle {
         height: box.preferred-height;
         y: (parent.height - self.height) / 2;
         border-radius: Theme.radius + 4 * Theme.dp;
-        background: #1b1e23;
+        background: Theme.sheet;
         border-width: max(1px, Theme.dp / 2);
         border-color: Theme.card-border;
         box := VerticalLayout {
@@ -378,7 +409,7 @@ export component QueryDialog inherits Rectangle {
                     height: 40 * Theme.dp;
                     border-radius: self.height / 2;
                     background: i == 0 && destructive ? (touch.pressed ? Theme.danger.darker(20%) : Theme.danger)
-                        : touch.pressed ? Theme.pressed : #2a2e35;
+                        : touch.pressed ? Theme.pressed : Theme.dialog-button;
                     t := Text {
                         text: b;
                         color: Theme.text;
@@ -419,5 +450,27 @@ export component BigClock inherits HorizontalLayout {
         width: i < 0 ? digit-h * 6 / 24 : digit-h * 14 / 24;
         height: digit-h;
         source: i < 0 ? @image-url("../icons/digits/colon.svg") : d[i];
+    }
+}
+
+// The floating action button (kit, p2-phone-recents): 56 dp, accent, a 24 dp glyph; the app places it 16 dp from the
+// content's bottom right, and leaves 88 dp under its list so the last row clears it.
+export component Fab inherits Rectangle {
+    in property <image> icon;
+    in property <string> label;
+    callback clicked;
+    width: 56 * Theme.dp;
+    height: 56 * Theme.dp;
+    border-radius: self.width / 2;
+    background: touch.pressed ? Theme.accent.darker(20%) : Theme.accent;
+    accessible-role: button;
+    accessible-label: root.label;
+    Glyph {
+        source: root.icon;
+        size: 24 * Theme.dp;
+        colorize: white;
+    }
+    touch := TouchArea {
+        clicked => { root.clicked(); }
     }
 }

@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // A ringing alarm (sub-view "ringing", opened by the UI server's `AppEvent::Alarm`): its time and label, Snooze
 // (5 minutes) and Dismiss.
-import { Theme } from "../../../../../ui/theme.slint";
-import { Button } from "../../../../../ui/components/controls.slint";
-import { Glyph } from "../../../../../ui/components/frame.slint";
+import { Theme } from "@neoui/theme.slint";
+import { Button } from "@neoui/components/controls.slint";
+import { Glyph } from "@neoui/components/frame.slint";
 import { ClockState } from "../state.slint";
 
 export component RingingPage inherits Rectangle {
@@ -14,7 +14,7 @@ export component RingingPage inherits Rectangle {
         HorizontalLayout {
             alignment: center;
             Glyph {
-                source: @image-url("../../../../../ui/icons/sys/alarm.svg");
+                source: @image-url("@neoui/icons/sys/alarm.svg");
                 size: 56 * Theme.dp;
                 colorize: Theme.accent;
             }

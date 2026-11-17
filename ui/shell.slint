@@ -1,11 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
-// The NeoSymbian shell: status bar, the current screen, the bottom strip, the Options sheet, dialogs and the
-// notification shade (docs gestures.md, Five places: apps describe their page, the shell draws the rest).
+// The NeoSymbian shell (Navigation v2, Shell v2): the status bar, the current screen, the bottom (the Buttons key row
+// or the gesture band), dialogs, toasts, the keyboard and the notification shade. Apps draw their own header and footer
+// with the kit; the shell's own screens get the kit's Header here.
 // Navigation is two levels: `screen` (an app, "home" or "menu") and `view` (a sub-view of that app, "" = its main
 // view). Back leaves the sub-view first, then returns to where the app was opened from.
 
 // Bundled so the glyphs baked into the binary are the same on every build host.
-import "fonts/Inter-VariableFont.ttf";
+import "fonts/NeoSans-Regular.ttf";
+import "fonts/NeoSans-Medium.ttf";
+import "fonts/NeoSans-SemiBold.ttf";
+import "fonts/NeoSans-Bold.ttf";
 import "fonts/UbuntuMono-Regular.ttf";
 // Latin, Cyrillic and Armenian in one face: the Armenian keyboard (Slint draws a Text in one font, no fallback)
 import "fonts/DejaVuSans.ttf";
@@ -14,9 +18,13 @@ import { SystemSettings } from "system-settings.slint";
 export { SystemSettings } from "system-settings.slint";
 export { Now } from "now.slint";
 export { Scroll } from "components/scroll.slint";
-import { StatusBar, Strip } from "components/frame.slint";
-import { OptionsMenu, QueryDialog, Button, TextField } from "components/controls.slint";
-import { Shade } from "components/shade.slint";
+import { StatusBar, KeyRow, Band } from "components/frame.slint";
+import { QueryDialog, Button, TextField } from "components/controls.slint";
+import { Header } from "components/header.slint";
+import { Toast } from "components/feedback.slint";
+import { Shade, ShadeNote } from "components/shade.slint";
+export { ShadeNote } from "components/shade.slint";
+export { Apps } from "screens/menu.slint";
 import { Keyboard } from "components/keyboard/keyboard.slint";
 import { Alphabets } from "components/keyboard/glyphs.slint";
 export { Layouts } from "components/keyboard/layouts.slint";
@@ -57,13 +65,12 @@ component Slot inherits Rectangle {
 }
 
 export component Shell inherits Window {
-    default-font-family: "Inter";
+    default-font-family: "NeoSans";
     background: Theme.bg;
 
     in-out property <string> screen: "home";
     in-out property <string> view: "";
     in-out property <string> origin: "home";
-    in-out property <bool> options-open;
     in-out property <bool> shade-open;
     // in: which build is running (kernel, user-side ROM, neoui), for Settings -> About phone
     in property <[string]> build-info;
@@ -90,32 +97,31 @@ export component Shell inherits Window {
         Theme.dp = self.dp;
     }
 
-    // an app's full-screen page hides the status bar and the strip (the UI server draws the app over both)
+    // an app's full-screen page hides the status bar and the bottom (the UI server draws the app over both)
     property <bool> full: app-front && app-full;
-    // in: Classic's strip shows for a moment over a full-screen page (the UI server, on a tap)
-    in property <bool> strip-peek;
-    // Classic shows the strip everywhere, home too. Gestures: a shell screen with nothing in the strip (home, the Apps
-    // menu, Settings) has none; an app keeps its body (its strip is plain black when empty)
-    property <bool> has-strip: (!full || strip-peek) && (SystemSettings.nav-mode != 1 || app-front || page-busy);
-    property <bool> page-busy: page-has-primary || sheet-items.length > 0;
+    // in: Buttons' key row shows for 3 s over a full-screen page (the UI server, on a tap; rule 13)
+    in property <bool> key-row-peek;
+    // Buttons: the 56 dp key row; Gestures and N9: the 16 dp band (D12, D17)
+    property <bool> buttons: SystemSettings.nav-mode == 0;
+    property <length> bottom-h: buttons ? Theme.key-row-h : Theme.band-h;
     // out: the Symbian UI server places app processes' surfaces in this body rectangle (NeoSymbian R6)
     out property <length> body-y: Theme.status-h;
     // the home screen's pages, for the UI server's swipe (smooth-ui S2c): which one shows, and the band they fill
     in-out property <int> home-page <=> home.page;
     out property <length> home-strip-h: home.strip-h;
-    out property <length> body-h: self.height - Theme.status-h - (has-strip && !full ? Theme.strip-h : 0);
-    // an app screen's body (the strip is the same height in both modes): app surfaces are this size, also for an app
-    // started while home shows (a resident app)
-    out property <length> app-body-h: self.height - Theme.status-h - Theme.strip-h;
-    // in: the UI server shows the system keyboard at the bottom, over the strip, for an app that asked (R6c), in the
+    // one rule for the shell's screens and apps (rule 16): Buttons 720 - 25 - 56 = 639, Gestures 720 - 25 - 16 = 679;
+    // a mode switch resizes running apps once (AppEvent::Area)
+    out property <length> body-h: self.height - Theme.status-h - bottom-h;
+    out property <length> app-body-h: body-h;
+    // in: the UI server shows the system keyboard above the key row or band, for an app that asked (R6c), in the
     // mode it asked for (0 hidden; proto::KEYBOARD's 1 text, 2 terminal, 3 number, 4 phone), and forwards what it
-    // types; out: how much of an app's body it covers in each mode, for the server to tell the app (it changes with
-    // the language and the settings). Its hide key (and Back) puts it away (KeyboardFocus.dismissed).
+    // types; out: how much of an app's body it covers in each mode (rule 14: the whole keyboard; it changes with the
+    // language and the settings). ˅ on the key row, a swipe down on it, or Back puts it away (KeyboardFocus.dismissed).
     in property <int> keyboard-mode;
-    out property <length> keyboard-text-h: max(0, kb.text-h - Theme.strip-h);
-    out property <length> keyboard-term-h: max(0, kb.term-h - Theme.strip-h);
-    out property <length> keyboard-number-h: max(0, kb.number-h - Theme.strip-h);
-    out property <length> keyboard-phone-h: max(0, kb.phone-h - Theme.strip-h);
+    out property <length> keyboard-text-h: kb.text-h;
+    out property <length> keyboard-term-h: kb.term-h;
+    out property <length> keyboard-number-h: kb.number-h;
+    out property <length> keyboard-phone-h: kb.phone-h;
     property <bool> keyboard-wanted: keyboard-mode > 0 || KeyboardFocus.open;
     callback typed(string);
     // in: an app process is in front: the shell's own mock of that screen stays hidden (an overlay shows over a dark
@@ -124,27 +130,28 @@ export component Shell inherits Window {
     // Installed apps advertised by LEGACY; tile taps keep the grid visible until it asks for FRONT(1).
     in property <[OldApp]> old-apps;
     callback open-entry(int);
-    // in: the foreground app's page (ipc 1.7 PAGE, or the one the UI server builds from an older app's NAV, TITLE and
-    // TOOLBAR): its title; whether Back stays inside the app; its primary action (icon as proto::TOOL_*, 0 none);
-    // Cancel; the Options sheet's items, or (legacy) the app's own Options; page dots; full screen. The shell reports
-    // taps through app-nav: "back", "options" (legacy), "primary", "cancel", "option" i, "answer" i.
+    // in: the foreground app's page (ipc 1.8 PAGE): its name (Open apps), whether Back stays inside the app, full
+    // screen. The shell reports taps through app-nav: "back", "answer" i, "note" (the toast's action).
     in property <string> app-title;
     in property <bool> app-back;
-    in property <bool> app-has-primary;
-    in property <int> app-primary-icon;
-    in property <string> app-primary-label;
-    in property <bool> app-cancel;
-    in property <[string]> app-options;
-    in property <bool> app-legacy-options;
-    in property <int> app-dots;
-    in property <int> app-dot;
     in property <bool> app-full;
+    // in: the front app is the legacy bridge (C++, no kit): the shell draws a header over its surface (the server
+    // places the surface under it), ← while it keeps Back, ⋮ for its Options key ("options")
+    in property <bool> app-legacy;
+    in property <bool> app-legacy-options;
     // in: the foreground app's dialog (ipc 1.7 QUERY); answering closes it at once
     in-out property <bool> query-open;
     in property <string> query-text;
     in property <[string]> query-buttons;
     in property <bool> query-destructive;
     callback app-nav(string, int);
+    // in: a toast (ipc NOTE) above the bottom, drawn for the app that posted it; empty text = none
+    in property <string> note-text;
+    in property <string> note-action;
+    // in: the apps' entries in the shade (ipc NOTIFY), newest first; out: the one tapped (its index)
+    in property <[ShadeNote]> notes;
+    callback note-opened(int, int);
+    in property <bool> app-unread;
     // in: the apps the UI server keeps running, most recent first (R10); out: the switcher's close button
     in property <[string]> running;
     callback close-app(string);
@@ -187,6 +194,7 @@ export component Shell inherits Window {
     in property <int> bars: -1;
     in property <string> operator;
     in property <string> rat;
+    in property <bool> roaming;
     in property <bool> in-call;
     in property <bool> phone-pending;
     in property <string> phone-feedback;
@@ -218,18 +226,16 @@ export component Shell inherits Window {
     callback phone-action(string, string);
 
     public function open(app: string) {
-        root.origin = root.screen == "menu" ? "menu" : "home";
+        // Back returns to the Apps menu or Settings (its Calls & Messages row), else home
+        root.origin = root.screen == "menu" || root.screen == "settings" ? root.screen : "home";
         root.screen = app;
         root.view = "";
-        root.options-open = false;
         root.shade-open = false;
     }
 
     public function back() {
         if (root.shade-open) {
             root.shade-open = false;
-        } else if (root.options-open) {
-            root.options-open = false;
         } else if (root.view != "") {
             root.view = "";
         } else if (root.screen == "menu") {
@@ -240,10 +246,10 @@ export component Shell inherits Window {
         }
     }
 
-    // Back from the strip or the left-edge gesture (docs gestures.md rule 6): close the shade, the sheet or the
-    // dialog, then put the keyboard away, then the page's own Back, else back to where the app was opened from
+    // Back from the key row or an edge gesture (rule 10): close the shade or the dialog, then put the keyboard away,
+    // then the page's own Back (the app's layers and pages), else back to where the app was opened from
     public function nav-back() {
-        if (root.shade-open || root.options-open) {
+        if (root.shade-open) {
             root.back();
         } else if (root.app-front && root.query-open) {
             root.answer(root.query-buttons.length - 1);
@@ -269,42 +275,13 @@ export component Shell inherits Window {
     public function go-home() {
         root.screen = "home";
         root.view = "";
-        root.options-open = false;
         root.shade-open = false;
-    }
-
-    // The strip's ⋮: the shell's sheet with the page's items, or an older app's own Options
-    function options-pressed() {
-        if (root.app-front && root.app-legacy-options && root.app-options.length == 0) {
-            root.app-nav("options", 0);
-        } else {
-            root.options-open = !root.options-open;
-        }
-    }
-
-    function primary-pressed() {
-        if (root.app-front) {
-            root.app-nav("primary", 0);
-        } else if (root.screen == "home") {
-            root.open("menu");
-        } else if (root.screen == "switcher") {
-            root.go-home();
-        }
-    }
-
-    pure function app-icon(i: int) -> image {
-        i == 1 ? @image-url("icons/sys/call.svg")
-        : i == 2 ? @image-url("icons/sys/add.svg")
-        : i == 3 ? @image-url("icons/sys/person_add.svg")
-        : i == 4 ? @image-url("icons/sys/edit.svg")
-        : i == 5 ? @image-url("icons/sys/check.svg")
-        : @image-url("icons/sys/delete.svg")
     }
 
     // One line per app (titles and Options menus), so apps added in parallel don't collide on one long line.
     pure function screen-title(s: string, v: string) -> string {
         s == "home" ? ""
-        : s == "menu" ? "Menu"
+        : s == "menu" ? "Apps"
         : s == "phone" ? "Phone"
         : s == "contacts" ? "Contacts"
         : s == "browser" ? "Browser"
@@ -317,6 +294,7 @@ export component Shell inherits Window {
         : s == "settings" ? settings-title(v)
         : s == "terminal" ? "Terminal"
         : s == "devtools" ? "Dev tools"
+        : s == "kit" ? "UI kit"
         : s == "legacy" ? "Old apps"
         : s == "switcher" ? "Open apps"
         : s
@@ -336,11 +314,6 @@ export component Shell inherits Window {
         : "About phone"
     }
 
-    // The shell's own pages (rule 5: ⋮ only where there are options, one primary action): Classic home's Apps, Open
-    // apps' Home and Close all
-    property <[string]> sheet-items: app-front ? app-options : screen == "switcher" && running.length > 0 ? ["Close all"] : [];
-    property <bool> page-has-primary: app-front ? app-has-primary : (screen == "home" && SystemSettings.nav-mode != 1) || screen == "switcher";
-
     // A tap that no row, button or field takes lands here: the focused field lets go, so the keyboard closes.
     TouchArea {
         clicked => {
@@ -352,10 +325,38 @@ export component Shell inherits Window {
         height: 0;
     }
 
+    // The shell's own screens get the kit's header (A3): the screen's name, ← in a sub-view, Open apps' ⋮ Close all.
+    // Home has none (rule 12); an app in front draws its own.
+    property <bool> has-header: (!root.app-front && root.screen != "home") || (root.app-front && root.app-legacy);
+    if has-header: Header {
+        y: root.body-y;
+        width: root.width;
+        title: root.app-front && root.app-title != "" ? root.app-title : screen-title(root.screen, root.view);
+        has-back: root.app-front ? root.app-back : root.view != "";
+        search: false;
+        actions: root.app-front && root.app-legacy-options ? [
+            { icon: @image-url("icons/sys/more.svg"), label: "Options" },
+        ] : [];
+        menu: !root.app-front && root.screen == "switcher" && root.running.length > 0 ? ["Close all"] : [];
+        back => {
+            if root.app-front {
+                root.nav-back();
+            } else {
+                root.back();
+            }
+        }
+        action(i) => {
+            root.app-nav("options", 0);
+        }
+        menu-picked(i) => {
+            root.close-all();
+        }
+    }
+
     // The current screen
     Rectangle {
-        y: body-y;
-        height: body-h;
+        y: body-y + (has-header ? Theme.header-h : 0);
+        height: body-h - (has-header ? Theme.header-h : 0);
         clip: true;
 
         Slot {
@@ -472,13 +473,17 @@ export component Shell inherits Window {
     Alphabets { }
 
     kb := Keyboard {
-        y: root.height - self.height;
+        // above the key row or the band (rule 14)
+        y: root.height - root.bottom-h - self.height;
         // above the SIM prompt, whose PIN field uses it
         z: root.sim-pin-required ? 1 : 0;
         // the app's mode when one asked, else the one the shell's focused field wants
         mode: keyboard-mode > 0 ? keyboard-mode : KeyboardFocus.mode;
         // an app asked for it, or one of the shell's own fields has the focus, and the user didn't put it away
         visible: keyboard-wanted && !KeyboardFocus.dismissed;
+        // shortcut: the edit bar is for an app's text fields only (the text keyboard: not the terminal, whose console
+        // would get Control as a raw key, nor the pads; the shell's own fields don't take the chords yet)
+        edit-bar: root.app-front && root.keyboard-mode == 1;
         typed(t) => { root.typed(t); }
     }
 
@@ -495,11 +500,9 @@ export component Shell inherits Window {
         rat: root.rat;
         wifi-bars: root.wifi-link.connected ? root.wifi-link.bars : -1;
         wifi-band: root.wifi-link.band;
+        roaming: root.roaming;
         unread: root.unread-messages > 0;
         visible: !root.full;
-        title: root.app-front && root.app-title != "" ? root.app-title : screen-title(screen, view);
-        dots: root.app-front ? root.app-dots : 0;
-        dot: root.app-dot;
         tapped => {
             root.shade-open = !root.shade-open;
         }
@@ -508,18 +511,11 @@ export component Shell inherits Window {
         }
     }
 
-    // the keyboard covers the strip (its hide key and Back put it away); the body keeps its size
-    if has-strip && !kb.visible: Strip {
-        y: root.height - Theme.strip-h;
-        gestures: SystemSettings.nav-mode == 1;
-        arrangement: SystemSettings.nav-strip;
-        can-back: root.app-front ? root.app-back : root.view != "";
-        cancel: root.app-front && root.app-cancel;
-        has-primary: root.page-has-primary;
-        primary-icon: root.app-front ? app-icon(root.app-primary-icon) : root.screen == "home" ? @image-url("icons/sys/apps.svg") : @image-url("icons/sys/home.svg");
-        primary-has-icon: !root.app-front || root.app-primary-icon > 0;
-        primary-label: root.app-front ? root.app-primary-label : root.screen == "home" ? "Apps" : "Home";
-        has-options: root.sheet-items.length > 0 || (root.app-front && root.app-legacy-options);
+    // the bottom (rule 06 / D17): Buttons' key row (also for 3 s over a full-screen page after a tap), or the band
+    if root.buttons && (!root.full || root.key-row-peek): KeyRow {
+        y: root.height - Theme.key-row-h;
+        can-back: root.app-front ? root.app-back : root.screen != "home";
+        keyboard: kb.visible;
         back => {
             root.nav-back();
         }
@@ -531,36 +527,29 @@ export component Shell inherits Window {
                 root.open("switcher");
             }
         }
-        cancelled => {
-            root.app-nav("cancel", 0);
-        }
-        primary => {
-            root.primary-pressed();
-        }
-        options => {
-            root.options-pressed();
+    }
+    if !root.buttons && !root.full: Band {
+        y: root.height - Theme.band-h;
+    }
+
+    // the app's toast (ipc NOTE), 12 dp above the bottom or the keyboard
+    if root.note-text != "": Toast {
+        x: 12 * Theme.dp;
+        width: root.width - 24 * Theme.dp;
+        y: (kb.visible ? kb.y : root.height - (root.full ? 0 : root.bottom-h)) - self.height - 12 * Theme.dp;
+        text: root.note-text;
+        action: root.note-action;
+        acted => {
+            root.app-nav("note", 0);
         }
     }
 
-    OptionsMenu {
-        y: body-y;
-        height: body-h;
-        items: root.sheet-items;
-        open: options-open;
-        dismissed => { root.options-open = false; }
-        picked(i) => {
-            root.options-open = false;
-            if (root.app-front) {
-                root.app-nav("option", i);
-            } else if (root.screen == "switcher") {
-                root.close-all();
-            }
-        }
-    }
-
+    // the key row stays usable under a dialog: its ← answers the last button (rule 15)
     QueryDialog {
+        x: 0;
+        y: 0;
         width: root.width;
-        height: root.height;
+        height: root.height - (root.buttons && !root.full ? Theme.key-row-h : 0);
         open: root.app-front && root.query-open;
         text: root.query-text;
         buttons: root.query-buttons;
@@ -572,6 +561,12 @@ export component Shell inherits Window {
         y: Theme.status-h;
         height: root.height - Theme.status-h;
         open: shade-open;
+        notes: root.notes;
+        note-opened(i, a) => {
+            root.shade-open = false;
+            root.note-opened(i, a);
+        }
+        app-unread: root.app-unread;
         missed: root.missed-calls;
         unread: root.unread-messages;
         unread-line: root.unread-line;

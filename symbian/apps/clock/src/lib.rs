@@ -16,13 +16,9 @@ mod state;
 
 use alloc::rc::Rc;
 use core::cell::RefCell;
-use core::pin::pin;
-use e32::ipc::TIpcArgs;
-use e32::rt::{self, Either};
-use e32::sys::TPtr8;
-use e32::{dprintln, time};
-use neoapp::App;
-use neoui_proto::ipc::{self as proto, AppEvent};
+use e32::dprintln;
+use e32::rt;
+use neoapp::{App, AppEvent, Ticker};
 use neoui_proto::{InputEvent, TouchPhase};
 use pages::{Ctx, Now};
 use slint::ComponentHandle;
@@ -63,6 +59,7 @@ fn run() -> Result<(), i32> {
         ui: ui.as_weak(),
         model: RefCell::new(model),
         analog: RefCell::default(),
+        page: RefCell::default(),
     });
     pages::bind(&ctx, &ui);
     ctx.open(View::None); // shows everything, and describes the page (⋮: the Clock settings)
@@ -74,49 +71,45 @@ fn run() -> Result<(), i32> {
     let mut shown_second = u32::MAX;
     rt::block_on(async {
         loop {
-            let mut ev = [0u8; proto::EVENT_LEN];
-            let got = {
-                let mut des = TPtr8::new(&mut ev);
-                let mut args = TIpcArgs::new();
-                args.des8(0, &mut des);
-                // One NEXT_EVENT stays outstanding while the clock ticks.
-                let mut next = pin!(ctx.app.server.send(proto::NEXT_EVENT, &args));
-                loop {
-                    if visible {
-                        let now = Now::read();
-                        if fast || now.second != shown_second {
-                            if now.second != shown_second {
-                                dprintln!(
-                                    "clock: tick {:02}:{:02}:{:02}",
-                                    now.local.hour,
-                                    now.local.minute,
-                                    now.second
-                                );
-                            }
-                            shown_second = now.second;
-                            fast = ctx.tick(&now);
-                            ctx.draw()?;
+            // One NEXT_EVENT stays outstanding while the clock ticks (neoapp's Ticker).
+            let every_us = if fast { FAST_TICK_US } else { TICK_US } as u32;
+            let mut tick = || -> Result<(), i32> {
+                if visible {
+                    let now = Now::read();
+                    if fast || now.second != shown_second {
+                        if now.second != shown_second {
+                            dprintln!(
+                                "clock: tick {:02}:{:02}:{:02}",
+                                now.local.hour,
+                                now.local.minute,
+                                now.second
+                            );
                         }
-                    }
-                    let wait = if fast { FAST_TICK_US } else { TICK_US };
-                    match rt::select(next.as_mut(), time::delay(wait)).await {
-                        Either::Left(r) => break r,
-                        Either::Right(()) => {}
+                        shown_second = now.second;
+                        fast = ctx.tick(&now);
+                        ctx.draw()?;
                     }
                 }
+                Ok(())
             };
-            got?;
-            match AppEvent::decode(&ev) {
-                Some(AppEvent::Quit) => {
+            let e = ctx
+                .app
+                .next_event(Some(Ticker {
+                    every_us,
+                    f: &mut tick,
+                }))
+                .await?;
+            match e {
+                AppEvent::Quit => {
                     dprintln!("clock: quit");
                     return Ok(());
                 }
-                Some(AppEvent::Visible(v)) => {
+                AppEvent::Visible(v) => {
                     dprintln!("clock: visible {}", v);
                     visible = v;
                     shown_second = u32::MAX; // redraw at once when shown again
                 }
-                Some(AppEvent::Settings { seq }) => {
+                AppEvent::Settings { seq } => {
                     ctx.model.borrow_mut().reload_shared(&ctx.app);
                     dprintln!(
                         "clock: settings changed ({}): 24-hour {}",
@@ -124,46 +117,28 @@ fn run() -> Result<(), i32> {
                         ctx.model.borrow().h24
                     );
                     ctx.show(&Now::read());
-                    ctx.draw()?;
                 }
-                Some(AppEvent::Alarm { id }) => {
-                    pages::ring(&ctx, id);
-                    ctx.draw()?;
-                }
-                Some(AppEvent::Options | AppEvent::Option { .. }) => {
-                    // Options opens the Clock settings, or closes them
-                    let to = if ctx.model.borrow().view == View::Settings {
-                        View::None
-                    } else {
-                        View::Settings
-                    };
-                    ctx.open(to);
-                    ctx.draw()?;
-                }
-                Some(AppEvent::Back) => {
-                    // claimed only while a sub-view is open: Back closes it, as Cancel does (Dismiss when ringing)
+                AppEvent::Alarm { id } => pages::ring(&ctx, id),
+                // the kit's layers first (the ⋮ menu, the Face sheet)
+                AppEvent::Back if neoapp::kit_back!(ui) => {}
+                AppEvent::Back => {
+                    // kept only while a sub-view is open: Back closes it, as ✕ does (Dismiss when ringing)
                     if ctx.model.borrow().view == View::Ringing {
                         ui.global::<ClockState>().invoke_dismiss();
                     } else {
                         ctx.open(View::None);
                     }
-                    ctx.draw()?;
                 }
-                Some(AppEvent::Input(input)) => {
-                    if let InputEvent::Touch {
-                        x,
-                        y,
-                        phase: TouchPhase::Up,
-                        ..
-                    } = input
-                    {
-                        dprintln!("clock: touch {},{}", x, y);
-                    }
-                    ctx.app.dispatch_touch(input);
-                    ctx.draw()?;
-                }
+                AppEvent::Input(InputEvent::Touch {
+                    x,
+                    y,
+                    phase: TouchPhase::Up,
+                    ..
+                }) => dprintln!("clock: touch {},{}", x, y),
                 _ => {}
             }
+            ctx.describe();
+            ctx.draw()?;
         }
     })
 }

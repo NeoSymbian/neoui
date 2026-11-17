@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-// The frame every screen shares: status bar, bottom toolbar, title bar.
+// The frame every screen shares (Navigation v2): the status bar, and the bottom: the key row (Buttons) or the gesture
+// band (Gestures, N9). The app's header and footer are the kit's (header.slint, footer.slint).
 import { Theme } from "../theme.slint";
 
 export component Glyph inherits Image {
@@ -9,8 +10,10 @@ export component Glyph inherits Image {
     colorize: Theme.text;
 }
 
+// The status bar (rule 01): the clock at the left, the network's name where v1 had the title (the operator, "No SIM",
+// "SOS only", "Airplane mode"...), then the radio technology and its bars (R when roaming), unread messages, Wi-Fi
+// and the battery. No title (D16): the app's header names the page.
 export component StatusBar inherits Rectangle {
-    in property <string> title;
     in property <int> battery-percent: -1;
     in property <string> battery-text: "--%";
     in property <bool> battery-charging;
@@ -18,18 +21,16 @@ export component StatusBar inherits Rectangle {
     in property <bool> battery-full;
     in property <bool> shade-open;
     in property <string> time: "10:24";
-    // the modem (telephony C5): bars 0..4, -1 = no modem (the plain signal icon); the operator shows where the title
-    // is empty (home), the radio technology ("LTE", "3G", "2G") right before the bars
+    // the modem (telephony C5): bars 0..4, -1 = no modem (the plain signal icon); the network's name; the radio
+    // technology ("LTE", "3G", "2G") right before the bars
     in property <int> bars: -1;
     in property <string> operator;
     in property <string> rat;
+    in property <bool> roaming;
     // Wi-Fi bars 0..4 while connected, -1 = not connected (no icon); its band ("2.4", "5") as a small label
     in property <int> wifi-bars: -1;
     in property <string> wifi-band;
     in property <bool> unread;
-    // sideways pages (Phone | Contacts): dots beside the title, `dot` of `dots` lit (docs gestures.md rule 11)
-    in property <int> dots;
-    in property <int> dot;
     callback tapped;
     // a swipe down on the bar (the shade opens)
     callback pulled;
@@ -40,27 +41,22 @@ export component StatusBar inherits Rectangle {
         padding-right: Theme.margin;
         spacing: 6 * Theme.dp;
         Text {
-            text: title != "" ? title : operator;
+            text: time;
             color: Theme.text;
             font-size: Theme.font-status;
             font-weight: 600;
             vertical-alignment: center;
-            horizontal-stretch: dots > 1 ? 0 : 1;
+        }
+        Text {
+            text: operator;
+            color: Theme.text-secondary;
+            font-size: Theme.font-status;
+            font-weight: 600;
+            vertical-alignment: center;
+            horizontal-alignment: right;
+            horizontal-stretch: 1;
             min-width: 0px;
             overflow: elide;
-        }
-        if dots > 1: HorizontalLayout {
-            horizontal-stretch: 1;
-            alignment: start;
-            spacing: 4 * Theme.dp;
-            padding-left: 2 * Theme.dp;
-            for i in dots: Rectangle {
-                y: (parent.height - self.height) / 2;
-                width: 5 * Theme.dp;
-                height: self.width;
-                border-radius: self.width / 2;
-                background: i == dot ? Theme.text : Theme.text-dim;
-            }
         }
         // the radio technology and its bars as one cluster: fixed widths, so the title takes all the spare room
         if bars >= 0: HorizontalLayout {
@@ -71,6 +67,13 @@ export component StatusBar inherits Rectangle {
                 color: Theme.text;
                 font-size: Theme.font-status * 0.8;
                 font-weight: 600;
+                vertical-alignment: center;
+            }
+            if roaming: Text {
+                text: "R";
+                color: Theme.warn;
+                font-size: Theme.font-status * 0.8;
+                font-weight: 700;
                 vertical-alignment: center;
             }
             VerticalLayout {
@@ -186,13 +189,6 @@ export component StatusBar inherits Rectangle {
                 }
             }
         }
-        Text {
-            text: time;
-            color: Theme.text;
-            font-size: Theme.font-status;
-            font-weight: 600;
-            vertical-alignment: center;
-        }
     }
 
     TouchArea {
@@ -216,18 +212,24 @@ export component StatusBar inherits Rectangle {
     }
 }
 
-// One of the strip's system buttons (← ⌂ ▢) or its ⋮: an icon, dimmed when there is nowhere for it to go.
-component StripButton inherits Rectangle {
+// One of the key row's keys: a 72 dp target, a 26 dp white glyph, dimmed when there is nowhere for it to go.
+component Key inherits Rectangle {
     in property <image> icon;
+    in property <string> label;
     in property <bool> dim;
     callback clicked;
-    width: 44 * Theme.dp;
-    height: Theme.strip-h;
-    background: touch.pressed ? Theme.pressed : transparent;
+    accessible-role: button;
+    accessible-label: label;
+    Rectangle {
+        width: 72 * Theme.dp;
+        background: touch.pressed ? Theme.pressed : transparent;
+        border-radius: Theme.radius;
+    }
+
     Glyph {
         source: icon;
         size: Theme.toolbar-icon;
-        opacity: dim ? 0.4 : 1;
+        opacity: dim ? Theme.disabled : 1;
     }
 
     touch := TouchArea {
@@ -237,187 +239,58 @@ component StripButton inherits Rectangle {
     }
 }
 
-// The page's Cancel (a word) or its primary action (a green pill with an icon and a label).
-component LabelButton inherits Rectangle {
-    in property <image> icon;
-    in property <bool> has-icon;
-    in property <string> label;
-    in property <bool> pill;
-    callback clicked;
-    width: min(150 * Theme.dp, row.preferred-width + (pill ? 36 : 20) * Theme.dp);
-    height: Theme.strip-h;
-    Rectangle {
-        x: 4 * Theme.dp;
-        width: parent.width - 8 * Theme.dp;
-        height: 38 * Theme.dp;
-        border-radius: self.height / 2;
-        // solid: the software renderer draws a gradient without the rounded corners
-        background: pill ? (touch.pressed ? Theme.ok.darker(20%) : Theme.ok) : touch.pressed ? Theme.pressed : transparent;
-        row := HorizontalLayout {
-            alignment: center;
-            spacing: 6 * Theme.dp;
-            if has-icon: Glyph {
-                source: icon;
-                size: 20 * Theme.dp;
-                y: (parent.height - self.height) / 2;
-            }
-
-            Text {
-                text: label;
-                color: Theme.text;
-                font-size: 14 * Theme.dp;
-                font-weight: 600;
-                vertical-alignment: center;
-                overflow: elide;
-            }
-        }
-    }
-
-    touch := TouchArea {
-        clicked => {
-            root.clicked();
-        }
-    }
-}
-
-// The page's group: Cancel, the primary action, ⋮ (only what the page has).
-component PageGroup inherits HorizontalLayout {
-    in property <bool> cancel;
-    in property <bool> has-primary;
-    in property <image> primary-icon;
-    in property <bool> primary-has-icon;
-    in property <string> primary-label;
-    in property <bool> has-options;
-    callback cancelled;
-    callback primary;
-    callback options;
-    if cancel: LabelButton {
-        label: "Cancel";
-        clicked => {
-            root.cancelled();
-        }
-    }
-    if has-primary: LabelButton {
-        icon: primary-icon;
-        has-icon: primary-has-icon;
-        label: primary-label;
-        pill: true;
-        clicked => {
-            root.primary();
-        }
-    }
-    if has-options: StripButton {
-        icon: @image-url("../icons/sys/more.svg");
-        clicked => {
-            root.options();
-        }
-    }
-}
-
-component Divider inherits Rectangle {
-    width: max(1px, Theme.dp / 2);
-    Rectangle {
-        height: 26 * Theme.dp;
-        background: Theme.hairline;
-    }
-}
-
-// The bottom strip, drawn by the shell for every page (docs gestures.md, Five places): the system group ← ⌂ ▢ and
-// the page's group Cancel (primary) ⋮. Classic arranges them: 0 system left, 1 system right, 2 split (← ⌂ at the
-// left end, ▢ at the right). Gestures leaves the system group to the screen edges and spreads the page's group over
-// the whole strip.
-export component Strip inherits Rectangle {
-    in property <bool> gestures;
-    in property <int> arrangement;
-    // ← goes up a page (else, dimmed, back to where the user came from)
+// Buttons mode's bottom (rule 06, D12): system keys only, ← ⌂ ▢ in thirds. ← dims on home; with the keyboard up it
+// becomes ˅ and puts the keyboard away (rule 14). No edge gestures in this mode (D18).
+export component KeyRow inherits Rectangle {
     in property <bool> can-back;
-    in property <bool> cancel;
-    in property <bool> has-primary;
-    in property <image> primary-icon;
-    in property <bool> primary-has-icon: true;
-    in property <string> primary-label;
-    in property <bool> has-options;
+    in property <bool> keyboard;
     callback back;
     callback home;
     callback apps;
-    callback cancelled;
-    callback primary;
-    callback options;
-    height: Theme.strip-h;
-    // Gestures with nothing of the page's: no bar at all, just the screen's black
-    property <bool> blank: gestures && !cancel && !has-primary && !has-options;
-    background: blank ? Theme.bg : @linear-gradient(180deg, Theme.toolbar-top 0%, Theme.toolbar-bottom 100%);
-    if !blank: Rectangle {
+    height: Theme.key-row-h;
+    background: @linear-gradient(180deg, Theme.toolbar-top 0%, Theme.toolbar-bottom 100%);
+    Rectangle {
         y: 0;
         height: max(1px, Theme.dp / 2);
         background: Theme.hairline;
     }
 
     HorizontalLayout {
-        padding-left: 4 * Theme.dp;
-        padding-right: 4 * Theme.dp;
-        if !gestures && arrangement != 1: StripButton {
-            icon: @image-url("../icons/sys/back.svg");
-            dim: !can-back;
+        Key {
+            icon: root.keyboard ? @image-url("../icons/sys/chevron_down.svg") : @image-url("../icons/sys/back.svg");
+            label: root.keyboard ? "Hide keyboard" : "Back";
+            dim: !root.can-back && !root.keyboard;
             clicked => {
                 root.back();
-            }
-        }
-        if !gestures && arrangement != 1: StripButton {
-            icon: @image-url("../icons/sys/home.svg");
-            clicked => {
-                root.home();
-            }
-        }
-        if !gestures && arrangement == 0: StripButton {
-            icon: @image-url("../icons/sys/tabs.svg");
-            clicked => {
-                root.apps();
-            }
-        }
-        if !gestures && arrangement != 1: Divider { }
-        HorizontalLayout {
-            horizontal-stretch: 1;
-            alignment: gestures ? space-around : arrangement == 0 ? end : arrangement == 1 ? start : center;
-            PageGroup {
-                spacing: gestures ? 24 * Theme.dp : 2 * Theme.dp;
-                cancel: root.cancel;
-                has-primary: root.has-primary;
-                primary-icon: root.primary-icon;
-                primary-has-icon: root.primary-has-icon;
-                primary-label: root.primary-label;
-                has-options: root.has-options;
-                cancelled => {
-                    root.cancelled();
-                }
-                primary => {
-                    root.primary();
-                }
-                options => {
-                    root.options();
-                }
             }
         }
 
-        if !gestures && arrangement != 0: Divider { }
-        if !gestures && arrangement == 1: StripButton {
-            icon: @image-url("../icons/sys/back.svg");
-            dim: !can-back;
-            clicked => {
-                root.back();
-            }
-        }
-        if !gestures && arrangement == 1: StripButton {
+        Key {
             icon: @image-url("../icons/sys/home.svg");
+            label: "Home";
             clicked => {
                 root.home();
             }
         }
-        if !gestures && arrangement != 0: StripButton {
+
+        Key {
             icon: @image-url("../icons/sys/tabs.svg");
+            label: "Open apps";
             clicked => {
                 root.apps();
             }
         }
+    }
+}
+
+// Gestures and N9's bottom (D17): a 16 dp band with the handle; the gestures start at the screen's edges.
+export component Band inherits Rectangle {
+    height: Theme.band-h;
+    background: Theme.bg;
+    Rectangle {
+        width: 108 * Theme.dp;
+        height: 4 * Theme.dp;
+        border-radius: 2 * Theme.dp;
+        background: Theme.handle;
     }
 }

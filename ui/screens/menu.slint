@@ -2,6 +2,7 @@
 // The app menu: a scrolling grid, 3 columns in portrait and 4 in landscape (Belle's menu, 135 dp rows).
 import { Theme } from "../theme.slint";
 import { NeoList } from "../components/scroll.slint";
+import { Badge } from "../components/footer.slint";
 
 export struct App { name: string, key: string, icon: image }
 
@@ -21,7 +22,10 @@ export global Apps {
         { name: "Terminal", key: "terminal", icon: @image-url("../icons/apps/terminal.svg") },
         { name: "Dev tools", key: "devtools", icon: @image-url("../icons/apps/devtools.svg") },
         { name: "Old apps", key: "legacy", icon: @image-url("../icons/apps/legacy.svg") },
+        { name: "UI kit", key: "kit", icon: @image-url("../icons/apps/devtools.svg") },
     ];
+    // in: each app's badge count (ipc BADGE; missed calls, unread messages), in the order of `all`; 0 = none
+    in property <[int]> badges;
 }
 
 export component MenuScreen inherits Rectangle {
@@ -56,6 +60,12 @@ export component MenuScreen inherits Rectangle {
                 width: Theme.app-icon;
                 height: Theme.app-icon;
                 source: app.icon;
+            }
+
+            if Apps.badges[i] > 0: Badge {
+                x: (parent.width + Theme.app-icon) / 2 - self.width / 2 - 4 * Theme.dp;
+                y: 8 * Theme.dp;
+                count: Apps.badges[i];
             }
 
             Text {

@@ -13,8 +13,10 @@ export global ClockState {
     in-out property <int> tab;
     in property <string> view;
     callback tab-chosen(int);
-    // Back, Cancel or a close button: leave the sub-view.
+    // Back, ✕ or ←: leave the sub-view.
     callback close();
+    // the header's ⋮ -> Settings
+    callback open-settings();
 
     // Clock face
     in property <int> hours;
@@ -31,7 +33,7 @@ export global ClockState {
     in property <bool> show-date: true;
     in property <image> analog-face;
 
-    // Clock settings (sub-view "settings", opened by the toolbar's Options)
+    // Clock settings (sub-view "settings", opened from the header's ⋮)
     callback set-analog(bool);
     callback set-seconds(bool);
     callback set-date(bool);

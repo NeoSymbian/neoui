@@ -2610,7 +2610,7 @@ dependencies = [
 [[package]]
 name = "modem-ipc"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/telephony?rev=b50763850b47373083e7cea82a3d30f40feb9cea#b50763850b47373083e7cea82a3d30f40feb9cea"
+source = "git+https://github.com/NeoSymbian/telephony?rev=452a22ac5442d1976f589c14472ea87c4c6041b5#452a22ac5442d1976f589c14472ea87c4c6041b5"
 
 [[package]]
 name = "moxcms"
@@ -2775,9 +2775,9 @@ version = "0.1.0"
 dependencies = [
  "e32",
  "neoapp",
+ "neoui-kit",
  "neoui-proto",
  "slint",
- "slint-build",
 ]
 
 [[package]]
@@ -2787,9 +2787,9 @@ dependencies = [
  "e32",
  "modem-ipc",
  "neoapp",
+ "neoui-kit",
  "neoui-proto",
  "slint",
- "slint-build",
 ]
 
 [[package]]
@@ -2799,9 +2799,19 @@ dependencies = [
  "e32",
  "neoapp",
  "neoui-files",
+ "neoui-kit",
  "neoui-proto",
  "slint",
- "slint-build",
+]
+
+[[package]]
+name = "neokit"
+version = "0.1.0"
+dependencies = [
+ "e32",
+ "neoapp",
+ "neoui-kit",
+ "slint",
 ]
 
 [[package]]
@@ -2810,15 +2820,22 @@ version = "0.1.0"
 dependencies = [
  "e32",
  "neoapp",
+ "neoui-kit",
  "neoui-proto",
  "neoui-term",
  "slint",
- "slint-build",
 ]
 
 [[package]]
 name = "neoui-files"
 version = "0.1.0"
+
+[[package]]
+name = "neoui-kit"
+version = "0.1.0"
+dependencies = [
+ "slint-build",
+]
 
 [[package]]
 name = "neoui-proto"
@@ -3403,7 +3420,7 @@ checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 [[package]]
 name = "phone-rules"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/telephony?rev=b50763850b47373083e7cea82a3d30f40feb9cea#b50763850b47373083e7cea82a3d30f40feb9cea"
+source = "git+https://github.com/NeoSymbian/telephony?rev=452a22ac5442d1976f589c14472ea87c4c6041b5#452a22ac5442d1976f589c14472ea87c4c6041b5"
 
 [[package]]
 name = "pico-args"

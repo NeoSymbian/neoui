@@ -7,26 +7,25 @@ use neoui_proto::gesture::Gesture;
 use neoui_proto::settings::Value;
 use neoui_render::{Nav, Page};
 
-/// Edge gestures (docs gestures.md G1) do what the strip and the menus do, and gesture mode takes ← ⌂ ▢ out of the
-/// strip.
+/// Edge gestures (docs gestures.md) do what the key row and the menus do; Gestures has a band, not keys.
 #[test]
 fn gestures_take_the_shells_paths() {
     let (w, h) = (1080, 2160);
     let mut r = common::renderer(w, h);
     let mut buf = vec![0u32; (w * h) as usize];
 
-    // Back: a claimed Back goes to the app, else the shell goes back
+    // Back: inside the app (can_back) it goes to the app, else the shell goes back
     r.show("files", "");
     r.set_app_front(true);
     let inside = Page {
         can_back: true,
         ..Page::default()
     };
-    r.set_app_page(&inside, false);
+    r.set_app_page(&inside);
     r.gesture(Gesture::Back);
     assert_eq!(r.take_nav(), [Nav::Back]);
     assert_eq!(r.screen(), "files", "Back inside the app must not navigate");
-    r.set_app_page(&Page::default(), false);
+    r.set_app_page(&Page::default());
     r.gesture(Gesture::Back);
     assert!(r.take_nav().is_empty());
     assert_eq!(r.screen(), "home");
@@ -58,11 +57,38 @@ fn gestures_take_the_shells_paths() {
     r.gesture(Gesture::AppsMenu);
     assert_eq!(r.screen(), "menu");
 
-    // gesture mode: ← ⌂ ▢ leave the strip (a tap where ← was does nothing); Settings has no buttons of its own
+    // the last, previous and next apps come from the running ones, most recent first
+    r.set_running(&["clock", "files", "terminal"]);
+    r.show("clock", "");
+    r.gesture(Gesture::LastApp);
+    assert_eq!(r.screen(), "files", "N9's flick: the app before this one");
+    r.show("files", "");
+    r.gesture(Gesture::PrevApp);
+    assert_eq!(
+        r.screen(),
+        "terminal",
+        "along the band rightwards: the older one"
+    );
+    r.show("files", "");
+    r.gesture(Gesture::NextApp);
+    assert_eq!(r.screen(), "clock", "leftwards: the newer one");
+    r.show("clock", "");
+    r.gesture(Gesture::NextApp);
+    assert_eq!(r.screen(), "clock", "nothing newer: it stays");
+    r.show("menu", "");
+    r.gesture(Gesture::PrevApp);
+    assert_eq!(
+        r.screen(),
+        "clock",
+        "from a shell screen: the most recent app"
+    );
+    r.set_running(&[]);
+
+    // Gestures: no keys, a 16 dp band (a tap on it does nothing; the edges do the navigating)
     assert!(r.apply_setting("nav.mode", &Value::Int(1)));
     common::snapshot(&mut r, &mut buf, "settings", "navigation", "pixel", w, h);
-    let at = common::strip(w, h);
-    common::tap(&mut r, at.back, at.y);
+    let d = common::dp(w, h);
+    common::tap(&mut r, (w / 6) as i32, (h as f32 - 8.0 * d) as i32);
     common::settle();
     r.render(&mut buf, w as usize);
     assert_eq!(
@@ -75,7 +101,7 @@ fn gestures_take_the_shells_paths() {
         &mut buf,
         "settings",
         "navigation",
-        "classic-pixel",
+        "buttons-pixel",
         w,
         h,
     );

@@ -1,0 +1,10 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "neoui-kit"
+description = "Build helper for neoui apps: compiles an app's Slint UI with the shared kit (`@neoui/kit.slint`)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+slint-build.workspace = true

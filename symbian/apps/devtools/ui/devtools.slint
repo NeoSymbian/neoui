@@ -1,13 +1,17 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// The Dev tools app (NEODEV.EXE): five tabs at the bottom (Home, Devices, Console, Procs, More) and the sub-views
+// The Dev tools app (NEODEV.EXE): five footer tabs (Home, Devices, Console, Procs, More) under a kit header, and the
+// sub-views
 // that open over them (a device, a process, Settings, Tools, About, the touch and display tests). Drawn by its own
 // process into the surface the UI server shows; it reuses the shell's tokens and components.
 //
 // State lives in the `DevState` global (state.slint), filled by src/pages/*.rs; each page is one file in pages/.
-import "../../../../ui/fonts/Inter-VariableFont.ttf";
-import "../../../../ui/fonts/UbuntuMono-Regular.ttf";
-import { Theme } from "../../../../ui/theme.slint";
-import { TabBar } from "../../../../ui/components/controls.slint";
+import "@neoui/fonts/NeoSans-Regular.ttf";
+import "@neoui/fonts/NeoSans-Medium.ttf";
+import "@neoui/fonts/NeoSans-SemiBold.ttf";
+import "@neoui/fonts/NeoSans-Bold.ttf";
+import "@neoui/fonts/UbuntuMono-Regular.ttf";
+import { Theme } from "@neoui/theme.slint";
+import { Header, Footer, Kit } from "@neoui/kit.slint";
 import { DevState } from "state.slint";
 import { HomePage } from "pages/home.slint";
 import { DevicesPage, DevicePage } from "pages/devices.slint";
@@ -16,31 +20,45 @@ import { ProcsPage, ProcPage } from "pages/procs.slint";
 import { MorePage, SettingsPage, ToolsPage, AboutPage } from "pages/more.slint";
 import { TouchTest, DisplayTest } from "pages/tests.slint";
 
-import { Scroll } from "../../../../ui/components/scroll.slint";
-export { Theme, DevState, Scroll }
+import { Scroll } from "@neoui/components/scroll.slint";
+export { Theme, DevState, Scroll, Kit }
 
 export component DevApp inherits Window {
-    default-font-family: "Inter";
+    default-font-family: "NeoSans";
     background: Theme.bg;
 
-    // only while no sub-view is open: a cover drawn on top would not stop taps reaching the rows under it
-    if DevState.view == "": Rectangle {
-        height: root.height - Theme.tab-h;
-        y: 0;
-        if DevState.tab == 0: HomePage { }
-        if DevState.tab == 1: DevicesPage { }
-        if DevState.tab == 2: ConsolePage { }
-        if DevState.tab == 3: ProcsPage { }
-        if DevState.tab == 4: MorePage { }
-    }
+    property <[string]> names: ["Dev tools", "Devices", "Console", "Procs", "More"];
 
-    if DevState.view == "": TabBar {
-        y: root.height - self.height;
-        tabs: ["Home", "Devices", "Console", "Procs", "More"];
-        current: DevState.tab;
-        font-size: 12.5 * Theme.dp;
-        tab-clicked(i) => {
-            DevState.tab-chosen(i);
+    // the tabs (Shell v2 K02): the header names the tab, icon-only tabs at the bottom; only while no sub-view is open
+    // (a cover drawn on top would not stop taps reaching the rows under it)
+    if DevState.view == "": VerticalLayout {
+        Header {
+            title: root.names[DevState.tab];
+            search: false;
+            tap-to-top: false;
+        }
+
+        Rectangle {
+            vertical-stretch: 1;
+            if DevState.tab == 0: HomePage { }
+            if DevState.tab == 1: DevicesPage { }
+            if DevState.tab == 2: ConsolePage { }
+            if DevState.tab == 3: ProcsPage { }
+            if DevState.tab == 4: MorePage { }
+        }
+
+        Footer {
+            current: DevState.tab;
+            picked(i) => {
+                DevState.tab-chosen(i);
+            }
+            tabs: [
+                { icon: @image-url("@neoui/icons/sys/home.svg"), label: "Home" },
+                { icon: @image-url("@neoui/icons/sys/usb.svg"), label: "Devices" },
+                { icon: @image-url("@neoui/icons/sys/doc.svg"), label: "Console" },
+                { icon: @image-url("@neoui/icons/sys/apps.svg"), label: "Procs" },
+                { icon: @image-url("@neoui/icons/sys/more.svg"), label: "More" },
+            ];
         }
     }
 

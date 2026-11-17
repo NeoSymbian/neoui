@@ -1,0 +1,36 @@
+// SPDX-License-Identifier: Apache-2.0
+// The neoui kit: the one import for an app (docs neoui-kit.md). Build with the `neoui-kit` crate, which maps `@neoui`
+// to this folder:
+//
+//     import "@neoui/fonts/NeoSans-Regular.ttf";
+//     import "@neoui/fonts/NeoSans-Medium.ttf";
+//     import "@neoui/fonts/NeoSans-SemiBold.ttf";
+//     import "@neoui/fonts/NeoSans-Bold.ttf";
+//     import { Theme, Header, Footer, NeoList, ListRow } from "@neoui/kit.slint";
+//     export { Theme, Scroll, Kit }   // the app's Rust sets Theme.dp, reads Scroll and drives Kit (Back)
+//
+// The app draws its header, footer and content with these parts; the shell draws the status bar, the key row or
+// gesture band, dialogs (QUERY), toasts (NOTE), the keyboard and the shade (Shell v2 K01).
+
+export { Theme } from "theme.slint";
+export { Kit } from "components/layers.slint";
+export { Glyph } from "components/frame.slint";
+export { KeyboardFocus } from "components/keyboard/focus.slint";
+export { Alphabets } from "components/keyboard/glyphs.slint";
+export { Scroll, NeoList } from "components/scroll.slint";
+export { Avatar, Switch, SectionHeader, ListRow } from "components/lists.slint";
+export {
+    TextField, Button, RoundButton, Fab, SearchField, Slider, Card, PageDots, BigClock
+} from "components/controls.slint";
+export { Keypad } from "components/keypad.slint";
+export { Bubble, Composer } from "components/chat.slint";
+export {
+    Act, HeaderButton, Header, SubHeader, FormHeader, SearchHeader, SelectionHeader
+} from "components/header.slint";
+export { Tab, Badge, Footer, TabPages } from "components/footer.slint";
+export { Menu } from "components/menu.slint";
+export { Sheet, ChoiceSheet, DatePicker, TimePicker } from "components/sheet.slint";
+export {
+    Toast, Spinner, ProgressBar, EmptyState, ErrorState, Skeleton, PullIndicator
+} from "components/feedback.slint";
+export { RowActions, FastScroll, FormRow, Chip } from "components/rows.slint";

@@ -20,4 +20,4 @@ neoapp.workspace = true
 neoui-files.workspace = true
 
 [build-dependencies]
-slint-build.workspace = true
+neoui-kit.workspace = true

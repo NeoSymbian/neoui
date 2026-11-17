@@ -10,9 +10,10 @@ const H: u32 = 1079;
 
 /// Centre of the one-unit key at `at` (of 10 per row) in keyboard row `k`, counted up from the bottom row (0); as
 /// tests/keyboard.rs.
-fn key(_r: &Renderer, k: usize, at: f32, units: f32) -> (i32, i32) {
+fn key(r: &Renderer, k: usize, at: f32, units: f32) -> (i32, i32) {
     let d = common::dp(W, H);
-    let bottom = H as f32; // the keyboard sits at the screen's bottom, over the strip
+    // the keyboard sits on the body's bottom: above the key row or the gesture band (Navigation v2 rule 14)
+    let bottom = (r.app_body().y + r.app_body().h as i32) as f32;
     (
         ((at + units / 2.0) * W as f32 / 10.0) as i32,
         (bottom - (27.0 + k as f32 * 48.0) * d) as i32,
@@ -71,7 +72,7 @@ fn shell_fields_use_the_system_keyboard() {
     let body_bottom = (body.y + body.h as i32) as f32;
     let kb_button = (
         (W as f32 - 32.0 * d) as i32,
-        (H as f32 - kb as f32 - (56.0 - 15.0) * d) as i32,
+        (body_bottom - kb as f32 + 15.0 * d) as i32,
     );
     tap(&mut r, &mut buf, kb_button);
     assert!(r.keyboard_dismissed());

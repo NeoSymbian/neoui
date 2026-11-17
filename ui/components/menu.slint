@@ -1,0 +1,87 @@
+// SPDX-License-Identifier: Apache-2.0
+// The app's menu (kit-menus, Navigation v2 rule 03): a dropdown card under ⋮ at the top right, or at the finger for
+// a long-press. No scrim; a tap outside or Back closes it. It replaces the shell's v1 Options sheet.
+import { Theme } from "../theme.slint";
+import { Kit } from "layers.slint";
+
+export component Menu {
+    in property <[string]> items;
+    // the index of a destructive item (Delete), drawn in red; -1 = none
+    in property <int> destructive: -1;
+    // where it shows, in the parent's coordinates: under ⋮ (`right-aligned`, at-x = the menu's right edge) or at the
+    // finger (at-x = its left edge)
+    in property <length> at-x;
+    in property <length> at-y;
+    in property <bool> right-aligned: true;
+    // the bottom it must fit above (the parent's height; 0 = none): a menu at the finger near it opens upwards
+    in property <length> bound;
+    callback picked(int);
+    out property <bool> open: popup.is-open;
+    property <int> level;
+    property <int> seq: Kit.back-seq;
+    width: 0;
+    height: 0;
+
+    public function show() {
+        popup.show();
+    }
+
+    public function close() {
+        popup.close();
+    }
+
+    changed open => {
+        if self.open {
+            self.level = Kit.push();
+        } else if self.level > 0 {
+            Kit.pop();
+            self.level = 0;
+        }
+    }
+    changed seq => {
+        if Kit.take-back(self.level) {
+            popup.close();
+        }
+    }
+
+    property <length> menu-h: root.items.length * Theme.header-h + 16 * Theme.dp;
+    popup := PopupWindow {
+        x: root.right-aligned ? root.at-x - Theme.menu-w : root.at-x;
+        y: root.bound > 0 && root.at-y + root.menu-h > root.bound ? max(0px, root.at-y - root.menu-h) : root.at-y;
+        width: Theme.menu-w;
+        height: root.menu-h;
+        close-policy: close-on-click-outside;
+        Rectangle {
+            border-radius: Theme.radius;
+            background: Theme.sheet;
+            border-width: max(1px, Theme.dp / 2);
+            border-color: Theme.card-border;
+            VerticalLayout {
+                padding-top: 8 * Theme.dp;
+                padding-bottom: 8 * Theme.dp;
+                for item[i] in root.items: Rectangle {
+                    height: Theme.header-h;
+                    background: t.pressed ? Theme.pressed : transparent;
+                    accessible-role: button;
+                    accessible-label: item;
+                    Text {
+                        x: 16 * Theme.dp;
+                        text: item;
+                        color: i == root.destructive ? Theme.danger-text : Theme.text;
+                        font-size: Theme.font-body;
+                        font-weight: 400;
+                        vertical-alignment: center;
+                    }
+
+                    t := TouchArea {
+                        clicked => {
+                            // the pick first: closing tears down this item, and nothing after close() runs
+                            root.picked(i);
+                            popup.close();
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

@@ -25,7 +25,11 @@ impl Caller<'_> {
         match *self {
             Caller::Shell => true,
             Caller::App(app) => match registry::lookup(name) {
-                Some(spec) => matches!(spec.owner, Owner::App(owner) if owner == app),
+                Some(spec) => match spec.owner {
+                    Owner::App(owner) => owner == app,
+                    Owner::Apps(owners) => owners.contains(&app),
+                    Owner::Shell => false,
+                },
                 None => namespace(name) == app,
             },
         }
@@ -65,6 +69,14 @@ mod tests {
         // clock.24h is registered as the clock app's (its settings page sets it); another app can't
         assert!(Caller::App("clock").may_write("clock.24h"));
         assert!(!Caller::App("files").may_write("clock.24h"));
+        // shared keys: Phone (its Settings page) and Contacts (a card's speed dial key)
+        assert!(Caller::App("phone").may_write("phone.speed"));
+        assert!(Caller::App("contacts").may_write("phone.speed"));
+        assert!(!Caller::App("messages").may_write("phone.speed"));
+        assert!(Caller::App("contacts").may_write("contacts.name_order"));
+        // an unregistered key in the app's own namespace
+        assert!(Caller::App("contacts").may_write("contacts.rev"));
+        assert!(!Caller::App("phone").may_write("contacts.rev"));
         // clock.alarms is registered as the clock app's own
         assert!(Caller::App("clock").may_write("clock.alarms"));
         assert!(!Caller::App("files").may_write("clock.alarms"));
