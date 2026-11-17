@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// Clock settings (sub-view "settings", the toolbar's Options): what the Clock tab shows. Back or Options closes it.
-import { Theme } from "../../../../../ui/theme.slint";
-import { ListRow, SectionHeader } from "../../../../../ui/components/lists.slint";
+// Clock settings (sub-view "settings", from the header's ⋮): what the Clock tab shows. Back or ← closes it.
+import { Theme } from "@neoui/theme.slint";
+import { ListRow, SectionHeader } from "@neoui/components/lists.slint";
+import { ChoiceSheet } from "@neoui/components/sheet.slint";
 import { ClockState } from "../state.slint";
 
 export component SettingsPage inherits Rectangle {
@@ -12,7 +13,7 @@ export component SettingsPage inherits Rectangle {
         ListRow {
             title: "Face";
             value: ClockState.analog ? "Analog" : "Digital";
-            clicked => { ClockState.set-analog(!ClockState.analog); }
+            clicked => { face.open = true; }
         }
 
         ListRow {
@@ -36,5 +37,12 @@ export component SettingsPage inherits Rectangle {
             switch-toggled(on) => { ClockState.set-h24(on); }
             divider: false;
         }
+    }
+
+    face := ChoiceSheet {
+        title: "Face";
+        choices: ["Digital", "Analog"];
+        current: ClockState.analog ? 1 : 0;
+        chosen(i) => { ClockState.set-analog(i == 1); }
     }
 }

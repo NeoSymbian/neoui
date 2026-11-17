@@ -51,7 +51,7 @@ fn old_apps_grid_and_empty_state() {
         buf.contains(&0xfff0_9020),
         "ARGB must keep the red and blue channels in order"
     );
-    let y = (85.0 * d) as i32;
+    let y = ((85.0 + 48.0) * d) as i32; // below the 48 dp header
     common::tap(&mut r, (w / 6) as i32, y);
     assert_eq!(r.take_entries(), [0xe000_1234]);
     assert_eq!(
@@ -85,7 +85,7 @@ fn old_apps_grid_and_empty_state() {
     common::write_png("oldapps-empty-pixel.png", &buf, w, h);
     common::tap(&mut r, (w / 6) as i32, y);
     assert!(r.take_entries().is_empty());
-    let at = common::strip(w, h);
+    let at = common::keys(&mut r, w, h);
     common::tap(&mut r, at.back, at.y);
     assert_ne!(
         r.screen(),

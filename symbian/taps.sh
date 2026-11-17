@@ -5,6 +5,10 @@
 # ("neoui: tap from Some((X, Y))"); `expect TEXT` waits for a later serial line, such as an app's reaction.
 M=""
 SW=${SCREEN:-768x640}; SH=${SW#*x}; SW=${SW%x*}
+# the navigation mode the taps assume (Navigation v2): the keyboard sits above Buttons' 56 dp key row or the 16 dp
+# gesture band; export NAV=gestures after switching
+NAV=${NAV:-buttons}
+kb_bottom_dp() { if [ "$NAV" = gestures ]; then echo 16; else echo 56; fi; }
 add() { M="${M:+$M;}$*"; }
 # +1/2 pixel, so the pointer driver's truncation lands on the pixel asked for
 at() { add "mouse_move $(((2 * $1 + 1) * 16384 / SW)) $(((2 * $2 + 1) * 16384 / SH))"; }
@@ -18,6 +22,14 @@ swipe() {
 	for k in 1 2 3 4 5 6 7 8; do at $(($1 + ($3 - $1) * k / 8)) $(($2 + ($4 - $2) * k / 8)); done
 	add "mouse_button 0"
 }
+# swipe_hold X1 Y1 X2 Y2: as swipe, held still for a second before the release (the Thumb map's up-and-hold)
+swipe_hold() {
+	at "$1" "$2"; add "mouse_button 1"
+	for k in 1 2 3 4 5 6 7 8; do at $(($1 + ($3 - $1) * k / 8)) $(($2 + ($4 - $2) * k / 8)); done
+	add "wait 1"; add "mouse_button 0"
+}
+# hold X Y: a long press (a second), for the kit's long-press (selection mode, menus)
+hold() { at "$1" "$2"; add "mouse_button 1"; add "wait 1"; add "mouse_button 0"; add "expect neoui: tap from Some(($1, $2))"; }
 # drag X Y1 Y2: a vertical swipe
 drag() { swipe "$1" "$2" "$1" "$3"; }
 # wait_s N: N seconds, for what logs nothing (a drag settling)
@@ -32,12 +44,12 @@ type_text() {
 	add "sendkey ret"
 }
 # kb_type WORD: tap WORD (lowercase letters and spaces) on the system keyboard in English, then its Enter key. The
-# keyboard is open at the screen's bottom, over the strip; key geometry mirrors ui/components/keyboard/keyboard.slint,
+# keyboard is open above the key row or the band (NAV); key geometry mirrors ui/components/keyboard/keyboard.slint,
 # counted up from the keyboard's bottom (row k centred 27 + 48 k dp above it, whatever rows are above), as
 # crates/neoui-render/tests/keyboard.rs does. The bottom row is 10 units: space spans 3.5-7.5 with the globe key.
 kb_key() {
-	awk -v c="$1" -v W="$SW" -v H="$SH" 'BEGIN {
-		d = (W < H ? W : H) / 360; bottom = H; u = W / 10; w = 1
+	awk -v c="$1" -v W="$SW" -v H="$SH" -v B="$(kb_bottom_dp)" 'BEGIN {
+		d = (W < H ? W : H) / 360; bottom = H - B * d; u = W / 10; w = 1
 		if ((i = index("qwertyuiop", c))) { row = 3; at = i - 1 }
 		else if ((i = index("asdfghjkl", c))) { row = 2; at = i - 0.5 }
 		else if ((i = index("zxcvbnm", c))) { row = 1; at = i + 0.5 }
@@ -53,18 +65,18 @@ kb_key() {
 # then ё я ч с м ... from 1)
 kb_tap() {
 	# shellcheck disable=SC2046 # "x y"
-	tap $(awk -v k="$1" -v at="$2" -v cols="$3" -v W="$SW" -v H="$SH" 'BEGIN {
+	tap $(awk -v k="$1" -v at="$2" -v cols="$3" -v W="$SW" -v H="$SH" -v B="$(kb_bottom_dp)" 'BEGIN {
 		d = (W < H ? W : H) / 360
-		printf "%d %d\n", (at + 0.5) * W / cols, H - (27 + k * 48) * d
+		printf "%d %d\n", (at + 0.5) * W / cols, H - (B + 27 + k * 48) * d
 	}')
 }
 # kb_hide [term]: the keyboard's hide key, the right end of its 30 dp top band, for the English letters with the
 # digit row (all languages on, as tall as the tallest: 5 rows of 48 dp + 6 dp), and the terminal's extra row
 kb_hide() {
 	# shellcheck disable=SC2046 # "x y"
-	tap $(awk -v t="$1" -v W="$SW" -v H="$SH" 'BEGIN {
+	tap $(awk -v t="$1" -v W="$SW" -v H="$SH" -v B="$(kb_bottom_dp)" 'BEGIN {
 		d = (W < H ? W : H) / 360; h = 30 + 6 + 5 * 48 + (t == "term" ? 48 : 0)
-		printf "%d %d\n", W - 32 * d, H - (h - 15) * d
+		printf "%d %d\n", W - 32 * d, H - (B + h - 15) * d
 	}')
 }
 # kb_globe: the next language on (English -> Armenian -> Russian -> English by default)

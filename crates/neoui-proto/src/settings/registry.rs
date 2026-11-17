@@ -173,12 +173,11 @@ registry! {
     /// Seconds without a touch before the screen turns off; 0 = never.
     DISPLAY_TIMEOUT: i32 = "display.timeout", default DefaultValue::Int(60),
         limit Limit::Range { min: 0, max: 600 }, owner Owner::Shell;
-    /// Settings -> Home screen & navigation: 0 Classic (the toolbar's Back), 1 Gestures (edge swipes, docs
-    /// `gestures.md`).
-    NAV_MODE: i32 = "nav.mode", default DefaultValue::Int(0), limit Limit::Range { min: 0, max: 1 }, owner Owner::Shell;
-    /// Settings -> Home screen & navigation, Classic only: where the strip's ← ⌂ ▢ sit. 0 left (the page's buttons
-    /// right), 1 right, 2 split (← ⌂ left, ▢ right).
-    NAV_STRIP: i32 = "nav.strip", default DefaultValue::Int(0), limit Limit::Range { min: 0, max: 2 }, owner Owner::Shell;
+    /// Settings -> Home screen & navigation (Navigation v2, D12 and D19): 0 Buttons (the key row ← ⌂ ▢, no edge
+    /// gestures), 1 Gestures (the Thumb map: Back from either side, up for Home, up and pause for Open apps, along the
+    /// band for the previous / next app), 2 N9 gestures (left Back, right Open apps, a right flick for the last app).
+    /// A stored 1 (v1's Gestures) becomes the Thumb map.
+    NAV_MODE: i32 = "nav.mode", default DefaultValue::Int(1), limit Limit::Range { min: 0, max: 2 }, owner Owner::Shell;
     /// Settings -> Date & time: the network (the modem's NITZ, else an HTTP Date) sets the clock.
     TIME_AUTO: bool = "time.auto", default DefaultValue::Bool(true), limit Limit::None, owner Owner::Shell;
     /// The mobile network's time zone (NITZ) sets the offset; off, the Time zone row picks it.

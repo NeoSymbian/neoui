@@ -2775,9 +2775,9 @@ version = "0.1.0"
 dependencies = [
  "e32",
  "neoapp",
+ "neoui-kit",
  "neoui-proto",
  "slint",
- "slint-build",
 ]
 
 [[package]]
@@ -2787,9 +2787,9 @@ dependencies = [
  "e32",
  "modem-ipc",
  "neoapp",
+ "neoui-kit",
  "neoui-proto",
  "slint",
- "slint-build",
 ]
 
 [[package]]
@@ -2799,9 +2799,19 @@ dependencies = [
  "e32",
  "neoapp",
  "neoui-files",
+ "neoui-kit",
  "neoui-proto",
  "slint",
- "slint-build",
+]
+
+[[package]]
+name = "neokit"
+version = "0.1.0"
+dependencies = [
+ "e32",
+ "neoapp",
+ "neoui-kit",
+ "slint",
 ]
 
 [[package]]
@@ -2810,15 +2820,22 @@ version = "0.1.0"
 dependencies = [
  "e32",
  "neoapp",
+ "neoui-kit",
  "neoui-proto",
  "neoui-term",
  "slint",
- "slint-build",
 ]
 
 [[package]]
 name = "neoui-files"
 version = "0.1.0"
+
+[[package]]
+name = "neoui-kit"
+version = "0.1.0"
+dependencies = [
+ "slint-build",
+]
 
 [[package]]
 name = "neoui-proto"

@@ -15,14 +15,19 @@
 //! entries ([`ENTRY`], [`AppEvent::Entry`]) and switches between its surface and the shell's screen ([`FRONT`]).
 //! Since 1.7 an app describes its page ([`PAGE`], [`crate::page`]) and the shell draws the strip, the Options sheet
 //! and dialogs ([`QUERY`]): [`AppEvent::Primary`], [`AppEvent::Cancel`], [`AppEvent::Option`] and
-//! [`AppEvent::Answer`] come back. [`NAV`], [`TITLE`] and [`TOOLBAR`] still work for apps that never send a page.
+//! [`AppEvent::Answer`] come back. Since 1.8 (Navigation v2, Shell v2) the app draws its own header and footer with
+//! the kit (`neoui-kit`), so the page is only its name, Back and full screen; the shell adds toasts ([`NOTE`],
+//! [`AppEvent::NoteAction`]), entries in the shade ([`NOTIFY`]), badge counts ([`BADGE`]), a clipboard ([`CLIP_SET`],
+//! [`CLIP_GET`]) and tells an app when its area changes height ([`AppEvent::Area`]). 1.7's `TITLE` (11), `TOOLBAR`
+//! (12) and the strip's events are gone (`KErrNotSupported`); their numbers stay reserved. [`NAV`] and
+//! [`AppEvent::Options`] stay for the legacy bridge (LEGACY.EXE, C++, no kit): the shell draws a header for it.
 
 use crate::{InputEvent, TouchPhase};
 
 /// The server's name (no leading `!`: that needs ProtServ).
 pub const SERVER: &str = "NeoUi";
 /// Protocol version (major, minor); a connect with another major is refused.
-pub const VERSION: (u8, u8) = (1, 7);
+pub const VERSION: (u8, u8) = (1, 8);
 
 /// `[Des8 out: GEOMETRY_LEN bytes = width, height, dp × 256 (u32 LE)]` → 0. `dp` is the shell's design unit in
 /// pixels (`min(screen w, h) / 360`), so apps size things like the shell does.
@@ -50,8 +55,9 @@ pub const KEYBOARD_NUMBER: i32 = 3;
 pub const KEYBOARD_PHONE: i32 = 4;
 /// How many keyboard modes there are (hidden included): the length of the server's height table.
 pub const KEYBOARD_MODES: usize = 5;
-/// `[claims: NAV_BACK | NAV_OPTIONS]` → 0. The app takes over the toolbar's Back and/or Options buttons: the server
-/// sends [`AppEvent::Back`] / [`AppEvent::Options`] instead of the shell acting on them. Claims end with the app.
+/// `[claims: NAV_BACK | NAV_OPTIONS]` → 0, for the legacy bridge (an app that draws no kit header): Back and the
+/// Options key come to the app ([`AppEvent::Back`], [`AppEvent::Options`]); the shell draws ← and ⋮ in a header over
+/// it. Claims end with the app.
 pub const NAV: i32 = 6;
 pub const NAV_BACK: i32 = 1;
 pub const NAV_OPTIONS: i32 = 2;
@@ -72,29 +78,8 @@ pub const SETTING_SET: i32 = 9;
 /// `[Des8 prefix]` → 0: send [`AppEvent::Settings`] when a key starting with `prefix` changes (empty: any key). At
 /// most [`crate::settings::service::WATCHES_MAX`] prefixes per session (`KErrOverflow`).
 pub const SETTING_WATCH: i32 = 10;
-/// `[Des8 title]` (UTF-8, at most [`TITLE_MAX`] bytes) → 0: the status bar shows it while the app is in front; empty
-/// gives the shell's title for the app back.
-pub const TITLE: i32 = 11;
+/// The longest launcher caption, page title or notification title, in bytes.
 pub const TITLE_MAX: usize = 48;
-/// `[icon: TOOL_*, style: TOOLBAR_* bits, Des8 label]` → 0: the toolbar's middle button while the app is in front
-/// ([`TOOL_NONE`]: none). A tap sends [`AppEvent::Action`]. The label (at most [`TITLE_MAX`] bytes) shows beside the
-/// icon.
-pub const TOOLBAR: i32 = 12;
-pub const TOOL_NONE: i32 = 0;
-pub const TOOL_CALL: i32 = 1;
-pub const TOOL_ADD: i32 = 2;
-pub const TOOL_PERSON_ADD: i32 = 3;
-pub const TOOL_EDIT: i32 = 4;
-pub const TOOL_CHECK: i32 = 5;
-pub const TOOL_DELETE: i32 = 6;
-/// The middle button is a green pill (the dialer's Call).
-pub const TOOLBAR_PILL: i32 = 1;
-/// Back shows as "Cancel" (an editor); it still sends Back (claim it with [`NAV`]).
-pub const TOOLBAR_CANCEL: i32 = 2;
-/// No buttons at all: the toolbar is an empty strip (full-screen call views).
-pub const TOOLBAR_EMPTY: i32 = 4;
-/// The toolbar's middle button as the shell reports it with the claimed Back/Options ([`NAV_BACK`], [`NAV_OPTIONS`]).
-pub const NAV_ACTION: i32 = 4;
 
 /// `[id: u32, Des8 caption, Des8 icon]` → 0: add or replace the calling app's launcher entry `id`. The caption is
 /// UTF-8, at most [`TITLE_MAX`] bytes; empty removes the entry. The icon is empty (a generic tile), or `w: u16 LE,
@@ -108,12 +93,28 @@ pub const ENTRIES_MAX: usize = 64;
 /// 0 shows the shell's screen for its key again and sends `Visible(false)`. The app keeps running.
 pub const FRONT: i32 = 14;
 /// `[Des8 page]` ([`crate::page::Page`], at most [`crate::page::PAGE_MAX`] bytes) → the height in pixels of the
-/// app's area: the body, or the whole screen for a full-screen page. Replaces whatever [`NAV`], [`TITLE`] and
-/// [`TOOLBAR`] said. A malformed page gives `KErrArgument`.
+/// app's area: the body, or the whole screen for a full-screen page. A malformed page gives `KErrArgument`.
 pub const PAGE: i32 = 15;
 /// `[Des8 query]` ([`crate::page::Query`], at most [`crate::page::QUERY_MAX`] bytes) → 0: show a dialog over the
 /// app; the answer comes as [`AppEvent::Answer`]. An empty descriptor takes the open dialog away unanswered.
 pub const QUERY: i32 = 16;
+/// `[Des8 note]` ([`crate::page::Note`], at most [`crate::page::NOTE_MAX`] bytes) → 0: a toast above the key row or
+/// band for [`NOTE_MS`]; a tap on its action sends [`AppEvent::NoteAction`]. Empty text takes it away.
+pub const NOTE: i32 = 17;
+pub const NOTE_MS: u64 = 3000;
+/// `[Des8 notification]` ([`crate::page::Notification`], at most [`crate::page::NOTIFICATION_MAX`] bytes) → 0: add or
+/// replace the app's entry `id` in the shade (an empty title removes it). At most [`NOTIFICATIONS_MAX`] per app
+/// (`KErrOverflow`). A tap brings the app to the front with [`AppEvent::Page`].
+pub const NOTIFY: i32 = 18;
+pub const NOTIFICATIONS_MAX: usize = 16;
+/// `[id: u32, count: u32]` → 0: a red count on the app's launcher icon (missed calls, unread messages); `id` names
+/// the counter (the app sums them), 0 removes it. Shown as 99+ past 99.
+pub const BADGE: i32 = 19;
+/// `[Des8 text]` (UTF-8, at most [`CLIP_MAX`] bytes) → 0: the clipboard's text, shared by every app and the shell.
+pub const CLIP_SET: i32 = 20;
+/// `[Des8 out text]` → the text's length (0: empty), written into argument 0; `KErrOverflow` when it doesn't fit.
+pub const CLIP_GET: i32 = 21;
+pub const CLIP_MAX: usize = 2048;
 
 /// A malformed [`ENTRY`] icon (`KErrArgument`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -151,9 +152,9 @@ pub enum AppEvent {
     Input(InputEvent),
     /// Leave now (closed in Open apps, or more than `MAX_RUNNING` apps run); the app should exit.
     Quit,
-    /// Back (the toolbar's, or the left-edge gesture), which the app claimed ([`NAV`]).
+    /// Back (the key row's ←, an edge gesture), while the page has `can_back` (or [`NAV_BACK`] is claimed).
     Back,
-    /// The toolbar's Options, which the app claimed ([`NAV`]).
+    /// The legacy bridge's Options key: ⋮ in the header the shell draws for it ([`NAV_OPTIONS`]).
     Options,
     /// The app went to the background (false) or came back (true); it keeps running either way (R10).
     Visible(bool),
@@ -166,18 +167,15 @@ pub enum AppEvent {
     Keyboard { h: u32 },
     /// Show page `page` (the app's own numbering): the user opened it from an icon, a notification or Settings.
     Page { page: u16 },
-    /// The toolbar's middle button ([`TOOLBAR`]).
-    Action,
     /// The user tapped launcher entry `id` ([`ENTRY`]).
     Entry { id: u32 },
-    /// The page's primary action ([`PAGE`]).
-    Primary,
-    /// The page's Cancel ([`PAGE`]).
-    Cancel,
-    /// Item `i` of the page's Options sheet ([`PAGE`]).
-    Option { i: u16 },
     /// Button `i` of the dialog ([`QUERY`]); Back answers the last button.
     Answer { i: u16 },
+    /// The user tapped the toast's action ([`NOTE`]).
+    NoteAction,
+    /// The app's area is now `h` pixels tall (the navigation mode changed: Buttons 639 dp, Gestures 679 dp); the
+    /// app resizes its window and redraws. A full-screen page keeps the whole screen.
+    Area { h: u32 },
 }
 
 const KIND_TOUCH: u32 = 1;
@@ -185,17 +183,16 @@ const KIND_KEY: u32 = 2;
 const KIND_QUIT: u32 = 3;
 const KIND_BACK: u32 = 4;
 const KIND_OPTIONS: u32 = 5;
+// 11 (1.7's Action), 13 (Primary), 14 (Cancel) and 15 (Option) are retired
 const KIND_VISIBLE: u32 = 6;
 const KIND_SETTINGS: u32 = 7;
 const KIND_ALARM: u32 = 8;
 const KIND_KEYBOARD: u32 = 9;
 const KIND_PAGE: u32 = 10;
-const KIND_ACTION: u32 = 11;
 const KIND_ENTRY: u32 = 12;
-const KIND_PRIMARY: u32 = 13;
-const KIND_CANCEL: u32 = 14;
-const KIND_OPTION: u32 = 15;
 const KIND_ANSWER: u32 = 16;
+const KIND_NOTE_ACTION: u32 = 17;
+const KIND_AREA: u32 = 18;
 
 impl AppEvent {
     /// `[kind, a, b, c]` as little-endian u32s: touch = (phase | id << 8, x, y), key = (down, code, 0).
@@ -218,12 +215,10 @@ impl AppEvent {
             AppEvent::Alarm { id } => [KIND_ALARM, u32::from(id), 0, 0],
             AppEvent::Keyboard { h } => [KIND_KEYBOARD, h, 0, 0],
             AppEvent::Page { page } => [KIND_PAGE, u32::from(page), 0, 0],
-            AppEvent::Action => [KIND_ACTION, 0, 0, 0],
             AppEvent::Entry { id } => [KIND_ENTRY, id, 0, 0],
-            AppEvent::Primary => [KIND_PRIMARY, 0, 0, 0],
-            AppEvent::Cancel => [KIND_CANCEL, 0, 0, 0],
-            AppEvent::Option { i } => [KIND_OPTION, u32::from(i), 0, 0],
             AppEvent::Answer { i } => [KIND_ANSWER, u32::from(i), 0, 0],
+            AppEvent::NoteAction => [KIND_NOTE_ACTION, 0, 0, 0],
+            AppEvent::Area { h } => [KIND_AREA, h, 0, 0],
         };
         let mut out = [0u8; EVENT_LEN];
         for (i, v) in w.iter().enumerate() {
@@ -262,16 +257,12 @@ impl AppEvent {
             KIND_PAGE => AppEvent::Page {
                 page: u16::try_from(w(1)).ok()?,
             },
-            KIND_ACTION => AppEvent::Action,
             KIND_ENTRY => AppEvent::Entry { id: w(1) },
-            KIND_PRIMARY => AppEvent::Primary,
-            KIND_CANCEL => AppEvent::Cancel,
-            KIND_OPTION => AppEvent::Option {
-                i: u16::try_from(w(1)).ok()?,
-            },
             KIND_ANSWER => AppEvent::Answer {
                 i: u16::try_from(w(1)).ok()?,
             },
+            KIND_NOTE_ACTION => AppEvent::NoteAction,
+            KIND_AREA => AppEvent::Area { h: w(1) },
             _ => return None,
         })
     }
@@ -307,13 +298,12 @@ mod tests {
             AppEvent::Keyboard { h: 369 },
             AppEvent::Page { page: 1 },
             AppEvent::Page { page: u16::MAX },
-            AppEvent::Action,
             AppEvent::Entry { id: 0 },
             AppEvent::Entry { id: u32::MAX },
-            AppEvent::Primary,
-            AppEvent::Cancel,
-            AppEvent::Option { i: 11 },
             AppEvent::Answer { i: 2 },
+            AppEvent::NoteAction,
+            AppEvent::Area { h: 0 },
+            AppEvent::Area { h: 2037 },
         ];
         for e in all {
             assert_eq!(AppEvent::decode(&e.encode()), Some(e));
@@ -322,9 +312,15 @@ mod tests {
         let mut big_page = AppEvent::Page { page: 0 }.encode();
         big_page[6] = 1; // page 65536
         assert_eq!(AppEvent::decode(&big_page), None);
-        let mut big_option = AppEvent::Option { i: 0 }.encode();
-        big_option[6] = 1;
-        assert_eq!(AppEvent::decode(&big_option), None);
+        let mut big_answer = AppEvent::Answer { i: 0 }.encode();
+        big_answer[6] = 1;
+        assert_eq!(AppEvent::decode(&big_answer), None);
+        // 1.7's retired kinds are not events any more
+        for kind in [11u8, 13, 14, 15] {
+            let mut b = [0; EVENT_LEN];
+            b[0] = kind;
+            assert_eq!(AppEvent::decode(&b), None, "kind {kind}");
+        }
     }
 
     #[test]

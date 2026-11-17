@@ -7,7 +7,7 @@
 //! outstanding, which the server completes with input, `Visible`, or `Quit`.
 //!
 //! Apps keep running when the shell moves away (R10): the one whose key is the current screen is the foreground app
-//! (its surface is shown, it gets input and its keyboard/toolbar claims apply); the others are told they are hidden.
+//! (its surface is shown, it gets input and its keyboard and page apply); the others are told they are hidden.
 //! They end when closed in the switcher, or when more than [`MAX_RUNNING`] run (the least recently used).
 //! Launcher apps start hidden behind the shell grid; ENTRY data outlives their process, and FRONT switches
 //! between that grid and their surface. A tile tap queues Entry even before the restarted app connects.
@@ -24,12 +24,12 @@ use e32::server::{Message, Service};
 use e32::sys::{TVersion, err};
 use neoui_proto::Rect;
 use neoui_proto::ipc::{self as proto, AppEvent};
-use neoui_proto::page::{PAGE_MAX, QUERY_MAX};
+use neoui_proto::page::{NOTE_MAX, NOTIFICATION_MAX, PAGE_MAX, QUERY_MAX};
 use neoui_proto::recents::Recents;
 use neoui_proto::settings::value::ENCODED_MAX;
 use neoui_proto::settings::{Caller, KEY_MAX, Value, kerr};
 use neoui_proto::{InputEvent, TouchPhase};
-use neoui_render::{Action, LauncherEntry, Nav, Page, Query};
+use neoui_render::{LauncherEntry, Nav, Note, Notification, Page, Query};
 
 /// Screen keys that are separate processes: their EXEs and command lines.
 // shortcut: a fixed table; a registry of installed apps comes with app installation.
@@ -38,6 +38,8 @@ pub const APPS: &[(&str, &str, &str)] = &[
     ("terminal", "neoterm", ""),
     ("files", "neofiles", ""),
     ("devtools", "neodev", ""),
+    // the kit gallery and the template for new apps (symbian/apps/kit)
+    ("kit", "neokit", ""),
     // S60 apps through the guest window server (NeoSymbian/legacy host/legacy.cpp)
     ("legacy", "legacy", ""),
     // Phone, Contacts and Messages: one process (NeoSymbian/phone), see ALIASES and PAGES
@@ -103,16 +105,12 @@ pub struct App {
     pub keyboard: u8,
     /// The keyboard height it was last told (the `KEYBOARD` reply or `AppEvent::Keyboard`).
     keyboard_h: u32,
-    /// The page it declared (`PAGE`, protocol 1.7); applies while it is in front. Older apps declare none: their
-    /// page is built from what they said with `NAV`, `TITLE` and `TOOLBAR` ([`App::page`]).
+    /// The page it declared (`PAGE`); applies while it is in front. None yet: Back leaves the app.
     pub declared: Option<Page>,
     /// Its open dialog (`QUERY`); shown while it is in front.
     pub query: Option<Query>,
-    /// Buttons it claimed (`NAV_BACK | NAV_OPTIONS`).
+    /// The legacy bridge's claims (`NAV`: `NAV_BACK | NAV_OPTIONS`).
     nav: i32,
-    /// Its status-bar title and middle button (`TITLE`, `TOOLBAR`: icon, style, label).
-    title: String,
-    tool: (i32, i32, String),
     /// It has been on screen (the switcher lists only those; a resident app starts hidden).
     shown: bool,
 }
@@ -145,38 +143,29 @@ impl App {
         }
     }
 
-    /// What the strip shows for it, and whether ⋮ is an older app's own Options (`NAV_OPTIONS`).
-    pub fn page(&self) -> (Page, bool) {
-        if let Some(p) = &self.declared {
-            return (p.clone(), false);
-        }
-        let (icon, style, label) = &self.tool;
-        let empty = style & proto::TOOLBAR_EMPTY != 0;
-        let page = Page {
-            title: self.title.clone(),
+    /// Its page now (an app that declared none yet: Back leaves it unless the legacy bridge claimed it).
+    pub fn page(&self) -> Page {
+        self.declared.clone().unwrap_or_else(|| Page {
             can_back: self.nav & proto::NAV_BACK != 0,
-            primary: (*icon != proto::TOOL_NONE && !empty).then(|| Action {
-                icon: *icon,
-                label: label.clone(),
-            }),
-            cancel: style & proto::TOOLBAR_CANCEL != 0 && !empty,
             ..Page::default()
-        };
-        (page, self.nav & proto::NAV_OPTIONS != 0)
+        })
     }
 
-    /// A tap on its page as the event it understands: an older app hears its toolbar's (Cancel was its Back).
+    /// The legacy bridge (a launcher, no kit): the shell draws a header over it; ⋮ when it claimed Options.
+    pub fn legacy(&self) -> (bool, bool) {
+        (
+            LAUNCHERS.contains(&self.key),
+            self.nav & proto::NAV_OPTIONS != 0,
+        )
+    }
+
+    /// What the user did through the shell, as the event the app gets.
     pub fn event(&self, n: Nav) -> AppEvent {
-        let old = self.declared.is_none();
         match n {
             Nav::Back => AppEvent::Back,
             Nav::Options => AppEvent::Options,
-            Nav::Primary if old => AppEvent::Action,
-            Nav::Primary => AppEvent::Primary,
-            Nav::Cancel if old => AppEvent::Back,
-            Nav::Cancel => AppEvent::Cancel,
-            Nav::Option(i) => AppEvent::Option { i },
             Nav::Answer(i) => AppEvent::Answer { i },
+            Nav::NoteAction => AppEvent::NoteAction,
         }
     }
 
@@ -228,6 +217,17 @@ pub struct Host {
     pub settings: Settings,
     /// When resident apps were last started.
     resident_at: Option<u64>,
+    /// The toast on show (`NOTE`): the app that posted it, the note, and when it goes (ms).
+    pub note: Option<(&'static str, Note, u64)>,
+    /// The apps' entries in the shade (`NOTIFY`), newest first; kept when the app ends (a tap starts it again).
+    pub notifications: Vec<(&'static str, Notification)>,
+    /// The launcher's badge counters (`BADGE`): app, counter id, count (never 0).
+    badges: Vec<(&'static str, u32, u32)>,
+    /// The toast, the shade's entries or the badges changed: the main loop gives them to the shell.
+    pub notes_changed: bool,
+    pub badges_changed: bool,
+    /// The clipboard (`CLIP_SET`, `CLIP_GET`), shared by every app.
+    clipboard: String,
 }
 
 impl Host {
@@ -258,7 +258,77 @@ impl Host {
             power: None,
             settings,
             resident_at: None,
+            note: None,
+            notifications: Vec::new(),
+            badges: Vec::new(),
+            notes_changed: false,
+            badges_changed: false,
+            clipboard: String::new(),
         }
+    }
+
+    /// The header the shell draws over the legacy bridge, in pixels (48 dp).
+    fn compat_header(&self) -> u32 {
+        48 * self.dp256 / 256
+    }
+
+    /// The app area moved to `body` (a navigation mode switch: Buttons 639 dp, Gestures 679 dp; rule 16): every app
+    /// that isn't full screen is told its new height (`AppEvent::Area`) and resizes once.
+    pub fn set_body(&mut self, body: Rect) {
+        if body == self.body {
+            return;
+        }
+        self.body = body;
+        let header = self.compat_header();
+        for app in self.apps.iter_mut() {
+            if app.quit_at.is_none() && !app.declared.as_ref().is_some_and(|p| p.full) {
+                let h = if app.legacy().0 {
+                    body.h - header
+                } else {
+                    body.h
+                };
+                app.send(AppEvent::Area { h });
+            }
+        }
+        self.refresh = true;
+    }
+
+    /// The launcher's badge counts by app (its counters summed).
+    pub fn badges(&self) -> Vec<(&'static str, u32)> {
+        let mut out: Vec<(&'static str, u32)> = Vec::new();
+        for (key, _, n) in &self.badges {
+            match out.iter_mut().find(|(k, _)| k == key) {
+                Some((_, sum)) => *sum = sum.saturating_add(*n),
+                None => out.push((key, *n)),
+            }
+        }
+        out
+    }
+
+    /// The toast's time is up: take it away. Call once per frame.
+    pub fn expire_note(&mut self, now_ms: u64) {
+        if self
+            .note
+            .as_ref()
+            .is_some_and(|(_, _, until)| now_ms >= *until)
+        {
+            self.note = None;
+            self.notes_changed = true;
+        }
+    }
+
+    /// The user tapped the shade's entry `i`: its app comes to the front on the entry's page; the entry goes.
+    pub fn open_notification(&mut self, i: usize, now_ms: u64) {
+        if i >= self.notifications.len() {
+            return;
+        }
+        let (key, n) = self.notifications.remove(i);
+        self.notes_changed = true;
+        dprintln!("neoui: notification {} of {} opened", n.id, key);
+        self.limit_running(key, now_ms);
+        self.start(key);
+        self.post(key, AppEvent::Page { page: n.page });
+        self.requested_screen = Some(key);
     }
 
     /// Start the [`RESIDENT`] apps that aren't running (hidden), at most every [`RESIDENT_RETRY_MS`]. Call once per
@@ -319,6 +389,11 @@ impl Host {
     /// screen for a full-screen page (less Classic's strip while it peeks).
     pub fn surface_rect(&self) -> Rect {
         let b = self.body;
+        if self.front().is_some_and(|a| a.legacy().0) {
+            // under the header the shell draws for it
+            let header = self.compat_header();
+            return Rect::new(b.x, b.y + header as i32, b.w, b.h - header);
+        }
         if !self.front_full() {
             return b;
         }
@@ -461,8 +536,6 @@ impl Host {
                     declared: None,
                     query: None,
                     nav: 0,
-                    title: String::new(),
-                    tool: (proto::TOOL_NONE, 0, String::new()),
                     shown: false,
                 });
             }
@@ -498,10 +571,17 @@ impl Host {
             .is_some()
     }
 
-    /// Input and claimed toolbar buttons go to the foreground app.
-    /// A tap on the front app's page (the strip, the sheet, a dialog, Back).
+    /// What the user did through the shell (Back, a dialog's button, the toast's action) goes to its app: the toast's
+    /// to the app that posted it, the rest to the foreground app.
     pub fn send_nav(&mut self, n: Nav) {
         dprintln!("neoui: nav {:?}", n);
+        if n == Nav::NoteAction {
+            if let Some((key, _, _)) = self.note.take() {
+                self.notes_changed = true;
+                self.post(key, AppEvent::NoteAction);
+            }
+            return;
+        }
         let Some(key) = self.front else { return };
         if let Some(app) = self.apps.find_mut(|a| a.key == key && a.quit_at.is_none()) {
             if let Nav::Answer(_) = n {
@@ -637,6 +717,35 @@ fn entry(
     Ok(0)
 }
 
+/// Adds, replaces or (empty title) removes app `key`'s shade entry; the newest goes first.
+fn notify(
+    list: &mut Vec<(&'static str, Notification)>,
+    key: &'static str,
+    n: Notification,
+) -> Result<i32, i32> {
+    let old = list.iter().position(|(k, o)| *k == key && o.id == n.id);
+    if let Some(i) = old {
+        list.remove(i);
+    }
+    if n.title.is_empty() {
+        return Ok(0);
+    }
+    if list.iter().filter(|(k, _)| *k == key).count() >= proto::NOTIFICATIONS_MAX {
+        return Err(kerr::OVERFLOW);
+    }
+    list.insert(0, (key, n));
+    Ok(0)
+}
+
+/// `CLIP_GET [out text]` → the text's length.
+fn clip_get(clip: &str, m: &Message) -> Result<i32, i32> {
+    if clip.len() > m.des_max_len(0)? {
+        return Err(kerr::OVERFLOW);
+    }
+    m.write8(0, clip.as_bytes(), 0)?;
+    i32::try_from(clip.len()).map_err(|_| kerr::OVERFLOW)
+}
+
 /// `SETTING_GET [key, out value]` → the value's length.
 fn setting_get(settings: &Settings, m: &Message) -> Result<i32, i32> {
     let key = read_text(m, 0, KEY_MAX)?;
@@ -695,6 +804,7 @@ impl Service for Host {
 
     fn message(&mut self, id: &mut u32, m: Message) {
         let (body, dp256, keyboard_h, front) = (self.body, self.dp256, self.keyboard_h, self.front);
+        let header = self.compat_header();
         let screen_h = self.screen_h;
         let Some(app) = self.apps.find_mut(|a| a.session == Some(*id)) else {
             return m.complete(err::KERR_NOT_SUPPORTED);
@@ -702,7 +812,13 @@ impl Service for Host {
         match m.function() {
             proto::GEOMETRY => {
                 let mut g = [0u8; proto::GEOMETRY_LEN];
-                for (i, v) in [body.w, body.h, dp256].iter().enumerate() {
+                // the legacy bridge sits under the header the shell draws for it
+                let h = if app.legacy().0 {
+                    body.h - header
+                } else {
+                    body.h
+                };
+                for (i, v) in [body.w, h, dp256].iter().enumerate() {
                     g[i * 4..i * 4 + 4].copy_from_slice(&v.to_le_bytes());
                 }
                 let r = m.write8(0, &g, 0);
@@ -754,20 +870,6 @@ impl Service for Host {
                 app.nav = m.int(0) & (proto::NAV_BACK | proto::NAV_OPTIONS);
                 m.complete(0);
             }
-            proto::TITLE => match read_text(&m, 0, proto::TITLE_MAX) {
-                Ok(t) => {
-                    app.title = t;
-                    m.complete(0);
-                }
-                Err(e) => m.complete(e),
-            },
-            proto::TOOLBAR => match read_text(&m, 2, proto::TITLE_MAX) {
-                Ok(label) => {
-                    app.tool = (m.int(0), m.int(1), label);
-                    m.complete(0);
-                }
-                Err(e) => m.complete(e),
-            },
             proto::PAGE => match read_bytes(&m, 0, PAGE_MAX)
                 .and_then(|b| Page::decode(&b).map_err(|_| kerr::ARGUMENT))
             {
@@ -797,6 +899,53 @@ impl Service for Host {
                 },
                 Err(e) => m.complete(e),
             },
+            proto::NOTE => match read_bytes(&m, 0, NOTE_MAX)
+                .and_then(|b| Note::decode(&b).map_err(|_| kerr::ARGUMENT))
+            {
+                Ok(n) => {
+                    if n.text.is_empty() {
+                        if self.note.as_ref().is_some_and(|(k, _, _)| *k == app.key) {
+                            self.note = None;
+                        }
+                    } else {
+                        let until = e32::time::millis() + proto::NOTE_MS;
+                        self.note = Some((app.key, n, until));
+                    }
+                    self.notes_changed = true;
+                    m.complete(0);
+                }
+                Err(e) => m.complete(e),
+            },
+            proto::NOTIFY => {
+                let key = app.key;
+                let r = read_bytes(&m, 0, NOTIFICATION_MAX)
+                    .and_then(|b| Notification::decode(&b).map_err(|_| kerr::ARGUMENT))
+                    .and_then(|n| notify(&mut self.notifications, key, n));
+                if r.is_ok() {
+                    self.notes_changed = true;
+                }
+                m.complete(r.unwrap_or_else(|e| e));
+            }
+            proto::BADGE => {
+                let (key, id, count) = (app.key, m.int(0) as u32, m.int(1) as u32);
+                self.badges.retain(|(k, i, _)| !(*k == key && *i == id));
+                if count > 0 {
+                    self.badges.push((key, id, count));
+                }
+                self.badges_changed = true;
+                m.complete(0);
+            }
+            proto::CLIP_SET => match read_text(&m, 0, proto::CLIP_MAX) {
+                Ok(t) => {
+                    self.clipboard = t;
+                    m.complete(0);
+                }
+                Err(e) => m.complete(e),
+            },
+            proto::CLIP_GET => {
+                let r = clip_get(&self.clipboard, &m);
+                m.complete(r.unwrap_or_else(|e| e));
+            }
             proto::POWER => {
                 dprintln!("neoui: power {} asked by {}", m.int(0), app.key);
                 self.power = Some(m.int(0));

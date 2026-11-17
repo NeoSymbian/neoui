@@ -19,7 +19,7 @@ use core::time::Duration;
 
 use neoui_proto::clock::face::Face;
 use neoui_proto::ipc::KEYBOARD_MODES;
-pub use neoui_proto::page::{Action, Page, Query};
+pub use neoui_proto::page::{Note, Notification, Page, Query};
 use neoui_proto::settings::Value;
 use neoui_proto::{Damage, InputEvent, Rect, ScrollPlan, Scrolling, TouchPhase};
 use slint::platform::software_renderer::{
@@ -74,19 +74,56 @@ impl Platform for NeoPlatform {
     }
 }
 
-/// A tap on the foreground app's page, for the app (`neoui_proto::ipc::AppEvent`).
+/// What the user did to the foreground app through the shell, for the app (`neoui_proto::ipc::AppEvent`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Nav {
     /// Back stays inside the app (its page said `can_back`).
     Back,
-    /// ⋮ of an older app that draws its own menu (`NAV_OPTIONS`).
+    /// ⋮ in the header the shell draws for the legacy bridge (it claimed `NAV_OPTIONS`).
     Options,
-    Primary,
-    Cancel,
-    /// An item of the shell's Options sheet.
-    Option(u16),
     /// A dialog button.
     Answer(u16),
+    /// The toast's action ("Undo").
+    NoteAction,
+}
+
+/// The live Back arrow (Navigation v2 rule 09): a `d` px bubble with a chevron, grey before the commit point and
+/// accent past it. The pixel at (`x`, `y`) inside the bubble's square, or `None` outside the circle. The UI server
+/// draws it over the frame (the app's surface is under it), so it is plain pixels, not Slint.
+pub fn back_bubble_pixel(
+    x: i32,
+    y: i32,
+    d: i32,
+    committed: bool,
+    pointing_left: bool,
+) -> Option<u32> {
+    let r = d / 2;
+    let (dx, dy) = (2 * x + 1 - d, 2 * y + 1 - d); // twice the offset from the centre
+    if dx * dx + dy * dy > d * d {
+        return None;
+    }
+    // the chevron: two strokes meeting at the tip, a quarter of the bubble high each way
+    let s = r / 2;
+    let t = (d / 12).max(1); // the stroke's half width, x2
+    let ax = if pointing_left { dx } else { -dx };
+    // the strokes run from the tip (-s/2, 0) to (s/2, ±s), in doubled units
+    let (tx, ex) = (-s, s);
+    let on = |sign: i32| {
+        let (vx, vy) = (ex - tx, 2 * s * sign);
+        let (px, py) = (ax - tx, dy);
+        let len2 = vx * vx + vy * vy;
+        let k = (px * vx + py * vy).clamp(0, len2);
+        let (cx, cy) = (px * len2 - k * vx, py * len2 - k * vy);
+        // distance from the segment, compared without square roots
+        cx as i64 * cx as i64 + cy as i64 * cy as i64 <= (t as i64 * 2 * len2 as i64).pow(2) / 4
+    };
+    Some(if on(1) || on(-1) {
+        0xFFFF_FFFF
+    } else if committed {
+        0xFF3D_8BFD // Theme.accent
+    } else {
+        0xFF2A_2E35 // Theme.dialog-button
+    })
 }
 
 /// Owns the Slint platform and the launcher UI.
@@ -100,6 +137,7 @@ pub struct Renderer {
     typed: Rc<RefCell<Vec<u32>>>,
     nav: Rc<RefCell<Vec<Nav>>>,
     entries: Rc<RefCell<Vec<u32>>>,
+    notes_opened: Rc<RefCell<Vec<usize>>>,
     closed: Rc<RefCell<Vec<alloc::string::String>>>,
     power: Rc<RefCell<Vec<i32>>>,
     phone: Rc<RefCell<Vec<(String, String)>>>,
@@ -110,6 +148,8 @@ pub struct Renderer {
     wifi_leave: Rc<RefCell<Option<bool>>>,
     /// keys of settings edited in the UI since the last `take_setting_edits` (`SystemSettings.edited`)
     edited: Rc<RefCell<Vec<String>>>,
+    /// the apps' badge counts (BADGE) as last given, merged with what the shell knows itself
+    app_badges: Vec<(String, u32)>,
     /// lists scrolled by shifting pixels (smooth-ui S2d), and how many frames did so
     scrolling: Scrolling,
     shifts: u32,
@@ -175,12 +215,13 @@ impl Renderer {
             sink.borrow_mut().push(match kind.as_str() {
                 "back" => Nav::Back,
                 "options" => Nav::Options,
-                "primary" => Nav::Primary,
-                "cancel" => Nav::Cancel,
-                "option" => Nav::Option(i),
+                "note" => Nav::NoteAction,
                 _ => Nav::Answer(i),
             })
         });
+        let notes_opened: Rc<RefCell<Vec<usize>>> = Rc::default();
+        let sink = notes_opened.clone();
+        ui.on_note_opened(move |i| sink.borrow_mut().push(i as usize));
         let entries: Rc<RefCell<Vec<u32>>> = Rc::default();
         let sink = entries.clone();
         // Slint uses signed ints; preserve all 32 UID bits on the round trip.
@@ -232,6 +273,7 @@ impl Renderer {
             typed,
             nav,
             entries,
+            notes_opened,
             closed,
             power,
             phone,
@@ -240,6 +282,7 @@ impl Renderer {
             wifi_connect,
             wifi_leave,
             edited,
+            app_badges: Vec::new(),
             scrolling: Scrolling::default(),
             shifts: 0,
         })
@@ -253,7 +296,6 @@ impl Renderer {
     pub fn show(&mut self, screen: &str, view: &str) {
         self.ui.set_screen(screen.into());
         self.ui.set_view(view.into());
-        self.ui.set_options_open(false);
         self.ui.set_shade_open(false);
     }
 
@@ -403,28 +445,79 @@ impl Renderer {
         self.ui.set_app_front(front);
     }
 
-    /// The foreground app's page (`neoui_proto::ipc::PAGE`). `legacy_options`: an older app claimed Options
-    /// (`NAV_OPTIONS`) to draw its own menu; ⋮ then sends [`Nav::Options`] while the page has no options.
-    pub fn set_app_page(&mut self, page: &Page, legacy_options: bool) {
+    /// The foreground app's page (`neoui_proto::ipc::PAGE`): its name, whether Back stays inside it, full screen.
+    pub fn set_app_page(&mut self, page: &Page) {
         let ui = &self.ui;
         ui.set_app_title(page.title.as_str().into());
         ui.set_app_back(page.can_back);
-        ui.set_app_has_primary(page.primary.is_some());
-        let (icon, label) = page
-            .primary
-            .as_ref()
-            .map_or((0, ""), |a| (a.icon, a.label.as_str()));
-        ui.set_app_primary_icon(icon);
-        ui.set_app_primary_label(label.into());
-        ui.set_app_cancel(page.cancel);
-        let options: Vec<slint::SharedString> =
-            page.options.iter().map(|o| o.as_str().into()).collect();
-        ui.set_app_options(Rc::new(slint::VecModel::from(options)).into());
-        ui.set_app_legacy_options(legacy_options);
-        let (n, at) = page.dots.unwrap_or((0, 0));
-        ui.set_app_dots(i32::from(n));
-        ui.set_app_dot(i32::from(at));
         ui.set_app_full(page.full);
+    }
+
+    /// The front app is the legacy bridge (no kit header): the shell draws a header over its surface, with ← while it
+    /// keeps Back and ⋮ (`Nav::Options`) when it claimed `NAV_OPTIONS`.
+    pub fn set_app_legacy(&mut self, legacy: bool, options: bool) {
+        self.ui.set_app_legacy(legacy);
+        self.ui.set_app_legacy_options(options);
+    }
+
+    /// The toast (`neoui_proto::ipc::NOTE`) to show above the bottom, or none.
+    pub fn set_note(&mut self, note: Option<&neoui_proto::page::Note>) {
+        let (text, action) = note.map_or(("", ""), |n| (n.text.as_str(), n.action.as_str()));
+        self.ui.set_note_text(text.into());
+        self.ui.set_note_action(action.into());
+    }
+
+    /// The apps' entries in the shade (`neoui_proto::ipc::NOTIFY`), newest first: (title, text) each.
+    pub fn set_notes(&mut self, notes: &[(&str, &str)]) {
+        let model: Vec<ShadeNote> = notes
+            .iter()
+            .map(|(t, x)| ShadeNote {
+                title: (*t).into(),
+                text: (*x).into(),
+            })
+            .collect();
+        self.ui
+            .set_notes(slint::ModelRc::from(Rc::new(slint::VecModel::from(model))));
+    }
+
+    /// The shade's app entries tapped since the last call (indices into what [`Renderer::set_notes`] gave).
+    pub fn take_notes_opened(&mut self) -> Vec<usize> {
+        core::mem::take(&mut *self.notes_opened.borrow_mut())
+    }
+
+    /// The launcher's badge counts (`neoui_proto::ipc::BADGE`) by app key; apps not named have none. Phone and
+    /// Messages fall back to the missed calls and unread messages the shell knows from MODEMD while their app posts
+    /// no count of its own.
+    pub fn set_badges(&mut self, counts: &[(&str, u32)]) {
+        self.app_badges = counts.iter().map(|(k, n)| ((*k).into(), *n)).collect();
+        self.update_badges();
+    }
+
+    fn update_badges(&mut self) {
+        let apps = self.ui.global::<Apps>();
+        let own = |key: &str| {
+            self.app_badges
+                .iter()
+                .filter(|(k, _)| k == key)
+                .map(|(_, n)| *n as i32)
+                .sum::<i32>()
+        };
+        let (missed, unread) = (self.ui.get_missed_calls(), self.ui.get_unread_messages());
+        let model: Vec<i32> = apps
+            .get_all()
+            .iter()
+            .map(|a| match (a.key.as_str(), own(a.key.as_str())) {
+                ("phone", 0) => missed,
+                ("messages", 0) => unread,
+                (_, n) => n,
+            })
+            .collect();
+        apps.set_badges(slint::ModelRc::from(Rc::new(slint::VecModel::from(model))));
+    }
+
+    /// How long until a Slint timer is due (a long press, a toast's end), so the server wakes for it.
+    pub fn next_timer(&self) -> Option<Duration> {
+        slint::platform::duration_until_next_timer_update()
     }
 
     /// The foreground app's dialog (`neoui_proto::ipc::QUERY`), or none.
@@ -440,28 +533,44 @@ impl Renderer {
         }
     }
 
-    /// Show Classic's strip over a full-screen page (a tap asked for it), or hide it again.
-    pub fn set_strip_peek(&mut self, on: bool) {
-        self.ui.set_strip_peek(on);
+    /// Show Buttons' key row over a full-screen page for a moment (a tap asked for it; rule 13), or hide it again.
+    pub fn set_key_row_peek(&mut self, on: bool) {
+        self.ui.set_key_row_peek(on);
     }
 
-    /// Is the strip on screen? (Not on Gestures home, not under a full-screen page.)
-    pub fn strip_shown(&self) -> bool {
-        self.ui.get_body_h() < self.ui.get_app_body_h() + 1.0
-    }
-
-    /// Do what a finished edge gesture asks (docs `gestures.md`). Back runs the strip's Back, so an app whose page goes
-    /// back inside it hears of it through [`Renderer::take_nav`]. Home from home opens the Apps menu (the bottom edge
-    /// goes on to it).
+    /// Do what a finished edge gesture asks (docs `gestures.md`, Navigation v2). Back runs the shell's Back, so an app
+    /// whose page goes back inside it hears of it through [`Renderer::take_nav`]. Home from home opens the Apps menu.
+    /// The last, previous and next apps come from the running apps (most recent first, [`Renderer::set_running`]).
     pub fn gesture(&mut self, g: neoui_proto::gesture::Gesture) {
         use neoui_proto::gesture::Gesture;
         let screen = self.screen();
+        let running: Vec<alloc::string::String> = self
+            .ui
+            .get_running()
+            .iter()
+            .map(|k| k.as_str().into())
+            .collect();
+        let at = running.iter().position(|k| *k == screen);
+        let switch_to = match g {
+            Gesture::LastApp => running.iter().find(|k| **k != screen),
+            // along the band: rightwards the older app, leftwards the newer one
+            Gesture::PrevApp => running.get(at.map_or(0, |i| i + 1)),
+            Gesture::NextApp => at
+                .and_then(|i| i.checked_sub(1))
+                .and_then(|i| running.get(i)),
+            _ => None,
+        };
         match g {
             Gesture::Back => self.ui.invoke_nav_back(),
             Gesture::OpenApps if screen != "switcher" => self.ui.invoke_open("switcher".into()),
             Gesture::Home if screen != "home" => self.show("home", ""),
             Gesture::OpenApps => {}
             Gesture::Home | Gesture::AppsMenu => self.show("menu", ""),
+            Gesture::LastApp | Gesture::PrevApp | Gesture::NextApp => {
+                if let Some(key) = switch_to {
+                    self.ui.invoke_open(key.as_str().into());
+                }
+            }
         }
     }
 
@@ -482,12 +591,10 @@ impl Renderer {
         core::mem::take(&mut *self.closed.borrow_mut())
     }
 
-    /// Is the shade, the Options sheet or a dialog open over the app area? The UI server neither composes the app's
-    /// surface over it nor gives it the touches meanwhile.
+    /// Is the shade or a dialog open over the app area? The UI server neither composes the app's surface over it nor
+    /// gives it the touches meanwhile.
     pub fn overlay_open(&self) -> bool {
-        self.ui.get_shade_open()
-            || self.ui.get_options_open()
-            || (self.ui.get_app_front() && self.ui.get_query_open())
+        self.ui.get_shade_open() || (self.ui.get_app_front() && self.ui.get_query_open())
     }
 
     /// Show or hide the Power menu (the UI server opens it when Power is held).
@@ -693,6 +800,7 @@ impl Renderer {
     pub fn set_phone_availability(&mut self, failed: bool, missed: u32) {
         self.ui.set_modem_failed(failed);
         self.ui.set_missed_calls(missed.min(i32::MAX as u32) as i32);
+        self.update_badges();
     }
 
     /// Unread messages (C9): the status bar's envelope and the shade's row with the newest one's `line`.
@@ -700,6 +808,7 @@ impl Renderer {
         self.ui
             .set_unread_messages(count.min(i32::MAX as u32) as i32);
         self.ui.set_unread_line(line.into());
+        self.update_badges();
     }
 
     /// What the SIM prompt and the modem banner asked since the last call: "pin" + PIN, "sim-dismiss", "dial" +
@@ -876,5 +985,33 @@ mod tests {
             alpha: 255,
         });
         assert_eq!(q.0, 0xFF01_0203);
+    }
+}
+
+#[cfg(test)]
+mod bubble_tests {
+    use super::back_bubble_pixel;
+
+    #[test]
+    fn the_bubble_is_a_circle_with_a_chevron() {
+        let d = 108; // 36 dp on the Pixel
+        assert_eq!(
+            back_bubble_pixel(0, 0, d, false, true),
+            None,
+            "a corner is outside"
+        );
+        assert_eq!(
+            back_bubble_pixel(d / 2, 2, d, false, true),
+            Some(0xFF2A_2E35)
+        );
+        assert_eq!(
+            back_bubble_pixel(d / 2, 2, d, true, true),
+            Some(0xFF3D_8BFD),
+            "accent past the commit point"
+        );
+        // the tip of a left-pointing chevron is left of the centre, a right-pointing one's right of it
+        let white = |x, left| back_bubble_pixel(x, d / 2, d, false, left) == Some(0xFFFF_FFFF);
+        assert!(white(d / 2 - d / 8, true) && !white(d / 2 + d / 8, true));
+        assert!(white(d / 2 + d / 8, false) && !white(d / 2 - d / 8, false));
     }
 }

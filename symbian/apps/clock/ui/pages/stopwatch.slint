@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // The Stopwatch tab: elapsed time to the hundredth, Start/Stop, Lap and Reset, and the laps (newest first). It keeps
 // running while the app is closed (wall-clock based, saved in clock.stopwatch).
-import { Theme } from "../../../../../ui/theme.slint";
-import { Button } from "../../../../../ui/components/controls.slint";
-import { ListRow } from "../../../../../ui/components/lists.slint";
-import { NeoList } from "../../../../../ui/components/scroll.slint";
+import { Theme } from "@neoui/theme.slint";
+import { Button } from "@neoui/components/controls.slint";
+import { ListRow } from "@neoui/components/lists.slint";
+import { NeoList } from "@neoui/components/scroll.slint";
 import { ClockState } from "../state.slint";
 
 export component StopwatchPage inherits Rectangle {

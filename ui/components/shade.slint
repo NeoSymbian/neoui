@@ -7,6 +7,12 @@ import { Slider } from "controls.slint";
 import { SystemSettings } from "../system-settings.slint";
 import { Now } from "../now.slint";
 
+// An app's entry (ipc NOTIFY): its title and text, "Clock · Time's up" style (the app's name first).
+export struct ShadeNote {
+    title: string,
+    text: string,
+}
+
 component Toggle inherits Rectangle {
     in property <image> icon;
     in property <string> label;
@@ -51,6 +57,9 @@ export component Shade inherits Rectangle {
     in property <string> unread-line;
     in property <bool> active-call;
     callback return-call;
+    // the apps' entries (ipc NOTIFY), newest first; a tap opens the app on its page
+    in property <[ShadeNote]> notes;
+    callback note-opened(int);
     // an app on one of its pages (app key, view: host::PAGES)
     callback open-view(string, string);
     visible: self.opacity > 0.01;
@@ -151,6 +160,15 @@ export component Shade inherits Rectangle {
                 font-size: Theme.font-status * 0.9;
                 font-weight: 600;
                 letter-spacing: 0.06 * Theme.font-status;
+            }
+
+            for n[i] in root.notes: ListRow {
+                title: n.title;
+                subtitle: n.text;
+                icon: @image-url("../icons/sys/bell.svg");
+                has-icon: true;
+                icon-tint: Theme.accent;
+                clicked => { root.note-opened(i); }
             }
 
             if active-call: ListRow {

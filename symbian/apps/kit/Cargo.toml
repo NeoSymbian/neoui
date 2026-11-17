@@ -1,0 +1,25 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# NEOKIT.EXE: the neoui kit gallery on the device, and the template for a new app: copy this folder, rename the
+# package and the EXE (exes.txt, host.rs APPS), and replace ui/app.slint and src/lib.rs with the app's own.
+# GPL-3.0 because it links Slint under GPL-3.0 (NeoSymbian decision 2026-11-06).
+[package]
+name = "neokit"
+description = "The neoui kit gallery (every kit part, one page per sheet) and the template for a new neoui app"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+publish = false
+
+[lib]
+crate-type = ["staticlib"]
+test = false
+
+[dependencies]
+e32.workspace = true
+slint.workspace = true
+# the app API: connect, events, page, dialogs, toasts, notifications, badges, settings
+neoapp.workspace = true
+
+[build-dependencies]
+# compiles ui/app.slint with the kit (@neoui/kit.slint)
+neoui-kit.workspace = true

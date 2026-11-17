@@ -1,0 +1,13 @@
+// SPDX-License-Identifier: Apache-2.0
+// The kit gallery in a window, for the host snapshot tests (crates/neoui-gallery): the page on show is
+// GalleryState.page.
+import { Theme, Kit, Scroll } from "../kit.slint";
+import { GalleryPages, GalleryState } from "gallery.slint";
+
+export { Theme, Kit, Scroll, GalleryState }
+
+export component Gallery inherits Window {
+    background: Theme.bg;
+    default-font-family: "Inter";
+    GalleryPages { }
+}

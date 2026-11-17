@@ -17,6 +17,7 @@ const H: u32 = 2037;
 
 thread_local! {
     static NOW: Cell<Duration> = const { Cell::new(Duration::ZERO) };
+    static CLIP: std::cell::RefCell<String> = const { std::cell::RefCell::new(String::new()) };
 }
 
 struct Host(Rc<MinimalSoftwareWindow>);
@@ -27,6 +28,13 @@ impl Platform for Host {
     }
     fn duration_since_start(&self) -> Duration {
         NOW.get()
+    }
+    // as neoapp's: the server's clipboard (CLIP_SET, CLIP_GET)
+    fn set_clipboard_text(&self, text: &str, _: slint::platform::Clipboard) {
+        CLIP.with(|c| *c.borrow_mut() = text.into());
+    }
+    fn clipboard_text(&self, _: slint::platform::Clipboard) -> Option<String> {
+        CLIP.with(|c| Some(c.borrow().clone()).filter(|t| !t.is_empty()))
     }
 }
 
@@ -89,9 +97,13 @@ fn the_kit() {
     shoot(&window, "kit-scratch");
     let kit = ui.global::<Kit>();
     assert_eq!(kit.get_layers(), 2, "the menu and the sheet are layers");
-    kit.set_back_seq(kit.get_back_seq() + 1);
-    shoot(&window, "kit-scratch");
+    // as neoapp::kit_back! does: bump, run the change handlers (no render), and see that a layer answered
+    let seq = kit.get_back_seq() + 1;
+    kit.set_back_seq(seq);
+    slint::platform::update_timers_and_animations();
+    assert_eq!(kit.get_answered(), seq, "a layer answered without a render");
     assert!(!g.get_sheet(), "Back closed the sheet first");
+    shoot(&window, "kit-scratch");
     assert_eq!(kit.get_layers(), 1);
     kit.set_back_seq(kit.get_back_seq() + 1);
     shoot(&window, "kit-scratch");
@@ -121,4 +133,52 @@ fn the_kit() {
             _ => {}
         }
     }
+
+    // the copy/paste bar sends Ctrl+A, Ctrl+C and Ctrl+V as keys: a focused kit field takes them, through the
+    // platform's clipboard (the server's, in neoapp)
+    g.set_page(6);
+    shoot(&window, "kit-scratch");
+    let tap = |x: f32, y: f32| {
+        use slint::platform::{PointerEventButton, WindowEvent};
+        let position = slint::LogicalPosition::new(x, y);
+        window.dispatch_event(WindowEvent::PointerPressed {
+            position,
+            button: PointerEventButton::Left,
+        });
+        window.dispatch_event(WindowEvent::PointerReleased {
+            position,
+            button: PointerEventButton::Left,
+        });
+    };
+    let key = |k: slint::SharedString, down: bool| {
+        use slint::platform::WindowEvent;
+        window.dispatch_event(if down {
+            WindowEvent::KeyPressed { text: k }
+        } else {
+            WindowEvent::KeyReleased { text: k }
+        });
+    };
+    let ctrl = |c: &str| {
+        let control: slint::SharedString = slint::platform::Key::Control.into();
+        key(control.clone(), true);
+        key(c.into(), true);
+        key(c.into(), false);
+        key(control, false);
+    };
+    // the first field ("Wake up") is 16 dp in, below the buttons and a caption: about 190 dp down at 3 px a dp
+    tap(100.0 * 3.0, 182.0 * 3.0);
+    ctrl("a");
+    ctrl("c");
+    assert_eq!(
+        CLIP.with(|c| c.borrow().clone()),
+        "Wake up",
+        "Ctrl+A, Ctrl+C copied the field"
+    );
+    ctrl("v");
+    ctrl("v");
+    shoot(&window, "kit-scratch");
+    std::fs::remove_file(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../snapshots/kit-scratch.png"),
+    )
+    .unwrap();
 }

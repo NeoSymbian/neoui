@@ -28,10 +28,9 @@ export global SystemSettings {
     in-out property <bool> shade-date: true;
     // seconds before the screen turns off, 0 = never (display.timeout)
     in-out property <int> screen-timeout: 60;
-    // 0 Classic (the toolbar's Back), 1 Gestures (edge swipes, docs gestures.md) (nav.mode)
-    in-out property <int> nav-mode: 0;
-    // Classic's strip: 0 ← ⌂ ▢ left, 1 right, 2 split (nav.strip)
-    in-out property <int> nav-strip: 0;
+    // 0 Buttons (the key row), 1 Gestures (the Thumb map), 2 N9 gestures (nav.mode; Navigation v2 D19)
+    in-out property <int> nav-mode: 1;
+    out property <string> nav-mode-name: nav-mode == 0 ? "Buttons" : nav-mode == 2 ? "N9 gestures" : "Gestures";
     in-out property <bool> usb-debugging: false;
     // the system keyboard (Settings -> Language & keyboard): the languages on, the current one (an index into
     // keyboard/layouts.slint's list) and whether all are as tall as the tallest
@@ -61,7 +60,6 @@ export global SystemSettings {
     changed shade-date => { edited("shade.date"); }
     changed screen-timeout => { edited("display.timeout"); }
     changed nav-mode => { edited("nav.mode"); }
-    changed nav-strip => { edited("nav.strip"); }
     changed usb-debugging => { edited("developer.usb_debugging"); }
     changed keyboard-en => { edited("keyboard.en"); }
     changed keyboard-hy => { edited("keyboard.hy"); }

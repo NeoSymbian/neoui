@@ -35,7 +35,7 @@ use e32::rt::{self, Either};
 use e32::server::{self, Server};
 use e32::{dprintln, time};
 use host::Host;
-use neoui_proto::gesture::{Edge, Recognizer, Step};
+use neoui_proto::gesture::{Edge, Map, Recognizer, Step};
 use neoui_proto::ipc::{self as proto, AppEvent};
 use neoui_proto::settings::keys;
 use neoui_proto::{Damage, InputEvent, Rect, TouchPhase, coalesce_moves, next_deadline};
@@ -54,7 +54,7 @@ const TRANSITION_MS: u32 = 250;
 const SWIPE_MS: u32 = 250;
 /// How long Power is held before the Power menu opens (H3a).
 const POWER_HOLD_MS: u64 = 1000;
-/// How long a tap shows Classic's strip over a full-screen page.
+/// How long a tap shows Buttons' key row over a full-screen page (rule 13).
 const PEEK_MS: u64 = 3000;
 /// `EHalGroupDisplay` and its `TDisplayHalFunction`s (`u32hal.h`): screen on/off and the panel's brightness (D2).
 const HAL_DISPLAY: i32 = 4;
@@ -156,10 +156,12 @@ fn main() -> i32 {
         settings,
     );
     let mut keyboard_shown = 0;
-    // the foreground app's title and toolbar button as last given to the shell
-    let mut chrome_shown: (neoui_render::Page, bool) = Default::default();
+    // the foreground app's page as last given to the shell
+    let mut chrome_shown = neoui_render::Page::default();
+    // the front app is the legacy bridge (the shell's header over it), and whether it has Options
+    let mut legacy_shown = (false, false);
     let mut query_shown: Option<neoui_render::Query> = None;
-    // when Classic's strip, shown over a full-screen page by a tap, goes again
+    // when Buttons' key row, shown over a full-screen page by a tap, goes again
     let mut peek_until = 0;
     // the screen and view last checked for an app page (host::page_for)
     let mut page_shown = (String::new(), String::new());
@@ -226,6 +228,17 @@ fn main() -> i32 {
             } else {
                 IDLE_US
             };
+            // a Slint timer (a long press, the kit's spinner), the toast's end, or a held gesture's pause is due sooner
+            let wait = [
+                gest.busy().then_some(50_000),
+                ui.next_timer().map(|d| d.as_micros() as u64),
+                host.note
+                    .as_ref()
+                    .map(|(_, _, until)| until.saturating_sub(time::millis()) * 1000),
+            ]
+            .into_iter()
+            .flatten()
+            .fold(wait, u64::min);
             match rt::select(
                 rt::select(input.as_mut(), receive.as_mut()),
                 rt::select(modem_update.as_mut(), time::delay(wait as i32)),
@@ -280,16 +293,20 @@ fn main() -> i32 {
                     }
                     // Edge gestures see every move (before they are merged: a merged move could hide the
                     // direction); what they don't take is routed as usual below.
-                    let gestures = host.settings.get(keys::NAV_MODE).unwrap_or(0) == 1
+                    // Gestures (the Thumb map) and N9 gestures; Buttons has no edge gestures (D18)
+                    let mode = host.settings.get(keys::NAV_MODE).unwrap_or(1);
+                    gest.set_map(if mode == 2 { Map::N9 } else { Map::Thumb });
+                    let gestures = mode != 0
                         && !power_menu
                         && !phone.modal()
                         && !ui.overlay_open()
                         && transition.is_none()
                         && swipe.is_none();
-                    // home keeps its left edge for the pages (Back does nothing there)
-                    let live: &[Edge] = match (gestures, screen.as_str()) {
-                        (false, _) => &[],
-                        (true, "home") => &[Edge::Right, Edge::Bottom],
+                    // home keeps its side edges for the pages (Back does nothing there); N9's right edge is Open apps
+                    let live: &[Edge] = match (gestures, mode, screen.as_str()) {
+                        (false, _, _) => &[],
+                        (true, 2, "home") => &[Edge::Right, Edge::Bottom],
+                        (true, _, "home") => &[Edge::Bottom],
                         _ => &[Edge::Left, Edge::Right, Edge::Bottom],
                     };
                     let ms = time::millis();
@@ -356,17 +373,17 @@ fn main() -> i32 {
                                         && !power_menu
                                         && !ui.overlay_open()
                                         && contains(&host.app_area(), x, y);
-                                    // Classic over a full-screen page: the first tap shows the strip for a moment
-                                    // (docs gestures.md rule 8), the app doesn't get it
+                                    // Buttons over a full-screen page: the first tap shows the key row for a moment
+                                    // (rule 13), the app doesn't get it
                                     if to_app
                                         && !host.peek
                                         && host.front_full()
-                                        && host.settings.get(keys::NAV_MODE).unwrap_or(0) != 1
+                                        && host.settings.get(keys::NAV_MODE).unwrap_or(1) == 0
                                     {
                                         host.peek = true;
                                         peek_until = time::millis() + PEEK_MS;
                                         host.refresh = true;
-                                        ui.set_strip_peek(true);
+                                        ui.set_key_row_peek(true);
                                         to_app = false;
                                         swallow = true;
                                     }
@@ -593,8 +610,36 @@ fn main() -> i32 {
                 _ => Default::default(),
             };
             if want_page != chrome_shown {
-                ui.set_app_page(&want_page.0, want_page.1);
+                ui.set_app_page(&want_page);
                 chrome_shown = want_page;
+            }
+            let want_legacy = match host.front() {
+                Some(a) if !phone_modal => a.legacy(),
+                _ => (false, false),
+            };
+            if want_legacy != legacy_shown {
+                ui.set_app_legacy(want_legacy.0, want_legacy.1);
+                legacy_shown = want_legacy;
+                host.refresh = true; // the surface moved under (or out from under) the header
+            }
+            // a mode switch moves the bottom: apps get their new height (rule 16)
+            host.set_body(ui.app_body());
+            // the toast, the shade's app entries and the launcher's badges (NOTE, NOTIFY, BADGE)
+            host.expire_note(ms);
+            if core::mem::take(&mut host.notes_changed) {
+                ui.set_note(host.note.as_ref().map(|(_, n, _)| n));
+                let notes: Vec<(&str, &str)> = host
+                    .notifications
+                    .iter()
+                    .map(|(_, n)| (n.title.as_str(), n.text.as_str()))
+                    .collect();
+                ui.set_notes(&notes);
+            }
+            for i in ui.take_notes_opened() {
+                host.open_notification(i, ms);
+            }
+            if core::mem::take(&mut host.badges_changed) {
+                ui.set_badges(&host.badges());
             }
             let want_query = match host.front() {
                 Some(a) if !phone_modal => a.query.clone(),
@@ -607,7 +652,7 @@ fn main() -> i32 {
             if host.peek && (!host.front_full() || ms >= peek_until) {
                 host.peek = false;
                 host.refresh = true;
-                ui.set_strip_peek(false);
+                ui.set_key_row_peek(false);
             }
             let overlay = ui.overlay_open();
             if overlay_shown && !overlay {
@@ -682,6 +727,11 @@ fn main() -> i32 {
                 continue; // nothing drawn while dark; the pollers above keep running
             }
 
+            // the Thumb map's up-and-hold: a still finger sends no moves, so time tells the recognizer
+            if let Some(Step::Track { edge, progress }) = gest.tick(ms) {
+                let at = hint.map_or(0, |(_, _, at)| at);
+                hint = Some((edge, progress, at));
+            }
             let fading = transition.is_some() || swipe.is_some();
             let (px, damage, render_us, mut copy_us) =
                 present(&mut ui, &mut frame, &display, &perf, !fading);
@@ -745,7 +795,12 @@ fn main() -> i32 {
                         compose(&mut host, &damage, &display)
                     };
                     if hint.is_some() || hint_drawn.is_some() {
-                        let r = hint.map(|(e, p, at)| hint_rect(e, p, at, (w, h), dp256));
+                        // Back: the left edge, and the right one in the Thumb map (N9's right edge is Open apps)
+                        let thumb = host.settings.get(keys::NAV_MODE).unwrap_or(1) == 1;
+                        let r = hint.map(|(e, p, at)| {
+                            let back = e == Edge::Left || (e == Edge::Right && thumb);
+                            hint_rect(e, p, at, back, (w, h), dp256)
+                        });
                         draw_hint(r, &mut hint_drawn, &frame, &host, w, &mut rows.1, &display);
                     }
                     perf.frame(render_us, copy_us, perf.since(&m), px + app_px);
@@ -853,24 +908,44 @@ fn slide(
     }
 }
 
-/// The edge gesture's hint (docs gestures.md G1): a 4 dp bar along the edge, longer as the finger goes in, in the
-/// accent colour once letting go acts, white past the bottom edge's Apps menu point (`progress` 512).
+/// The edge gesture's hint (docs gestures.md): for Back (rule 09, `back`) a 36 dp bubble with ← that follows the
+/// finger in from the edge and turns accent at the commit point; otherwise a 4 dp bar along the edge, longer as the
+/// finger goes in, accent once letting go acts, white at the bottom's second point (`progress` 512: N9's Apps menu,
+/// the Thumb map's Open apps).
 fn hint_rect(
     edge: Edge,
     progress: u32,
     at: i32,
+    back: bool,
     (w, h): (usize, usize),
     dp256: u32,
-) -> (Rect, u32) {
+) -> Hint {
     let dp = |n: usize| n * dp256 as usize / 256;
-    let t = dp(4);
     let p = progress.min(512) as usize;
+    if back && edge != Edge::Bottom {
+        let d = dp(36);
+        let travel = dp(8) + dp(40) * p.min(256) / 256;
+        let x = if edge == Edge::Left {
+            travel
+        } else {
+            w.saturating_sub(travel + d)
+        };
+        let y = (at.max(0) as usize)
+            .saturating_sub(d / 2)
+            .min(h.saturating_sub(d));
+        return Hint {
+            rect: Rect::new(x as i32, y as i32, d as u32, d as u32),
+            colour: 0,
+            bubble: Some((p >= 256, edge == Edge::Left)),
+        };
+    }
+    let t = dp(4);
     let colour = match p {
         512.. => 0x00ff_ffff,
         256.. => 0x003d_8bfd, // Theme.accent
         _ => 0x007d_838c,     // Theme.text-dim
     };
-    let r = match edge {
+    let rect = match edge {
         Edge::Left | Edge::Right => {
             let len = (dp(32) + dp(96) * p.min(256) / 256).min(h);
             let y = (at.max(0) as usize).saturating_sub(len / 2).min(h - len);
@@ -882,13 +957,25 @@ fn hint_rect(
             Rect::new(((w - len) / 2) as i32, (h - t) as i32, len as u32, t as u32)
         }
     };
-    (r, colour)
+    Hint {
+        rect,
+        colour,
+        bubble: None,
+    }
+}
+
+/// What [`draw_hint`] draws: a bar of `colour`, or the Back bubble (committed, pointing left).
+#[derive(Clone, Copy)]
+struct Hint {
+    rect: Rect,
+    colour: u32,
+    bubble: Option<(bool, bool)>,
 }
 
 /// Put back what the last hint covered (the frame with the front app over it), then draw the new one, if any,
 /// straight to the screen. `row` is a screen-wide scratch row.
 fn draw_hint(
-    hint: Option<(Rect, u32)>,
+    hint: Option<Hint>,
     drawn: &mut Option<Rect>,
     frame: &[u32],
     host: &Host,
@@ -897,8 +984,8 @@ fn draw_hint(
     display: &Display,
 ) {
     let rows = |r: Rect| r.y.max(0) as usize..r.y.max(0) as usize + r.h as usize;
+    let app = front_surface(host);
     if let Some(r) = drawn.take() {
-        let app = front_surface(host);
         for y in rows(r) {
             row.copy_from_slice(&frame[y * w..][..w]);
             app_row(app, y, row);
@@ -910,13 +997,39 @@ fn draw_hint(
             );
         }
     }
-    if let Some((r, colour)) = hint {
-        row[..r.w as usize].fill(colour);
-        for y in rows(r) {
-            display.blit_to(row, w, (0, 0, r.w as usize, 1), (r.x as usize, y));
+    let Some(h) = hint else { return };
+    let r = h.rect;
+    for y in rows(r) {
+        match h.bubble {
+            // the bubble over what is under it: the frame and the front app's row
+            Some((committed, left)) => {
+                row.copy_from_slice(&frame[y * w..][..w]);
+                app_row(app, y, row);
+                for x in 0..r.w as i32 {
+                    if let Some(px) = neoui_render::back_bubble_pixel(
+                        x,
+                        y as i32 - r.y,
+                        r.w as i32,
+                        committed,
+                        left,
+                    ) {
+                        row[r.x as usize + x as usize] = px;
+                    }
+                }
+                display.blit_to(
+                    row,
+                    w,
+                    (r.x as usize, 0, r.w as usize, 1),
+                    (r.x as usize, y),
+                );
+            }
+            None => {
+                row[..r.w as usize].fill(h.colour);
+                display.blit_to(row, w, (0, 0, r.w as usize, 1), (r.x as usize, y));
+            }
         }
-        *drawn = Some(r);
     }
+    *drawn = Some(r);
 }
 
 fn contains(r: &Rect, x: i32, y: i32) -> bool {

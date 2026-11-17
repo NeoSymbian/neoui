@@ -89,33 +89,25 @@ pub fn tap(r: &mut Renderer, x: i32, y: i32) {
     }
 }
 
-/// The strip's buttons (ui/components/frame.slint `Strip`, Classic with ← ⌂ ▢ on the left): (x, y) centres. The
-/// strip is 56 dp high with 4 dp of padding at both ends; the system buttons are 44 dp wide, ⋮ too.
+/// Buttons mode's key row (ui/components/frame.slint `KeyRow`): ← ⌂ ▢ in thirds of the 56 dp row at the bottom.
 #[allow(dead_code)] // each test uses some of them
-pub struct StripAt {
+pub struct KeysAt {
     pub y: i32,
     pub back: i32,
     pub home: i32,
     pub apps: i32,
-    /// ⋮ at the right end
-    pub options: i32,
-    /// the page's last button when it has no ⋮ (the primary pill's right part)
-    pub last: i32,
-    /// the page's first button with ← ⌂ ▢ on the right (`nav.strip` 1): Cancel's left part
-    pub first: i32,
 }
 
+/// Switch to Buttons (`nav.mode` 0) and return where its keys are.
 #[allow(dead_code)]
-pub fn strip(w: u32, h: u32) -> StripAt {
+pub fn keys(r: &mut Renderer, w: u32, h: u32) -> KeysAt {
+    assert!(r.apply_setting("nav.mode", &neoui_proto::settings::Value::Int(0)));
     let d = dp(w, h);
-    StripAt {
+    KeysAt {
         y: (h as f32 - 28.0 * d) as i32,
-        back: (26.0 * d) as i32,
-        home: (70.0 * d) as i32,
-        apps: (114.0 * d) as i32,
-        options: (w as f32 - 26.0 * d) as i32,
-        last: (w as f32 - 18.0 * d) as i32,
-        first: (18.0 * d) as i32,
+        back: (w / 6) as i32,
+        home: (w / 2) as i32,
+        apps: (w * 5 / 6) as i32,
     }
 }
 
@@ -124,15 +116,15 @@ pub fn dp(w: u32, h: u32) -> f32 {
     w.min(h) as f32 / 360.0
 }
 
-/// Centre of menu tile `i`'s icon; mirrors ui/screens/menu.slint (grid 12 dp below the 25 dp status bar,
-/// 135 dp rows, 72 dp icons 12 dp below the cell top).
+/// Centre of menu tile `i`'s icon; mirrors ui/screens/menu.slint (grid 12 dp below the 25 dp status bar and the 48 dp
+/// header, 135 dp rows, 72 dp icons 12 dp below the cell top).
 fn tile_center(i: usize, w: u32, h: u32) -> (i32, i32) {
     let d = dp(w, h);
     let cols = if w > h { 4 } else { 3 };
     let cell_w = w as f32 / cols as f32;
     (
         ((i % cols) as f32 * cell_w + cell_w / 2.0) as i32,
-        ((25.0 + 12.0) * d + (i / cols) as f32 * 135.0 * d + (12.0 + 36.0) * d) as i32,
+        ((25.0 + 48.0 + 12.0) * d + (i / cols) as f32 * 135.0 * d + (12.0 + 36.0) * d) as i32,
     )
 }
 

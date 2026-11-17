@@ -65,6 +65,8 @@ pub struct Ctx {
     pub model: RefCell<Model>,
     /// The analog face's dial, kept between seconds (face.rs).
     pub analog: RefCell<face::Analog>,
+    /// The page last described to the shell.
+    pub page: RefCell<neoapp::Page>,
 }
 
 impl Ctx {
@@ -98,24 +100,33 @@ impl Ctx {
         self.show(&now);
     }
 
-    /// Opens a sub-view over the tabs (or closes it with [`View::None`]); while one is open, Back closes it. The tabs'
-    /// ⋮ has Settings.
+    /// Opens a sub-view over the tabs (or closes it with [`View::None`]); while one is open, Back closes it.
     pub fn open(&self, view: View) {
         self.model.borrow_mut().view = view;
+        dprintln!("clock: view {}", view.name());
+        self.describe();
+        self.show(&Now::read());
+    }
+
+    /// Tells the shell the page when it changed: Back stays in the app while a sub-view or a kit layer (the ⋮ menu,
+    /// the Face sheet) is open.
+    pub fn describe(&self) {
+        let layers = self
+            .ui
+            .upgrade()
+            .map_or(0, |ui| ui.global::<crate::Kit>().get_layers());
         let page = neoapp::Page {
-            can_back: view != View::None,
-            options: if view == View::None {
-                alloc::vec!["Settings".into()]
-            } else {
-                alloc::vec![]
-            },
+            title: "Clock".into(),
+            can_back: self.model.borrow().view != View::None || layers > 0,
             ..Default::default()
         };
+        if *self.page.borrow() == page {
+            return;
+        }
         if let Err(e) = self.app.page(&page) {
             dprintln!("clock: cannot describe the page ({})", e);
         }
-        dprintln!("clock: view {}", view.name());
-        self.show(&Now::read());
+        *self.page.borrow_mut() = page;
     }
 
     /// The analog face for `now`, when it is on screen (the Clock tab, analog, no sub-view): the dial kept, the hands
@@ -194,6 +205,8 @@ pub fn bind(ctx: &Rc<Ctx>, ui: &ClockApp) {
     });
     let c = ctx.clone();
     s.on_close(move || c.open(View::None));
+    let c = ctx.clone();
+    s.on_open_settings(move || c.open(View::Settings));
     face::bind(ctx, &s);
     settings::bind(ctx, &s);
     set_time::bind(ctx, &s);

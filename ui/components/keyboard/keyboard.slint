@@ -91,8 +91,11 @@ export component Keyboard inherits Rectangle {
     // proto::KEYBOARD's modes: 1 text, 2 terminal (the Esc / Tab / arrows row on top), 3 and up a pad (`Pads`:
     // 3 number, 4 phone); an unknown one is text
     in property <int> mode: 1;
-    // what a key typed: a character, Backspace "\u{8}", Enter "\u{d}", or (terminal row) Escape, Tab, an arrow
+    // what a key typed: a character, Backspace "\u{8}", Enter "\u{d}", or (terminal row) Escape, Tab, an arrow; the
+    // edit bar's chords as Control "\u{11}" then the letter (neoapp turns the pair into Ctrl+letter)
     callback typed(string);
+    // the edit bar on the top band, Select all · Copy · Paste (an app's text field: Slint's fields take the chords)
+    in property <bool> edit-bar;
     property <bool> symbols;
     property <bool> shift;
     property <Layout> layout: Layouts.all[Layouts.current];
@@ -152,6 +155,45 @@ export component Keyboard inherits Rectangle {
             letters = true;
         } else {
             typed(k.text != "" ? k.text : k.label);
+        }
+    }
+
+    // a swipe down on the top band puts the keyboard away too (Navigation v2 D20); on the band only, so the keys
+    // keep their taps without the swipe handler's delay
+    edit := HorizontalLayout {
+        x: 4 * Theme.dp;
+        y: 0;
+        height: bar;
+        width: root.edit-bar ? self.preferred-width : 0;
+        visible: root.edit-bar;
+        for item[i] in ["Select all", "Copy", "Paste"]: Rectangle {
+            width: label.preferred-width + 20 * Theme.dp;
+            background: t.pressed ? Theme.pressed : transparent;
+            border-radius: Theme.radius-small;
+            label := Text {
+                text: item;
+                color: Theme.text-secondary;
+                font-size: Theme.font-label;
+            }
+
+            t := TouchArea {
+                clicked => {
+                    root.typed("\u{11}" + (i == 0 ? "a" : i == 1 ? "c" : "v"));
+                }
+            }
+        }
+    }
+
+    SwipeGestureHandler {
+        x: edit.width + edit.x;
+        y: 0;
+        width: root.width - 64 * Theme.dp - self.x;
+        height: bar;
+        handle-swipe-down: true;
+        swiped => {
+            if self.current-position.y - self.pressed-position.y > 24 * Theme.dp {
+                KeyboardFocus.dismissed = true;
+            }
         }
     }
 

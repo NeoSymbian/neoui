@@ -66,6 +66,7 @@ impl Ctx {
     pub fn open(&self, view: View) {
         self.model.borrow_mut().view = view;
         let page = neoapp::Page {
+            title: "Dev tools".into(),
             can_back: view != View::None,
             ..Default::default()
         };
@@ -74,6 +75,15 @@ impl Ctx {
         }
         dprintln!("devtools: view {}", view.name());
         self.show();
+    }
+
+    /// Back (the key row, a gesture, a sub-view's ←): a test returns to its device, a sub-view to the tabs.
+    pub fn back(&self) {
+        let back_to = match self.model.borrow().view {
+            View::TouchTest | View::DisplayTest => View::Device,
+            _ => View::None,
+        };
+        self.open(back_to);
     }
 
     /// Opens a page by name: a tab, or a sub-view (Home's list, More's list).
@@ -255,6 +265,8 @@ pub fn bind(ctx: &Rc<Ctx>, ui: &DevApp) {
     s.on_tab_chosen(move |i| c.choose_tab(Tab::from_index(i)));
     let c = ctx.clone();
     s.on_open(move |name| c.open_page(name.as_str()));
+    let c = ctx.clone();
+    s.on_back(move || c.back());
     devices::bind(ctx, &s);
     device::bind(ctx, &s);
     console::bind(ctx, &s);

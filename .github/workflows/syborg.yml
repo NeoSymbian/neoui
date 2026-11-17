@@ -50,7 +50,7 @@ jobs:
           cargo clippy --workspace --release --target armv5te-none-eabi -Zbuild-std=core,alloc,compiler_builtins -- -D warnings
           cargo arm --workspace
           mkdir -p ../../build/rust
-          cp target/armv5te-none-eabi/release/{libneoui_symbian,libneoclock,libneoterm,libneofiles,libneodevtools}.a exes.txt ../../build/rust/
+          cp target/armv5te-none-eabi/release/{libneoui_symbian,libneoclock,libneoterm,libneofiles,libneodevtools,libneokit}.a exes.txt ../../build/rust/
 
       # NEOPHONE.EXE (NeoSymbian/phone: Phone and Contacts), which the UI server starts hidden at boot (host::RESIDENT)
       - name: NeoSymbian/phone
@@ -88,44 +88,55 @@ jobs:
         run: ./build.sh
 
       # A phone-shaped screen with odd sizes (half of the Pixel's 1079x2159 touch range), so the UI must adapt to
-      # whatever the device reports. The path is the design's contract, in screen pixels. The strip (docs gestures.md,
-      # Five places; Classic, ← ⌂ ▢ left) is 56 dp = 84 px: ← (39,1037), ▢ (171,1037), ⋮ (500,1037), the page's last
-      # button without ⋮ (512,1037): Classic home's Apps. Apps (512,1037); Clock in the menu (449,530); a tap inside
-      # the Clock app (270,500); ←. Then the Terminal app: Terminal (449,735), `dir` on the system keyboard (R6c),
-      # `neotest` on hardware keys; the keyboard covers the strip, so its hide key (kb_hide) and then ←. Then Files
-      # (R8), from the menu (89,735): Z: card (270,315) -> Sys (row 2, y 358: private, Resource, Sys, System) -> Bin
-      # (row 0, y 142), ← -> Data (row 1) -> estart.txt (row 0) in the viewer, ← x4 to the drives; C: card
-      # (270,135) -> ⋮ (the shell's sheet) -> New folder (270,756) -> `neo` on the keyboard; ⋮ -> Delete (270,924)
-      # -> the neo row (row 0) -> Delete in the shell's dialog (297,566); ← x2 (C:\ -> drives -> the app closes).
-      # R10: apps keep running -- ← returns to the menu, so each app is opened from the menu directly; then Terminal
-      # is reopened (resumed, not restarted), and Open apps (▢) closes all three with the first card's x (227,88).
+      # whatever the device reports. The path is the design's contract, in screen pixels (1 dp = 1.497 px; Navigation
+      # v2, docs gestures.md and neoui-kit.md):
+      # - The status bar is 37 px and a header 72 px, so shell screens and apps start their content at y 109.
+      # - Buttons' key row is 84 px: ← (90,1037), ⌂ (270,1037), ▢ (449,1037).
+      # - Gestures' band is 24 px. In the home dock, Apps is at (485,973) in Gestures and (485,913) in Buttons.
+      # - Apps menu tiles, 3 to a row: x 90, 270, 449; rows at y 199, 401, 603, 805. Clock is (449,603), Files
+      #   (90,805), Settings (270,805), Terminal (449,805).
+      # The steps:
+      # - Gestures is the default. Settings -> Home screen & navigation (270,588) -> Navigation (270,201) twice: Buttons.
+      # - Clock; a tap inside it (270,500); ←.
+      # - Terminal: `dir` on the system keyboard (R6c, above the key row), `neotest` on hardware keys, the keyboard's
+      #   hide key, ←.
+      # - Files (R8): Z: card (270,387) -> Sys (row 2, y 424) -> Bin (row 0, y 208); ← -> Data (row 1, 316) ->
+      #   estart.txt (row 0) in the viewer; ← x4 to the drives.
+      # - Files on C: (270,207): ⋮ (497,73) -> New folder (400,157) -> `neo` on the keyboard; a long press on the neo
+      #   row (row 0) -> the selection header's Delete (497,73) -> Delete in the shell's dialog (297,524).
+      # - Files again: New folder with the globe key twice (Russian); ← x2 (C:\ -> drives -> the app closes).
+      # - R10: apps keep running, and ← returns to the menu, so each app is opened from the menu directly. Terminal is
+      #   reopened (resumed, not restarted). Open apps (▢) closes all three with the first card's × (227,160).
+      # - Last, Navigation once more: Gestures again, for the later steps.
       - name: Boot at 539x1079; Clock; Terminal (ESHELL, dir by touch, neotest); Files; resume; Open apps closes all
         working-directory: build
         run: |
-          export SCREEN=539x1079
+          export SCREEN=539x1079 NAV=buttons
           . ../neoui/symbian/taps.sh
-          tap 512 1037
-          tap 449 530; expect "clock: surface"; wait_s 2   # the clock ticks once a second while shown (checked below)
+          tap 485 973; tap 270 805; tap 270 588; tap 270 201; tap 270 201; expect "neoui: setting nav.mode"
+          tap 270 1037; tap 485 913   # home, then the menu, in Buttons
+          tap 449 603; expect "clock: surface"; wait_s 2   # the clock ticks once a second while shown (checked below)
           tap 270 500; expect "clock: touch"
-          tap 39 1037; expect "clock: visible false"
-          tap 449 735; expect "term| Copyright"; wait_s 1
+          tap 90 1037; expect "clock: visible false"
+          tap 449 805; expect "term| Copyright"; wait_s 1
           kb_type dir; expect "term| Directory of C:"
           type_text neotest; expect "passed, 0 failed"
-          kb_hide term; tap 39 1037
-          tap 89 735; expect "files: drives"
-          tap 270 315; expect "files: list"; tap 270 358; expect "files: list"; tap 270 142; expect "files: list"
-          tap 39 1037; expect "files: list"; tap 270 250; expect "files: list"; tap 270 142; expect "files: view"
-          for i in 1 2 3; do tap 39 1037; expect "files: list"; done
-          tap 39 1037; expect "files: drives"
-          tap 270 135; expect "files: list"; tap 500 1037; tap 270 756
+          kb_hide term; tap 90 1037
+          tap 90 805; expect "files: drives"
+          tap 270 387; expect "files: list"; tap 270 424; expect "files: list"; tap 270 208; expect "files: list"
+          tap 90 1037; expect "files: list"; tap 270 316; expect "files: list"; tap 270 208; expect "files: view"
+          for i in 1 2 3; do tap 90 1037; expect "files: list"; done
+          tap 90 1037; expect "files: drives"
+          tap 270 207; expect "files: list"; tap 497 73; tap 400 157
           kb_type neo; expect "files: mkdir"
-          tap 500 1037; tap 270 924; tap 270 142; tap 297 566; expect "files: delete"
-          tap 500 1037; tap 270 756; kb_globe; kb_globe
+          hold 270 208; tap 497 73; tap 297 524; expect "files: delete"
+          tap 497 73; tap 400 157; kb_globe; kb_globe
           kb_tap 2 8.5 12; kb_tap 2 6.5 12; kb_tap 1 5 12; kb_enter; expect "files: mkdir"
-          tap 39 1037; expect "files: drives"; tap 39 1037
-          tap 449 735; kb_hide term; tap 39 1037
-          tap 171 1037
-          for i in 1 2 3; do tap 227 88; expect "exited (type 0"; done
+          tap 90 1037; expect "files: drives"; tap 90 1037
+          tap 449 805; kb_hide term; tap 90 1037
+          tap 449 1037
+          for i in 1 2 3; do tap 227 160; expect "exited (type 0"; done
+          tap 270 1037; tap 485 913; tap 270 805; tap 270 588; tap 270 201; expect "neoui: setting nav.mode"
           MON_GAP=0.1 MONITOR="$M" SECS=300 ./boot.sh
 
       - name: Check the output
@@ -198,30 +209,32 @@ jobs:
           print(f"fb.ppm: 539x1079, {len(colours)} sampled colours")
           PY
 
-      # P2 (legacy apps): "Old apps" in the menu (270,930) starts LEGACY.EXE (NeoSymbian/build apps/legacy), which runs
-      # the stock 2010 window server as a guest in a shared buffer (graphics fork: scnew.cpp, WSTOP.CPP, EVENT.CPP) and
-      # the Symbian Foundation's MiniGUI grid.exe in it; a tap in its window reaches it as a raw pointer event. grid
-      # draws for 3 s and exits, and LEGACY with it. Then NEOPHONE: Phone in the dock (54,1000) opens it on the dialer
-      # (page 0); Back (88,1033: unclaimed on the dialer) goes home; Apps (270,1000) -> Contacts in the menu (449,125,
-      # row 0 of the grid whose row 2 holds Clock at y 530) opens it on Contacts (page 1); Back goes home again and
-      # Messages in the dock (162,1000) opens it on Messages (page 6).
+      # P2 (legacy apps), in Gestures (the main step left it so): Apps in the dock (485,973) -> "Old apps" in the menu
+      # (270,1007) starts LEGACY.EXE (NeoSymbian/build apps/legacy). It runs the stock 2010 window server as a guest
+      # in a shared buffer (graphics fork: scnew.cpp, WSTOP.CPP, EVENT.CPP) and the Symbian Foundation's MiniGUI
+      # grid.exe in it. The first tile of its grid is (90,202), under the shell's header; a tap in its window reaches
+      # it as a raw pointer event, and grid draws for 3 s and exits. The shell's header over the legacy bridge has ←
+      # (36,73), which closes it (FRONT 0); left-edge swipes go back to the menu and home.
+      # Then NEOPHONE: Phone in the dock (54,973) opens it on the dialer (page 0); a left-edge swipe goes home. Apps
+      # (485,973) -> Contacts in the menu (449,199) opens it on Contacts (page 1); two swipes go home again; Messages
+      # in the dock (162,973) opens it on Messages (page 6).
       - name: Boot again; Old apps (the AppArc grid, its first app); Phone, Contacts and Messages (NEOPHONE)
         working-directory: build
         run: |
           cp out/serial.log out/serial-main.log
-          export SCREEN=539x1079
+          export SCREEN=539x1079 NAV=gestures
           . ../neoui/symbian/taps.sh
-          tap 512 1037
-          tap 270 930; expect "legacy: app "
-          wait_s 3; tap 90 130; expect "legacy: start app"
+          tap 485 973
+          tap 270 1007; expect "legacy: app "
+          wait_s 3; tap 90 202; expect "legacy: start app"
           wait_s 5; tap 200 300; expect "legacy: raw"
-          tap 39 1037; expect "neoui: app legacy front false"
-          wait_s 2; tap 39 1037; wait_s 2; tap 39 1037; wait_s 3   # the grid, then the menu, then home
-          tap 67 912; expect "neophone: page 0 view"
-          tap 39 1037
-          tap 512 1037; tap 449 125; expect "neophone: page 1 view"
-          tap 39 1037; wait_s 2; tap 39 1037; wait_s 2   # Contacts -> the menu (where it was opened) -> home
-          tap 202 912; expect "neophone: page 6 view"
+          tap 36 73; expect "neoui: app legacy front false"
+          wait_s 2; swipe 5 540 200 540; wait_s 2; swipe 5 540 200 540; wait_s 3   # the grid, then the menu, then home
+          tap 54 973; expect "neophone: page 0 view"
+          wait_s 1; swipe 5 540 200 540
+          wait_s 1; tap 485 973; tap 449 199; expect "neophone: page 1 view"
+          wait_s 1; swipe 5 540 200 540; wait_s 2; swipe 5 540 200 540; wait_s 2   # Contacts -> the menu -> home
+          tap 162 973; expect "neophone: page 6 view"
           MON_GAP=0.1 MONITOR="$M" SECS=180 ./boot.sh
           s=out/serial.log
           grep -a 'neoui: app legacy started' $s
@@ -243,40 +256,41 @@ jobs:
           grep -a 'neophone: page 6 view' $s
           ! grep -aq 'K::Fault\|Kern::Fault\|\[EKERN\] panic\|rust panic' $s
 
-      # Gesture navigation (docs gestures.md G1; edge zone 16 dp = 23 px here, sides commit at 72 dp = 107 px, Home at
-      # 80 dp = 119 px, the Apps menu past half the height). Settings (menu 270,735) -> Home screen & navigation (row
-      # at 516) -> Navigation (129) turns gestures on. Then: the left edge goes Back (the sub-view, then Settings'
-      # origin); up from the bottom goes Home, and from home to the menu; Clock (449,530) and the left edge hides it;
-      # the right edge opens Open apps; a long swipe up the menu; Clock again, and a tap in the bottom zone still
-      # reaches the strip (Clock's ⋮, alone in the middle of the strip in Gestures: the shell's sheet, Settings at 932). Back to Classic at the end, so
-      # later boots tap ←.
-      - name: Boot again; gesture navigation
+      # Navigation v2's gestures (docs gestures.md; edge zone 16 dp = 24 px, sides and the band commit at 72 dp =
+      # 108 px, Home at 80 dp = 120 px). The Thumb map (Gestures, the default):
+      # - Settings (via Apps 485,973 and 270,805) -> Home screen & navigation (270,588).
+      # - The left edge goes Back (the sub-view), the right edge too (Settings' origin, the menu).
+      # - Up from the bottom goes Home, and from home to the menu.
+      # - Clock (449,603). Up and held still for Open apps.
+      # - Clock again from the menu; along the band rightwards: the previous app.
+      # - Clock's ⋮ (497,73) -> Settings (400,157), the kit's menu.
+      # Then the N9 map (Navigation once more, 270,201): the right edge's drag is Open apps.
+      - name: Boot again; gesture navigation (the Thumb map, then N9)
         working-directory: build
         run: |
           cp out/serial.log out/serial-legacy.log
-          export SCREEN=539x1079
+          export SCREEN=539x1079 NAV=gestures
           . ../neoui/symbian/taps.sh
-          tap 512 1037; tap 270 735   # (a shell screen logs its change before the tap line `tap` waits for)
-          tap 270 516; tap 270 129; wait_s 1
+          tap 485 973; tap 270 805   # (a shell screen logs its change before the tap line `tap` waits for)
+          tap 270 588; wait_s 1
           swipe 5 540 200 540; expect "neoui: gesture back"
-          wait_s 1; swipe 5 540 200 540; expect "neoui: screen menu"
+          wait_s 1; swipe 534 540 340 540; expect "neoui: screen menu"
           wait_s 1; swipe 270 1075 270 900; expect "neoui: screen home"
           wait_s 1; swipe 270 1075 270 900; expect "neoui: screen menu"
-          wait_s 1; tap 449 530; expect "clock: surface"
-          wait_s 1; swipe 5 540 200 540; expect "clock: visible false"
-          wait_s 1; swipe 534 540 340 540; expect "neoui: screen switcher"
-          wait_s 1; swipe 270 1075 270 400; expect "neoui: gesture menu"
-          wait_s 1; tap 449 530; expect "clock: visible true"
-          wait_s 1; tap 270 1070; wait_s 1   # Clock's ⋮ opens the shell's sheet
-          tap 270 932; expect "clock: view settings"   # its one item, Settings (nav logs before the tap line)
-          wait_s 1; swipe 270 1075 270 400; expect "neoui: screen menu"
-          wait_s 1; tap 270 735; tap 270 516; tap 270 129; wait_s 2
+          wait_s 1; tap 449 603; expect "clock: surface"
+          wait_s 1; swipe_hold 270 1075 270 900; expect "neoui: screen switcher"
+          wait_s 1; swipe 270 1075 270 900; expect "neoui: screen home"
+          wait_s 1; tap 485 973; tap 449 603; expect "clock: visible true"
+          wait_s 1; swipe 100 1072 400 1072; expect "neoui: gesture prev"
+          wait_s 1; tap 449 603
+          wait_s 1; tap 497 73; wait_s 1; tap 400 157; expect "clock: view settings"
+          wait_s 1; swipe 270 1075 270 900; expect "neoui: screen home"
+          wait_s 1; tap 485 973; tap 270 805; tap 270 588; tap 270 201; wait_s 1
+          swipe 534 540 340 540; expect "neoui: screen switcher"
           MON_GAP=0.1 MONITOR="$M" SECS=180 ./boot.sh
           s=out/serial.log
-          for g in back home menu apps; do grep -a "neoui: gesture $g" $s; done
-          # Open apps by the right edge; the bottom zone's tap replayed to the strip
-          test "$(grep -ac 'neoui: screen switcher' $s)" = 1
-          grep -a 'neoui: nav Option(0)' $s
+          for g in back home menu apps prev; do grep -a "neoui: gesture $g" $s; done
+          grep -a 'clock: view settings' $s
           grep -a 'clock: visible false' $s
           ! grep -aq 'K::Fault\|Kern::Fault\|\[EKERN\] panic\|rust panic' $s
 

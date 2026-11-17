@@ -97,7 +97,7 @@ component WifiSheet inherits Rectangle {
         width: root.width;
         height: card.preferred-height;
         // above the system keyboard while the password field has it up
-        y: root.height - self.height - (KeyboardFocus.open && !KeyboardFocus.dismissed ? max(0, KeyboardFocus.text-h - Theme.strip-h) : 0);
+        y: root.height - self.height - (KeyboardFocus.open && !KeyboardFocus.dismissed ? KeyboardFocus.text-h : 0);
         background: Theme.bg-raised;
         border-top-left-radius: Theme.radius;
         border-top-right-radius: Theme.radius;
@@ -267,7 +267,7 @@ export component SettingsScreen inherits Rectangle {
 
             SettingRow {
                 title: "Home screen & navigation";
-                value: SystemSettings.nav-mode == 1 ? "Gestures" : "Classic";
+                value: SystemSettings.nav-mode-name;
                 icon: @image-url("../icons/sys/home.svg");
                 tint: #3d8bfd;
                 clicked => { root.view = "navigation"; }
@@ -488,24 +488,54 @@ export component SettingsScreen inherits Rectangle {
         }
     }
 
-    // Home screen & navigation (docs gestures.md, Five places): Classic keeps ← ⌂ ▢ in the strip, arranged three
-    // ways; Gestures moves them to edge swipes and gives the page's buttons the whole strip. Later stages add Home
-    // style, Open apps columns and swipe-to-close here.
+    // Home screen & navigation (Navigation v2): Buttons (the key row ← ⌂ ▢), Gestures (the Thumb map) or N9 gestures,
+    // each with its map. Later stages add Home style, Open apps columns and swipe-to-close here.
     if view == "navigation": NeoList {
         VerticalLayout {
             SectionHeader { text: "Navigation"; }
             // a tap steps to the next choice (no picker widget yet)
             ListRow {
                 title: "Navigation";
-                value: SystemSettings.nav-mode == 1 ? "Gestures" : "Classic";
+                value: SystemSettings.nav-mode-name;
+                subtitle: "Buttons · Gestures · N9 gestures";
                 has-icon: true;
                 icon: @image-url("../icons/sys/home.svg");
                 clicked => {
-                    SystemSettings.nav-mode = SystemSettings.nav-mode == 1 ? 0 : 1;
+                    SystemSettings.nav-mode = mod(SystemSettings.nav-mode + 1, 3);
                 }
             }
 
+            if SystemSettings.nav-mode == 0: ListRow {
+                title: "Back, Home, Open apps";
+                subtitle: "Keys at the bottom; no edge gestures";
+                has-icon: true;
+                icon: @image-url("../icons/sys/back.svg");
+                divider: false;
+            }
             if SystemSettings.nav-mode == 1: VerticalLayout {
+                ListRow {
+                    title: "From either side";
+                    subtitle: "Back";
+                    has-icon: true;
+                    icon: @image-url("../icons/sys/back.svg");
+                }
+
+                ListRow {
+                    title: "Up from the bottom";
+                    subtitle: "Home; up and hold for Open apps";
+                    has-icon: true;
+                    icon: @image-url("../icons/sys/apps.svg");
+                }
+
+                ListRow {
+                    title: "Along the bottom";
+                    subtitle: "The previous or next app";
+                    has-icon: true;
+                    icon: @image-url("../icons/sys/tabs.svg");
+                    divider: false;
+                }
+            }
+            if SystemSettings.nav-mode == 2: VerticalLayout {
                 ListRow {
                     title: "From the left edge";
                     subtitle: "Back";
@@ -515,7 +545,7 @@ export component SettingsScreen inherits Rectangle {
 
                 ListRow {
                     title: "From the right edge";
-                    subtitle: "Open apps";
+                    subtitle: "Open apps; a quick flick for the last app";
                     has-icon: true;
                     icon: @image-url("../icons/sys/tabs.svg");
                 }
@@ -526,18 +556,6 @@ export component SettingsScreen inherits Rectangle {
                     has-icon: true;
                     icon: @image-url("../icons/sys/apps.svg");
                     divider: false;
-                }
-            }
-
-            if SystemSettings.nav-mode != 1: ListRow {
-                title: "Back, Home, Open apps";
-                value: SystemSettings.nav-strip == 1 ? "Right" : SystemSettings.nav-strip == 2 ? "Split" : "Left";
-                subtitle: "Where they sit in the bottom strip";
-                has-icon: true;
-                icon: @image-url("../icons/sys/back.svg");
-                divider: false;
-                clicked => {
-                    SystemSettings.nav-strip = mod(SystemSettings.nav-strip + 1, 3);
                 }
             }
         }

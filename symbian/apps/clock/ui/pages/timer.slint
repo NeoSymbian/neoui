@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // The Timer tab: the time left with a progress bar; presets and ±1 min / ±10 s while idle; Start, Pause, Resume,
 // Reset. It keeps counting while the app is closed (wall-clock based, saved in clock.timer).
-import { Theme } from "../../../../../ui/theme.slint";
-import { Button } from "../../../../../ui/components/controls.slint";
+import { Theme } from "@neoui/theme.slint";
+import { Button } from "@neoui/components/controls.slint";
 import { ClockState } from "../state.slint";
 
 export component TimerPage inherits Rectangle {

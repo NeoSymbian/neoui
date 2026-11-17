@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-// The kit gallery: every kit part on one page per kit sheet (design canvas, Shell & system UI -> UI kit). The host
-// tests (crates/neoui-gallery) render each page to snapshots/kit-*.png; NEOKIT.EXE shows the same pages on the device,
-// switched with its footer, and is the template for a new app.
+// The kit gallery's pages: every kit part, one page per kit sheet (design canvas, Shell & system UI -> UI kit). The
+// host tests render them in window.slint (crates/neoui-gallery, snapshots/kit-*.png); NEOKIT.EXE shows them on the
+// device under its own header.
 import "../fonts/Inter-VariableFont.ttf";
 import "../fonts/DejaVuSans.ttf";
 import {
@@ -517,9 +517,8 @@ component FeedbackPage inherits VerticalLayout {
     }
 }
 
-export component Gallery inherits Window {
-    background: Theme.bg;
-    default-font-family: "Inter";
+// The pages, without a window: NEOKIT puts them under its own header.
+export component GalleryPages inherits Rectangle {
     if GalleryState.page == 0: HeadersPage { }
     if GalleryState.page == 1: FooterPage { }
     if GalleryState.page == 2: ListsPage { }

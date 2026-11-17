@@ -1,0 +1,32 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// NEOKIT.EXE: the kit gallery under a kit header (its ⋮ picks the sheet). A new app starts from this file: import
+// what it needs from "@neoui/kit.slint", export Theme (the app sets Theme.dp), Scroll (smooth scrolling) and Kit (Back
+// through menus and sheets), and draw its header, footer and content with the kit's parts.
+import "@neoui/fonts/Inter-VariableFont.ttf";
+import "@neoui/fonts/DejaVuSans.ttf";
+import { Theme, Kit, Scroll, Header } from "@neoui/kit.slint";
+import { GalleryPages, GalleryState } from "@neoui/gallery/gallery.slint";
+
+export { Theme, Kit, Scroll, GalleryState }
+
+export component KitApp inherits Window {
+    default-font-family: "Inter";
+    background: Theme.bg;
+    property <[string]> names: [
+        "Headers", "Footer", "Lists", "Menus", "Date picker", "Time picker", "Controls", "Feedback"
+    ];
+    VerticalLayout {
+        Header {
+            title: root.names[GalleryState.page];
+            search: false;
+            menu: root.names;
+            menu-picked(i) => {
+                GalleryState.page = i;
+            }
+        }
+
+        GalleryPages {
+            vertical-stretch: 1;
+        }
+    }
+}

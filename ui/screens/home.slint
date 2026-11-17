@@ -7,11 +7,16 @@ import { Card, PageDots } from "../components/controls.slint";
 import { ClockWidget } from "../components/widgets.slint";
 import { Avatar } from "../components/lists.slint";
 import { Glyph } from "../components/frame.slint";
+import { Badge } from "../components/footer.slint";
+import { Menu } from "../components/menu.slint";
+import { Apps } from "menu.slint";
 
 component DockIcon inherits Rectangle {
     in property <image> icon;
     in property <string> label;
     in property <bool> compact;
+    // ipc BADGE: missed calls, unread messages
+    in property <int> badge;
     callback clicked;
     width: 64 * Theme.dp;
     height: compact ? 50 * Theme.dp : 78 * Theme.dp;
@@ -21,6 +26,12 @@ component DockIcon inherits Rectangle {
         height: self.width;
         source: icon;
         opacity: t.pressed ? 0.7 : 1;
+    }
+
+    if root.badge > 0: Badge {
+        x: (compact ? 46 : 54) * Theme.dp - self.width / 2;
+        y: -4 * Theme.dp;
+        count: root.badge;
     }
 
     if !compact: Text {
@@ -171,6 +182,24 @@ export component HomeScreen inherits Rectangle {
             animate x { duration: Theme.instant ? 0ms : Theme.page; easing: ease-out-quad; }
             width: 3 * page-w;
             height: root.strip-h;
+
+            // a long press on the pages' empty part: Edit home · Wallpaper (D20; home has no ⋮ in any mode)
+            hold := TouchArea {
+                property <bool> fired;
+                changed pressed => {
+                    if self.pressed {
+                        self.fired = false;
+                    }
+                }
+            }
+            Timer {
+                interval: 500ms;
+                running: hold.pressed && !hold.fired;
+                triggered => {
+                    hold.fired = true;
+                    home-menu.show();
+                }
+            }
 
             // Page 0: clock, agenda, favourites, music (landscape: two columns, below)
             if root.width <= root.height: Rectangle {
@@ -357,6 +386,7 @@ export component HomeScreen inherits Rectangle {
                 compact: landscape;
                 icon: @image-url("../icons/apps/phone.svg");
                 label: "Phone";
+                badge: Apps.badges[0];
                 clicked => { root.open-view("phone", "dial"); }
             }
 
@@ -364,6 +394,7 @@ export component HomeScreen inherits Rectangle {
                 compact: landscape;
                 icon: @image-url("../icons/apps/messages.svg");
                 label: "Messages";
+                badge: Apps.badges[1];
                 clicked => { root.open-app("messages"); }
             }
 
@@ -381,13 +412,26 @@ export component HomeScreen inherits Rectangle {
                 clicked => { root.open-app("camera"); }
             }
 
-            // Gestures home has no strip, so Apps sits in the dock; Classic home's strip has it
-            if SystemSettings.nav-mode == 1: DockIcon {
+            // Apps sits in the dock in every mode (D10)
+            DockIcon {
                 compact: landscape;
                 icon: @image-url("../icons/apps/menu.svg");
                 label: "Apps";
                 clicked => { root.open-app("menu"); }
             }
+        }
+    }
+
+    // shortcut: no home editor or wallpaper picker yet; the two open their Settings pages
+    home-menu := Menu {
+        x: 0;
+        y: 0;
+        right-aligned: false;
+        at-x: max(8 * Theme.dp, min(root.width - Theme.menu-w - 8 * Theme.dp, hold.pressed-x - Theme.menu-w / 2));
+        at-y: min(root.height - 2 * Theme.header-h - 16 * Theme.dp - root.dock-h, hold.pressed-y);
+        items: ["Edit home", "Wallpaper"];
+        picked(i) => {
+            root.open-view("settings", i == 0 ? "navigation" : "display");
         }
     }
 }

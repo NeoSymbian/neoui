@@ -21,4 +21,4 @@ neoapp.workspace = true
 modem-ipc.workspace = true
 
 [build-dependencies]
-slint-build.workspace = true
+neoui-kit.workspace = true
