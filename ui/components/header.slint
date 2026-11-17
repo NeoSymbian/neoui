@@ -14,6 +14,8 @@ export struct Act {
     icon: image,
     label: string,
     disabled: bool,
+    // the glyph's colour (a favourite's amber ★); transparent = the header's grey
+    tint: color,
 }
 
 // one 48 x 48 header button around a 24 dp glyph; pressed = a 20 dp-radius circle and a white glyph
@@ -199,6 +201,10 @@ export component Header inherits Rectangle {
     // #0b0c0e where the content scrolls under it
     in property <bool> alt;
     in property <bool> has-back;
+    // the title's font when Inter lacks its script ("DejaVu Sans" for an Armenian name); "" = the window's
+    in property <string> title-font;
+    // 🔍 before the actions instead of after them (Contacts: [Contacts · 🔍 · + · ⋮])
+    in property <bool> search-first;
     // selection mode: > 0 shows [✕ N selected · selection-actions]
     in property <int> selected;
     in property <[Act]> selection-actions;
@@ -286,6 +292,7 @@ export component Header inherits Rectangle {
                 spacing: 10 * Theme.dp;
                 Text {
                     text: root.title;
+                    font-family: root.title-font;
                     color: Theme.text;
                     font-size: Theme.font-title;
                     font-weight: 600;
@@ -315,15 +322,23 @@ export component Header inherits Rectangle {
             }
         }
 
+        if root.search && root.search-first: HeaderButton {
+            icon: @image-url("../icons/sys/search.svg");
+            label: "Search";
+            clicked => {
+                root.searching = true;
+            }
+        }
         for a[i] in root.actions: HeaderButton {
             icon: a.icon;
             label: a.label;
             disabled: a.disabled;
+            tint: a.tint != transparent ? a.tint : Theme.text-secondary;
             clicked => {
                 root.action(i);
             }
         }
-        if root.search: HeaderButton {
+        if root.search && !root.search-first: HeaderButton {
             icon: @image-url("../icons/sys/search.svg");
             label: "Search";
             clicked => {

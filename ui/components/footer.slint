@@ -34,9 +34,11 @@ export component Badge inherits Rectangle {
 export component Footer inherits Rectangle {
     in property <[Tab]> tabs;
     in-out property <int> current;
+    // #0b0c0e, to match a header with `alt`
+    in property <bool> alt;
     callback picked(int);
     height: Theme.footer-h;
-    background: Theme.bg;
+    background: root.alt ? Theme.header-alt : Theme.bg;
     accessible-role: tab-list;
     HorizontalLayout {
         for t[i] in root.tabs: Rectangle {
