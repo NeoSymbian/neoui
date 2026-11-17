@@ -2636,10 +2636,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "neoui-files"
-version = "0.1.0"
-
-[[package]]
 name = "neoui-gallery"
 version = "0.1.0"
 dependencies = [

@@ -41,7 +41,6 @@ import { PhotosScreen } from "screens/photos.slint";
 import { MusicScreen } from "screens/music.slint";
 import { CalendarScreen } from "screens/calendar.slint";
 import { ClockScreen } from "screens/clock.slint";
-import { FilesScreen } from "screens/files.slint";
 import { SettingsScreen } from "screens/settings.slint";
 import { WifiNet, WifiLink } from "data.slint";
 import { TerminalScreen } from "screens/terminal.slint";
@@ -417,13 +416,6 @@ export component Shell inherits Window {
             OldAppsScreen {
                 entries: root.old-apps;
                 open-entry(id) => { root.open-entry(id); }
-            }
-        }
-
-        Slot {
-            active: screen == "files" && !root.app-front;
-            FilesScreen {
-                view <=> root.view;
             }
         }
 

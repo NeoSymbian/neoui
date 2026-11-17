@@ -2793,18 +2793,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "neofiles"
-version = "0.1.0"
-dependencies = [
- "e32",
- "neoapp",
- "neoui-files",
- "neoui-kit",
- "neoui-proto",
- "slint",
-]
-
-[[package]]
 name = "neokit"
 version = "0.1.0"
 dependencies = [
@@ -2825,10 +2813,6 @@ dependencies = [
  "neoui-term",
  "slint",
 ]
-
-[[package]]
-name = "neoui-files"
-version = "0.1.0"
 
 [[package]]
 name = "neoui-kit"

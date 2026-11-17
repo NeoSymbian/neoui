@@ -50,7 +50,7 @@ jobs:
           cargo clippy --workspace --release --target armv5te-none-eabi -Zbuild-std=core,alloc,compiler_builtins -- -D warnings
           cargo arm --workspace
           mkdir -p ../../build/rust
-          cp target/armv5te-none-eabi/release/{libneoui_symbian,libneoclock,libneoterm,libneofiles,libneodevtools,libneokit}.a exes.txt ../../build/rust/
+          cp target/armv5te-none-eabi/release/{libneoui_symbian,libneoclock,libneoterm,libneodevtools,libneokit}.a exes.txt ../../build/rust/
 
       # NeoSymbian/phone: NEOPHONE.EXE (Phone), NEOCONT.EXE (Contacts), NEOMSG.EXE (Messages). Phone and Messages are
       # resident (host::RESIDENT); the three open each other (ipc OPEN, protocol 1.9).
@@ -60,6 +60,15 @@ jobs:
           cd phone/symbian && cargo arm
           cp target/armv5te-none-eabi/release/{libneophone,libneocont,libneomsg}.a ../../build/rust/
           grep -E '^NEO(PHONE|CONT|MSG)\.EXE' exes.txt >> ../../build/rust/exes.txt
+
+      # NeoSymbian/files: NEOFILES.EXE (Files; moved out of neoui, docs files-app.md FA0). The shell starts it by its
+      # key, `files` (host::APPS).
+      - name: NeoSymbian/files
+        run: |
+          git clone -q --depth 1 https://github.com/NeoSymbian/files.git
+          cd files/symbian && cargo arm
+          cp target/armv5te-none-eabi/release/libneofiles.a ../../build/rust/
+          grep -E '^NEOFILES\.EXE' exes.txt >> ../../build/rust/exes.txt
 
       # NEOTEST.EXE (e32-rs's on-device tests), so ESHELL in the Terminal app has a 2010-style text program to run
       - name: e32-rs neotest
@@ -98,6 +107,8 @@ jobs:
       #   (90,805), Settings (270,805), Terminal (449,805).
       # The steps:
       # - Gestures is the default. Settings -> Home screen & navigation (270,588) -> Navigation (270,201) twice: Buttons.
+      #   Each tap waits for its own "tap from" line, which v2 prints after "setting nav.mode", so the step waits for
+      #   the store's later "settings saved" instead.
       # - Clock; a tap inside it (270,500); ←.
       # - Terminal: `dir` on the system keyboard (R6c, above the key row), `neotest` on hardware keys, the keyboard's
       #   hide key, ←.
@@ -114,15 +125,13 @@ jobs:
         run: |
           export SCREEN=539x1079 NAV=buttons
           . ../neoui/symbian/taps.sh
-          tap 485 973; tap 270 805; tap 270 588; tap 270 201; tap 270 201; expect "neoui: setting nav.mode"
+          tap 485 973; tap 270 805; tap 270 588; tap 270 201; tap 270 201; expect "neoui: settings saved"
           tap 270 1037; tap 485 913   # home, then the menu, in Buttons
           tap 449 603; expect "clock: surface"; wait_s 2   # the clock ticks once a second while shown (checked below)
           tap 270 500; expect "clock: touch"
           tap 90 1037; expect "clock: visible false"
-          tap 449 805; expect "term| Copyright"; wait_s 1
-          kb_type dir; expect "term| Directory of C:"
-          type_text neotest; expect "passed, 0 failed"
-          kb_hide term; tap 90 1037
+          # Files before the Terminal: on v2 the Terminal app draws nothing until ESHELL writes, and ESHELL is silent
+          # on Syborg (a separate bug), so the steps from the Terminal on fail; Files is checked first.
           tap 90 805; expect "files: drives"
           tap 270 387; expect "files: list"; tap 270 424; expect "files: list"; tap 270 208; expect "files: list"
           tap 90 1037; expect "files: list"; tap 270 316; expect "files: list"; tap 270 208; expect "files: view"
@@ -134,10 +143,14 @@ jobs:
           tap 497 73; tap 400 157; kb_globe; kb_globe
           kb_tap 2 8.5 12; kb_tap 2 6.5 12; kb_tap 1 5 12; kb_enter; expect "files: mkdir"
           tap 90 1037; expect "files: drives"; tap 90 1037
+          tap 449 805; expect "term| Copyright"; wait_s 1
+          kb_type dir; expect "term| Directory of C:"
+          type_text neotest; expect "passed, 0 failed"
+          kb_hide term; tap 90 1037
           tap 449 805; kb_hide term; tap 90 1037
           tap 449 1037
           for i in 1 2 3; do tap 227 160; expect "exited (type 0"; done
-          tap 270 1037; tap 485 913; tap 270 805; tap 270 588; tap 270 201; expect "neoui: setting nav.mode"
+          tap 270 1037; tap 485 913; tap 270 805; tap 270 588; tap 270 201; expect "neoui: settings saved"
           MON_GAP=0.1 MONITOR="$M" SECS=300 ./boot.sh
 
       - name: Check the output
@@ -187,7 +200,7 @@ jobs:
           grep -a 'files: view Z:\\Sys\\Data\\estart.txt 1' $s
           grep -a 'neoui: keyboard 1 for files' $s
           grep -a 'files: mkdir C:\\neo\\ 0' $s
-          grep -a 'files: delete C:\\neo\\ 0' $s
+          grep -a 'files: delete neo 0' $s   # the app logs the row's name (kit selection)
           # the keyboard's globe key, twice (English -> Armenian -> Russian), and a folder named "дом" on the FAT C:
           grep -a 'files: mkdir C:' $s | grep -av 'C:\\neo\\' | grep -aq '\\ 0'
           grep -a 'files: quit' $s
