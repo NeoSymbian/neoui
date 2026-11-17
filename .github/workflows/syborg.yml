@@ -52,13 +52,17 @@ jobs:
           mkdir -p ../../build/rust
           cp target/armv5te-none-eabi/release/{libneoui_symbian,libneoclock,libneoterm,libneofiles,libneodevtools,libneokit}.a exes.txt ../../build/rust/
 
-      # NEOPHONE.EXE (NeoSymbian/phone: Phone and Contacts), which the UI server starts hidden at boot (host::RESIDENT)
+      # NeoSymbian/phone: NEOPHONE.EXE (Phone), NEOCONT.EXE (Contacts), NEOMSG.EXE (Messages). Phone and Messages are
+      # resident (host::RESIDENT); the three open each other (ipc OPEN, protocol 1.9).
+      # shortcut: the phone branch with the three apps; back to the default branch once NeoSymbian/phone merges it
       - name: NeoSymbian/phone
+        env:
+          PHONE_REF: split
         run: |
-          git clone -q --depth 1 https://github.com/NeoSymbian/phone.git
+          git clone -q --depth 1 -b "$PHONE_REF" https://github.com/NeoSymbian/phone.git
           cd phone/symbian && cargo arm
-          cp target/armv5te-none-eabi/release/libneophone.a ../../build/rust/
-          grep '^NEOPHONE.EXE' exes.txt >> ../../build/rust/exes.txt
+          cp target/armv5te-none-eabi/release/{libneophone,libneocont,libneomsg}.a ../../build/rust/
+          grep -E '^NEO(PHONE|CONT|MSG)\.EXE' exes.txt >> ../../build/rust/exes.txt
 
       # NEOTEST.EXE (e32-rs's on-device tests), so ESHELL in the Terminal app has a 2010-style text program to run
       - name: e32-rs neotest
@@ -215,10 +219,11 @@ jobs:
       # grid.exe in it. The first tile of its grid is (90,202), under the shell's header; a tap in its window reaches
       # it as a raw pointer event, and grid draws for 3 s and exits. The shell's header over the legacy bridge has ←
       # (36,73), which closes it (FRONT 0); left-edge swipes go back to the menu and home.
-      # Then NEOPHONE: Phone in the dock (54,973) opens it on the dialer (page 0); a left-edge swipe goes home. Apps
-      # (485,973) -> Contacts in the menu (449,199) opens it on Contacts (page 1); two swipes go home again; Messages
-      # in the dock (162,973) opens it on Messages (page 6).
-      - name: Boot again; Old apps (the AppArc grid, its first app); Phone, Contacts and Messages (NEOPHONE)
+      # Then the phone apps: Phone in the dock (54,973) brings the resident NEOPHONE to the front; a left-edge swipe goes
+      # home. Apps (485,973) -> Contacts in the menu (449,199) starts NEOCONT; two swipes go home again. Messages in
+      # the dock (162,973) brings the resident NEOMSG; its footer's Contacts tab (270,1019: the middle third, 24 dp over
+      # the band) opens Contacts from Messages (ipc OPEN).
+      - name: Boot again; Old apps (the AppArc grid, its first app); Phone, Contacts and Messages (three apps)
         working-directory: build
         run: |
           cp out/serial.log out/serial-main.log
@@ -230,11 +235,12 @@ jobs:
           wait_s 5; tap 200 300; expect "legacy: raw"
           tap 36 73; expect "neoui: app legacy front false"
           wait_s 2; swipe 5 540 200 540; wait_s 2; swipe 5 540 200 540; wait_s 3   # the grid, then the menu, then home
-          tap 54 973; expect "neophone: page 0 view"
+          tap 54 973; expect "neoui: screen phone"
           wait_s 1; swipe 5 540 200 540
-          wait_s 1; tap 485 973; tap 449 199; expect "neophone: page 1 view"
+          wait_s 1; tap 485 973; tap 449 199; expect "neocont: connected"
           wait_s 1; swipe 5 540 200 540; wait_s 2; swipe 5 540 200 540; wait_s 2   # Contacts -> the menu -> home
-          tap 162 973; expect "neophone: page 6 view"
+          tap 162 973; expect "neoui: screen messages"
+          wait_s 2; tap 270 1019; expect "neoui: messages opens contacts"
           MON_GAP=0.1 MONITOR="$M" SECS=180 ./boot.sh
           s=out/serial.log
           grep -a 'neoui: app legacy started' $s
@@ -248,12 +254,15 @@ jobs:
           grep -a 'neoui: app legacy front true' $s
           grep -a 'neoui: app legacy front false' $s
           grep -a 'neoui: screen home' $s
-          grep -a 'neoui: phone page 0' $s
-          grep -a 'neophone: page 0 view' $s
-          grep -a 'neoui: phone page 1' $s
-          grep -a 'neophone: page 1 view' $s
-          grep -a 'neoui: phone page 6' $s
-          grep -a 'neophone: page 6 view' $s
+          # Phone and Messages start hidden at boot, one at a time (host::keep_resident)
+          grep -a 'neoui: app phone started' $s
+          grep -a 'neoui: app messages started' $s
+          grep -a 'neoui: screen phone' $s
+          grep -a 'neoui: app contacts started' $s
+          grep -a 'neocont: connected' $s
+          grep -a 'neoui: screen messages' $s
+          grep -a 'neoui: messages opens contacts page 0' $s
+          grep -a 'neocont: opened on page 0' $s
           ! grep -aq 'K::Fault\|Kern::Fault\|\[EKERN\] panic\|rust panic' $s
 
       # Navigation v2's gestures (docs gestures.md; edge zone 16 dp = 24 px, sides and the band commit at 72 dp =
