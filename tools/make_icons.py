@@ -196,6 +196,7 @@ GLYPHS = {
     # navigation and lists
     "chevron_right": [("p", "M9.5 5.5 16 12l-6.5 6.5")],
     "chevron_down": [("p", "M5.5 9.5 12 16l6.5-6.5")],
+    "chevron_left": [("p", "M14.5 5.5 8 12l6.5 6.5")],
     "more": [("d", (12, 5.5, 1.6)), ("d", (12, 12, 1.6)), ("d", (12, 18.5, 1.6))],
     "star": [("p", "M12 3.6l2.6 5.3 5.8.8-4.2 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z")],
     "refresh": [("p", "M19.4 12a7.4 7.4 0 1 1-2.2-5.2"), ("p", "M19.6 4.4v4.2h-4.2")],
@@ -272,6 +273,21 @@ GLYPHS = {
         ("p", "M9 6.2h6v4.6H9z"),
         *[("d", (x, y, 0.8)) for y in (14, 16.7) for x in (9.6, 12, 14.4)],
     ],
+    # v2 kit glyphs (design canvas ds-glyphs, 2026-11-16)
+    "timer": [("p", "M6.5 3.5h11M6.5 20.5h11"), ("p", "M8 3.5v2.6a4 4 0 0 0 1.6 3.2L12 11.2l2.4-1.9A4 4 0 0 0 16 6.1V3.5M8 20.5v-2.6a4 4 0 0 1 1.6-3.2L12 12.8l2.4 1.9a4 4 0 0 1 1.6 3.2v2.6")],
+    "recents": [("p", "M4.4 12a7.6 7.6 0 1 0 2.2-5.4"), ("p", "M4 4.4v3.4h3.4"), ("p", "M12 8.2V12l2.8 1.8")],
+    "select_all": [("p", "M8 4.5h10a1.5 1.5 0 0 1 1.5 1.5v10"), ("p", "M6 8h8.5a1.5 1.5 0 0 1 1.5 1.5V18a1.5 1.5 0 0 1-1.5 1.5H6A1.5 1.5 0 0 1 4.5 18V9.5A1.5 1.5 0 0 1 6 8z"), ("p", "M7.4 13.8l2.2 2.2 4-4.2")],
+    "archive": [("p", "M4.8 4.6h14.4a1.2 1.2 0 0 1 1.2 1.2v2a1.2 1.2 0 0 1-1.2 1.2H4.8a1.2 1.2 0 0 1-1.2-1.2v-2a1.2 1.2 0 0 1 1.2-1.2z"), ("p", "M5.2 9v8.9a1.5 1.5 0 0 0 1.5 1.5h10.6a1.5 1.5 0 0 0 1.5-1.5V9"), ("p", "M10 12.8h4")],
+    "share": [("c", (17.5, 5.8, 2.3)), ("c", (6.5, 12, 2.3)), ("c", (17.5, 18.2, 2.3)), ("p", "M8.5 10.9l7-3.9M8.5 13.1l7 3.9")],
+    "sort": [("p", "M4.5 7h15M4.5 12h10M4.5 17h5")],
+    "filter": [("p", "M4 5.5h16l-6.2 7.2v5.6l-3.6 1.8v-7.4z")],
+}
+
+# system glyphs whose names are also app tiles (ui/icons/sys/<name>.svg beside ui/icons/apps/<name>.svg): the footer
+# tabs of Clock and NEOPHONE
+SYS_ONLY = {
+    "clock": [("c", (12, 12, 8.2)), ("p", "M12 7.4V12l3.2 2")],
+    "contacts": [("p", "M6.2 3.6h11.6a2.2 2.2 0 0 1 2.2 2.2v12.4a2.2 2.2 0 0 1-2.2 2.2H6.2A2.2 2.2 0 0 1 4 18.2V5.8a2.2 2.2 0 0 1 2.2-2.2z"), ("c", (12, 10.2, 2.8)), ("p", "M7.6 17.2a4.6 4.6 0 0 1 8.8 0")],
 }
 
 GLYPHS["menu"] = GLYPHS["apps"]  # the "all apps" tile in the home dock
@@ -294,9 +310,9 @@ APPS = {  # name -> tile base colour (the tile is lit from the top)
 }
 
 
-def shapes(name: str, colour: str) -> str:
+def shapes(name: str, colour: str, table: dict = GLYPHS) -> str:
     out = []
-    for kind, data in GLYPHS[name]:
+    for kind, data in table[name]:
         if kind == "p":
             out.append(f'<path d="{data}" fill="none" stroke="{colour}"/>')
         elif kind == "f":
@@ -321,11 +337,11 @@ def mix(hex_colour: str, other: tuple, t: float) -> str:
     )
 
 
-def sys_svg(name: str) -> str:
+def sys_svg(name: str, table: dict = GLYPHS) -> str:
     return (
         HEAD
         + '<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 24 24">'
-        f'<g stroke-width="{STROKE}" stroke-linecap="round" stroke-linejoin="round">{shapes(name, "#ffffff")}</g></svg>\n'
+        f'<g stroke-width="{STROKE}" stroke-linecap="round" stroke-linejoin="round">{shapes(name, "#ffffff", table)}</g></svg>\n'
     )
 
 
@@ -385,11 +401,14 @@ def main() -> None:
             continue
         with open(os.path.join(OUT, "sys", name + ".svg"), "w") as f:
             f.write(sys_svg(name))
+    for name in SYS_ONLY:
+        with open(os.path.join(OUT, "sys", name + ".svg"), "w") as f:
+            f.write(sys_svg(name, SYS_ONLY))
     for name, base in APPS.items():
         with open(os.path.join(OUT, "apps", name + ".svg"), "w") as f:
             f.write(app_svg(name, base))
     print(
-        f"make_icons: {len(APPS)} app icons, {len(GLYPHS) - len(APPS)} system icons -> {os.path.normpath(OUT)}"
+        f"make_icons: {len(APPS)} app icons, {len(GLYPHS) - len(APPS) + len(SYS_ONLY)} system icons -> {os.path.normpath(OUT)}"
     )
 
 

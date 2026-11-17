@@ -1,0 +1,405 @@
+// SPDX-License-Identifier: Apache-2.0
+// The app header (kit-header; Navigation v2 D13-D16, Shell v2 K01-K03): 48 dp at the top of the app's surface, drawn
+// by the app. Root [Name · ≤ 3 icons], sub-page [← Name · ≤ 3], form [✕ Title ✓], search [field · ✕] and selection
+// [✕ N selected · ≤ 3]. ⋮ counts as one of the three and opens the Menu. The title lives here only (D16).
+import { Theme } from "../theme.slint";
+import { Glyph } from "frame.slint";
+import { FieldInput, PageDots } from "controls.slint";
+import { Kit } from "layers.slint";
+import { Menu } from "menu.slint";
+import { KeyboardFocus } from "keyboard/focus.slint";
+
+// an icon action: the glyph, a label for accessibility (and the menu when it overflows), dimmed when disabled
+export struct Act {
+    icon: image,
+    label: string,
+    disabled: bool,
+}
+
+// one 48 x 48 header button around a 24 dp glyph; pressed = a 20 dp-radius circle and a white glyph
+export component HeaderButton inherits Rectangle {
+    in property <image> icon;
+    in property <string> label;
+    in property <bool> disabled;
+    in property <color> tint: Theme.text-secondary;
+    callback clicked;
+    width: Theme.action;
+    height: Theme.action;
+    opacity: disabled ? Theme.disabled : 1;
+    accessible-role: button;
+    accessible-label: label;
+    Rectangle {
+        width: 40 * Theme.dp;
+        height: self.width;
+        border-radius: self.width / 2;
+        background: t.pressed && !root.disabled ? Theme.pressed : transparent;
+    }
+
+    Glyph {
+        source: root.icon;
+        size: Theme.action-glyph;
+        colorize: t.pressed && !root.disabled ? Theme.text : root.tint;
+    }
+
+    t := TouchArea {
+        enabled: !root.disabled;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component Hairline inherits Rectangle {
+    height: max(1px, Theme.dp / 2);
+    background: Theme.header-hairline;
+}
+
+component Title inherits Text {
+    color: Theme.text;
+    font-size: Theme.font-title;
+    font-weight: 600;
+    vertical-alignment: center;
+    overflow: elide;
+    horizontal-stretch: 1;
+}
+
+// The header as a search field (40 high, radius 20) with ✕: results filter on every change.
+export component SearchHeader inherits Rectangle {
+    in property <string> placeholder: "Search";
+    in-out property <string> text;
+    callback changed(string);
+    // ✕ (or Back through the Header): the root header again
+    callback closed();
+    height: Theme.header-h;
+    background: Theme.bg;
+    Rectangle {
+        x: 8 * Theme.dp;
+        width: parent.width - 16 * Theme.dp;
+        height: Theme.search-h;
+        border-radius: self.height / 2;
+        background: Theme.field;
+        HorizontalLayout {
+            padding-left: 14 * Theme.dp;
+            spacing: 10 * Theme.dp;
+            VerticalLayout {
+                alignment: center;
+                Glyph {
+                    source: @image-url("../icons/sys/search.svg");
+                    size: 20 * Theme.dp;
+                    colorize: Theme.text-dim;
+                }
+            }
+
+            Rectangle {
+                horizontal-stretch: 1;
+                if root.text == "": Text {
+                    x: 0;
+                    text: root.placeholder;
+                    color: Theme.text-dim;
+                    font-size: Theme.font-body;
+                    vertical-alignment: center;
+                }
+                input := FieldInput {
+                    text <=> root.text;
+                    edited => {
+                        root.changed(self.text);
+                    }
+                    init => {
+                        self.focus();
+                    }
+                }
+            }
+
+            Rectangle {
+                width: 36 * Theme.dp;
+                accessible-role: button;
+                accessible-label: "Close search";
+                Rectangle {
+                    width: 28 * Theme.dp;
+                    height: self.width;
+                    border-radius: self.width / 2;
+                    background: close-touch.pressed ? Theme.pressed : transparent;
+                }
+
+                Glyph {
+                    source: @image-url("../icons/sys/close.svg");
+                    size: 20 * Theme.dp;
+                    colorize: Theme.text-secondary;
+                }
+
+                close-touch := TouchArea {
+                    clicked => {
+                        root.closed();
+                    }
+                }
+            }
+        }
+    }
+
+    Hairline {
+        y: parent.height - self.height;
+    }
+}
+
+// [✕ N selected · ≤ 3 actions]: while it shows, the footer hides and rows show check circles (K03).
+export component SelectionHeader inherits Rectangle {
+    in property <int> count;
+    in property <[Act]> actions;
+    callback action(int);
+    // ✕ or Back: leave selection
+    callback closed();
+    height: Theme.header-h;
+    background: Theme.bg;
+    HorizontalLayout {
+        padding-right: 4 * Theme.dp;
+        HeaderButton {
+            icon: @image-url("../icons/sys/close.svg");
+            label: "Leave selection";
+            tint: Theme.text;
+            clicked => {
+                root.closed();
+            }
+        }
+
+        Title {
+            text: root.count + " selected";
+        }
+
+        for a[i] in root.actions: HeaderButton {
+            icon: a.icon;
+            label: a.label;
+            disabled: a.disabled;
+            clicked => {
+                root.action(i);
+            }
+        }
+    }
+
+    Hairline {
+        y: parent.height - self.height;
+    }
+}
+
+// The root header [Name · ≤ 3 icons], or with `has-back` the sub-page header [← Name · ≤ 3]. Search and selection
+// are built in: the search action turns it into a SearchHeader, `selected > 0` into a SelectionHeader. Both are
+// layers for Back (Kit).
+export component Header inherits Rectangle {
+    in property <string> title;
+    // page dots beside the title (D16); 0 = none
+    in property <int> dots;
+    in property <int> dot;
+    in property <[Act]> actions;
+    // ⋮ items; [] = no ⋮
+    in property <[string]> menu;
+    in property <int> menu-destructive: -1;
+    // K03 defaults, each with its opt-out
+    in property <bool> search: true;
+    in property <string> search-placeholder: "Search";
+    in property <bool> tap-to-top: true;
+    // #0b0c0e where the content scrolls under it
+    in property <bool> alt;
+    in property <bool> has-back;
+    // selection mode: > 0 shows [✕ N selected · selection-actions]
+    in property <int> selected;
+    in property <[Act]> selection-actions;
+    in-out property <string> query;
+    in-out property <bool> searching;
+    callback action(int);
+    callback menu-picked(int);
+    // each change of the query: filter
+    callback searched(string);
+    // a tap on the title or the gap: scroll the page's list to the top (NeoList.to-top)
+    callback top();
+    // ←: the app's own Back path (Back order step 3)
+    callback back();
+    callback selection-action(int);
+    // ✕ or Back in selection mode: the app clears its selection
+    callback selection-closed();
+    height: Theme.header-h;
+    background: root.alt ? Theme.header-alt : Theme.bg;
+
+    public function close-search() {
+        root.searching = false;
+        root.query = "";
+        KeyboardFocus.open = false;
+        root.searched("");
+    }
+
+    property <bool> layered: root.searching || root.selected > 0;
+    property <int> level;
+    property <int> seq: Kit.back-seq;
+    changed layered => {
+        if self.layered {
+            self.level = Kit.push();
+        } else if self.level > 0 {
+            Kit.pop();
+            self.level = 0;
+        }
+    }
+    changed seq => {
+        if Kit.take-back(self.level) {
+            if root.selected > 0 {
+                root.selection-closed();
+            } else {
+                root.close-search();
+            }
+        }
+    }
+
+    if root.selected > 0: SelectionHeader {
+        count: root.selected;
+        actions: root.selection-actions;
+        action(i) => {
+            root.selection-action(i);
+        }
+        closed => {
+            root.selection-closed();
+        }
+    }
+    if root.selected == 0 && root.searching: SearchHeader {
+        placeholder: root.search-placeholder;
+        text <=> root.query;
+        changed(t) => {
+            root.searched(t);
+        }
+        closed => {
+            root.close-search();
+        }
+    }
+    if root.selected == 0 && !root.searching: HorizontalLayout {
+        padding-left: root.has-back ? 0 : 16 * Theme.dp;
+        padding-right: 4 * Theme.dp;
+        if root.has-back: HeaderButton {
+            icon: @image-url("../icons/sys/back.svg");
+            label: "Back";
+            tint: Theme.text;
+            clicked => {
+                root.back();
+            }
+        }
+        if root.has-back: Rectangle {
+            width: 4 * Theme.dp;
+        }
+        Rectangle {
+            horizontal-stretch: 1;
+            HorizontalLayout {
+                spacing: 10 * Theme.dp;
+                Text {
+                    text: root.title;
+                    color: Theme.text;
+                    font-size: Theme.font-title;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                    overflow: elide;
+                    horizontal-stretch: 0;
+                    max-width: root.width - 64 * Theme.dp;
+                }
+
+                if root.dots > 0: VerticalLayout {
+                    alignment: center;
+                    PageDots {
+                        count: root.dots;
+                        current: root.dot;
+                    }
+                }
+                Rectangle {
+                    horizontal-stretch: 1;
+                }
+            }
+
+            TouchArea {
+                enabled: root.tap-to-top;
+                clicked => {
+                    root.top();
+                }
+            }
+        }
+
+        for a[i] in root.actions: HeaderButton {
+            icon: a.icon;
+            label: a.label;
+            disabled: a.disabled;
+            clicked => {
+                root.action(i);
+            }
+        }
+        if root.search: HeaderButton {
+            icon: @image-url("../icons/sys/search.svg");
+            label: "Search";
+            clicked => {
+                root.searching = true;
+            }
+        }
+        if root.menu.length > 0: HeaderButton {
+            icon: @image-url("../icons/sys/more.svg");
+            label: "More options";
+            clicked => {
+                more.show();
+            }
+        }
+    }
+
+    more := Menu {
+        x: 0;
+        y: 0;
+        at-x: root.width - 4 * Theme.dp;
+        at-y: Theme.header-h;
+        items: root.menu;
+        destructive: root.menu-destructive;
+        picked(i) => {
+            root.menu-picked(i);
+        }
+    }
+
+    if root.selected == 0 && !root.searching: Hairline {
+        y: parent.height - self.height;
+    }
+}
+
+// [← Page name · ≤ 3 icons]: ← does what Back does (Back order step 3, up one page).
+export component SubHeader inherits Header {
+    has-back: true;
+}
+
+// [✕ Title ✓]: forms have no footer. The kit does not ask: on cancel the app asks (app.query) when there are
+// changes (D14). ✓ stays dimmed until the form is valid.
+export component FormHeader inherits Rectangle {
+    in property <string> title;
+    in property <bool> can-save: true;
+    callback cancel();
+    callback save();
+    height: Theme.header-h;
+    background: Theme.bg;
+    HorizontalLayout {
+        HeaderButton {
+            icon: @image-url("../icons/sys/close.svg");
+            label: "Cancel";
+            tint: Theme.text;
+            clicked => {
+                root.cancel();
+            }
+        }
+
+        Rectangle {
+            width: 4 * Theme.dp;
+        }
+
+        Title {
+            text: root.title;
+        }
+
+        HeaderButton {
+            icon: @image-url("../icons/sys/check.svg");
+            label: "Save";
+            tint: Theme.accent;
+            disabled: !root.can-save;
+            clicked => {
+                root.save();
+            }
+        }
+    }
+
+    Hairline {
+        y: parent.height - self.height;
+    }
+}

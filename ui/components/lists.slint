@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// List building blocks: avatar, row, section header, switch.
+// List building blocks: avatar, row, section header, switch (kit-lists).
 import { Theme } from "../theme.slint";
 import { Glyph } from "frame.slint";
 
@@ -81,11 +81,35 @@ export component ListRow inherits Rectangle {
     callback clicked;
     // the trailing switch was flipped by a tap (`switch-on` holds the new state)
     callback switch-toggled(bool);
+    // selection mode (K03): every row shows a check circle; a tap toggles (the app's clicked handler decides)
+    in property <bool> selecting;
+    in property <bool> checked;
+    // held 500 ms without moving: starts selection mode, or opens a long-press Menu (at the finger: long-x, long-y)
+    callback long-pressed();
+    out property <length> long-x: touch.pressed-x;
+    out property <length> long-y: touch.pressed-y;
+    property <bool> long-fired;
     height: subtitle == "" ? Theme.list-row-h : Theme.list-row-double-h;
-    background: touch.pressed ? Theme.pressed : transparent;
+    background: touch.pressed ? Theme.pressed : checked ? Theme.selected : transparent;
     touch := TouchArea {
+        changed pressed => {
+            if self.pressed {
+                root.long-fired = false;
+            }
+        }
         clicked => {
-            root.clicked();
+            if !root.long-fired {
+                root.clicked();
+            }
+        }
+    }
+
+    Timer {
+        interval: 500ms;
+        running: touch.pressed && !root.long-fired;
+        triggered => {
+            root.long-fired = true;
+            root.long-pressed();
         }
     }
 
@@ -93,6 +117,22 @@ export component ListRow inherits Rectangle {
         padding-left: Theme.margin + 4 * Theme.dp;
         padding-right: Theme.margin + 4 * Theme.dp;
         spacing: 14 * Theme.dp;
+        if selecting: VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 24 * Theme.dp;
+                height: self.width;
+                border-radius: self.width / 2;
+                background: checked ? Theme.accent : transparent;
+                border-width: checked ? 0 : 2 * Theme.dp;
+                border-color: Theme.text-dim;
+                if checked: Glyph {
+                    source: @image-url("../icons/sys/check.svg");
+                    size: 16 * Theme.dp;
+                    colorize: white;
+                }
+            }
+        }
         if avatar != "": VerticalLayout {
             alignment: center;
             Avatar {
@@ -166,7 +206,7 @@ export component ListRow inherits Rectangle {
     }
 
     if divider: Rectangle {
-        x: Theme.margin + 4 * Theme.dp + (avatar != "" ? Theme.avatar + 14 * Theme.dp : (has-icon ? Theme.row-icon + 14 * Theme.dp : 0));
+        x: Theme.margin + 4 * Theme.dp + (selecting ? 38 * Theme.dp : 0) + (avatar != "" ? Theme.avatar + 14 * Theme.dp : (has-icon ? Theme.row-icon + 14 * Theme.dp : 0));
         y: parent.height - self.height;
         width: parent.width - self.x;
         height: max(1px, Theme.dp / 2);

@@ -1,0 +1,540 @@
+// SPDX-License-Identifier: Apache-2.0
+// The kit gallery: every kit part on one page per kit sheet (design canvas, Shell & system UI -> UI kit). The host
+// tests (crates/neoui-gallery) render each page to snapshots/kit-*.png; NEOKIT.EXE shows the same pages on the device,
+// switched with its footer, and is the template for a new app.
+import "../fonts/Inter-VariableFont.ttf";
+import "../fonts/DejaVuSans.ttf";
+import {
+    Theme, Kit, Scroll, Glyph, NeoList, ListRow, SectionHeader, Header, SubHeader, FormHeader, Footer, TabPages,
+    Menu, ChoiceSheet, DatePicker, TimePicker, Toast, Spinner, ProgressBar, EmptyState, ErrorState, Skeleton,
+    PullIndicator, RowActions, FastScroll, FormRow, Chip, Button, TextField, SearchField, Slider, Switch, Badge,
+    Tab, Act
+} from "../kit.slint";
+
+export { Theme, Kit, Scroll }
+
+export global GalleryState {
+    // the page on show: 0 headers, 1 footer, 2 lists, 3 menus, 4 date, 5 time, 6 controls, 7 feedback
+    in-out property <int> page;
+    // the Menus page's ChoiceSheet (the tests open it after the menu, to check Back's order)
+    in-out property <bool> sheet;
+    // a note for the app's log (the device app turns it into a toast)
+    callback note(string);
+}
+
+component Caption inherits Text {
+    x: 16 * Theme.dp;
+    height: 22 * Theme.dp;
+    color: Theme.text-dim;
+    font-size: 11 * Theme.dp;
+    font-weight: 600;
+    vertical-alignment: bottom;
+}
+
+component HeadersPage inherits VerticalLayout {
+    alignment: start;
+    spacing: 2 * Theme.dp;
+    Caption {
+        text: "HEADER · ROOT";
+    }
+
+    Header {
+        title: "Settings";
+    }
+
+    Caption {
+        text: "HEADER · FOOTER APP, ACTIONS AND ⋮";
+    }
+
+    Header {
+        title: "Alarms";
+        search: false;
+        actions: [{ icon: @image-url("../icons/sys/add.svg"), label: "Add alarm" }];
+        menu: ["Settings"];
+    }
+
+    Caption {
+        text: "SUBHEADER";
+    }
+
+    SubHeader {
+        title: "Wi-Fi";
+        search: false;
+        menu: ["Add network"];
+    }
+
+    Caption {
+        text: "FORMHEADER";
+    }
+
+    FormHeader {
+        title: "Edit alarm";
+    }
+
+    Caption {
+        text: "FORMHEADER · NOT VALID YET";
+    }
+
+    FormHeader {
+        title: "New folder";
+        can-save: false;
+    }
+
+    Caption {
+        text: "SEARCH";
+    }
+
+    Header {
+        title: "World";
+        searching: true;
+        query: "Lo";
+    }
+
+    Caption {
+        text: "SELECTION";
+    }
+
+    Header {
+        title: "Alarms";
+        selected: 3;
+        selection-actions: [{ icon: @image-url("../icons/sys/delete.svg"), label: "Delete" }];
+    }
+
+    Caption {
+        text: "PAGE DOTS · ALT BACKGROUND";
+    }
+
+    Header {
+        title: "Phone";
+        dots: 2;
+        dot: 0;
+        alt: true;
+        search: false;
+    }
+
+    Caption {
+        text: "LONG TITLE";
+    }
+
+    SubHeader {
+        title: "Home screen & navigation";
+        search: false;
+        actions: [
+            { icon: @image-url("../icons/sys/edit.svg"), label: "Edit" },
+            { icon: @image-url("../icons/sys/share.svg"), label: "Share", disabled: true },
+        ];
+    }
+}
+
+component Alarm inherits ListRow {
+    subtitle: "Wake up · Weekdays";
+    has-switch: true;
+}
+
+component FooterPage inherits VerticalLayout {
+    in-out property <int> tab: 1;
+    property <[string]> names: ["Clock", "Alarms", "World", "Timer", "Stopwatch"];
+    Header {
+        title: root.names[root.tab];
+        search: false;
+        actions: [{ icon: @image-url("../icons/sys/add.svg"), label: "Add" }];
+        menu: ["Settings"];
+    }
+
+    TabPages {
+        count: 5;
+        current <=> root.tab;
+        for n[i] in root.names: NeoList {
+            VerticalLayout {
+                alignment: start;
+                if i == 1: Alarm {
+                    title: "07:30";
+                    switch-on: true;
+                }
+                if i == 1: Alarm {
+                    title: "06:45";
+                    subtitle: "Work · Weekdays";
+                }
+                if i == 1: Alarm {
+                    title: "09:00";
+                    subtitle: "Gym · Weekends";
+                }
+                if i != 1: EmptyState {
+                    icon: @image-url("../icons/sys/clock.svg");
+                    title: n;
+                }
+            }
+        }
+    }
+
+    Caption {
+        text: "3 TABS";
+    }
+
+    Footer {
+        tabs: [
+            { icon: @image-url("../icons/sys/clock.svg"), label: "Clock" },
+            { icon: @image-url("../icons/sys/alarm.svg"), label: "Alarms" },
+            { icon: @image-url("../icons/sys/world.svg"), label: "World" },
+        ];
+        current: 2;
+    }
+
+    Caption {
+        text: "5 TABS · BADGES (DOT, COUNT) · DISABLED";
+    }
+
+    Footer {
+        current <=> root.tab;
+        tabs: [
+            { icon: @image-url("../icons/sys/clock.svg"), label: "Clock" },
+            { icon: @image-url("../icons/sys/alarm.svg"), label: "Alarms" },
+            { icon: @image-url("../icons/sys/world.svg"), label: "World", badge: 2 },
+            { icon: @image-url("../icons/sys/timer.svg"), label: "Timer", badge: -1 },
+            { icon: @image-url("../icons/sys/stopwatch.svg"), label: "Stopwatch", disabled: true },
+        ];
+    }
+}
+
+component ListsPage inherits Rectangle {
+    NeoList {
+        width: parent.width - 28 * Theme.dp;
+        x: 0;
+        VerticalLayout {
+            alignment: start;
+            SectionHeader {
+                text: "Rows";
+            }
+
+            ListRow {
+                title: "About phone";
+                has-icon: true;
+                icon: @image-url("../icons/sys/info.svg");
+                chevron: true;
+            }
+
+            ListRow {
+                title: "Ava Lee";
+                subtitle: "Missed call";
+                avatar: "AL";
+                value: "10:02";
+                unread: true;
+            }
+
+            ListRow {
+                title: "Bluetooth";
+                subtitle: "Visible to nearby devices";
+                has-switch: true;
+                switch-on: true;
+            }
+
+            SectionHeader {
+                text: "Selection";
+            }
+
+            ListRow {
+                title: "07:30";
+                subtitle: "Wake up · Weekdays";
+                selecting: true;
+                checked: true;
+            }
+
+            ListRow {
+                title: "06:45";
+                subtitle: "Work · Weekdays";
+                selecting: true;
+            }
+
+            SectionHeader {
+                text: "Swipe actions";
+            }
+
+            RowActions {
+                height: Theme.list-row-double-h;
+                revealed: true;
+                actions: [
+                    { icon: @image-url("../icons/sys/archive.svg"), label: "Archive" },
+                    { icon: @image-url("../icons/sys/delete.svg"), label: "Delete" },
+                ];
+                ListRow {
+                    title: "09:00";
+                    subtitle: "Gym · Weekends";
+                }
+            }
+
+            SectionHeader {
+                text: "Empty";
+            }
+
+            EmptyState {
+                icon: @image-url("../icons/sys/alarm.svg");
+                title: "No alarms";
+                action: "+ Add alarm";
+            }
+        }
+    }
+
+    FastScroll {
+        x: parent.width - self.width - 4 * Theme.dp;
+        y: 8 * Theme.dp;
+        height: parent.height - 16 * Theme.dp;
+    }
+}
+
+component MenusPage inherits Rectangle {
+    VerticalLayout {
+        alignment: start;
+        SubHeader {
+            title: "Phone storage";
+            search: false;
+            menu: ["New folder", "Rename", "Delete"];
+            menu-destructive: 2;
+        }
+
+        ListRow {
+            title: "Documents";
+            subtitle: "4 items";
+            has-icon: true;
+            icon: @image-url("../icons/sys/folder.svg");
+        }
+
+        ListRow {
+            title: "Images";
+            subtitle: "126 items";
+            has-icon: true;
+            icon: @image-url("../icons/sys/folder.svg");
+        }
+    }
+
+    // the ⋮ menu as it opens (a PopupWindow draws above everything)
+    menu := Menu {
+        x: 0;
+        y: 0;
+        at-x: root.width - 4 * Theme.dp;
+        at-y: Theme.header-h;
+        items: ["New folder", "Rename", "Delete"];
+        destructive: 2;
+    }
+
+    ChoiceSheet {
+        title: "Face";
+        choices: ["Digital", "Analog"];
+        current: 0;
+        open <=> GalleryState.sheet;
+    }
+
+    init => {
+        menu.show();
+    }
+}
+
+component ControlsPage inherits VerticalLayout {
+    alignment: start;
+    padding-left: 16 * Theme.dp;
+    padding-right: 16 * Theme.dp;
+    spacing: 10 * Theme.dp;
+    Caption {
+        x: 0;
+        text: "BUTTONS · PRIMARY, SECONDARY, DANGER, TEXT, DISABLED";
+    }
+
+    HorizontalLayout {
+        spacing: 8 * Theme.dp;
+        alignment: start;
+        Button {
+            text: "Save";
+        }
+
+        Button {
+            text: "Cancel";
+            primary: false;
+        }
+
+        Button {
+            text: "Delete";
+            tint: Theme.danger;
+        }
+    }
+
+    HorizontalLayout {
+        spacing: 8 * Theme.dp;
+        alignment: start;
+        Button {
+            text: "Retry";
+            flat: true;
+        }
+
+        Button {
+            text: "Save";
+            enabled: false;
+        }
+    }
+
+    Caption {
+        x: 0;
+        text: "FIELDS";
+    }
+
+    TextField {
+        text: "Wake up";
+    }
+
+    TextField {
+        placeholder: "Folder name";
+        error: "Type a name";
+    }
+
+    Rectangle {
+        height: 14 * Theme.dp;
+    }
+
+    SearchField { }
+
+    Caption {
+        x: 0;
+        text: "SLIDER · SWITCH · CHIPS";
+    }
+
+    Slider {
+        value: 0.6;
+    }
+
+    HorizontalLayout {
+        spacing: 10 * Theme.dp;
+        alignment: start;
+        Switch {
+            on: true;
+        }
+
+        Switch { }
+    }
+
+    HorizontalLayout {
+        spacing: 6 * Theme.dp;
+        alignment: start;
+        for d[i] in ["Mon", "Tue", "Wed", "Sat", "Sun"]: Chip {
+            text: d;
+            on: i < 3;
+        }
+    }
+
+    Caption {
+        x: 0;
+        text: "PROGRESS · SPINNER";
+    }
+
+    ProgressBar {
+        value: 0.35;
+    }
+
+    ProgressBar {
+        indeterminate: true;
+    }
+
+    HorizontalLayout {
+        spacing: 16 * Theme.dp;
+        alignment: start;
+        Spinner { }
+
+        Spinner {
+            size: 36 * Theme.dp;
+        }
+    }
+
+    Caption {
+        x: 0;
+        text: "FORM ROW";
+    }
+
+    FormRow {
+        padding-left: 0;
+        padding-right: 0;
+        label: "Label";
+        text: "Gym";
+    }
+}
+
+component FeedbackPage inherits VerticalLayout {
+    alignment: start;
+    spacing: 10 * Theme.dp;
+    Caption {
+        text: "TOAST (THE SHELL'S NOTE)";
+    }
+
+    HorizontalLayout {
+        padding-left: 12 * Theme.dp;
+        padding-right: 12 * Theme.dp;
+        Toast {
+            text: "Alarm deleted";
+            action: "Undo";
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: 12 * Theme.dp;
+        padding-right: 12 * Theme.dp;
+        Toast {
+            text: "Saved to Phone storage";
+        }
+    }
+
+    Caption {
+        text: "PULL TO REFRESH";
+    }
+
+    HorizontalLayout {
+        alignment: center;
+        spacing: 16 * Theme.dp;
+        PullIndicator {
+            progress: 0.5;
+        }
+
+        PullIndicator {
+            progress: 1;
+        }
+
+        PullIndicator {
+            refreshing: true;
+        }
+    }
+
+    Caption {
+        text: "LOADING";
+    }
+
+    Skeleton {
+        rows: 3;
+        avatar: true;
+    }
+
+    Caption {
+        text: "ERROR";
+    }
+
+    ErrorState {
+        title: "Can't load the list";
+        reason: "No connection";
+    }
+}
+
+export component Gallery inherits Window {
+    background: Theme.bg;
+    default-font-family: "Inter";
+    if GalleryState.page == 0: HeadersPage { }
+    if GalleryState.page == 1: FooterPage { }
+    if GalleryState.page == 2: ListsPage { }
+    if GalleryState.page == 3: MenusPage { }
+    if GalleryState.page == 4: DatePicker {
+        open: true;
+        year: 2026;
+        month: 11;
+        day: 6;
+    }
+    if GalleryState.page == 5: TimePicker {
+        open: true;
+        hour: 7;
+        minute: 30;
+    }
+    if GalleryState.page == 6: ControlsPage { }
+    if GalleryState.page == 7: FeedbackPage { }
+}

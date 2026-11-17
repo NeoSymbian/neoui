@@ -2640,6 +2640,15 @@ name = "neoui-files"
 version = "0.1.0"
 
 [[package]]
+name = "neoui-gallery"
+version = "0.1.0"
+dependencies = [
+ "neoui-kit",
+ "png",
+ "slint",
+]
+
+[[package]]
 name = "neoui-host"
 version = "0.1.0"
 dependencies = [
@@ -2647,6 +2656,13 @@ dependencies = [
  "neoui-render",
  "softbuffer",
  "winit",
+]
+
+[[package]]
+name = "neoui-kit"
+version = "0.1.0"
+dependencies = [
+ "slint-build",
 ]
 
 [[package]]

@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Lists that tell the UI server how far they scrolled (smooth-ui S2d): it moves the pixels already drawn and lets
-// Slint draw only the rows the move uncovered.
+// Slint draw only the rows the move uncovered. NeoList also carries the kit's list defaults (K03): pull to refresh,
+// selection mode and back to the top.
+import { Theme } from "../theme.slint";
+import { PullIndicator } from "feedback.slint";
 
 // What scrolled since the UI server last rendered: whole pixels (> 0 = the content moved down), how many lists moved
 // (the server shifts only when exactly one did), and that list's place on screen (physical px).
@@ -13,16 +16,61 @@ export global Scroll {
     in-out property <length> height;
 }
 
-// A Flickable that reports its scrolling to `Scroll`.
-export component NeoList inherits Flickable {
-    property <int> shown: 0;
-    changed content-y => {
-        Scroll.dy += Math.round(self.content-y / 1px) - self.shown;
-        self.shown = Math.round(self.content-y / 1px);
-        Scroll.lists += 1;
-        Scroll.x = self.absolute-position.x;
-        Scroll.y = self.absolute-position.y;
-        Scroll.width = self.width;
-        Scroll.height = self.height;
+// A Flickable that reports its scrolling to `Scroll`, inside a pull-to-refresh handler (the Flickable takes every
+// vertical drag once its content overflows, so the pull is caught around it). The Flickable's content properties are
+// forwarded, so a NeoList is used as one.
+export component NeoList inherits Rectangle {
+    in-out property <length> content-x <=> flick.content-x;
+    in-out property <length> content-y <=> flick.content-y;
+    in-out property <length> content-width <=> flick.content-width;
+    in-out property <length> content-height <=> flick.content-height;
+    in property <bool> interactive <=> flick.interactive;
+    // K03: pulled down 64 dp past the top, refresh() runs; set `refreshing` while the data comes (the spinner shows).
+    // Off unless a list asks: the pull handler holds every press back 100 ms (Slint's forward delay), which would
+    // slow the first frames of every scroll, so only lists whose data comes from outside (network, modem, files) opt in.
+    in property <bool> pull-refresh;
+    in-out property <bool> refreshing;
+    callback refresh();
+    // K03: long-press starts selection mode (the app reads it before acting on a row's long-pressed); `selected` is
+    // how many rows are picked
+    in property <bool> selection: true;
+    in-out property <int> selected;
+    property <length> threshold: 64 * Theme.dp;
+    clip: true;
+    property <length> pull: swipe.swiping ? max(0, swipe.current-position.y - swipe.pressed-position.y) : 0;
+
+    // back to the top (Header.top, tap to top)
+    public function to-top() {
+        flick.content-y = 0;
+    }
+
+    swipe := SwipeGestureHandler {
+        enabled: root.pull-refresh;
+        handle-swipe-down: root.pull-refresh && !root.refreshing && flick.content-y >= 0;
+        swiped => {
+            if self.current-position.y - self.pressed-position.y > root.threshold {
+                root.refresh();
+            }
+        }
+        flick := Flickable {
+            property <int> shown: 0;
+            y: min(root.pull, root.threshold) / 2;
+            changed content-y => {
+                Scroll.dy += Math.round(self.content-y / 1px) - self.shown;
+                self.shown = Math.round(self.content-y / 1px);
+                Scroll.lists += 1;
+                Scroll.x = self.absolute-position.x;
+                Scroll.y = self.absolute-position.y;
+                Scroll.width = self.width;
+                Scroll.height = self.height;
+            }
+            @children
+        }
+    }
+
+    if root.pull > 0 || root.refreshing: PullIndicator {
+        y: (root.refreshing ? root.threshold : min(root.pull, root.threshold * 1.25)) - self.height - 4 * Theme.dp;
+        progress: root.pull / root.threshold;
+        refreshing: root.refreshing;
     }
 }

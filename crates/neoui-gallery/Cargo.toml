@@ -1,0 +1,17 @@
+# SPDX-License-Identifier: Apache-2.0
+[package]
+name = "neoui-gallery"
+description = "The neoui kit gallery: every kit component on one page per sheet, rendered to snapshots on the host"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dependencies]
+slint.workspace = true
+
+[build-dependencies]
+neoui-kit = { path = "../neoui-kit" }
+
+[dev-dependencies]
+png.workspace = true

@@ -1,0 +1,381 @@
+// SPDX-License-Identifier: Apache-2.0
+// Bottom sheets (kit-menus): a pick-one ChoiceSheet and the date and time pickers. Each covers the app's whole
+// surface (a scrim) and rises from the bottom, so the app places it last in its window, full size. Back or a tap on
+// the scrim cancels; each is a layer for Back (Kit).
+import { Theme } from "../theme.slint";
+import { Glyph } from "frame.slint";
+import { Button } from "controls.slint";
+import { Kit } from "layers.slint";
+
+// The sheet itself: scrim, top radius 18, a 36 x 4 handle, a title, then the children.
+export component Sheet inherits Rectangle {
+    in property <string> title;
+    in-out property <bool> open;
+    callback dismissed();
+    visible: self.opacity > 0.01;
+    opacity: root.open ? 1 : 0;
+    animate opacity { duration: Theme.instant ? 0ms : Theme.popup; easing: ease-out-quad; }
+
+    public function close() {
+        root.open = false;
+        root.dismissed();
+    }
+
+    property <int> level;
+    property <int> seq: Kit.back-seq;
+    changed open => {
+        if self.open {
+            self.level = Kit.push();
+        } else if self.level > 0 {
+            Kit.pop();
+            self.level = 0;
+        }
+    }
+    changed seq => {
+        if Kit.take-back(self.level) {
+            root.close();
+        }
+    }
+
+    Rectangle {
+        background: Theme.scrim;
+        TouchArea {
+            clicked => {
+                root.close();
+            }
+        }
+    }
+
+    Rectangle {
+        width: parent.width;
+        height: box.preferred-height;
+        y: parent.height - self.height + (root.open ? 0 : 24 * Theme.dp);
+        animate y { duration: Theme.instant ? 0ms : Theme.popup; easing: ease-out-quad; }
+        border-top-left-radius: Theme.radius + 4 * Theme.dp;
+        border-top-right-radius: Theme.radius + 4 * Theme.dp;
+        background: Theme.sheet;
+        TouchArea { }
+
+        box := VerticalLayout {
+            padding-bottom: 12 * Theme.dp;
+            HorizontalLayout {
+                alignment: center;
+                padding-top: 8 * Theme.dp;
+                padding-bottom: 6 * Theme.dp;
+                Rectangle {
+                    width: 36 * Theme.dp;
+                    height: 4 * Theme.dp;
+                    border-radius: 2 * Theme.dp;
+                    background: Theme.handle;
+                }
+            }
+
+            if root.title != "": Text {
+                x: 0;
+                height: 44 * Theme.dp;
+                text: root.title;
+                color: Theme.text;
+                font-size: Theme.font-body;
+                font-weight: 600;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+            @children
+        }
+    }
+}
+
+// Pick one: a tap on a row picks it and closes the sheet (no OK).
+export component ChoiceSheet inherits Sheet {
+    in property <[string]> choices;
+    in-out property <int> current;
+    callback chosen(int);
+    for c[i] in root.choices: Rectangle {
+        height: Theme.list-row-h;
+        background: t.pressed ? Theme.pressed : transparent;
+        accessible-role: radio-button;
+        accessible-checked: i == root.current;
+        accessible-label: c;
+        HorizontalLayout {
+            padding-left: 20 * Theme.dp;
+            padding-right: 20 * Theme.dp;
+            spacing: 14 * Theme.dp;
+            Text {
+                text: c;
+                color: Theme.text;
+                font-size: Theme.font-body;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+            }
+
+            VerticalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 22 * Theme.dp;
+                    height: self.width;
+                    border-radius: self.width / 2;
+                    border-width: 2 * Theme.dp;
+                    border-color: i == root.current ? Theme.accent : Theme.text-dim;
+                    if i == root.current: Rectangle {
+                        width: 10 * Theme.dp;
+                        height: self.width;
+                        border-radius: self.width / 2;
+                        background: Theme.accent;
+                    }
+                }
+            }
+        }
+
+        t := TouchArea {
+            clicked => {
+                root.current = i;
+                root.open = false;
+                root.chosen(i);
+            }
+        }
+    }
+}
+
+// Cancel / Set at the bottom of a picker.
+component PickerButtons inherits HorizontalLayout {
+    callback cancel();
+    callback set();
+    alignment: end;
+    padding-left: 16 * Theme.dp;
+    padding-right: 16 * Theme.dp;
+    padding-top: 8 * Theme.dp;
+    spacing: 8 * Theme.dp;
+    Button {
+        text: "Cancel";
+        flat: true;
+        clicked => {
+            root.cancel();
+        }
+    }
+
+    Button {
+        text: "Set";
+        clicked => {
+            root.set();
+        }
+    }
+}
+
+// A month grid (weeks start on Monday, as Clock's day names do), month by month with ‹ ›.
+export component DatePicker inherits Sheet {
+    title: "Set date";
+    in-out property <int> year: 2026;
+    // 1..=12
+    in-out property <int> month: 1;
+    in-out property <int> day: 1;
+    callback set(int, int, int);
+    property <[string]> names: [
+        "January", "February", "March", "April", "May", "June", "July", "August", "September", "October",
+        "November", "December"
+    ];
+    property <int> days: root.days-in(root.year, root.month);
+    // the grid cell (0..42) of day 1: its weekday, Monday = 0
+    property <int> first: root.weekday(root.year, root.month, 1);
+
+    pure function days-in(y: int, m: int) -> int {
+        if m == 2 {
+            return (Math.mod(y, 4) == 0 && Math.mod(y, 100) != 0) || Math.mod(y, 400) == 0 ? 29 : 28;
+        }
+        (m == 4 || m == 6 || m == 9 || m == 11) ? 30 : 31
+    }
+
+    // Sakamoto's method; Monday = 0
+    pure function weekday(y: int, m: int, d: int) -> int {
+        let t = [0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4];
+        let yy = m < 3 ? y - 1 : y;
+        Math.mod(yy + Math.floor(yy / 4) - Math.floor(yy / 100) + Math.floor(yy / 400) + t[m - 1] + d + 6, 7)
+    }
+
+    function shift(by: int) {
+        let m = root.month + by;
+        root.year = m < 1 ? root.year - 1 : m > 12 ? root.year + 1 : root.year;
+        root.month = m < 1 ? 12 : m > 12 ? 1 : m;
+        root.day = min(root.day, root.days-in(root.year, root.month));
+    }
+
+    HorizontalLayout {
+        padding-left: 12 * Theme.dp;
+        padding-right: 12 * Theme.dp;
+        height: 44 * Theme.dp;
+        Rectangle {
+            width: Theme.action;
+            Glyph {
+                source: @image-url("../icons/sys/chevron_left.svg");
+                size: 20 * Theme.dp;
+                colorize: Theme.text-secondary;
+            }
+
+            TouchArea {
+                clicked => {
+                    root.shift(-1);
+                }
+            }
+        }
+
+        Text {
+            text: root.names[root.month - 1] + " " + root.year;
+            color: Theme.text;
+            font-size: Theme.font-body;
+            font-weight: 600;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+
+        Rectangle {
+            width: Theme.action;
+            Glyph {
+                source: @image-url("../icons/sys/chevron_right.svg");
+                size: 20 * Theme.dp;
+                colorize: Theme.text-secondary;
+            }
+
+            TouchArea {
+                clicked => {
+                    root.shift(1);
+                }
+            }
+        }
+    }
+
+    Rectangle {
+        height: 7 * 40 * Theme.dp;
+        property <length> cell-w: (self.width - 24 * Theme.dp) / 7;
+        for n[i] in ["M", "T", "W", "T", "F", "S", "S"]: Text {
+            x: 12 * Theme.dp + i * parent.cell-w;
+            y: 0;
+            width: parent.cell-w;
+            height: 40 * Theme.dp;
+            text: n;
+            color: Theme.text-dim;
+            font-size: Theme.font-label;
+            font-weight: 600;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+        for c in 42: Rectangle {
+            property <int> d: c - root.first + 1;
+            x: 12 * Theme.dp + Math.mod(c, 7) * parent.cell-w + (parent.cell-w - self.width) / 2;
+            y: (1 + Math.floor(c / 7)) * 40 * Theme.dp + 2 * Theme.dp;
+            width: 36 * Theme.dp;
+            height: self.width;
+            border-radius: self.width / 2;
+            visible: self.d >= 1 && self.d <= root.days;
+            background: self.d == root.day ? Theme.accent : dt.pressed ? Theme.pressed : transparent;
+            Text {
+                text: parent.d;
+                color: Theme.text;
+                font-size: Theme.font-label;
+                font-weight: parent.d == root.day ? 700 : 400;
+            }
+
+            dt := TouchArea {
+                clicked => {
+                    root.day = parent.d;
+                }
+            }
+        }
+    }
+
+    PickerButtons {
+        cancel => {
+            root.close();
+        }
+        set => {
+            root.open = false;
+            root.set(root.year, root.month, root.day);
+        }
+    }
+}
+
+// One wheel: five values around the current one; drag it, or tap a row.
+component Wheel inherits Rectangle {
+    in property <int> count;
+    in-out property <int> value;
+    property <length> step: 40 * Theme.dp;
+    property <int> start;
+    height: 5 * self.step;
+    clip: true;
+    for k in 5: Text {
+        property <int> v: Math.mod(root.value + k - 2 + root.count * 2, root.count);
+        y: k * root.step;
+        width: parent.width;
+        height: root.step;
+        text: (self.v < 10 ? "0" : "") + self.v;
+        color: k == 2 ? Theme.text : Theme.text-dim;
+        font-size: k == 2 ? 28 * Theme.dp : Theme.font-body;
+        font-weight: k == 2 ? 600 : 400;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    t := TouchArea {
+        pointer-event(e) => {
+            if e.kind == PointerEventKind.down {
+                root.start = root.value;
+            }
+        }
+        moved => {
+            root.value = Math.mod(root.start - Math.round((self.mouse-y - self.pressed-y) / root.step) + root.count * 4, root.count);
+        }
+        clicked => {
+            root.value = Math.mod(root.value + Math.floor(self.mouse-y / root.step) - 2 + root.count, root.count);
+        }
+    }
+}
+
+// Two wheels (hours, minutes) on a selection band.
+export component TimePicker inherits Sheet {
+    title: "Set time";
+    in-out property <int> hour;
+    in-out property <int> minute;
+    callback set(int, int);
+    Rectangle {
+        height: 5 * 40 * Theme.dp;
+        Rectangle {
+            x: 24 * Theme.dp;
+            width: parent.width - 48 * Theme.dp;
+            height: 40 * Theme.dp;
+            border-radius: Theme.radius-small;
+            background: Theme.selected;
+        }
+
+        HorizontalLayout {
+            alignment: center;
+            spacing: 8 * Theme.dp;
+            Wheel {
+                width: 72 * Theme.dp;
+                count: 24;
+                value <=> root.hour;
+            }
+
+            Text {
+                text: ":";
+                color: Theme.text;
+                font-size: 28 * Theme.dp;
+                font-weight: 600;
+                vertical-alignment: center;
+            }
+
+            Wheel {
+                width: 72 * Theme.dp;
+                count: 60;
+                value <=> root.minute;
+            }
+        }
+    }
+
+    PickerButtons {
+        cancel => {
+            root.close();
+        }
+        set => {
+            root.open = false;
+            root.set(root.hour, root.minute);
+        }
+    }
+}

@@ -1,0 +1,116 @@
+// SPDX-License-Identifier: Apache-2.0
+// Footer tabs (kit-footer, Shell v2 K02): icon-only, 48 dp, 2-5 tabs, the active one on an accent pill, red badges.
+// The header names the current tab. A footer app is one app with several top pages; TabPages moves between them with
+// a sideways swipe (K03). The keyboard covers the footer; selection mode hides it.
+import { Theme } from "../theme.slint";
+import { Glyph } from "frame.slint";
+
+// badge: 0 = none, -1 = a dot (something new), n > 0 = a count (99+)
+export struct Tab {
+    icon: image,
+    label: string,
+    badge: int,
+    disabled: bool,
+}
+
+// A red badge: a dot or a count, with a 2 dp ring in the background colour.
+export component Badge inherits Rectangle {
+    in property <int> count;
+    property <length> ring: 2 * Theme.dp;
+    width: count < 0 ? 8 * Theme.dp + 2 * ring : max(Theme.badge, label.preferred-width + 8 * Theme.dp) + 2 * ring;
+    height: count < 0 ? 8 * Theme.dp + 2 * ring : Theme.badge + 2 * ring;
+    border-radius: self.height / 2;
+    background: Theme.danger;
+    border-width: ring;
+    border-color: Theme.bg;
+    label := Text {
+        text: root.count > 99 ? "99+" : root.count > 0 ? root.count : "";
+        color: white;
+        font-size: 11 * Theme.dp;
+        font-weight: 700;
+    }
+}
+
+export component Footer inherits Rectangle {
+    in property <[Tab]> tabs;
+    in-out property <int> current;
+    callback picked(int);
+    height: Theme.footer-h;
+    background: Theme.bg;
+    accessible-role: tab-list;
+    HorizontalLayout {
+        for t[i] in root.tabs: Rectangle {
+            opacity: t.disabled ? Theme.disabled : 1;
+            accessible-role: tab;
+            accessible-label: t.label;
+            Rectangle {
+                width: Theme.pill-w;
+                height: Theme.pill-h;
+                border-radius: self.height / 2;
+                background: i == root.current ? Theme.tab-pill : touch.pressed ? Theme.pressed : transparent;
+            }
+
+            Glyph {
+                source: t.icon;
+                size: Theme.action-glyph;
+                colorize: i == root.current ? Theme.accent : touch.pressed ? Theme.text : Theme.text-secondary;
+            }
+
+            if t.badge != 0: Badge {
+                count: t.badge;
+                x: parent.width / 2 + 4 * Theme.dp;
+                y: parent.height / 2 - 16 * Theme.dp;
+            }
+            touch := TouchArea {
+                enabled: !t.disabled;
+                clicked => {
+                    root.current = i;
+                    root.picked(i);
+                }
+            }
+        }
+    }
+
+    Rectangle {
+        y: 0;
+        height: max(1px, Theme.dp / 2);
+        background: Theme.header-hairline;
+    }
+}
+
+// The footer app's top pages side by side, one surface wide each: a sideways drag moves them with the finger and
+// commits to the next tab past 60 dp (less snaps back). One child per tab. In Gestures the 16 dp edge zones stay the
+// system's: the UI server never passes those touches to the app.
+export component TabPages inherits Rectangle {
+    in property <int> count;
+    in-out property <int> current;
+    in property <bool> swipe-tabs: true;
+    callback tab-changed(int);
+    clip: true;
+
+    function go(to: int) {
+        if to >= 0 && to < root.count && to != root.current {
+            root.current = to;
+            root.tab-changed(to);
+        }
+    }
+
+    swipe := SwipeGestureHandler {
+        handle-swipe-left: root.swipe-tabs && root.current < root.count - 1;
+        handle-swipe-right: root.swipe-tabs && root.current > 0;
+        property <length> drag: self.swiping ? self.current-position.x - self.pressed-position.x : 0;
+        swiped => {
+            if self.current-position.x - self.pressed-position.x < -60 * Theme.dp {
+                root.go(root.current + 1);
+            } else if self.current-position.x - self.pressed-position.x > 60 * Theme.dp {
+                root.go(root.current - 1);
+            }
+        }
+        HorizontalLayout {
+            x: -root.current * root.width + swipe.drag;
+            width: root.width * root.count;
+            animate x { duration: swipe.swiping || Theme.instant ? 0ms : Theme.fast; easing: ease-out-quad; }
+            @children
+        }
+    }
+}

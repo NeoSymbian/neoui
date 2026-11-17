@@ -1,0 +1,211 @@
+// SPDX-License-Identifier: Apache-2.0
+// Feedback (kit-feedback): the toast's look, a spinner, a progress bar, and the empty, error and loading states that
+// stand in for a list (states, not screens: the header and footer stay usable).
+import { Theme } from "../theme.slint";
+import { Glyph } from "frame.slint";
+import { Button } from "controls.slint";
+
+// The look of the shell's NOTE toast: text ≤ 80 B and an optional action ("Undo"). The shell draws it above the nav;
+// apps call app.note() rather than placing it.
+export component Toast inherits Rectangle {
+    in property <string> text;
+    in property <string> action;
+    callback acted();
+    height: max(Theme.header-h, row.preferred-height);
+    border-radius: Theme.radius;
+    background: Theme.toast;
+    border-width: max(1px, Theme.dp / 2);
+    border-color: Theme.card-border;
+    row := HorizontalLayout {
+        padding-left: 16 * Theme.dp;
+        padding-right: root.action == "" ? 16 * Theme.dp : 4 * Theme.dp;
+        padding-top: 10 * Theme.dp;
+        padding-bottom: 10 * Theme.dp;
+        spacing: 8 * Theme.dp;
+        Text {
+            text: root.text;
+            color: Theme.text;
+            font-size: 14.5 * Theme.dp;
+            vertical-alignment: center;
+            wrap: word-wrap;
+            horizontal-stretch: 1;
+        }
+
+        if root.action != "": Rectangle {
+            width: label.preferred-width + 24 * Theme.dp;
+            border-radius: Theme.radius-small;
+            background: t.pressed ? Theme.pressed : transparent;
+            accessible-role: button;
+            accessible-label: root.action;
+            label := Text {
+                text: root.action;
+                color: Theme.toast-action;
+                font-size: 14 * Theme.dp;
+                font-weight: 600;
+            }
+
+            t := TouchArea {
+                clicked => {
+                    root.acted();
+                }
+            }
+        }
+    }
+}
+
+// Eight dots around a ring, the bright one going round (no Path: the software renderer draws rectangles only).
+export component Spinner inherits Rectangle {
+    in property <length> size: 24 * Theme.dp;
+    in property <bool> running: true;
+    width: size;
+    height: size;
+    property <int> step: running ? Math.mod(animation-tick() / 90ms, 8) : 0;
+    for i in 8: Rectangle {
+        property <angle> a: i * 45deg - 90deg;
+        property <length> d: root.size / 5.5;
+        x: root.size / 2 + (root.size / 2 - self.d / 2) * Math.cos(self.a) - self.d / 2;
+        y: root.size / 2 + (root.size / 2 - self.d / 2) * Math.sin(self.a) - self.d / 2;
+        width: self.d;
+        height: self.d;
+        border-radius: self.d / 2;
+        background: Theme.accent;
+        opacity: 0.2 + 0.8 * Math.mod(i - root.step + 8, 8) / 7;
+    }
+}
+
+// A thin bar: `value` 0..1, or `indeterminate` (a segment going across).
+export component ProgressBar inherits Rectangle {
+    in property <float> value;
+    in property <bool> indeterminate;
+    height: 4 * Theme.dp;
+    border-radius: self.height / 2;
+    background: Theme.track;
+    clip: true;
+    Rectangle {
+        x: root.indeterminate ? (Math.mod(animation-tick() / 1ms, 1400) / 1400) * (root.width * 1.3) - root.width * 0.3 : 0;
+        width: root.indeterminate ? root.width * 0.3 : root.width * max(0, min(1, root.value));
+        border-radius: self.height / 2;
+        background: Theme.accent;
+    }
+}
+
+// A glyph in a circle, a title, an optional reason and an optional action (EmptyState, ErrorState).
+component State inherits VerticalLayout {
+    in property <image> icon;
+    in property <string> title;
+    in property <string> reason;
+    in property <string> action;
+    callback acted();
+    alignment: center;
+    spacing: 14 * Theme.dp;
+    padding: 24 * Theme.dp;
+    HorizontalLayout {
+        alignment: center;
+        Rectangle {
+            width: 88 * Theme.dp;
+            height: self.width;
+            border-radius: self.width / 2;
+            background: Theme.card;
+            Glyph {
+                source: root.icon;
+                size: 44 * Theme.dp;
+                colorize: Theme.text-dim;
+            }
+        }
+    }
+
+    Text {
+        text: root.title;
+        color: Theme.text;
+        font-size: Theme.font-body;
+        font-weight: 600;
+        horizontal-alignment: center;
+    }
+
+    if root.reason != "": Text {
+        text: root.reason;
+        color: Theme.text-secondary;
+        font-size: Theme.font-label;
+        horizontal-alignment: center;
+        wrap: word-wrap;
+    }
+    if root.action != "": HorizontalLayout {
+        alignment: center;
+        Button {
+            text: root.action;
+            primary: false;
+            clicked => {
+                root.acted();
+            }
+        }
+    }
+}
+
+// In place of a list with no rows ("No alarms", "+ Add alarm").
+export component EmptyState inherits State { }
+
+// In place of a list that failed to load: a reason and one Retry.
+export component ErrorState inherits State {
+    icon: @image-url("../icons/sys/info.svg");
+    action: "Retry";
+}
+
+// Loading rows shaped like the real list (after 300 ms without data, so a fast load shows nothing).
+export component Skeleton inherits VerticalLayout {
+    in property <int> rows: 6;
+    in property <bool> avatar;
+    for i in root.rows: Rectangle {
+        height: Theme.list-row-double-h;
+        HorizontalLayout {
+            padding-left: Theme.card-pad;
+            padding-right: Theme.card-pad;
+            spacing: 14 * Theme.dp;
+            if root.avatar: VerticalLayout {
+                alignment: center;
+                Rectangle {
+                    width: Theme.avatar;
+                    height: self.width;
+                    border-radius: self.width / 2;
+                    background: Theme.field;
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                spacing: 8 * Theme.dp;
+                Rectangle {
+                    width: (0.4 + Math.mod(i * 37, 30) / 100) * (root.width - 120 * Theme.dp);
+                    height: 14 * Theme.dp;
+                    border-radius: 4 * Theme.dp;
+                    background: Theme.field;
+                }
+
+                Rectangle {
+                    width: (0.25 + Math.mod(i * 23, 25) / 100) * (root.width - 120 * Theme.dp);
+                    height: 11 * Theme.dp;
+                    border-radius: 4 * Theme.dp;
+                    background: Theme.field;
+                }
+            }
+        }
+    }
+}
+
+// The pull-to-refresh indicator: follows the pull, turns accent past the threshold, spins while refreshing.
+export component PullIndicator inherits Rectangle {
+    in property <float> progress;
+    in property <bool> refreshing;
+    width: 36 * Theme.dp;
+    height: self.width;
+    border-radius: self.width / 2;
+    background: Theme.sheet;
+    border-width: max(1px, Theme.dp / 2);
+    border-color: Theme.card-border;
+    if root.refreshing: Spinner {
+        size: 20 * Theme.dp;
+    }
+    if !root.refreshing: Glyph {
+        source: @image-url("../icons/sys/refresh.svg");
+        size: 20 * Theme.dp;
+        colorize: root.progress >= 1 ? Theme.accent : Theme.text-secondary;
+    }
+}
