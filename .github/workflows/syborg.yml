@@ -200,7 +200,7 @@ jobs:
           grep -a 'files: view Z:\\Sys\\Data\\estart.txt 1' $s
           grep -a 'neoui: keyboard 1 for files' $s
           grep -a 'files: mkdir C:\\neo\\ 0' $s
-          grep -a 'files: delete C:\\neo\\ 0' $s
+          grep -a 'files: delete neo 0' $s   # the app logs the row's name (kit selection)
           # the keyboard's globe key, twice (English -> Armenian -> Russian), and a folder named "дом" on the FAT C:
           grep -a 'files: mkdir C:' $s | grep -av 'C:\\neo\\' | grep -aq '\\ 0'
           grep -a 'files: quit' $s
