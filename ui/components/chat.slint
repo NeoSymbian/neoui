@@ -13,6 +13,8 @@ export component Bubble inherits Rectangle {
     in property <string> meta;
     in property <bool> mine;
     in property <bool> failed;
+    // its long-press menu is open: a light ring (p2-msg-options)
+    in property <bool> held;
     callback tapped;
     callback long-pressed(length, length);
     property <length> max-w: self.width * 0.76;
@@ -26,8 +28,8 @@ export component Bubble inherits Rectangle {
         border-bottom-left-radius: root.mine ? 18 * Theme.dp : 6 * Theme.dp;
         border-bottom-right-radius: root.mine ? 6 * Theme.dp : 18 * Theme.dp;
         background: root.failed ? Theme.bubble-failed : root.mine ? Theme.bubble-out : Theme.bubble-in;
-        border-width: root.failed ? max(1px, Theme.dp) : 0;
-        border-color: #e5484d80;
+        border-width: root.held ? 2 * Theme.dp : root.failed ? max(1px, Theme.dp) : 0;
+        border-color: root.held ? #ffffff8c : #e5484d80;
         col := VerticalLayout {
             padding-left: root.pad-x;
             padding-right: root.pad-x;

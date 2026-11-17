@@ -634,11 +634,8 @@ fn main() -> i32 {
             host.expire_note(ms);
             if core::mem::take(&mut host.notes_changed) {
                 ui.set_note(host.note.as_ref().map(|(_, n, _)| n));
-                let notes: Vec<(&str, &str, &[String])> = host
-                    .notifications
-                    .iter()
-                    .map(|(_, n)| (n.title.as_str(), n.text.as_str(), n.actions.as_slice()))
-                    .collect();
+                let notes: Vec<&neoui_render::Notification> =
+                    host.notifications.iter().map(|(_, n)| n).collect();
                 ui.set_notes(&notes);
                 ui.set_app_unread(host.notifications.iter().any(|(k, _)| *k == "messages"));
             }

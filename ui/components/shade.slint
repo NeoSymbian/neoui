@@ -8,11 +8,38 @@ import { SystemSettings } from "../system-settings.slint";
 import { Now } from "../now.slint";
 
 // An app's entry (ipc NOTIFY): its title and text, "Clock · Time's up" style (the app's name first).
-// Since 1.9 up to two actions ("Reply", "Call") under the text.
+// Since 1.9: up to two actions ("Reply", "Call") under the text, an avatar (initials on a tint), a time, and two lines
+// (`earlier` dim over `text`). Only the newest entry is `expanded`; the others are one-line rows (p2-msg-notify).
 export struct ShadeNote {
     title: string,
+    earlier: string,
     text: string,
     actions: [string],
+    initials: string,
+    tint: color,
+    time: string,
+    expanded: bool,
+}
+
+component NoteAvatar inherits Rectangle {
+    in property <string> initials;
+    in property <color> tint;
+    in property <bool> message;
+    width: 36 * Theme.dp;
+    height: self.width;
+    border-radius: self.width / 2;
+    background: root.initials != "" ? root.tint : transparent;
+    if root.initials != "": Text {
+        text: root.initials;
+        color: white;
+        font-size: 13.7 * Theme.dp;
+        font-weight: 600;
+    }
+    if root.initials == "": Glyph {
+        source: root.message ? @image-url("../icons/sys/message.svg") : @image-url("../icons/sys/bell.svg");
+        size: 24 * Theme.dp;
+        colorize: Theme.accent;
+    }
 }
 
 component Toggle inherits Rectangle {
@@ -83,12 +110,12 @@ export component Shade inherits Rectangle {
     panel := Rectangle {
         y: open ? 0 : -self.height * 0.15;
         animate y { duration: Theme.popup; easing: ease-out-quad; }
-        height: 516 * Theme.dp;
-        background: #0f1115f7;
+        height: min(root.height, col.preferred-height);
+        background: #0f1115;
         border-radius: 0;
         TouchArea { }
 
-        VerticalLayout {
+        col := VerticalLayout {
             padding: Theme.margin;
             spacing: 12 * Theme.dp;
             alignment: start;
@@ -167,35 +194,131 @@ export component Shade inherits Rectangle {
                 letter-spacing: 0.06 * Theme.font-status;
             }
 
-            for n[i] in root.notes: VerticalLayout {
-                ListRow {
-                    title: n.title;
-                    subtitle: n.text;
-                    icon: @image-url("../icons/sys/bell.svg");
-                    has-icon: true;
-                    icon-tint: Theme.accent;
+            for n[i] in root.notes: Rectangle {
+                height: inner.preferred-height;
+                background: tap.pressed ? Theme.pressed : transparent;
+                tap := TouchArea {
                     clicked => { root.note-opened(i, 0); }
                 }
-                if n.actions.length > 0: HorizontalLayout {
-                    padding-left: 72 * Theme.dp;
-                    spacing: 8 * Theme.dp;
-                    height: 40 * Theme.dp;
-                    alignment: start;
-                    for a[j] in n.actions: Rectangle {
-                        width: label.preferred-width + 32 * Theme.dp;
-                        border-radius: 20 * Theme.dp;
-                        background: act-touch.pressed ? Theme.pressed : Theme.sheet;
-                        label := Text {
-                            text: a;
-                            color: Theme.accent;
-                            font-size: Theme.font-body * 0.95;
-                            font-weight: 600;
-                            vertical-alignment: center;
-                        }
-                        act-touch := TouchArea {
-                            clicked => { root.note-opened(i, j + 1); }
+                inner := VerticalLayout {
+                if n.expanded: HorizontalLayout {
+                    padding-top: 12 * Theme.dp;
+                    padding-bottom: 12 * Theme.dp;
+                    padding-left: 4 * Theme.dp;
+                    spacing: 14 * Theme.dp;
+                    VerticalLayout {
+                        alignment: start;
+                        NoteAvatar {
+                            initials: n.initials;
+                            tint: n.tint;
+                            message: n.actions.length > 0;
                         }
                     }
+                    VerticalLayout {
+                        spacing: 3 * Theme.dp;
+                        HorizontalLayout {
+                            spacing: 8 * Theme.dp;
+                            Text {
+                                text: n.title;
+                                color: Theme.text;
+                                font-size: 16 * Theme.dp;
+                                font-weight: 600;
+                                overflow: elide;
+                                horizontal-stretch: 1;
+                            }
+                            Text {
+                                text: n.time;
+                                color: Theme.text-dim;
+                                font-size: 12.5 * Theme.dp;
+                                vertical-alignment: center;
+                            }
+                        }
+                        if n.earlier != "": Text {
+                            text: n.earlier;
+                            color: Theme.text-secondary;
+                            font-size: 14 * Theme.dp;
+                            overflow: elide;
+                        }
+                        Text {
+                            text: n.text;
+                            color: Theme.text;
+                            font-size: 14 * Theme.dp;
+                            overflow: elide;
+                        }
+                        if n.actions.length > 0: HorizontalLayout {
+                            padding-top: 8 * Theme.dp;
+                            spacing: 8 * Theme.dp;
+                            alignment: start;
+                            for a[j] in n.actions: Rectangle {
+                                height: 36 * Theme.dp;
+                                width: act-row.preferred-width + 32 * Theme.dp;
+                                border-radius: self.height / 2;
+                                // the first action is the main one (Reply): blue, with its glyph
+                                background: j == 0 ? (act-touch.pressed ? Theme.accent.darker(20%) : Theme.accent)
+                                    : (act-touch.pressed ? Theme.pressed : #2a2e35);
+                                act-row := HorizontalLayout {
+                                    alignment: center;
+                                    spacing: 6 * Theme.dp;
+                                    if j == 0: VerticalLayout {
+                                        alignment: center;
+                                        Glyph {
+                                            source: @image-url("../icons/sys/message.svg");
+                                            size: 18 * Theme.dp;
+                                            colorize: white;
+                                        }
+                                    }
+                                    Text {
+                                        text: a;
+                                        color: white;
+                                        font-size: 14 * Theme.dp;
+                                        font-weight: 600;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                                act-touch := TouchArea {
+                                    clicked => { root.note-opened(i, j + 1); }
+                                }
+                            }
+                        }
+                    }
+                }
+                if !n.expanded: HorizontalLayout {
+                    height: 72 * Theme.dp;
+                    padding-left: 4 * Theme.dp;
+                    spacing: 14 * Theme.dp;
+                    VerticalLayout {
+                        alignment: center;
+                        NoteAvatar {
+                            initials: n.initials;
+                            tint: n.tint;
+                            message: n.actions.length > 0;
+                        }
+                    }
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 3 * Theme.dp;
+                        Text {
+                            text: n.title;
+                            color: Theme.text;
+                            font-size: 16 * Theme.dp;
+                            font-weight: 500;
+                            overflow: elide;
+                        }
+                        Text {
+                            text: n.text;
+                            color: Theme.text-dim;
+                            font-size: 13.5 * Theme.dp;
+                            overflow: elide;
+                        }
+                    }
+                }
+                }
+                Rectangle {
+                    x: 54 * Theme.dp;
+                    y: parent.height - self.height;
+                    width: parent.width - self.x;
+                    height: max(1px, Theme.dp / 2);
+                    background: #ffffff12;
                 }
             }
 
@@ -225,13 +348,6 @@ export component Shade inherits Rectangle {
                 clicked => { root.open-app("messages"); }
             }
 
-            ListRow {
-                title: "Alarm 06:45";
-                subtitle: "Weekdays";
-                icon: @image-url("../icons/sys/alarm.svg");
-                has-icon: true;
-                divider: false;
-            }
         }
     }
 }

@@ -44,8 +44,10 @@ fn the_shade_keeps_sideways_drags_from_the_home_pages() {
     common::settle();
     r.render(&mut buf, w as usize);
     assert!(r.overlay_open());
-    drag(&mut r, &mut buf, w, y, -(200.0 * d) as i32);
-    drag(&mut r, &mut buf, w, y, (200.0 * d) as i32);
+    // on the panel (it is as tall as its rows: the time, the toggles, the slider)
+    let on_panel = (190.0 * d) as i32;
+    drag(&mut r, &mut buf, w, on_panel, -(200.0 * d) as i32);
+    drag(&mut r, &mut buf, w, on_panel, (200.0 * d) as i32);
     assert_eq!(
         r.home_page(),
         1,

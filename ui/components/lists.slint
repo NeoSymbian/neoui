@@ -78,6 +78,8 @@ export component ListRow inherits Rectangle {
     in-out property <bool> switch-on;
     in property <bool> unread;
     in property <bool> divider: true;
+    // room kept free at the right (a letter strip beside the list)
+    in property <length> trailing-room;
     callback clicked;
     // the trailing switch was flipped by a tap (`switch-on` holds the new state)
     callback switch-toggled(bool);
@@ -115,7 +117,7 @@ export component ListRow inherits Rectangle {
 
     HorizontalLayout {
         padding-left: Theme.margin + 4 * Theme.dp;
-        padding-right: Theme.margin + 4 * Theme.dp;
+        padding-right: Theme.margin + 4 * Theme.dp + root.trailing-room;
         spacing: 14 * Theme.dp;
         if selecting: VerticalLayout {
             alignment: center;

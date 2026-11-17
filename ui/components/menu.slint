@@ -13,6 +13,8 @@ export component Menu {
     in property <length> at-x;
     in property <length> at-y;
     in property <bool> right-aligned: true;
+    // the bottom it must fit above (the parent's height; 0 = none): a menu at the finger near it opens upwards
+    in property <length> bound;
     callback picked(int);
     out property <bool> open: popup.is-open;
     property <int> level;
@@ -42,12 +44,12 @@ export component Menu {
         }
     }
 
-    // shortcut: a long-press menu near the bottom is not flipped up; the app passes an at-y that fits
+    property <length> menu-h: root.items.length * Theme.header-h + 16 * Theme.dp;
     popup := PopupWindow {
         x: root.right-aligned ? root.at-x - Theme.menu-w : root.at-x;
-        y: root.at-y;
+        y: root.bound > 0 && root.at-y + root.menu-h > root.bound ? max(0px, root.at-y - root.menu-h) : root.at-y;
         width: Theme.menu-w;
-        height: root.items.length * Theme.header-h + 16 * Theme.dp;
+        height: root.menu-h;
         close-policy: close-on-click-outside;
         Rectangle {
             border-radius: Theme.radius;

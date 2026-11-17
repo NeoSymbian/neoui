@@ -481,17 +481,29 @@ impl Renderer {
     }
 
     /// The apps' entries in the shade (`neoui_proto::ipc::NOTIFY`), newest first: (title, text) each.
-    pub fn set_notes(&mut self, notes: &[(&str, &str, &[String])]) {
+    pub fn set_notes(&mut self, notes: &[&Notification]) {
         let model: Vec<ShadeNote> = notes
             .iter()
-            .map(|(t, x, a)| ShadeNote {
-                title: (*t).into(),
-                text: (*x).into(),
-                actions: slint::ModelRc::from(Rc::new(slint::VecModel::from(
-                    a.iter()
-                        .map(|s| s.as_str().into())
-                        .collect::<Vec<slint::SharedString>>(),
-                ))),
+            .enumerate()
+            .map(|(i, n)| {
+                // two lines: the earlier one dim over the newest
+                let (earlier, text) = n.text.rsplit_once('\n').unwrap_or(("", n.text.as_str()));
+                ShadeNote {
+                    title: n.title.as_str().into(),
+                    earlier: earlier.into(),
+                    text: text.into(),
+                    actions: slint::ModelRc::from(Rc::new(slint::VecModel::from(
+                        n.actions
+                            .iter()
+                            .map(|s| s.as_str().into())
+                            .collect::<Vec<slint::SharedString>>(),
+                    ))),
+                    initials: n.initials.as_str().into(),
+                    tint: slint::Color::from_argb_encoded(0xff00_0000 | n.tint),
+                    time: n.time.as_str().into(),
+                    // only the newest entry opens up (p2-msg-notify)
+                    expanded: i == 0,
+                }
             })
             .collect();
         self.ui

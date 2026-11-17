@@ -37,9 +37,22 @@ pub const NOTE_MAX: usize = 1 + NOTE_TEXT_MAX + 1 + LABEL_MAX;
 pub const NOTIFY_ACTIONS_MAX: usize = 2;
 /// The longest notification action label, in bytes.
 pub const ACTION_MAX: usize = 16;
+/// The longest notification avatar's initials and time text, in bytes.
+pub const INITIALS_MAX: usize = 8;
+pub const TIME_MAX: usize = 16;
 /// The largest encoded [`Notification`].
-pub const NOTIFICATION_MAX: usize =
-    6 + 1 + TITLE_MAX + 1 + TEXT_MAX + 1 + NOTIFY_ACTIONS_MAX * (1 + ACTION_MAX);
+pub const NOTIFICATION_MAX: usize = 6
+    + 1
+    + TITLE_MAX
+    + 1
+    + TEXT_MAX
+    + 1
+    + NOTIFY_ACTIONS_MAX * (1 + ACTION_MAX)
+    + 1
+    + INITIALS_MAX
+    + 4
+    + 1
+    + TIME_MAX;
 
 /// What an app shows now. Send it again whenever any of it changes.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -84,12 +97,19 @@ pub struct Notification {
     pub id: u32,
     /// At most [`TITLE_MAX`] bytes.
     pub title: String,
-    /// At most [`TEXT_MAX`] bytes.
+    /// At most [`TEXT_MAX`] bytes; a newline splits it into two lines (the earlier message dim, the newest under it).
     pub text: String,
     /// The page the app opens on a tap.
     pub page: u16,
-    /// Up to [`NOTIFY_ACTIONS_MAX`] buttons under the text ("Reply", "Call"), each at most [`ACTION_MAX`] bytes.
+    /// Up to [`NOTIFY_ACTIONS_MAX`] buttons under the text ("Reply", "Call"), each at most [`ACTION_MAX`] bytes; the
+    /// first is drawn as the main one.
     pub actions: Vec<String>,
+    /// An avatar instead of the bell: initials (at most [`INITIALS_MAX`] bytes; "" = the bell) on `tint`
+    /// (0xRRGGBB).
+    pub initials: String,
+    pub tint: u32,
+    /// When, as the app writes it ("10:05"; at most [`TIME_MAX`] bytes; "" = none).
+    pub time: String,
 }
 
 /// A [`Page`] or [`Query`] that is malformed or over a limit (`KErrArgument`).
@@ -207,7 +227,8 @@ impl Notification {
         out.extend_from_slice(&self.page.to_le_bytes());
         put(&mut out, &self.title, TITLE_MAX)?;
         put(&mut out, &self.text, TEXT_MAX)?;
-        if !self.actions.is_empty() {
+        let extra = !self.initials.is_empty() || !self.time.is_empty() || self.tint != 0;
+        if !self.actions.is_empty() || extra {
             if self.actions.len() > NOTIFY_ACTIONS_MAX {
                 return Err(PageError);
             }
@@ -215,6 +236,11 @@ impl Notification {
             for a in &self.actions {
                 put(&mut out, a, ACTION_MAX)?;
             }
+        }
+        if extra {
+            put(&mut out, &self.initials, INITIALS_MAX)?;
+            out.extend_from_slice(&self.tint.to_le_bytes());
+            put(&mut out, &self.time, TIME_MAX)?;
         }
         Ok(out)
     }
@@ -231,7 +257,7 @@ impl Notification {
             title: r.text(TITLE_MAX)?,
             text: r.text(TEXT_MAX)?,
             page,
-            actions: Vec::new(),
+            ..Notification::default()
         };
         if !r.0.is_empty() {
             let count = usize::from(r.byte()?);
@@ -241,6 +267,13 @@ impl Notification {
             for _ in 0..count {
                 n.actions.push(r.text(ACTION_MAX)?);
             }
+        }
+        if !r.0.is_empty() {
+            n.initials = r.text(INITIALS_MAX)?;
+            let t = r.0.get(..4).ok_or(PageError)?;
+            n.tint = u32::from_le_bytes([t[0], t[1], t[2], t[3]]);
+            r.0 = &r.0[4..];
+            n.time = r.text(TIME_MAX)?;
         }
         if !r.0.is_empty() {
             return Err(PageError);
@@ -433,7 +466,7 @@ mod tests {
             title: s("Ava Lee"),
             text: s("Running late, start without me"),
             page: 6,
-            actions: vec![],
+            ..Notification::default()
         };
         let b = n.encode().unwrap();
         assert_eq!(Notification::decode(&b), Ok(n.clone()));
@@ -445,6 +478,15 @@ mod tests {
         let wb = with.encode().unwrap();
         assert_eq!(&wb[..b.len()], &b[..]);
         assert_eq!(Notification::decode(&wb), Ok(with));
+        // the avatar and time come after the actions, which may be none
+        let avatar = Notification {
+            initials: s("AL"),
+            tint: 0x22b46a,
+            time: s("10:05"),
+            text: s("Perfect. I'll book a table.\nRunning late, see you at 7?"),
+            ..n.clone()
+        };
+        assert_eq!(Notification::decode(&avatar.encode().unwrap()), Ok(avatar));
         let three = Notification {
             actions: vec![s("a"), s("b"), s("c")],
             ..n.clone()
@@ -461,6 +503,9 @@ mod tests {
             text: "y".repeat(TEXT_MAX),
             page: u16::MAX,
             actions: vec!["a".repeat(ACTION_MAX), "b".repeat(ACTION_MAX)],
+            initials: "i".repeat(INITIALS_MAX),
+            tint: 0x22b46a,
+            time: "t".repeat(TIME_MAX),
         };
         assert_eq!(big.encode().unwrap().len(), NOTIFICATION_MAX);
         assert_eq!(Notification::decode(&big.encode().unwrap()), Ok(big));

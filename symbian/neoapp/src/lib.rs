@@ -114,14 +114,9 @@ impl Platform for AppPlatform {
     }
     // the clipboard is the server's, shared by every app (CLIP_SET, CLIP_GET)
     fn set_clipboard_text(&self, text: &str, clipboard: slint::platform::Clipboard) {
-        if clipboard != slint::platform::Clipboard::DefaultClipboard || text.len() > proto::CLIP_MAX
-        {
-            return;
+        if clipboard == slint::platform::Clipboard::DefaultClipboard {
+            clip_set(&self.server, text);
         }
-        let t = TPtrC8::new(text.as_bytes());
-        let mut args = TIpcArgs::new();
-        args.desc8(0, &t);
-        let _ = self.server.send_receive(proto::CLIP_SET, &args);
     }
     fn clipboard_text(
         &self,
@@ -130,19 +125,35 @@ impl Platform for AppPlatform {
         if clipboard != slint::platform::Clipboard::DefaultClipboard {
             return None;
         }
-        let mut buf = vec![0u8; proto::CLIP_MAX];
-        let len = {
-            let mut out = TPtr8::new(&mut buf);
-            let mut args = TIpcArgs::new();
-            args.des8(0, &mut out);
-            self.server.send_receive(proto::CLIP_GET, &args).ok()?;
-            out.len()
-        };
-        buf.truncate(len);
-        alloc::string::String::from_utf8(buf)
-            .ok()
-            .filter(|t| !t.is_empty())
+        clip_get(&self.server)
     }
+}
+
+/// The server's clipboard text (`proto::CLIP_GET`); `None` when empty.
+fn clip_get(server: &Session) -> Option<alloc::string::String> {
+    let mut buf = vec![0u8; proto::CLIP_MAX];
+    let len = {
+        let mut out = TPtr8::new(&mut buf);
+        let mut args = TIpcArgs::new();
+        args.des8(0, &mut out);
+        server.send_receive(proto::CLIP_GET, &args).ok()?;
+        out.len()
+    };
+    buf.truncate(len);
+    alloc::string::String::from_utf8(buf)
+        .ok()
+        .filter(|t| !t.is_empty())
+}
+
+/// Put `text` on the server's clipboard (`proto::CLIP_SET`); longer than `proto::CLIP_MAX` is refused.
+fn clip_set(server: &Session, text: &str) -> bool {
+    if text.len() > proto::CLIP_MAX {
+        return false;
+    }
+    let t = TPtrC8::new(text.as_bytes());
+    let mut args = TIpcArgs::new();
+    args.desc8(0, &t);
+    server.send_receive(proto::CLIP_SET, &args).is_ok()
 }
 
 /// Something an app does on its own clock while it waits for events (the Clock's seconds): `f` runs every
@@ -594,6 +605,16 @@ impl App {
         self.server
             .send_receive(proto::DONE, &TIpcArgs::new())
             .map(drop)
+    }
+
+    /// The clipboard's text, shared by every app and the shell (Copy text, Paste); `None` when empty.
+    pub fn clipboard(&self) -> Option<alloc::string::String> {
+        clip_get(&self.server)
+    }
+
+    /// Put `text` on the clipboard; false when it is over `proto::CLIP_MAX` bytes or the server refused.
+    pub fn set_clipboard(&self, text: &str) -> bool {
+        clip_set(&self.server, text)
     }
 
     /// Show the app's surface (true) or the shell's screen for its key (false) (`proto::FRONT`).

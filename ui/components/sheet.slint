@@ -86,9 +86,29 @@ export component Sheet inherits Rectangle {
 }
 
 // Pick one: a tap on a row picks it and closes the sheet (no OK).
+component Radio inherits VerticalLayout {
+    in property <bool> on;
+    alignment: center;
+    Rectangle {
+        width: 22 * Theme.dp;
+        height: self.width;
+        border-radius: self.width / 2;
+        border-width: 2 * Theme.dp;
+        border-color: root.on ? Theme.accent : Theme.text-dim;
+        if root.on: Rectangle {
+            width: 10 * Theme.dp;
+            height: self.width;
+            border-radius: self.width / 2;
+            background: Theme.accent;
+        }
+    }
+}
+
 export component ChoiceSheet inherits Sheet {
     in property <[string]> choices;
     in-out property <int> current;
+    // the radio before the text (the phone's pickers: caller ID, keep call log, number type)
+    in property <bool> radio-left;
     callback chosen(int);
     for c[i] in root.choices: Rectangle {
         height: Theme.list-row-h;
@@ -100,6 +120,9 @@ export component ChoiceSheet inherits Sheet {
             padding-left: 20 * Theme.dp;
             padding-right: 20 * Theme.dp;
             spacing: 14 * Theme.dp;
+            if root.radio-left: Radio {
+                on: i == root.current;
+            }
             Text {
                 text: c;
                 color: Theme.text;
@@ -108,21 +131,8 @@ export component ChoiceSheet inherits Sheet {
                 horizontal-stretch: 1;
             }
 
-            VerticalLayout {
-                alignment: center;
-                Rectangle {
-                    width: 22 * Theme.dp;
-                    height: self.width;
-                    border-radius: self.width / 2;
-                    border-width: 2 * Theme.dp;
-                    border-color: i == root.current ? Theme.accent : Theme.text-dim;
-                    if i == root.current: Rectangle {
-                        width: 10 * Theme.dp;
-                        height: self.width;
-                        border-radius: self.width / 2;
-                        background: Theme.accent;
-                    }
-                }
+            if !root.radio-left: Radio {
+                on: i == root.current;
             }
         }
 

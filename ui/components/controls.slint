@@ -98,6 +98,9 @@ export component Button inherits Rectangle {
     in property <bool> flat;
     in property <bool> enabled: true;
     in property <color> tint: Theme.accent;
+    // a glyph before the text (a card's Call / Message pills)
+    in property <image> icon;
+    in property <bool> has-icon;
     callback clicked;
     height: Theme.field-h;
     border-radius: self.height / 2;
@@ -109,6 +112,16 @@ export component Button inherits Rectangle {
     HorizontalLayout {
         padding-left: 20 * Theme.dp;
         padding-right: 20 * Theme.dp;
+        spacing: 8 * Theme.dp;
+        alignment: center;
+        if root.has-icon: VerticalLayout {
+            alignment: center;
+            Glyph {
+                source: root.icon;
+                size: 22 * Theme.dp;
+                colorize: root.flat ? root.tint : white;
+            }
+        }
         Text {
             text: root.text;
             color: root.flat ? root.tint : white;

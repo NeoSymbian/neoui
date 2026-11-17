@@ -8,7 +8,7 @@ const NOTE_ACTIONS_Y: f32 = 332.0;
 const NOTE_CALL_X: f32 = 194.0;
 
 use neoui_proto::settings::Value;
-use neoui_render::{Nav, Note, Page, Query, Renderer};
+use neoui_render::{Nav, Note, Notification, Page, Query, Renderer};
 
 fn press(r: &mut Renderer, buf: &mut [u32], x: i32, y: i32) {
     common::tap(r, x, y);
@@ -155,11 +155,21 @@ fn the_v2_chrome() {
 
     // an app's entry in the shade: a tap reports its index and closes the shade
     r.show("home", "");
-    let actions = [String::from("Reply"), String::from("Call")];
-    r.set_notes(&[
-        ("Ava Lindqvist", "Running late, see you at 7?", &actions[..]),
-        ("Timer done · 05:00", "Clock · Time's up", &[]),
-    ]);
+    let ava = Notification {
+        title: "Ava Lindqvist".into(),
+        text: "Perfect. I'll book a table.\nRunning late, see you at 7?".into(),
+        actions: vec!["Reply".into(), "Call".into()],
+        initials: "AL".into(),
+        tint: 0x22b46a,
+        time: "10:05".into(),
+        ..Notification::default()
+    };
+    let timer = Notification {
+        title: "Timer done · 05:00".into(),
+        text: "Clock · Time's up".into(),
+        ..Notification::default()
+    };
+    r.set_notes(&[&ava, &timer]);
     common::frame(&mut r, &mut buf, w, "notes");
     press(&mut r, &mut buf, w as i32 / 2, (12.0 * d) as i32);
     assert!(r.overlay_open(), "the shade is open");
