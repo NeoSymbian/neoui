@@ -130,10 +130,8 @@ jobs:
           tap 449 603; expect "clock: surface"; wait_s 2   # the clock ticks once a second while shown (checked below)
           tap 270 500; expect "clock: touch"
           tap 90 1037; expect "clock: visible false"
-          tap 449 805; expect "term| Copyright"; wait_s 1
-          kb_type dir; expect "term| Directory of C:"
-          type_text neotest; expect "passed, 0 failed"
-          kb_hide term; tap 90 1037
+          # Files before the Terminal: on v2 the Terminal app draws nothing until ESHELL writes, and ESHELL is silent
+          # on Syborg (a separate bug), so the steps from the Terminal on fail; Files is checked first.
           tap 90 805; expect "files: drives"
           tap 270 387; expect "files: list"; tap 270 424; expect "files: list"; tap 270 208; expect "files: list"
           tap 90 1037; expect "files: list"; tap 270 316; expect "files: list"; tap 270 208; expect "files: view"
@@ -145,6 +143,10 @@ jobs:
           tap 497 73; tap 400 157; kb_globe; kb_globe
           kb_tap 2 8.5 12; kb_tap 2 6.5 12; kb_tap 1 5 12; kb_enter; expect "files: mkdir"
           tap 90 1037; expect "files: drives"; tap 90 1037
+          tap 449 805; expect "term| Copyright"; wait_s 1
+          kb_type dir; expect "term| Directory of C:"
+          type_text neotest; expect "passed, 0 failed"
+          kb_hide term; tap 90 1037
           tap 449 805; kb_hide term; tap 90 1037
           tap 449 1037
           for i in 1 2 3; do tap 227 160; expect "exited (type 0"; done
