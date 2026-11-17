@@ -3,6 +3,10 @@
 #[allow(dead_code)] // helpers shared with the snapshot tests
 mod common;
 
+// where the first shade entry's actions sit (dp): the row under its text, Call after Reply
+const NOTE_ACTIONS_Y: f32 = 332.0;
+const NOTE_CALL_X: f32 = 194.0;
+
 use neoui_proto::settings::Value;
 use neoui_render::{Nav, Note, Page, Query, Renderer};
 
@@ -151,12 +155,25 @@ fn the_v2_chrome() {
 
     // an app's entry in the shade: a tap reports its index and closes the shade
     r.show("home", "");
-    r.set_notes(&[("Timer done · 05:00", "Clock · Time's up")]);
+    let actions = [String::from("Reply"), String::from("Call")];
+    r.set_notes(&[
+        ("Ava Lindqvist", "Running late, see you at 7?", &actions[..]),
+        ("Timer done · 05:00", "Clock · Time's up", &[]),
+    ]);
     common::frame(&mut r, &mut buf, w, "notes");
     press(&mut r, &mut buf, w as i32 / 2, (12.0 * d) as i32);
     assert!(r.overlay_open(), "the shade is open");
     common::frame(&mut r, &mut buf, w, "shade");
     common::write_png("shade-notes-539x1079.png", &buf, w, h);
+    // its second action (Call) under the first entry: reported as (entry 0, action 2), and the shade closes
+    press(
+        &mut r,
+        &mut buf,
+        (NOTE_CALL_X * d) as i32,
+        (NOTE_ACTIONS_Y * d) as i32,
+    );
+    assert_eq!(r.take_notes_opened(), [(0, 2)]);
+    assert!(!r.overlay_open(), "an action closes the shade");
 
     // badges on the Apps menu (and the dock): Phone 2, Messages 3 (MODEMD's count while the app posts none), Clock 1
     r.set_unread_messages(3, "Ava: on my way");

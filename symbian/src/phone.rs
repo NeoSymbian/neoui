@@ -276,7 +276,7 @@ impl Phone {
         };
         let rings = ringing(&s) && !old.as_ref().is_some_and(ringing);
         let starts = live(&s) && !old.as_ref().is_some_and(live);
-        let app_in_front = matches!(ui.screen().as_str(), "phone" | "contacts" | "messages");
+        let app_in_front = ui.screen() == "phone";
         if rings {
             self.rang = true;
         }

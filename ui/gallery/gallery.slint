@@ -8,13 +8,13 @@ import {
     Theme, Kit, Scroll, Glyph, NeoList, ListRow, SectionHeader, Header, SubHeader, FormHeader, Footer, TabPages,
     Menu, ChoiceSheet, DatePicker, TimePicker, Toast, Spinner, ProgressBar, EmptyState, ErrorState, Skeleton,
     PullIndicator, RowActions, FastScroll, FormRow, Chip, Button, TextField, SearchField, Slider, Switch, Badge,
-    Tab, Act
+    Tab, Act, Keypad, Fab, Bubble, Composer, RoundButton
 } from "../kit.slint";
 
 export { Theme, Kit, Scroll }
 
 export global GalleryState {
-    // the page on show: 0 headers, 1 footer, 2 lists, 3 menus, 4 date, 5 time, 6 controls, 7 feedback
+    // the page on show: 0 headers, 1 footer, 2 lists, 3 menus, 4 date, 5 time, 6 controls, 7 feedback, 8 phone parts
     in-out property <int> page;
     // the Menus page's ChoiceSheet (the tests open it after the menu, to check Back's order)
     in-out property <bool> sheet;
@@ -517,6 +517,96 @@ component FeedbackPage inherits VerticalLayout {
     }
 }
 
+// The parts NEOPHONE v2 brought (p2-*): filter chips, the keypad, the floating button, call toggles, bubbles and the
+// composer.
+component PhonePartsPage inherits VerticalLayout {
+    alignment: start;
+    spacing: 8 * Theme.dp;
+    Caption {
+        text: "CHIPS";
+    }
+
+    HorizontalLayout {
+        padding-left: 12 * Theme.dp;
+        spacing: 6 * Theme.dp;
+        alignment: start;
+        Chip {
+            text: "All";
+            on: true;
+        }
+
+        Chip {
+            text: "Missed";
+            count: 2;
+            count-danger: true;
+        }
+
+        Chip {
+            text: "Blocked";
+            count: 3;
+        }
+    }
+
+    Caption {
+        text: "KEYPAD · FAB · CALL TOGGLES";
+    }
+
+    HorizontalLayout {
+        padding-left: 12 * Theme.dp;
+        padding-right: 12 * Theme.dp;
+        spacing: 12 * Theme.dp;
+        Keypad {
+            width: 220 * Theme.dp;
+        }
+
+        VerticalLayout {
+            alignment: start;
+            spacing: 12 * Theme.dp;
+            Fab {
+                icon: @image-url("../icons/sys/keypad.svg");
+                label: "Open keypad";
+            }
+
+            RoundButton {
+                icon: @image-url("../icons/sys/mic_off.svg");
+                label: "Mute";
+                active: true;
+            }
+        }
+    }
+
+    Caption {
+        text: "BUBBLES · COMPOSER";
+    }
+
+    VerticalLayout {
+        padding-left: 12 * Theme.dp;
+        padding-right: 12 * Theme.dp;
+        spacing: 6 * Theme.dp;
+        Bubble {
+            text: "Hey! Are we still on for dinner tonight?";
+            meta: "09:51";
+        }
+
+        Bubble {
+            text: "Yes. 7 at the usual place?";
+            meta: "09:53 ✓✓";
+            mine: true;
+        }
+
+        Bubble {
+            text: "No problem, take your time";
+            mine: true;
+            failed: true;
+        }
+    }
+
+    Composer {
+        text: "Вижу тебя в 7";
+        counter: "Unicode · 57 left · 1 SMS";
+    }
+}
+
 // The pages, without a window: NEOKIT puts them under its own header.
 export component GalleryPages inherits Rectangle {
     if GalleryState.page == 0: HeadersPage { }
@@ -536,4 +626,5 @@ export component GalleryPages inherits Rectangle {
     }
     if GalleryState.page == 6: ControlsPage { }
     if GalleryState.page == 7: FeedbackPage { }
+    if GalleryState.page == 8: PhonePartsPage { }
 }

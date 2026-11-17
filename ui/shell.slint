@@ -147,7 +147,8 @@ export component Shell inherits Window {
     in property <string> note-action;
     // in: the apps' entries in the shade (ipc NOTIFY), newest first; out: the one tapped (its index)
     in property <[ShadeNote]> notes;
-    callback note-opened(int);
+    callback note-opened(int, int);
+    in property <bool> app-unread;
     // in: the apps the UI server keeps running, most recent first (R10); out: the switcher's close button
     in property <[string]> running;
     callback close-app(string);
@@ -557,10 +558,11 @@ export component Shell inherits Window {
         height: root.height - Theme.status-h;
         open: shade-open;
         notes: root.notes;
-        note-opened(i) => {
+        note-opened(i, a) => {
             root.shade-open = false;
-            root.note-opened(i);
+            root.note-opened(i, a);
         }
+        app-unread: root.app-unread;
         missed: root.missed-calls;
         unread: root.unread-messages;
         unread-line: root.unread-line;

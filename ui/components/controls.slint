@@ -439,3 +439,25 @@ export component BigClock inherits HorizontalLayout {
         source: i < 0 ? @image-url("../icons/digits/colon.svg") : d[i];
     }
 }
+
+// The floating action button (kit, p2-phone-recents): 56 dp, accent, a 24 dp glyph; the app places it 16 dp from the
+// content's bottom right, and leaves 88 dp under its list so the last row clears it.
+export component Fab inherits Rectangle {
+    in property <image> icon;
+    in property <string> label;
+    callback clicked;
+    width: 56 * Theme.dp;
+    height: 56 * Theme.dp;
+    border-radius: self.width / 2;
+    background: touch.pressed ? Theme.accent.darker(20%) : Theme.accent;
+    accessible-role: button;
+    accessible-label: root.label;
+    Glyph {
+        source: root.icon;
+        size: 24 * Theme.dp;
+        colorize: white;
+    }
+    touch := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}

@@ -1,0 +1,107 @@
+// SPDX-License-Identifier: Apache-2.0
+// The phone keypad (kit, NEOPHONE v2 p2-phone-keypad, p2-call-keypad): 12 keys in 3 columns, digits 26 over their
+// letters, voicemail on 1 and + on 0. A tap types the key; holding one 500 ms sends `held` instead (speed dial 2-9,
+// voicemail on 1, + on 0). `pressed`/`released` follow the finger for call tones (DTMF).
+import { Theme } from "../theme.slint";
+import { Glyph } from "frame.slint";
+
+component Key inherits Rectangle {
+    in property <string> key;
+    in property <string> sub;
+    in property <image> icon;
+    in property <bool> has-icon;
+    callback typed(string);
+    callback held(string);
+    callback down(string);
+    callback up(string);
+    property <bool> fired;
+    height: 62 * Theme.dp;
+    border-radius: 14 * Theme.dp;
+    background: touch.pressed ? Theme.pressed : Theme.sheet;
+    accessible-role: button;
+    accessible-label: root.key;
+    VerticalLayout {
+        alignment: center;
+        spacing: 1 * Theme.dp;
+        Text {
+            text: root.key;
+            color: Theme.text;
+            font-size: 26 * Theme.dp;
+            horizontal-alignment: center;
+        }
+        if root.has-icon: HorizontalLayout {
+            alignment: center;
+            height: 14 * Theme.dp;
+            Glyph {
+                source: root.icon;
+                size: 14 * Theme.dp;
+                colorize: Theme.text-secondary;
+            }
+        }
+        if !root.has-icon: Text {
+            height: 14 * Theme.dp;
+            text: root.sub;
+            color: Theme.text-secondary;
+            font-size: 11 * Theme.dp;
+            font-weight: 600;
+            letter-spacing: 1 * Theme.dp;
+            horizontal-alignment: center;
+        }
+    }
+
+    hold := Timer {
+        interval: 500ms;
+        running: touch.pressed && !root.fired;
+        triggered => {
+            root.fired = true;
+            root.held(root.key);
+        }
+    }
+
+    touch := TouchArea {
+        pointer-event(e) => {
+            if e.kind == PointerEventKind.down {
+                root.fired = false;
+                root.down(root.key);
+            } else if e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel {
+                root.up(root.key);
+            }
+        }
+        clicked => {
+            if !root.fired {
+                root.typed(root.key);
+            }
+        }
+    }
+}
+
+export component Keypad inherits GridLayout {
+    // the 1 key's voicemail sign (off on the in-call keypad)
+    in property <bool> voicemail: true;
+    callback typed(string);
+    callback held(string);
+    callback pressed(string);
+    callback released(string);
+    spacing-horizontal: 8 * Theme.dp;
+    spacing-vertical: 6 * Theme.dp;
+    Row {
+        Key { key: "1"; has-icon: root.voicemail; icon: @image-url("../icons/sys/voicemail.svg"); typed(k) => { root.typed(k); } held(k) => { root.held(k); } down(k) => { root.pressed(k); } up(k) => { root.released(k); } }
+        Key { key: "2"; sub: "ABC"; typed(k) => { root.typed(k); } held(k) => { root.held(k); } down(k) => { root.pressed(k); } up(k) => { root.released(k); } }
+        Key { key: "3"; sub: "DEF"; typed(k) => { root.typed(k); } held(k) => { root.held(k); } down(k) => { root.pressed(k); } up(k) => { root.released(k); } }
+    }
+    Row {
+        Key { key: "4"; sub: "GHI"; typed(k) => { root.typed(k); } held(k) => { root.held(k); } down(k) => { root.pressed(k); } up(k) => { root.released(k); } }
+        Key { key: "5"; sub: "JKL"; typed(k) => { root.typed(k); } held(k) => { root.held(k); } down(k) => { root.pressed(k); } up(k) => { root.released(k); } }
+        Key { key: "6"; sub: "MNO"; typed(k) => { root.typed(k); } held(k) => { root.held(k); } down(k) => { root.pressed(k); } up(k) => { root.released(k); } }
+    }
+    Row {
+        Key { key: "7"; sub: "PQRS"; typed(k) => { root.typed(k); } held(k) => { root.held(k); } down(k) => { root.pressed(k); } up(k) => { root.released(k); } }
+        Key { key: "8"; sub: "TUV"; typed(k) => { root.typed(k); } held(k) => { root.held(k); } down(k) => { root.pressed(k); } up(k) => { root.released(k); } }
+        Key { key: "9"; sub: "WXYZ"; typed(k) => { root.typed(k); } held(k) => { root.held(k); } down(k) => { root.pressed(k); } up(k) => { root.released(k); } }
+    }
+    Row {
+        Key { key: "*"; typed(k) => { root.typed(k); } held(k) => { root.held(k); } down(k) => { root.pressed(k); } up(k) => { root.released(k); } }
+        Key { key: "0"; sub: "+"; typed(k) => { root.typed(k); } held(k) => { root.held(k); } down(k) => { root.pressed(k); } up(k) => { root.released(k); } }
+        Key { key: "#"; typed(k) => { root.typed(k); } held(k) => { root.held(k); } down(k) => { root.pressed(k); } up(k) => { root.released(k); } }
+    }
+}

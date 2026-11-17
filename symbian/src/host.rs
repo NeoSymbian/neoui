@@ -42,40 +42,35 @@ pub const APPS: &[(&str, &str, &str)] = &[
     ("kit", "neokit", ""),
     // S60 apps through the guest window server (NeoSymbian/legacy host/legacy.cpp)
     ("legacy", "legacy", ""),
-    // Phone, Contacts and Messages: one process (NeoSymbian/phone), see ALIASES and PAGES
+    // Phone, Contacts and Messages (NeoSymbian/phone): three apps that open each other (ipc OPEN)
     ("phone", "neophone", ""),
+    ("contacts", "neocont", ""),
+    ("messages", "neomsg", ""),
 ];
 
 /// Apps whose shell screen is a launcher grid until they request FRONT(1).
 // shortcut: a fixed table like APPS; apps declare launcher support when apps are installable.
 pub const LAUNCHERS: &[&str] = &["legacy"];
 
-/// Screens another app's process serves on one of its pages: (screen, app key, page). The switcher shows the app once.
-pub const ALIASES: &[(&str, &str, u16)] = &[("contacts", "phone", 1), ("messages", "phone", 6)];
-
 /// Shell views that open an app on a page (`ui.show(app, view)`, from icons, notifications, Settings): (app, view,
-/// page). The app's own numbering (NeoSymbian/phone `Page`).
+/// page). The app's own numbering (NeoSymbian/phone `phone_core::page`).
 // shortcut: a fixed table like APPS; apps declare their pages when apps are installable.
 pub const PAGES: &[(&str, &str, u16)] = &[
-    ("phone", "dial", 0),
-    ("phone", "contacts", 1),
-    ("phone", "recents", 2),
-    ("phone", "call", 3),
-    ("phone", "settings", 4),
-    ("phone", "speed", 5),
-    ("phone", "messages", 6),
+    ("phone", "recents", 0),
+    ("phone", "dial", 1),
+    ("phone", "call", 2),
+    ("phone", "settings", 3),
+    ("phone", "speed", 4),
 ];
 
-/// Apps started (hidden) at boot and never closed for room: an incoming call must show at once.
-pub const RESIDENT: &[&str] = &["phone"];
+/// Apps started (hidden) at boot and never closed for room: an incoming call must show at once; Messages posts a
+/// shade entry per conversation as texts arrive.
+pub const RESIDENT: &[&str] = &["phone", "messages"];
 /// A resident app that ended is started again after this long.
 const RESIDENT_RETRY_MS: u64 = 10_000;
 
 /// The app key and page that screen `screen` with view `view` opens, if it is an app page.
 pub fn page_for(screen: &str, view: &str) -> Option<(&'static str, u16)> {
-    if let Some((_, key, page)) = ALIASES.iter().find(|(s, _, _)| *s == screen) {
-        return Some((key, *page));
-    }
     PAGES
         .iter()
         .find(|(k, v, _)| *k == screen && *v == view)
@@ -113,6 +108,8 @@ pub struct App {
     nav: i32,
     /// It has been on screen (the switcher lists only those; a resident app starts hidden).
     shown: bool,
+    /// The argument of the last `OPEN` of it, until it reads it (`ARG`).
+    arg: String,
 }
 
 impl App {
@@ -199,6 +196,10 @@ pub struct Host {
     front: Option<&'static str>,
     /// FRONT asks the main loop to select the calling app's screen.
     pub requested_screen: Option<&'static str>,
+    /// With [`Self::requested_screen`] from `OPEN`: the app that opened it (Back at its root returns there).
+    pub requested_from: Option<&'static str>,
+    /// The front app said `DONE`: the main loop takes the shell's Back past it.
+    pub leave: bool,
     /// Kept by app key, not process: installed entries survive exit and restart.
     entries: Vec<(&'static str, Vec<LauncherEntry>)>,
     pub entries_changed: bool,
@@ -249,6 +250,8 @@ impl Host {
             screen: None,
             front: None,
             requested_screen: None,
+            requested_from: None,
+            leave: false,
             entries: Vec::new(),
             entries_changed: false,
             next_session: 1,
@@ -317,21 +320,51 @@ impl Host {
         }
     }
 
-    /// The user tapped the shade's entry `i`: its app comes to the front on the entry's page; the entry goes.
-    pub fn open_notification(&mut self, i: usize, now_ms: u64) {
+    /// The user tapped the shade's entry `i` (`action` 0) or one of its actions (`i + 1`): its app comes to the
+    /// front on the entry's page and is told which; the entry goes.
+    pub fn open_notification(&mut self, i: usize, action: u16, now_ms: u64) {
         if i >= self.notifications.len() {
             return;
         }
         let (key, n) = self.notifications.remove(i);
         self.notes_changed = true;
-        dprintln!("neoui: notification {} of {} opened", n.id, key);
+        dprintln!(
+            "neoui: notification {} of {} opened ({})",
+            n.id,
+            key,
+            action
+        );
         self.limit_running(key, now_ms);
         self.start(key);
-        self.post(key, AppEvent::Page { page: n.page });
+        if action == 0 {
+            self.post(key, AppEvent::Page { page: n.page });
+        }
+        self.post(key, AppEvent::Notified { id: n.id, action });
         self.requested_screen = Some(key);
     }
 
-    /// Start the [`RESIDENT`] apps that aren't running (hidden), at most every [`RESIDENT_RETRY_MS`]. Call once per
+    /// App `from` opens app `key` on `page` with `arg` (ipc `OPEN`): started or brought to the front, told, and
+    /// shown with `from` as where Back returns.
+    fn open_app(
+        &mut self,
+        from: &'static str,
+        key: &'static str,
+        page: u16,
+        arg: String,
+        now_ms: u64,
+    ) {
+        dprintln!("neoui: {} opens {} page {}", from, key, page);
+        self.limit_running(key, now_ms);
+        self.start(key);
+        if let Some(app) = self.apps.find_mut(|a| a.key == key && a.quit_at.is_none()) {
+            app.arg = arg;
+            app.send(AppEvent::Open { page });
+        }
+        self.requested_screen = Some(key);
+        self.requested_from = Some(from);
+    }
+
+    /// Start a [`RESIDENT`] app that isn't running (hidden), at most every [`RESIDENT_RETRY_MS`]. Call once per
     /// frame.
     pub fn keep_resident(&mut self, now_ms: u64) {
         if self
@@ -340,18 +373,23 @@ impl Host {
         {
             return;
         }
-        let missing: Vec<&'static str> = RESIDENT
-            .iter()
-            .copied()
-            .filter(|k| self.apps.find(|a| a.key == *k).is_none())
-            .collect();
-        if missing.is_empty() {
+        // one at a time, and not while an app is still connecting: `connect` binds the newest app without a session
+        if self
+            .apps
+            .find(|a| a.session.is_none() && a.quit_at.is_none())
+            .is_some()
+        {
             return;
         }
+        let Some(key) = RESIDENT
+            .iter()
+            .copied()
+            .find(|k| self.apps.find(|a| a.key == *k).is_none())
+        else {
+            return;
+        };
         self.resident_at = Some(now_ms);
-        for key in missing {
-            self.launch(key);
-        }
+        self.launch(key);
     }
 
     /// Answer the held `DAMAGE` calls: the frame they asked for is on screen (or won't be shown). Call once per server
@@ -440,10 +478,6 @@ impl Host {
 
     /// The shell moved to `screen`: hide the app that was in front, and show (or start) the one for `screen`.
     pub fn set_screen(&mut self, screen: &str, now_ms: u64) {
-        let screen = ALIASES
-            .iter()
-            .find(|(s, _, _)| *s == screen)
-            .map_or(screen, |(_, k, _)| *k);
         let key = APPS
             .iter()
             .find(|(k, _, _)| *k == screen)
@@ -502,7 +536,8 @@ impl Host {
             .apps
             .over_limit(
                 limit,
-                |a| a.quit_at.is_some(),
+                // a resident never opened (or dismissed) holds no slot: it has no surface yet
+                |a| a.quit_at.is_some() || (RESIDENT.contains(&a.key) && !a.shown),
                 |a| a.key == key || RESIDENT.contains(&a.key),
             )
             .map(|a| a.key)
@@ -537,6 +572,7 @@ impl Host {
                     query: None,
                     nav: 0,
                     shown: false,
+                    arg: String::new(),
                 });
             }
             Err(e) => dprintln!("neoui: app {} failed to start ({})", key, e),
@@ -992,6 +1028,42 @@ impl Service for Host {
                 self.limit_running(key, e32::time::millis());
                 self.start(key);
                 self.requested_screen = Some(key);
+                m.complete(0);
+            }
+            proto::OPEN => {
+                let from = app.key;
+                let target = read_text(&m, 0, proto::KEY_MAX)
+                    .ok()
+                    .and_then(|k| APPS.iter().find(|(a, _, _)| *a == k).map(|(a, _, _)| *a));
+                let Some(target) = target else {
+                    return m.complete(err::KERR_NOT_FOUND);
+                };
+                let Ok(page) = u16::try_from(m.int(1)) else {
+                    return m.complete(kerr::ARGUMENT);
+                };
+                match read_text(&m, 2, proto::ARG_MAX) {
+                    Ok(arg) => {
+                        self.open_app(from, target, page, arg, e32::time::millis());
+                        m.complete(0);
+                    }
+                    Err(_) => m.complete(kerr::ARGUMENT),
+                }
+            }
+            proto::ARG => {
+                let r = if app.arg.len() > m.des_max_len(0).unwrap_or(0) {
+                    Err(kerr::OVERFLOW)
+                } else {
+                    m.write8(0, app.arg.as_bytes(), 0)
+                        .map(|()| core::mem::take(&mut app.arg).len() as i32)
+                };
+                m.complete(r.unwrap_or_else(|e| e));
+            }
+            proto::DONE => {
+                // only the app in front can hand the screen back
+                if front == Some(app.key) {
+                    dprintln!("neoui: app {} done", app.key);
+                    self.leave = true;
+                }
                 m.complete(0);
             }
             proto::NEXT_EVENT => match app.queue.pop_front() {

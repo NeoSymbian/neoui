@@ -1,0 +1,140 @@
+// SPDX-License-Identifier: Apache-2.0
+// Message parts (kit, NEOPHONE v2 p2-msg-thread): a bubble, and the composer under a thread (a field, Send, and a
+// counter line). Send stays in the content (D14).
+import { Theme } from "../theme.slint";
+import { Glyph } from "frame.slint";
+import { FieldInput } from "controls.slint";
+import { KeyboardFocus } from "keyboard/focus.slint";
+
+// One message: theirs on the left, mine (`mine`) on the right; `meta` is its time and ticks under the text (09:53 ✓✓).
+// A failed one (`failed`) has a red border and "Not sent · tap to retry" as its meta. 76 % of the width at most.
+export component Bubble inherits Rectangle {
+    in property <string> text;
+    in property <string> meta;
+    in property <bool> mine;
+    in property <bool> failed;
+    callback tapped;
+    callback long-pressed(length, length);
+    property <length> max-w: self.width * 0.76;
+    property <length> pad-x: 12 * Theme.dp;
+    height: box.height;
+    box := Rectangle {
+        x: root.mine ? root.width - self.width : 0;
+        width: min(root.max-w, max(body.preferred-width, info.preferred-width) + 2 * root.pad-x);
+        height: col.preferred-height;
+        border-radius: 18 * Theme.dp;
+        border-bottom-left-radius: root.mine ? 18 * Theme.dp : 6 * Theme.dp;
+        border-bottom-right-radius: root.mine ? 6 * Theme.dp : 18 * Theme.dp;
+        background: root.failed ? Theme.bubble-failed : root.mine ? Theme.bubble-out : Theme.bubble-in;
+        border-width: root.failed ? max(1px, Theme.dp) : 0;
+        border-color: #e5484d80;
+        col := VerticalLayout {
+            padding-left: root.pad-x;
+            padding-right: root.pad-x;
+            padding-top: 8 * Theme.dp;
+            padding-bottom: 6 * Theme.dp;
+            spacing: 2 * Theme.dp;
+            body := Text {
+                text: root.text;
+                color: Theme.text;
+                font-size: 15.5 * Theme.dp;
+                wrap: word-wrap;
+            }
+            info := Text {
+                text: root.failed ? "⚠ Not sent · tap to retry" : root.meta;
+                color: root.failed ? Theme.danger-text : #ffffff9e;
+                font-size: 11.5 * Theme.dp;
+                horizontal-alignment: right;
+            }
+        }
+        touch := TouchArea {
+            clicked => { root.tapped(); }
+        }
+        hold := Timer {
+            interval: 500ms;
+            running: touch.pressed;
+            triggered => {
+                self.running = false;
+                root.long-pressed(box.x + touch.mouse-x, touch.mouse-y);
+            }
+        }
+    }
+}
+
+// The composer: a 44 dp pill field (grows to 4 lines), a round Send (disabled while empty), and the counter line
+// under them ("Unicode · 57 left · 1 SMS"; empty hides it).
+export component Composer inherits VerticalLayout {
+    in-out property <string> text;
+    in property <string> placeholder: "Text message";
+    in property <string> counter;
+    in property <bool> enabled: true;
+    callback send(string);
+    callback edited(string);
+    public function focus-field() {
+        input.focus();
+    }
+    HorizontalLayout {
+        padding-left: 12 * Theme.dp;
+        padding-right: 12 * Theme.dp;
+        padding-top: 8 * Theme.dp;
+        padding-bottom: 4 * Theme.dp;
+        spacing: 10 * Theme.dp;
+        Rectangle {
+            height: max(44 * Theme.dp, min(input.preferred-height, 4 * 22 * Theme.dp) + 20 * Theme.dp);
+            border-radius: 22 * Theme.dp;
+            background: Theme.field;
+            border-width: max(1px, Theme.dp / 2);
+            border-color: input.has-focus ? Theme.accent : #ffffff14;
+            if root.text == "": Text {
+                x: 16 * Theme.dp;
+                text: root.placeholder;
+                color: Theme.text-dim;
+                font-size: 15.5 * Theme.dp;
+                vertical-alignment: center;
+            }
+            input := FieldInput {
+                x: 16 * Theme.dp;
+                width: parent.width - 32 * Theme.dp;
+                height: parent.height;
+                text <=> root.text;
+                single-line: false;
+                wrap: word-wrap;
+                font-size: 15.5 * Theme.dp;
+                edited => { root.edited(self.text); }
+            }
+            if KeyboardFocus.dismissed && input.has-focus: TouchArea {
+                clicked => { input.reopen(); }
+            }
+        }
+        VerticalLayout {
+            alignment: end;
+            Rectangle {
+                width: 44 * Theme.dp;
+                height: 44 * Theme.dp;
+                border-radius: self.width / 2;
+                property <bool> on: root.enabled && root.text != "";
+                background: self.on ? (send-touch.pressed ? Theme.accent.darker(20%) : Theme.accent) : Theme.field;
+                accessible-role: button;
+                accessible-label: "Send";
+                Glyph {
+                    source: @image-url("../icons/sys/send.svg");
+                    size: 20 * Theme.dp;
+                    colorize: parent.on ? white : Theme.text-dim;
+                }
+                send-touch := TouchArea {
+                    enabled: parent.on;
+                    clicked => { root.send(root.text); }
+                }
+            }
+        }
+    }
+    if root.counter != "": Text {
+        text: root.counter;
+        color: Theme.text-dim;
+        font-size: 12 * Theme.dp;
+        horizontal-alignment: right;
+        height: 22 * Theme.dp;
+        // 18 dp from the right, like the field's inner text
+        x: -18 * Theme.dp;
+    }
+}

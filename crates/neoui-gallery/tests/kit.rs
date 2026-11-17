@@ -114,7 +114,7 @@ fn the_kit() {
     .unwrap();
 
     let names = [
-        "headers", "footer", "lists", "menus", "date", "time", "controls", "feedback",
+        "headers", "footer", "lists", "menus", "date", "time", "controls", "feedback", "phone",
     ];
     for (i, name) in names.iter().enumerate() {
         g.set_page(i as i32);

@@ -89,7 +89,7 @@ fn pixel() {
     // two unread messages (C9): the status bar's envelope, the shade's row
     r.set_unread_messages(2, "+374 91 234567: Running late, see you at 7?");
     // an app's entry (NOTIFY) above the shell's own rows
-    r.set_notes(&[("Timer done · 05:00", "Clock · Time's up")]);
+    r.set_notes(&[("Timer done · 05:00", "Clock · Time's up", &[])]);
     common::frame(&mut r, &mut buf, w, "home");
     common::tap(&mut r, (w / 2) as i32, (12.0 * d) as i32);
     common::frame(&mut r, &mut buf, w, "shade");

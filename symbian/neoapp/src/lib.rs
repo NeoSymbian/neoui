@@ -164,7 +164,11 @@ pub struct App {
     /// The shell's design unit in pixels (set it on the app's `Theme.dp`).
     pub dp: f32,
     pub window: Rc<MinimalSoftwareWindow>,
-    surface: Chunk,
+    /// Asked for on the first frame drawn while the app is on screen: a resident app started hidden (Phone,
+    /// Messages) costs no surface (~7 MB on the phone) until it is first shown.
+    surface: RefCell<Option<Chunk>>,
+    /// The server's last `Visible`.
+    visible: Cell<bool>,
     scrolling: RefCell<Scrolling>,
     /// How [`App::next_event`] reads the app's `Scroll` global when it draws ([`App::set_scrolled`]).
     scrolled: RefCell<Option<Box<Scrolled>>>,
@@ -195,7 +199,6 @@ impl App {
             u32::from_le_bytes([geo[i * 4], geo[i * 4 + 1], geo[i * 4 + 2], geo[i * 4 + 3]])
         };
         let (width, height, dp) = (word(0) as usize, word(1) as usize, word(2) as f32 / 256.0);
-        let surface = Chunk::from_handle(server.send_receive(proto::SURFACE, &TIpcArgs::new())?);
         let window = MinimalSoftwareWindow::new(RepaintBufferType::ReusedBuffer);
         slint::platform::set_platform(Box::new(AppPlatform {
             window: window.clone(),
@@ -209,7 +212,8 @@ impl App {
             height: Cell::new(height),
             dp,
             window,
-            surface,
+            surface: RefCell::new(None),
+            visible: Cell::new(false),
             scrolling: RefCell::default(),
             scrolled: RefCell::default(),
             ctrl: Cell::new(false),
@@ -290,6 +294,7 @@ impl App {
             AppEvent::Input(InputEvent::Key { code, down: true }) => self.dispatch_key(code),
             AppEvent::Input(t @ InputEvent::Touch { .. }) => self.dispatch_touch(t),
             AppEvent::Area { h } if h > 0 => self.resize(h as usize),
+            AppEvent::Visible(v) => self.visible.set(v),
             _ => {}
         }
     }
@@ -333,14 +338,21 @@ impl App {
     pub fn draw_scrolled(&self, scrolled: impl FnOnce() -> ((i32, i32), Rect)) -> Result<(), i32> {
         slint::platform::update_timers_and_animations();
         let (moved, list) = scrolled();
-        // SAFETY: the server made the chunk `width * height * 4` bytes, committed; only this thread writes it and the
-        // server only reads it; the slice lives for this call.
-        let px = unsafe {
-            core::slice::from_raw_parts_mut(
-                self.surface.base().cast::<Xrgb8888>(),
-                self.width * self.height.get(),
-            )
-        };
+        if self.surface.borrow().is_none() {
+            if !self.visible.get() {
+                return Ok(()); // nothing to show yet: what changed stays dirty until the app is shown
+            }
+            let h = self.server.send_receive(proto::SURFACE, &TIpcArgs::new())?;
+            *self.surface.borrow_mut() = Some(Chunk::from_handle(h));
+        }
+        let base = self
+            .surface
+            .borrow()
+            .as_ref()
+            .map_or(core::ptr::null_mut(), |c| c.base().cast::<Xrgb8888>());
+        // SAFETY: the server made the chunk `width * screen height * 4` bytes, committed, and never frees it while
+        // the session lives; only this thread writes it and the server only reads it; the slice lives for this call.
+        let px = unsafe { core::slice::from_raw_parts_mut(base, self.width * self.height.get()) };
         let screen = Rect::new(0, 0, self.width as u32, self.height.get() as u32);
         let plan = self
             .scrolling
@@ -510,7 +522,8 @@ impl App {
     }
 
     /// Add or replace an entry in the shade (`proto::NOTIFY`); a tap brings the app to the front with
-    /// `AppEvent::Page { page }`.
+    /// `AppEvent::Page { page }` then `AppEvent::Notified { id, action: 0 }`, a tap on action `i` with `Notified {
+    /// id, action: i + 1 }`.
     pub fn notify(&self, n: &Notification) -> Result<(), i32> {
         self.send_bytes(proto::NOTIFY, &n.encode().map_err(|_| kerr::ARGUMENT)?)
     }
@@ -537,6 +550,37 @@ impl App {
         let mut args = TIpcArgs::new();
         args.int(0, id as i32).desc8(1, &c).desc8(2, &i);
         self.server.send_receive(proto::ENTRY, &args).map(drop)
+    }
+
+    /// Open app `key` (`"phone"`, `"contacts"`, `"messages"`...) on its page `page` with `arg` (a number; at most
+    /// `proto::ARG_MAX` bytes) (`proto::OPEN`): it gets `AppEvent::Open { page }` and reads `arg` with
+    /// [`App::arg`]; Back at its root comes back here.
+    pub fn open(&self, key: &str, page: u16, arg: &str) -> Result<(), i32> {
+        let (k, a) = (TPtrC8::new(key.as_bytes()), TPtrC8::new(arg.as_bytes()));
+        let mut args = TIpcArgs::new();
+        args.desc8(0, &k).int(1, i32::from(page)).desc8(2, &a);
+        self.server.send_receive(proto::OPEN, &args).map(drop)
+    }
+
+    /// The argument of the `OPEN` that sent the last `AppEvent::Open` (empty: none); reading takes it.
+    pub fn arg(&self) -> Result<alloc::string::String, i32> {
+        let mut buf = alloc::vec![0u8; proto::ARG_MAX];
+        let n = {
+            let mut des = TPtr8::new(&mut buf);
+            let mut args = TIpcArgs::new();
+            args.des8(0, &mut des);
+            self.server.send_receive(proto::ARG, &args)?
+        };
+        buf.truncate(n.max(0) as usize);
+        alloc::string::String::from_utf8(buf).map_err(|_| kerr::ARGUMENT)
+    }
+
+    /// The task the app was opened for is finished (a call ended): the shell shows where the user came from
+    /// (`proto::DONE`). The app keeps running.
+    pub fn done(&self) -> Result<(), i32> {
+        self.server
+            .send_receive(proto::DONE, &TIpcArgs::new())
+            .map(drop)
     }
 
     /// Show the app's surface (true) or the shell's screen for its key (false) (`proto::FRONT`).

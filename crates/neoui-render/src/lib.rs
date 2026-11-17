@@ -137,7 +137,7 @@ pub struct Renderer {
     typed: Rc<RefCell<Vec<u32>>>,
     nav: Rc<RefCell<Vec<Nav>>>,
     entries: Rc<RefCell<Vec<u32>>>,
-    notes_opened: Rc<RefCell<Vec<usize>>>,
+    notes_opened: Rc<RefCell<Vec<(usize, u16)>>>,
     closed: Rc<RefCell<Vec<alloc::string::String>>>,
     power: Rc<RefCell<Vec<i32>>>,
     phone: Rc<RefCell<Vec<(String, String)>>>,
@@ -219,9 +219,9 @@ impl Renderer {
                 _ => Nav::Answer(i),
             })
         });
-        let notes_opened: Rc<RefCell<Vec<usize>>> = Rc::default();
+        let notes_opened: Rc<RefCell<Vec<(usize, u16)>>> = Rc::default();
         let sink = notes_opened.clone();
-        ui.on_note_opened(move |i| sink.borrow_mut().push(i as usize));
+        ui.on_note_opened(move |i, a| sink.borrow_mut().push((i as usize, a as u16)));
         let entries: Rc<RefCell<Vec<u32>>> = Rc::default();
         let sink = entries.clone();
         // Slint uses signed ints; preserve all 32 UID bits on the round trip.
@@ -297,6 +297,19 @@ impl Renderer {
         self.ui.set_screen(screen.into());
         self.ui.set_view(view.into());
         self.ui.set_shade_open(false);
+    }
+
+    /// Shows app `screen` opened by app `from` (ipc `OPEN`): Back at its root returns to `from`.
+    pub fn show_from(&mut self, screen: &str, from: &str) {
+        if from != screen {
+            self.ui.set_origin(from.into());
+        }
+        self.show(screen, "");
+    }
+
+    /// The shell's Back past the app (ipc `DONE`: the app's task ended): to where it was opened from, or home.
+    pub fn leave_app(&mut self) {
+        self.ui.invoke_back();
     }
 
     /// Rebuilds the Old apps model after its launcher's entries change.
@@ -468,21 +481,32 @@ impl Renderer {
     }
 
     /// The apps' entries in the shade (`neoui_proto::ipc::NOTIFY`), newest first: (title, text) each.
-    pub fn set_notes(&mut self, notes: &[(&str, &str)]) {
+    pub fn set_notes(&mut self, notes: &[(&str, &str, &[String])]) {
         let model: Vec<ShadeNote> = notes
             .iter()
-            .map(|(t, x)| ShadeNote {
+            .map(|(t, x, a)| ShadeNote {
                 title: (*t).into(),
                 text: (*x).into(),
+                actions: slint::ModelRc::from(Rc::new(slint::VecModel::from(
+                    a.iter()
+                        .map(|s| s.as_str().into())
+                        .collect::<Vec<slint::SharedString>>(),
+                ))),
             })
             .collect();
         self.ui
             .set_notes(slint::ModelRc::from(Rc::new(slint::VecModel::from(model))));
     }
 
-    /// The shade's app entries tapped since the last call (indices into what [`Renderer::set_notes`] gave).
-    pub fn take_notes_opened(&mut self) -> Vec<usize> {
+    /// The shade's app entries tapped since the last call: (index into what [`Renderer::set_notes`] gave, 0 for the
+    /// entry itself or `i + 1` for its action `i`).
+    pub fn take_notes_opened(&mut self) -> Vec<(usize, u16)> {
         core::mem::take(&mut *self.notes_opened.borrow_mut())
+    }
+
+    /// Messages posts its own entries (one per conversation): the shade hides its summary row of unread messages.
+    pub fn set_app_unread(&mut self, on: bool) {
+        self.ui.set_app_unread(on);
     }
 
     /// The launcher's badge counts (`neoui_proto::ipc::BADGE`) by app key; apps not named have none. Phone and

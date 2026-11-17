@@ -532,7 +532,13 @@ fn main() -> i32 {
                 repaint_all = true;
             }
             if let Some(key) = host.requested_screen.take() {
-                ui.show(key, "");
+                match host.requested_from.take() {
+                    Some(from) => ui.show_from(key, from),
+                    None => ui.show(key, ""),
+                }
+            }
+            if core::mem::take(&mut host.leave) {
+                ui.leave_app();
             }
             let now = ui.screen();
             if now != screen {
@@ -628,15 +634,16 @@ fn main() -> i32 {
             host.expire_note(ms);
             if core::mem::take(&mut host.notes_changed) {
                 ui.set_note(host.note.as_ref().map(|(_, n, _)| n));
-                let notes: Vec<(&str, &str)> = host
+                let notes: Vec<(&str, &str, &[String])> = host
                     .notifications
                     .iter()
-                    .map(|(_, n)| (n.title.as_str(), n.text.as_str()))
+                    .map(|(_, n)| (n.title.as_str(), n.text.as_str(), n.actions.as_slice()))
                     .collect();
                 ui.set_notes(&notes);
+                ui.set_app_unread(host.notifications.iter().any(|(k, _)| *k == "messages"));
             }
-            for i in ui.take_notes_opened() {
-                host.open_notification(i, ms);
+            for (i, action) in ui.take_notes_opened() {
+                host.open_notification(i, action, ms);
             }
             if core::mem::take(&mut host.badges_changed) {
                 ui.set_badges(&host.badges());

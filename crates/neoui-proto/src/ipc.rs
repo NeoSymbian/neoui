@@ -20,14 +20,17 @@
 //! [`AppEvent::NoteAction`]), entries in the shade ([`NOTIFY`]), badge counts ([`BADGE`]), a clipboard ([`CLIP_SET`],
 //! [`CLIP_GET`]) and tells an app when its area changes height ([`AppEvent::Area`]). 1.7's `TITLE` (11), `TOOLBAR`
 //! (12) and the strip's events are gone (`KErrNotSupported`); their numbers stay reserved. [`NAV`] and
-//! [`AppEvent::Options`] stay for the legacy bridge (LEGACY.EXE, C++, no kit): the shell draws a header for it.
+//! [`AppEvent::Options`] stay for the legacy bridge (LEGACY.EXE, C++, no kit): the shell draws a header for it. Since
+//! 1.9 apps open each other ([`OPEN`], [`ARG`], [`AppEvent::Open`]: Contacts' Call opens Phone on its call page with
+//! the number), hand the user back when a task ends ([`DONE`]), and a notification carries actions
+//! ([`AppEvent::Notified`]).
 
 use crate::{InputEvent, TouchPhase};
 
 /// The server's name (no leading `!`: that needs ProtServ).
 pub const SERVER: &str = "NeoUi";
 /// Protocol version (major, minor); a connect with another major is refused.
-pub const VERSION: (u8, u8) = (1, 8);
+pub const VERSION: (u8, u8) = (1, 9);
 
 /// `[Des8 out: GEOMETRY_LEN bytes = width, height, dp × 256 (u32 LE)]` → 0. `dp` is the shell's design unit in
 /// pixels (`min(screen w, h) / 360`), so apps size things like the shell does.
@@ -115,6 +118,22 @@ pub const CLIP_SET: i32 = 20;
 /// `[Des8 out text]` → the text's length (0: empty), written into argument 0; `KErrOverflow` when it doesn't fit.
 pub const CLIP_GET: i32 = 21;
 pub const CLIP_MAX: usize = 2048;
+/// `[Des8 key, page: u16, Des8 arg]` → 0: open app `key` (its launcher key: `"phone"`, `"contacts"`) on page `page`
+/// (the target's own numbering) with `arg` (UTF-8, at most [`ARG_MAX`] bytes; a number, an id). The server starts
+/// the app or brings it to the front, keeps `arg` for [`ARG`], sends [`AppEvent::Open`] and remembers the caller:
+/// Back at the target's root ([`crate::page::Page::can_back`] false) or [`DONE`] returns there. `KErrNotFound` for
+/// an unknown key, `KErrArgument` for a malformed one or an arg over the limit. An app may open itself (a footer tab
+/// for the app already in front is a no-op on the user's side).
+pub const OPEN: i32 = 22;
+pub const ARG_MAX: usize = 256;
+/// `[Des8 out arg]` → the length of the arg the last [`OPEN`] of this app carried (0: none), written into argument
+/// 0; reading takes it. `KErrOverflow` when it doesn't fit.
+pub const ARG: i32 = 23;
+/// `[]` → 0: the app finished the task it was opened for (a call ended): the server shows the app that opened it, or
+/// the previous running app, or home. The app keeps running.
+pub const DONE: i32 = 24;
+/// The longest launcher key, in bytes.
+pub const KEY_MAX: usize = 16;
 
 /// A malformed [`ENTRY`] icon (`KErrArgument`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -176,6 +195,11 @@ pub enum AppEvent {
     /// The app's area is now `h` pixels tall (the navigation mode changed: Buttons 639 dp, Gestures 679 dp); the
     /// app resizes its window and redraws. A full-screen page keeps the whole screen.
     Area { h: u32 },
+    /// Another app (or this one) opened it on `page` ([`OPEN`]); [`ARG`] gives the argument.
+    Open { page: u16 },
+    /// The user tapped the app's notification `id` ([`NOTIFY`]): `action` 0 is the entry itself, `i + 1` its
+    /// action `i`.
+    Notified { id: u32, action: u16 },
 }
 
 const KIND_TOUCH: u32 = 1;
@@ -193,6 +217,8 @@ const KIND_ENTRY: u32 = 12;
 const KIND_ANSWER: u32 = 16;
 const KIND_NOTE_ACTION: u32 = 17;
 const KIND_AREA: u32 = 18;
+const KIND_OPEN: u32 = 19;
+const KIND_NOTIFIED: u32 = 20;
 
 impl AppEvent {
     /// `[kind, a, b, c]` as little-endian u32s: touch = (phase | id << 8, x, y), key = (down, code, 0).
@@ -219,6 +245,8 @@ impl AppEvent {
             AppEvent::Answer { i } => [KIND_ANSWER, u32::from(i), 0, 0],
             AppEvent::NoteAction => [KIND_NOTE_ACTION, 0, 0, 0],
             AppEvent::Area { h } => [KIND_AREA, h, 0, 0],
+            AppEvent::Open { page } => [KIND_OPEN, u32::from(page), 0, 0],
+            AppEvent::Notified { id, action } => [KIND_NOTIFIED, id, u32::from(action), 0],
         };
         let mut out = [0u8; EVENT_LEN];
         for (i, v) in w.iter().enumerate() {
@@ -263,6 +291,13 @@ impl AppEvent {
             },
             KIND_NOTE_ACTION => AppEvent::NoteAction,
             KIND_AREA => AppEvent::Area { h: w(1) },
+            KIND_OPEN => AppEvent::Open {
+                page: u16::try_from(w(1)).ok()?,
+            },
+            KIND_NOTIFIED => AppEvent::Notified {
+                id: w(1),
+                action: u16::try_from(w(2)).ok()?,
+            },
             _ => return None,
         })
     }
@@ -304,6 +339,13 @@ mod tests {
             AppEvent::NoteAction,
             AppEvent::Area { h: 0 },
             AppEvent::Area { h: 2037 },
+            AppEvent::Open { page: 0 },
+            AppEvent::Open { page: 3 },
+            AppEvent::Notified { id: 7, action: 0 },
+            AppEvent::Notified {
+                id: u32::MAX,
+                action: 2,
+            },
         ];
         for e in all {
             assert_eq!(AppEvent::decode(&e.encode()), Some(e));

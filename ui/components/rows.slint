@@ -157,24 +157,41 @@ export component FormRow inherits VerticalLayout {
     }
 }
 
-// A chip (alarm days, label presets): 32 high, on = accent. Multi pick by default; for a single pick the app turns
-// the others off in `toggled`.
+// A chip (alarm days, label presets, list filters): 32 high, r 16, 13.5/600; picked = a 16 % accent fill and an accent
+// border (ds-components). Multi pick by default; for a single pick the app turns the others off in `toggled`. `count`
+// adds a number after the text (Missed 2), red with `count-danger`.
 export component Chip inherits Rectangle {
     in property <string> text;
     in-out property <bool> on;
+    in property <int> count;
+    in property <bool> count-danger;
     callback toggled(bool);
     height: 32 * Theme.dp;
-    width: label.preferred-width + 28 * Theme.dp;
+    width: row.preferred-width + 24 * Theme.dp;
     border-radius: self.height / 2;
-    background: root.on ? Theme.accent : touch.pressed ? Theme.pressed : Theme.field;
+    background: root.on ? Theme.tab-pill : touch.pressed ? Theme.pressed : Theme.field;
+    border-width: max(1px, Theme.dp);
+    border-color: root.on ? Theme.accent : #ffffff14;
     accessible-role: checkbox;
     accessible-checked: root.on;
-    accessible-label: root.text;
-    label := Text {
-        text: root.text;
-        color: Theme.text;
-        font-size: Theme.font-label;
-        font-weight: 600;
+    accessible-label: root.count > 0 ? root.text + " " + root.count : root.text;
+    row := HorizontalLayout {
+        alignment: center;
+        spacing: 6 * Theme.dp;
+        Text {
+            text: root.text;
+            color: root.on ? Theme.text : Theme.text-secondary;
+            font-size: 13.5 * Theme.dp;
+            font-weight: 500;
+            vertical-alignment: center;
+        }
+        if root.count > 0: Text {
+            text: root.count;
+            color: root.count-danger ? Theme.danger : Theme.text-secondary;
+            font-size: 13.5 * Theme.dp;
+            font-weight: 700;
+            vertical-alignment: center;
+        }
     }
 
     touch := TouchArea {
