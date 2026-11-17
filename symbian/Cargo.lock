@@ -2610,7 +2610,7 @@ dependencies = [
 [[package]]
 name = "modem-ipc"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/telephony?rev=452a22ac5442d1976f589c14472ea87c4c6041b5#452a22ac5442d1976f589c14472ea87c4c6041b5"
+source = "git+https://github.com/NeoSymbian/telephony?rev=4095a4b7f34359fe8df25cd0e18e81c15be719c9#4095a4b7f34359fe8df25cd0e18e81c15be719c9"
 
 [[package]]
 name = "moxcms"
@@ -3420,7 +3420,7 @@ checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 [[package]]
 name = "phone-rules"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/telephony?rev=452a22ac5442d1976f589c14472ea87c4c6041b5#452a22ac5442d1976f589c14472ea87c4c6041b5"
+source = "git+https://github.com/NeoSymbian/telephony?rev=4095a4b7f34359fe8df25cd0e18e81c15be719c9#4095a4b7f34359fe8df25cd0e18e81c15be719c9"
 
 [[package]]
 name = "pico-args"
