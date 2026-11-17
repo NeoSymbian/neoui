@@ -204,8 +204,25 @@ fn record_test(state: State) -> i32 {
         let rec = open(48_000, 1, true)?;
         let mut pcm = alloc::vec![0u8; 48_000 * 2 * 5];
         let mut got = 0;
+        let mut since = time::millis();
         while got < pcm.len() {
-            let n = (pcm.len() - got).min(16_384);
+            // read only what is there: a recording that never gets data fails after 8 s instead of hanging
+            let mut b = [0u8; neoaudio::Info::SIZE];
+            let mut des = TPtr8::new(&mut b);
+            let mut a = TIpcArgs::new();
+            a.des8(0, &mut des);
+            rec.send_receive(neoaudio::op::INFO, &a)?;
+            let queued = neoaudio::Info::from_bytes(&b).unwrap_or_default().queued as usize;
+            if queued == 0 {
+                if time::millis() - since > 8_000 {
+                    dprintln!("neoui: sound test: no recorded data after {} bytes", got);
+                    return Err(-33); // KErrTimedOut
+                }
+                time::sleep(50_000);
+                continue;
+            }
+            since = time::millis();
+            let n = (pcm.len() - got).min(queued).min(16_384);
             let mut des = TPtr8::new(&mut pcm[got..got + n]);
             let mut a = TIpcArgs::new();
             a.des8(0, &mut des);
