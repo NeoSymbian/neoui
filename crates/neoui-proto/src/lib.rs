@@ -143,6 +143,36 @@ pub enum InputEvent {
     Key { code: u32, down: bool },
 }
 
+/// The fingers after the first (pointer numbers 1 and up): the shell's gestures and widgets follow finger 0 only, and
+/// another finger that goes down in the front app's area belongs to the app until it lifts (an old app's key pad:
+/// move and fire at once).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Fingers(u32);
+
+impl Fingers {
+    /// Whether finger `id`'s event goes to the app; `in_app`: where it is lies in the app's area (read at the press).
+    pub fn route(&mut self, id: u8, phase: TouchPhase, in_app: bool) -> bool {
+        let bit = 1u32 << (id & 31);
+        if phase == TouchPhase::Down {
+            if in_app {
+                self.0 |= bit;
+            } else {
+                self.0 &= !bit;
+            }
+        }
+        let to_app = self.0 & bit != 0;
+        if phase == TouchPhase::Up {
+            self.0 &= !bit;
+        }
+        to_app
+    }
+
+    /// Forgets every finger (the screen went off, a call came); whether the app had one.
+    pub fn take(&mut self) -> bool {
+        core::mem::take(&mut self.0) != 0
+    }
+}
+
 /// Fold each run of touch moves of one finger into its last move; presses, releases and keys are kept, in order.
 /// (One render per batch of input, not per event: smooth-ui S1.)
 pub fn coalesce_moves(evs: &mut alloc::vec::Vec<InputEvent>) {
@@ -258,6 +288,29 @@ pub struct SurfaceId(pub u32);
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn extra_fingers_belong_to_the_app_from_press_to_lift() {
+        let mut f = Fingers::default();
+        assert!(f.route(1, TouchPhase::Down, true));
+        assert!(
+            !f.route(2, TouchPhase::Down, false),
+            "pressed outside the app"
+        );
+        assert!(
+            f.route(1, TouchPhase::Move, false),
+            "a captured finger stays the app's"
+        );
+        assert!(!f.route(2, TouchPhase::Move, true));
+        assert!(f.route(1, TouchPhase::Up, false));
+        assert!(!f.route(1, TouchPhase::Move, true), "lifted");
+        assert!(f.route(3, TouchPhase::Down, true));
+        assert!(f.take() && !f.take());
+        assert!(
+            !f.route(3, TouchPhase::Up, true),
+            "reset: its lift is not the app's"
+        );
+    }
+
     use super::*;
 
     #[test]

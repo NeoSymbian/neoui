@@ -195,6 +195,8 @@ fn main() -> i32 {
         let mut screen = ui.screen();
         let mut down_at = None;
         let mut to_app = false;
+        // fingers after the first: the app's when they go down in its area (an old app's key pad)
+        let mut fingers = neoui_proto::Fingers::default();
         // the press of the last release, for the frame that shows it (one frame may show several taps)
         let mut tap_end = None;
         // the next frame's start, and whether something waits for it
@@ -272,7 +274,9 @@ fn main() -> i32 {
                                 };
                                 if let Some(c) = change {
                                     set_screen(c, &mut host.refresh);
-                                    if c == screen::Change::Off && core::mem::take(&mut to_app) {
+                                    if c == screen::Change::Off
+                                        && (core::mem::take(&mut to_app) | fingers.take())
+                                    {
                                         host.send(AppEvent::InputReset); // its finger's lift never comes
                                     }
                                 }
@@ -314,11 +318,16 @@ fn main() -> i32 {
                     };
                     let ms = time::millis();
                     let mut routed = Vec::with_capacity(evs.len());
+                    let mut extra = Vec::new();
                     for ev in evs {
-                        let InputEvent::Touch { x, y, phase, .. } = ev else {
+                        let InputEvent::Touch { id, x, y, phase } = ev else {
                             routed.push(ev);
                             continue;
                         };
+                        if id != 0 {
+                            extra.push(ev); // gestures and the shell's widgets follow the first finger only
+                            continue;
+                        }
                         match gest.feed(phase, x, y, ms, live) {
                             Step::Pass => routed.push(ev),
                             Step::Hold => {
@@ -476,6 +485,25 @@ fn main() -> i32 {
                             InputEvent::Key { .. } => ui.dispatch(event),
                         }
                     }
+                    coalesce_moves(&mut extra);
+                    for ev in extra {
+                        if let InputEvent::Touch { id, x, y, phase } = ev {
+                            let in_app = host.front().is_some()
+                                && !phone.modal()
+                                && !power_menu
+                                && !ui.overlay_open()
+                                && contains(&host.app_area(), x, y);
+                            if fingers.route(id, phase, in_app) {
+                                let body = host.surface_rect();
+                                host.send(AppEvent::Input(InputEvent::Touch {
+                                    id,
+                                    x: x - body.x,
+                                    y: y - body.y,
+                                    phase,
+                                }));
+                            }
+                        }
+                    }
                 }
                 Either::Left(Either::Right(msg)) => {
                     receive.set(server.receive());
@@ -505,7 +533,7 @@ fn main() -> i32 {
                 transition = None;
                 swipe = None;
                 home_press = None;
-                if core::mem::take(&mut to_app) {
+                if core::mem::take(&mut to_app) | fingers.take() {
                     host.send(AppEvent::InputReset); // the call took the screen from under its finger
                 }
             }
@@ -720,7 +748,7 @@ fn main() -> i32 {
             };
             if let Some(c) = woke.or_else(|| scr.tick(ms, timeout, phone.in_call() || power_menu)) {
                 set_screen(c, &mut host.refresh);
-                if c == screen::Change::Off && core::mem::take(&mut to_app) {
+                if c == screen::Change::Off && (core::mem::take(&mut to_app) | fingers.take()) {
                     host.send(AppEvent::InputReset);
                 }
             }
@@ -1121,7 +1149,12 @@ fn to_input(ev: &TRawEvent) -> Option<InputEvent> {
         // Raw pointer events are screen pixels on every device (Syborg's driver scaled x wrongly until NeoSymbian's
         // adaptation fix, f3b63c6); the UI takes the display size from the HAL and nothing else.
         let (x, y) = ev.pos();
-        Some(InputEvent::Touch { id: 0, x, y, phase })
+        Some(InputEvent::Touch {
+            id: ev.i_pointer_number,
+            x,
+            y,
+            phase,
+        })
     };
     let key = |down| {
         key_char(ev.scan_code()).map(|c| InputEvent::Key {
