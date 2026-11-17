@@ -23,7 +23,20 @@ pub fn ui_dir() -> PathBuf {
 /// The compiler setup every neoui app uses: images and glyphs baked in for the software renderer (no files on the
 /// target), SDF text (font sizes scale with the screen) and `@neoui` mapped to [`ui_dir`].
 pub fn config() -> slint_build::CompilerConfiguration {
-    let libs = std::collections::HashMap::from([(String::from("neoui"), ui_dir())]);
+    config_with(&[])
+}
+
+/// [`config`] plus the app's own libraries (`("phone-shared", dir)` → `@phone-shared/...`): parts several apps of one
+/// repo share.
+pub fn config_with(libs: &[(&str, PathBuf)]) -> slint_build::CompilerConfiguration {
+    let mut map = std::collections::HashMap::from([(String::from("neoui"), ui_dir())]);
+    for (name, dir) in libs {
+        map.insert(
+            String::from(*name),
+            dir.canonicalize().unwrap_or(dir.clone()),
+        );
+    }
+    let libs = map;
     slint_build::CompilerConfiguration::new()
         .embed_resources(slint_build::EmbedResourcesKind::EmbedForSoftwareRenderer)
         .with_sdf_fonts(true)
@@ -33,10 +46,18 @@ pub fn config() -> slint_build::CompilerConfiguration {
 /// Compile `path` (relative to the calling crate) with [`config`]; panics with the compiler's message on an error,
 /// as a build script should.
 pub fn compile(path: &str) {
-    if let Err(e) = slint_build::compile_with_config(path, config()) {
+    compile_with(path, &[]);
+}
+
+/// [`compile`] with the app's own libraries (see [`config_with`]); paths relative to the calling crate.
+pub fn compile_with(path: &str, libs: &[(&str, PathBuf)]) {
+    if let Err(e) = slint_build::compile_with_config(path, config_with(libs)) {
         panic!("compile {path}: {e}");
     }
     println!("cargo:rerun-if-changed={}", ui_dir().display());
+    for (_, dir) in libs {
+        println!("cargo:rerun-if-changed={}", dir.display());
+    }
 }
 
 #[cfg(test)]

@@ -17,6 +17,8 @@ pub enum Owner {
     Shell,
     /// The app with this key (`"clock"`), and the UI server.
     App(&'static str),
+    /// Any of these apps, and the UI server: a key apps share (Phone and Contacts: speed dial, the name order).
+    Apps(&'static [&'static str]),
 }
 
 /// What values a registered key accepts beyond its type.
@@ -230,20 +232,20 @@ registry! {
         limit Limit::MaxLen(48), owner Owner::App("phone");
     /// Speed dial: the numbers of keys 2..=9, '\n'-separated (empty = unassigned).
     PHONE_SPEED: Bytes = "phone.speed", default DefaultValue::Bytes(&[]), limit Limit::MaxLen(400),
-        owner Owner::App("phone");
+        owner Owner::Apps(&["phone", "contacts"]);
     /// The newest call-log entry the user has seen in Recents: missed calls after it count as new.
     PHONE_MISSED_SEEN: i32 = "phone.missed_seen", default DefaultValue::Int(0),
         limit Limit::Range { min: 0, max: i32::MAX }, owner Owner::App("phone");
     /// The Phone app (NEOPHONE, its own process) owns `phone.*` and `contacts.*`; the shell still reads them.
     /// Contacts show names "First Last" (0) or "Last First" (1).
     CONTACTS_NAME_ORDER: i32 = "contacts.name_order", default DefaultValue::Int(0),
-        limit Limit::Range { min: 0, max: 1 }, owner Owner::App("phone");
+        limit Limit::Range { min: 0, max: 1 }, owner Owner::Apps(&["phone", "contacts"]);
     /// The number type a new contact's first number gets (phone_core's label list: 0 Mobile).
     CONTACTS_DEFAULT_LABEL: i32 = "contacts.default_label", default DefaultValue::Int(0),
-        limit Limit::Range { min: 0, max: 15 }, owner Owner::App("phone");
+        limit Limit::Range { min: 0, max: 15 }, owner Owner::Apps(&["phone", "contacts"]);
     /// The Phone app has copied the shell's contacts file (C:\private\e0002001\contacts.dat) into its own.
     CONTACTS_MIGRATED: bool = "contacts.migrated", default DefaultValue::Bool(false), limit Limit::None,
-        owner Owner::App("phone");
+        owner Owner::Apps(&["phone", "contacts"]);
     /// The Clock app's face: 0 digital, 1 analog (Clock settings).
     CLOCK_FACE: i32 = "clock.face", default DefaultValue::Int(0),
         limit Limit::Range { min: 0, max: 1 }, owner Owner::App("clock");
