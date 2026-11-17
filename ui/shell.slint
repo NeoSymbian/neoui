@@ -223,7 +223,8 @@ export component Shell inherits Window {
     callback phone-action(string, string);
 
     public function open(app: string) {
-        root.origin = root.screen == "menu" ? "menu" : "home";
+        // Back returns to the Apps menu or Settings (its Phone & Contacts row), else home
+        root.origin = root.screen == "menu" || root.screen == "settings" ? root.screen : "home";
         root.screen = app;
         root.view = "";
         root.shade-open = false;
