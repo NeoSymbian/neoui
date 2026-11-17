@@ -1,10 +1,10 @@
 # SPDX-License-Identifier: Apache-2.0
-"""NeoSans: Inter with Noto Sans Armenian's letters, at 400, 500 and 600 (docs neoui-kit.md, "Fonts").
+"""NeoSans: Inter with Noto Sans Armenian's letters, at 400, 500, 600 and 700 (docs neoui-kit.md, "Fonts").
 
 Slint draws a Text in one font with no fallback, and Inter has no Armenian: the design (the canvas, Inter with Noto
 Sans Armenian after it) needs one family with both. Static cuts of both variable fonts are subset to the scripts the
 UI draws (Latin, Cyrillic, Armenian, punctuation and the symbols it uses), Noto is scaled to Inter's 2048 units, and
-each pair is merged into ui/fonts/NeoSans-{Regular,Medium,SemiBold}.ttf.
+each pair is merged into ui/fonts/NeoSans-{Regular,Medium,SemiBold,Bold}.ttf.
 
     uv run --with fonttools python tools/make_fonts.py <NotoSansArmenian[wdth,wght].ttf>
 
@@ -21,7 +21,7 @@ from fontTools.ttLib.scaleUpem import scale_upem
 from fontTools.varLib.instancer import instantiateVariableFont
 
 FONTS = Path(__file__).resolve().parent.parent / "ui" / "fonts"
-WEIGHTS = {400: "Regular", 500: "Medium", 600: "SemiBold"}
+WEIGHTS = {400: "Regular", 500: "Medium", 600: "SemiBold", 700: "Bold"}
 
 # Basic Latin to Latin Extended-B, Greek and Cyrillic, general punctuation, currency, letterlike, arrows, the maths and
 # shapes the UI draws (✓ ✕ ★ ⚠ ● …), and the Armenian block with its ligatures.

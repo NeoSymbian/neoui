@@ -217,10 +217,10 @@ registry! {
     PHONE_CLIR: i32 = "phone.clir", default DefaultValue::Int(0),
         limit Limit::Range { min: 0, max: 2 }, owner Owner::App("phone");
     /// The call screen counts the connected time.
-    PHONE_SHOW_DURATION: bool = "phone.show_duration", default DefaultValue::Bool(false), limit Limit::None,
+    PHONE_SHOW_DURATION: bool = "phone.show_duration", default DefaultValue::Bool(true), limit Limit::None,
         owner Owner::App("phone");
     /// A note with the call's duration when it ends.
-    PHONE_SUMMARY: bool = "phone.summary", default DefaultValue::Bool(false), limit Limit::None, owner Owner::App("phone");
+    PHONE_SUMMARY: bool = "phone.summary", default DefaultValue::Bool(true), limit Limit::None, owner Owner::App("phone");
     /// How many days the call log keeps a call: 0 (no log), 1, 10 or 30.
     PHONE_LOG_DAYS: i32 = "phone.log_days", default DefaultValue::Int(30),
         limit Limit::Range { min: 0, max: 30 }, owner Owner::App("phone");
