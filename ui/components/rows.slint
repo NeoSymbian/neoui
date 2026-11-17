@@ -54,7 +54,10 @@ export component RowActions inherits Rectangle {
         }
     }
 
+    // revealed: the handler stops short of the buttons, so a tap on them reaches them (the row still slides back)
     swipe := SwipeGestureHandler {
+        x: 0;
+        width: root.revealed ? root.width - root.open-w : root.width;
         handle-swipe-left: root.actions.length > 0 && !root.revealed;
         handle-swipe-right: root.revealed;
         property <length> d: self.swiping ? self.current-position.x - self.pressed-position.x : 0;

@@ -43,7 +43,9 @@ export component Bubble inherits Rectangle {
                 wrap: word-wrap;
             }
             info := Text {
-                text: root.failed ? "⚠ Not sent · tap to retry" : root.meta;
+                // a failed message: its `meta` says why when the app gives one ("Not sent · no answer · tap to retry")
+                text: root.failed && root.meta == "" ? "⚠ Not sent · tap to retry" : root.meta;
+                wrap: word-wrap;
                 color: root.failed ? Theme.danger-text : #ffffff9e;
                 font-size: 11.5 * Theme.dp;
                 horizontal-alignment: right;
