@@ -82,6 +82,7 @@ pub fn show_settings(s: &DevState<'_>, app: &App) {
         let owner = match spec.owner {
             Owner::Shell => String::from("shell"),
             Owner::App(a) => format!("app {a}"),
+            Owner::Apps(a) => format!("apps {}", a.join(", ")),
         };
         let limit = match spec.limit {
             Limit::None => String::new(),
