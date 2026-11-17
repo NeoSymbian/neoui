@@ -54,12 +54,9 @@ jobs:
 
       # NeoSymbian/phone: NEOPHONE.EXE (Phone), NEOCONT.EXE (Contacts), NEOMSG.EXE (Messages). Phone and Messages are
       # resident (host::RESIDENT); the three open each other (ipc OPEN, protocol 1.9).
-      # shortcut: the phone branch with the three apps; back to the default branch once NeoSymbian/phone merges it
       - name: NeoSymbian/phone
-        env:
-          PHONE_REF: split
         run: |
-          git clone -q --depth 1 -b "$PHONE_REF" https://github.com/NeoSymbian/phone.git
+          git clone -q --depth 1 https://github.com/NeoSymbian/phone.git
           cd phone/symbian && cargo arm
           cp target/armv5te-none-eabi/release/{libneophone,libneocont,libneomsg}.a ../../build/rust/
           grep -E '^NEO(PHONE|CONT|MSG)\.EXE' exes.txt >> ../../build/rust/exes.txt
