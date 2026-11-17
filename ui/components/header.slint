@@ -381,10 +381,15 @@ export component SubHeader inherits Header {
 export component FormHeader inherits Rectangle {
     in property <string> title;
     in property <bool> can-save: true;
+    // no ✓ at all: the form's action is in its content (a new message's Send, D14)
+    in property <bool> has-save: true;
+    // as Header's
+    in property <bool> alt;
+    in property <string> title-font;
     callback cancel();
     callback save();
     height: Theme.header-h;
-    background: Theme.bg;
+    background: root.alt ? Theme.header-alt : Theme.bg;
     HorizontalLayout {
         HeaderButton {
             icon: @image-url("../icons/sys/close.svg");
@@ -401,9 +406,10 @@ export component FormHeader inherits Rectangle {
 
         Title {
             text: root.title;
+            font-family: root.title-font;
         }
 
-        HeaderButton {
+        if root.has-save: HeaderButton {
             icon: @image-url("../icons/sys/check.svg");
             label: "Save";
             tint: Theme.accent;
