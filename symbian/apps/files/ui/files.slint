@@ -3,7 +3,9 @@
 // app draws its header (Header on the drives, SubHeader with ⋮ in a folder, the selection header while rows are
 // picked) and forms ([✕ New folder ✓], [✕ Rename ✓]); the shell draws dialogs (QUERY) and toasts (NOTE).
 // The Rust side owns the state; this file draws it and reports taps as callbacks.
-import "@neoui/fonts/Inter-VariableFont.ttf";
+import "@neoui/fonts/NeoSans-Regular.ttf";
+import "@neoui/fonts/NeoSans-Medium.ttf";
+import "@neoui/fonts/NeoSans-SemiBold.ttf";
 // Latin, Cyrillic and Armenian: names and text typed on the system keyboard, in any of its languages
 import "@neoui/fonts/DejaVuSans.ttf";
 import "@neoui/fonts/DejaVuSansMono.ttf";
@@ -18,7 +20,7 @@ export struct DriveRow { label: string, detail: string, used: float, rom: bool }
 export struct FileRow { name: string, detail: string, kind: string, checked: bool }
 
 export component FilesApp inherits Window {
-    default-font-family: "Inter";
+    default-font-family: "NeoSans";
     background: Theme.bg;
 
     // "drives", "folder" or "text"

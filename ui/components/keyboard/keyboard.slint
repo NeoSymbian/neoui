@@ -20,7 +20,7 @@ component Key inherits Rectangle {
     in property <string> label;
     // a small second line under the label (a phone pad's letters)
     in property <string> hint;
-    in property <string> font: "Inter";
+    in property <string> font: "NeoSans";
     // a function key: drawn darker
     in property <bool> special;
     in property <bool> lit;
@@ -78,7 +78,7 @@ component KeyRow inherits Rectangle {
         width: (end ? edge : 1) * unit - 6 * Theme.dp;
         height: parent.height;
         label: shift && !end ? k.to-uppercase() : k;
-        font: end ? "Inter" : root.font;
+        font: end ? "NeoSans" : root.font;
         special: end;
         lit: k == "⇧" && root.shift;
         pressed-key => {
@@ -258,7 +258,7 @@ export component Keyboard inherits Rectangle {
         height: 42 * Theme.dp;
         keys: Common.digits;
         cols: 10;
-        font: "Inter";
+        font: "NeoSans";
         key(k) => { root.press(k); }
     }
 
@@ -267,7 +267,7 @@ export component Keyboard inherits Rectangle {
         height: 42 * Theme.dp;
         keys: row;
         cols: symbols ? 10 : layout.cols;
-        font: symbols ? "Inter" : layout.font;
+        font: symbols ? "NeoSans" : layout.font;
         shift: root.shift && !symbols;
         key(k) => { root.press(k); }
     }

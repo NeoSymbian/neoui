@@ -36,8 +36,6 @@ export component Bubble inherits Rectangle {
             spacing: 2 * Theme.dp;
             body := Text {
                 text: root.text;
-                // DejaVu Sans: the one face with Armenian (Inter has none and Slint has no fallback)
-                font-family: "DejaVu Sans";
                 color: Theme.text;
                 font-size: 15.5 * Theme.dp;
                 wrap: word-wrap;
@@ -90,7 +88,6 @@ export component Composer inherits VerticalLayout {
             if root.text == "": Text {
                 x: 16 * Theme.dp;
                 text: root.placeholder;
-                font-family: "DejaVu Sans";
                 color: Theme.text-dim;
                 font-size: 15.5 * Theme.dp;
                 vertical-alignment: center;

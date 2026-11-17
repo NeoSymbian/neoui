@@ -5,7 +5,9 @@
 // [✕ Edit alarm ✓], [← Add a city], [← Settings]; a ringing alarm is full screen.
 //
 // State lives in the `ClockState` global (state.slint), filled by src/pages/*.rs; each page is one file in pages/.
-import "@neoui/fonts/Inter-VariableFont.ttf";
+import "@neoui/fonts/NeoSans-Regular.ttf";
+import "@neoui/fonts/NeoSans-Medium.ttf";
+import "@neoui/fonts/NeoSans-SemiBold.ttf";
 import { Theme, Kit, Scroll, Header, SubHeader, FormHeader, Footer, TabPages, Act } from "@neoui/kit.slint";
 import { ClockState } from "state.slint";
 import { FacePage } from "pages/face.slint";
@@ -30,7 +32,7 @@ component SubView inherits Rectangle {
 }
 
 export component ClockApp inherits Window {
-    default-font-family: "Inter";
+    default-font-family: "NeoSans";
     background: Theme.bg;
     property <[string]> names: ["Clock", "Alarms", "World", "Timer", "Stopwatch"];
 

@@ -5,7 +5,9 @@
 // process into the surface the UI server shows; it reuses the shell's tokens and components.
 //
 // State lives in the `DevState` global (state.slint), filled by src/pages/*.rs; each page is one file in pages/.
-import "@neoui/fonts/Inter-VariableFont.ttf";
+import "@neoui/fonts/NeoSans-Regular.ttf";
+import "@neoui/fonts/NeoSans-Medium.ttf";
+import "@neoui/fonts/NeoSans-SemiBold.ttf";
 import "@neoui/fonts/UbuntuMono-Regular.ttf";
 import { Theme } from "@neoui/theme.slint";
 import { Header, Footer, Kit } from "@neoui/kit.slint";
@@ -21,7 +23,7 @@ import { Scroll } from "@neoui/components/scroll.slint";
 export { Theme, DevState, Scroll, Kit }
 
 export component DevApp inherits Window {
-    default-font-family: "Inter";
+    default-font-family: "NeoSans";
     background: Theme.bg;
 
     property <[string]> names: ["Dev tools", "Devices", "Console", "Procs", "More"];

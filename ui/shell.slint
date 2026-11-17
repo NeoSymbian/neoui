@@ -6,7 +6,9 @@
 // view). Back leaves the sub-view first, then returns to where the app was opened from.
 
 // Bundled so the glyphs baked into the binary are the same on every build host.
-import "fonts/Inter-VariableFont.ttf";
+import "fonts/NeoSans-Regular.ttf";
+import "fonts/NeoSans-Medium.ttf";
+import "fonts/NeoSans-SemiBold.ttf";
 import "fonts/UbuntuMono-Regular.ttf";
 // Latin, Cyrillic and Armenian in one face: the Armenian keyboard (Slint draws a Text in one font, no fallback)
 import "fonts/DejaVuSans.ttf";
@@ -62,7 +64,7 @@ component Slot inherits Rectangle {
 }
 
 export component Shell inherits Window {
-    default-font-family: "Inter";
+    default-font-family: "NeoSans";
     background: Theme.bg;
 
     in-out property <string> screen: "home";
