@@ -171,6 +171,8 @@ fn run() -> Result<(), i32> {
                 }
                 Some(AppEvent::Visible(v)) => {
                     dprintln!("devtools: visible {}", v);
+                    // neoapp draws only while shown (App::draw)
+                    ctx.app.handle(&AppEvent::Visible(v));
                     visible = v;
                     if v {
                         (stats_at, devices_at) = (0, 0); // refresh at once

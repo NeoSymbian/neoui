@@ -138,6 +138,11 @@ fn run() -> Result<(), i32> {
                 Some(AppEvent::Input(InputEvent::Key { code, down: true })) => {
                     con.key(console_key(code))
                 }
+                // neoapp draws only while shown (App::draw): it learns that here; draw what came while hidden
+                Some(e @ AppEvent::Visible(_)) => {
+                    app.handle(&e);
+                    con.dirty = true;
+                }
                 Some(AppEvent::Keyboard { h }) => {
                     ui.set_kb_h(h as f32);
                     con.dirty = true;
