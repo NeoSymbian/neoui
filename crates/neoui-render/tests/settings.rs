@@ -50,4 +50,15 @@ fn settings_binding() {
     common::frame(&mut r, &mut buf, w, "shade");
     assert_eq!(r.take_setting_edits(), [("radio.wifi", Value::Bool(true))]);
     assert_eq!(r.setting("radio.wifi"), Some(Value::Bool(true)));
+
+    // Settings -> Old apps: the old apps' key pads (design canvas "Old apps · Settings"); a row opens its picker
+    // and a choice is stored
+    r.show("settings", "oldapps");
+    common::frame(&mut r, &mut buf, w, "settings oldapps");
+    common::write_png("settings-oldapps-539x1079.png", &buf, w, h);
+    let _ = r.take_setting_edits();
+    let row = |i: f32| (25.0 + 52.0 + 34.0 + 56.0 * i + 28.0) * d; // under the header and "Vibration"
+    common::tap(&mut r, w as i32 / 2, row(1.0) as i32); // Vibration strength
+    common::frame(&mut r, &mut buf, w, "settings oldapps");
+    common::write_png("settings-oldapps-sheet-539x1079.png", &buf, w, h);
 }

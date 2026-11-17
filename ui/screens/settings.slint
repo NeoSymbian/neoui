@@ -5,7 +5,8 @@ import { Now } from "../now.slint";
 import { Theme } from "../theme.slint";
 import { NeoList } from "../components/scroll.slint";
 import { ListRow, SectionHeader } from "../components/lists.slint";
-import { Slider, Card, Button, TextField } from "../components/controls.slint";
+import { Slider, Card, Button, TextField, QueryDialog } from "../components/controls.slint";
+import { ChoiceSheet } from "../components/sheet.slint";
 import { KeyboardFocus } from "../components/keyboard/focus.slint";
 import { WifiNet, WifiLink } from "../data.slint";
 import { Layouts } from "../components/keyboard/layouts.slint";
@@ -188,6 +189,14 @@ component WifiDetailsSheet inherits Rectangle {
 
 export component SettingsScreen inherits Rectangle {
     in-out property <string> view;
+    // Old apps: the open picker (1 strength, 2 default pad, 3 directions, 4 A, 5 B) and the reset question
+    property <int> oldapps-sheet;
+    property <bool> oldapps-reset;
+    property <[string]> pad-strengths: ["Light", "Medium", "Strong"];
+    property <[string]> pad-defaults: ["Auto", "Navigator", "Gamepad", "Number"];
+    property <[string]> pad-dirs: ["Arrows", "Number keys"];
+    property <[string]> pad-a: ["OK", "5"];
+    property <[string]> pad-b: ["Right softkey", "0", "#"];
     // in: which build is running, one line each for the kernel, the user-side ROM and neoui (the UI server reads them)
     in property <[string]> build;
     // a row that opens another app on one of its pages (app key, view: host::PAGES)
@@ -303,6 +312,14 @@ export component SettingsScreen inherits Rectangle {
                 value: "12";
                 icon: @image-url("../icons/sys/apps.svg");
                 tint: #8656e8;
+            }
+
+            SettingRow {
+                title: "Old apps";
+                value: "Key pads";
+                icon: @image-url("../icons/sys/keyboard.svg");
+                tint: #5b6573;
+                clicked => { root.view = "oldapps"; }
             }
 
             SectionHeader { text: "System"; }
@@ -628,6 +645,74 @@ export component SettingsScreen inherits Rectangle {
         }
     }
 
+    // Settings -> Old apps: the key pads LEGACY draws under old S60 apps (NeoSymbian/legacy host/pad.cpp)
+    if view == "oldapps": NeoList {
+        VerticalLayout {
+            SectionHeader { text: "Vibration"; }
+            ListRow {
+                title: "Key vibration";
+                has-switch: true;
+                switch-on <=> SystemSettings.legacy-pad-vibrate;
+            }
+            ListRow {
+                title: "Vibration strength";
+                subtitle: root.pad-strengths[SystemSettings.legacy-pad-strength];
+                chevron: true;
+                clicked => { root.oldapps-sheet = 1; }
+            }
+            SectionHeader { text: "Pads"; }
+            ListRow {
+                title: "Default pad for new apps";
+                subtitle: SystemSettings.legacy-pad-default == 0 ? "Auto · games get Gamepad"
+                    : root.pad-defaults[SystemSettings.legacy-pad-default];
+                chevron: true;
+                clicked => { root.oldapps-sheet = 2; }
+            }
+            ListRow {
+                title: "Gamepad directions";
+                subtitle: root.pad-dirs[SystemSettings.legacy-pad-dirs];
+                chevron: true;
+                clicked => { root.oldapps-sheet = 3; }
+            }
+            ListRow {
+                title: "Gamepad A button";
+                subtitle: root.pad-a[SystemSettings.legacy-pad-a];
+                chevron: true;
+                clicked => { root.oldapps-sheet = 4; }
+            }
+            ListRow {
+                title: "Gamepad B button";
+                subtitle: root.pad-b[SystemSettings.legacy-pad-b];
+                chevron: true;
+                clicked => { root.oldapps-sheet = 5; }
+            }
+            ListRow {
+                title: "Left-handed gamepad";
+                subtitle: "Swaps the d-pad and the buttons";
+                has-switch: true;
+                switch-on <=> SystemSettings.legacy-pad-lefty;
+            }
+            ListRow {
+                title: "Open games in the console";
+                subtitle: "Landscape: d-pad left, buttons right";
+                has-switch: true;
+                switch-on <=> SystemSettings.legacy-pad-console;
+            }
+            Rectangle {
+                height: Theme.list-row-h;
+                background: reset-touch.pressed ? Theme.pressed : transparent;
+                Text {
+                    x: Theme.margin + 4 * Theme.dp;
+                    text: "Reset remembered pads";
+                    color: Theme.danger;
+                    font-size: Theme.font-body;
+                    vertical-alignment: center;
+                }
+                reset-touch := TouchArea { clicked => { root.oldapps-reset = true; } }
+            }
+        }
+    }
+
     if view == "wifi": Rectangle {
         NeoList {
             VerticalLayout {
@@ -871,4 +956,41 @@ export component SettingsScreen inherits Rectangle {
             Text { text: battery-storage; font-size: Theme.font-status; color: Theme.text-dim; wrap: word-wrap; }
         }
     }
+    if oldapps-sheet > 0: ChoiceSheet {
+        width: parent.width;
+        height: parent.height;
+        open: true;
+        title: root.oldapps-sheet == 1 ? "Vibration strength" : root.oldapps-sheet == 2 ? "Default pad for new apps"
+            : root.oldapps-sheet == 3 ? "Gamepad directions" : root.oldapps-sheet == 4 ? "Gamepad A button"
+            : "Gamepad B button";
+        choices: root.oldapps-sheet == 1 ? root.pad-strengths : root.oldapps-sheet == 2 ? root.pad-defaults
+            : root.oldapps-sheet == 3 ? root.pad-dirs : root.oldapps-sheet == 4 ? root.pad-a : root.pad-b;
+        current: root.oldapps-sheet == 1 ? SystemSettings.legacy-pad-strength
+            : root.oldapps-sheet == 2 ? SystemSettings.legacy-pad-default
+            : root.oldapps-sheet == 3 ? SystemSettings.legacy-pad-dirs
+            : root.oldapps-sheet == 4 ? SystemSettings.legacy-pad-a : SystemSettings.legacy-pad-b;
+        chosen(i) => {
+            if root.oldapps-sheet == 1 { SystemSettings.legacy-pad-strength = i; }
+            if root.oldapps-sheet == 2 { SystemSettings.legacy-pad-default = i; }
+            if root.oldapps-sheet == 3 { SystemSettings.legacy-pad-dirs = i; }
+            if root.oldapps-sheet == 4 { SystemSettings.legacy-pad-a = i; }
+            if root.oldapps-sheet == 5 { SystemSettings.legacy-pad-b = i; }
+            root.oldapps-sheet = 0;
+        }
+        dismissed => { root.oldapps-sheet = 0; }
+    }
+
+    QueryDialog {
+        width: parent.width;
+        height: parent.height;
+        open: root.oldapps-reset;
+        text: "Forget the pad each old app was last used with? Each one gets its first pad again.";
+        buttons: ["Reset", "Cancel"];
+        destructive: true;
+        answered(i) => {
+            if i == 0 { SystemSettings.legacy-pad-epoch += 1; }
+            root.oldapps-reset = false;
+        }
+    }
+
 }

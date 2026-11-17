@@ -195,6 +195,10 @@ fn main() -> i32 {
         let mut screen = ui.screen();
         let mut down_at = None;
         let mut to_app = false;
+        // fingers after the first: the app's when they go down in its area (an old app's key pad)
+        let mut fingers = neoui_proto::Fingers::default();
+        // the app those fingers went down in: they are dropped when another app comes to the front
+        let mut fingers_app: Option<&'static str> = None;
         // the press of the last release, for the frame that shows it (one frame may show several taps)
         let mut tap_end = None;
         // the next frame's start, and whether something waits for it
@@ -272,6 +276,11 @@ fn main() -> i32 {
                                 };
                                 if let Some(c) = change {
                                     set_screen(c, &mut host.refresh);
+                                    if c == screen::Change::Off
+                                        && (core::mem::take(&mut to_app) | fingers.take())
+                                    {
+                                        host.send(AppEvent::InputReset); // its finger's lift never comes
+                                    }
                                 }
                             }
                             Ok(ev)
@@ -312,10 +321,14 @@ fn main() -> i32 {
                     let ms = time::millis();
                     let mut routed = Vec::with_capacity(evs.len());
                     for ev in evs {
-                        let InputEvent::Touch { x, y, phase, .. } = ev else {
+                        let InputEvent::Touch { id, x, y, phase } = ev else {
                             routed.push(ev);
                             continue;
                         };
+                        if id != 0 {
+                            routed.push(ev); // gestures follow the first finger only; in order with it (below)
+                            continue;
+                        }
                         match gest.feed(phase, x, y, ms, live) {
                             Step::Pass => routed.push(ev),
                             Step::Hold => {
@@ -353,6 +366,31 @@ fn main() -> i32 {
                     for event in evs {
                         let app_on_screen = host.front().is_some() && !phone.modal();
                         match event {
+                            // fingers after the first: the app's when they press in it (the shell's widgets and
+                            // gestures follow finger 0 only), until they lift or another app comes to the front
+                            InputEvent::Touch { id, x, y, phase } if id != 0 => {
+                                let front = host.front().map(|a| a.key);
+                                if fingers_app.is_some() && fingers_app != front {
+                                    fingers.take(); // the app they pressed in went away: Visible(false) told it
+                                }
+                                let in_app = front.is_some()
+                                    && !phone.modal()
+                                    && !power_menu
+                                    && !ui.overlay_open()
+                                    && contains(&host.app_area(), x, y);
+                                if phase == TouchPhase::Down && in_app {
+                                    fingers_app = front;
+                                }
+                                if fingers.route(id, phase, in_app) {
+                                    let body = host.surface_rect();
+                                    host.send(AppEvent::Input(InputEvent::Touch {
+                                        id,
+                                        x: x - body.x,
+                                        y: y - body.y,
+                                        phase,
+                                    }));
+                                }
+                            }
                             InputEvent::Touch { id, x, y, phase } => {
                                 let body = host.surface_rect();
                                 if phase == TouchPhase::Down {
@@ -502,7 +540,9 @@ fn main() -> i32 {
                 transition = None;
                 swipe = None;
                 home_press = None;
-                to_app = false;
+                if core::mem::take(&mut to_app) | fingers.take() {
+                    host.send(AppEvent::InputReset); // the call took the screen from under its finger
+                }
             }
             // a gesture under way ends when the screen changes under it (a call, an alarm, the PIN prompt)
             if modal || ui.screen() != screen {
@@ -715,6 +755,9 @@ fn main() -> i32 {
             };
             if let Some(c) = woke.or_else(|| scr.tick(ms, timeout, phone.in_call() || power_menu)) {
                 set_screen(c, &mut host.refresh);
+                if c == screen::Change::Off && (core::mem::take(&mut to_app) | fingers.take()) {
+                    host.send(AppEvent::InputReset);
+                }
             }
             if panel_max > 0 && scr.is_on() {
                 let want = screen::panel_level(
@@ -1113,7 +1156,12 @@ fn to_input(ev: &TRawEvent) -> Option<InputEvent> {
         // Raw pointer events are screen pixels on every device (Syborg's driver scaled x wrongly until NeoSymbian's
         // adaptation fix, f3b63c6); the UI takes the display size from the HAL and nothing else.
         let (x, y) = ev.pos();
-        Some(InputEvent::Touch { id: 0, x, y, phase })
+        Some(InputEvent::Touch {
+            id: ev.i_pointer_number,
+            x,
+            y,
+            phase,
+        })
     };
     let key = |down| {
         key_char(ev.scan_code()).map(|c| InputEvent::Key {
@@ -1157,6 +1205,14 @@ fn key_char(scan: i32) -> Option<char> {
         0x41..=0x5A => char::from_u32(scan as u32 + 0x20),
         _ => None,
     }
+}
+
+/// A short vibration (HAPTIC: the old apps' key pads): the kernel's `EHalGroupVariant` 0x4e27 (`qcom_telhal.cpp`,
+/// `{ms, amplitude}`, CommDD). `KErrNotSupported` where there is no motor (QEMU).
+pub(crate) fn haptic(ms: u32, amp: u32) -> i32 {
+    let mut io = [ms, amp, 0u32, 0u32];
+    // SAFETY: the function reads a 4-word {a, b, len, buf} block from a1 (len 0: no buffer); a2 is unused.
+    unsafe { e32::sys::ui::hal_function(1, 0x4e27, io.as_mut_ptr().cast(), core::ptr::null_mut()) }
 }
 
 /// The panel's highest brightness level (display HAL), or 0 when it has none (QEMU).

@@ -23,14 +23,16 @@
 //! [`AppEvent::Options`] stay for the legacy bridge (LEGACY.EXE, C++, no kit): the shell draws a header for it. Since
 //! 1.9 apps open each other ([`OPEN`], [`ARG`], [`AppEvent::Open`]: Contacts' Call opens Phone on its call page with
 //! the number), hand the user back when a task ends ([`DONE`]), and a notification carries actions
-//! ([`AppEvent::Notified`]).
+//! ([`AppEvent::Notified`]). Since 1.10 an app can ask for a short vibration ([`HAPTIC`]: the old apps' key pads) and is
+//! told when the fingers it had were taken away ([`AppEvent::InputReset`]: the screen went off, the app lost the
+//! front), and the legacy bridge loses the shell's header once it declares a [`PAGE`].
 
 use crate::{InputEvent, TouchPhase};
 
 /// The server's name (no leading `!`: that needs ProtServ).
 pub const SERVER: &str = "NeoUi";
 /// Protocol version (major, minor); a connect with another major is refused.
-pub const VERSION: (u8, u8) = (1, 9);
+pub const VERSION: (u8, u8) = (1, 10);
 
 /// `[Des8 out: GEOMETRY_LEN bytes = width, height, dp × 256 (u32 LE)]` → 0. `dp` is the shell's design unit in
 /// pixels (`min(screen w, h) / 360`), so apps size things like the shell does.
@@ -132,6 +134,10 @@ pub const ARG: i32 = 23;
 /// `[]` → 0: the app finished the task it was opened for (a call ended): the server shows the app that opened it, or
 /// the previous running app, or home. The app keeps running.
 pub const DONE: i32 = 24;
+/// `[ms, amplitude]` → 0: a short vibration (a key pad's tick), at most [`HAPTIC_MS_MAX`] ms and amplitude 0..=127.
+/// `KErrNotSupported` on a device without a vibration motor.
+pub const HAPTIC: i32 = 25;
+pub const HAPTIC_MS_MAX: i32 = 50;
 /// The longest launcher key, in bytes.
 pub const KEY_MAX: usize = 16;
 
@@ -200,6 +206,9 @@ pub enum AppEvent {
     /// The user tapped the app's notification `id` ([`NOTIFY`]): `action` 0 is the entry itself, `i + 1` its
     /// action `i`.
     Notified { id: u32, action: u16 },
+    /// The fingers the app had are gone without their lifts (the screen went off, the app lost the front): whatever
+    /// it holds for them (an on-screen key down) is released now.
+    InputReset,
 }
 
 const KIND_TOUCH: u32 = 1;
@@ -219,6 +228,7 @@ const KIND_NOTE_ACTION: u32 = 17;
 const KIND_AREA: u32 = 18;
 const KIND_OPEN: u32 = 19;
 const KIND_NOTIFIED: u32 = 20;
+const KIND_INPUT_RESET: u32 = 21;
 
 impl AppEvent {
     /// `[kind, a, b, c]` as little-endian u32s: touch = (phase | id << 8, x, y), key = (down, code, 0).
@@ -247,6 +257,7 @@ impl AppEvent {
             AppEvent::Area { h } => [KIND_AREA, h, 0, 0],
             AppEvent::Open { page } => [KIND_OPEN, u32::from(page), 0, 0],
             AppEvent::Notified { id, action } => [KIND_NOTIFIED, id, u32::from(action), 0],
+            AppEvent::InputReset => [KIND_INPUT_RESET, 0, 0, 0],
         };
         let mut out = [0u8; EVENT_LEN];
         for (i, v) in w.iter().enumerate() {
@@ -298,6 +309,7 @@ impl AppEvent {
                 id: w(1),
                 action: u16::try_from(w(2)).ok()?,
             },
+            KIND_INPUT_RESET => AppEvent::InputReset,
             _ => return None,
         })
     }
@@ -342,6 +354,7 @@ mod tests {
             AppEvent::Open { page: 0 },
             AppEvent::Open { page: 3 },
             AppEvent::Notified { id: 7, action: 0 },
+            AppEvent::InputReset,
             AppEvent::Notified {
                 id: u32::MAX,
                 action: 2,

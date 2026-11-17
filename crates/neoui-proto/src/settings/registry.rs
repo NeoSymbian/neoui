@@ -212,6 +212,35 @@ registry! {
     /// Every keyboard language as tall as the tallest one on (shorter ones get a digit row); else each its own height.
     KEYBOARD_SAME_HEIGHT: bool = "keyboard.same_height", default DefaultValue::Bool(true), limit Limit::None,
         owner Owner::Shell;
+    /// Settings -> Old apps (the key pads LEGACY draws under an old app; NeoSymbian/legacy host/pad.cpp): a short
+    /// vibration on each key.
+    LEGACY_PAD_VIBRATE: bool = "legacy.pad.vibrate", default DefaultValue::Bool(true), limit Limit::None,
+        owner Owner::Shell;
+    /// The key vibration's strength: 0 light, 1 medium, 2 strong.
+    LEGACY_PAD_STRENGTH: i32 = "legacy.pad.strength", default DefaultValue::Int(1),
+        limit Limit::Range { min: 0, max: 2 }, owner Owner::Shell;
+    /// The pad an app gets on its first open: 0 auto (games the Gamepad, others the Navigator), 1 Navigator,
+    /// 2 Gamepad, 3 Number. Each app then remembers its own (`legacy.<uid>.pad`, written by LEGACY).
+    LEGACY_PAD_DEFAULT: i32 = "legacy.pad.default", default DefaultValue::Int(0),
+        limit Limit::Range { min: 0, max: 3 }, owner Owner::Shell;
+    /// The Gamepad's d-pad sends 0 the arrows (a diagonal holds two), 1 the number keys 1-9.
+    LEGACY_PAD_DIRS: i32 = "legacy.pad.dirs", default DefaultValue::Int(0),
+        limit Limit::Range { min: 0, max: 1 }, owner Owner::Shell;
+    /// The Gamepad's A button sends 0 OK (select), 1 the 5 key.
+    LEGACY_PAD_A: i32 = "legacy.pad.a", default DefaultValue::Int(0),
+        limit Limit::Range { min: 0, max: 1 }, owner Owner::Shell;
+    /// The Gamepad's B button sends 0 the right softkey, 1 the 0 key, 2 the # key.
+    LEGACY_PAD_B: i32 = "legacy.pad.b", default DefaultValue::Int(0),
+        limit Limit::Range { min: 0, max: 2 }, owner Owner::Shell;
+    /// Left-handed Gamepad: the d-pad on the right, A and B on the left.
+    LEGACY_PAD_LEFTY: bool = "legacy.pad.lefty", default DefaultValue::Bool(false), limit Limit::None,
+        owner Owner::Shell;
+    /// A game's first open is in the landscape console (the Gamepad beside the app).
+    LEGACY_PAD_CONSOLE: bool = "legacy.pad.console", default DefaultValue::Bool(false), limit Limit::None,
+        owner Owner::Shell;
+    /// "Reset remembered pads" adds one: LEGACY ignores the per-app pads saved under an older value.
+    LEGACY_PAD_EPOCH: i32 = "legacy.pad.epoch", default DefaultValue::Int(0),
+        limit Limit::Range { min: 0, max: i32::MAX }, owner Owner::Shell;
     /// Settings -> Phone (telephony C8): caller ID on our calls: 0 set by the network, 1 hidden, 2 shown (MODEMD
     /// prefixes `#31#`/`*31#`).
     PHONE_CLIR: i32 = "phone.clir", default DefaultValue::Int(0),
