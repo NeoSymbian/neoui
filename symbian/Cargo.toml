@@ -38,8 +38,8 @@ e32 = { git = "https://github.com/NeoSymbian/e32-rs", rev = "e97e2ebcb242f5365d1
 neoui-proto = { path = "../crates/neoui-proto" }
 slint = { version = "=1.18.1", default-features = false, features = ["compat-1-2", "unsafe-single-threaded", "libm", "renderer-software"] }
 neoapp = { path = "neoapp" }
-modem-ipc = { git = "https://github.com/NeoSymbian/telephony", rev = "e18187a69f7b3c6cf60305430861a0c082ac8283" }
-phone-rules = { git = "https://github.com/NeoSymbian/telephony", rev = "e18187a69f7b3c6cf60305430861a0c082ac8283" }
+modem-ipc = { git = "https://github.com/NeoSymbian/telephony", rev = "452a22ac5442d1976f589c14472ea87c4c6041b5" }
+phone-rules = { git = "https://github.com/NeoSymbian/telephony", rev = "452a22ac5442d1976f589c14472ea87c4c6041b5" }
 neoui-term = { path = "../crates/neoui-term" }
 neoui-files = { path = "../crates/neoui-files" }
 # the kit build helper (@neoui/kit.slint): every app's build.rs compiles its UI with it
