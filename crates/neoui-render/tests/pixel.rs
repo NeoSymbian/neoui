@@ -6,8 +6,6 @@ mod common;
 const SCREENS: &[(&str, &str)] = &[
     ("home", ""),
     ("menu", ""),
-    ("browser", ""),
-    ("browser", "page"),
     ("camera", ""),
     ("photos", ""),
     ("photos", "photo"),

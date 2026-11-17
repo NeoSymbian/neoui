@@ -35,7 +35,6 @@ import { PowerMenu } from "components/powermenu.slint";
 import { HomeScreen } from "screens/home.slint";
 import { MenuScreen } from "screens/menu.slint";
 import { OldAppsScreen, OldApp } from "screens/oldapps.slint";
-import { BrowserScreen } from "screens/browser.slint";
 import { CameraScreen } from "screens/camera.slint";
 import { PhotosScreen } from "screens/photos.slint";
 import { MusicScreen } from "screens/music.slint";
@@ -371,13 +370,6 @@ export component Shell inherits Window {
             active: screen == "menu";
             MenuScreen {
                 open-app(a) => { root.open(a); }
-            }
-        }
-
-        Slot {
-            active: screen == "browser";
-            BrowserScreen {
-                view <=> root.view;
             }
         }
 
