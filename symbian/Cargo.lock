@@ -2770,6 +2770,11 @@ dependencies = [
 ]
 
 [[package]]
+name = "neoaudio"
+version = "0.1.0"
+source = "git+https://github.com/NeoSymbian/telephony?rev=29017af255044ca9de1745b79e3bbd8c9446d5c7#29017af255044ca9de1745b79e3bbd8c9446d5c7"
+
+[[package]]
 name = "neoclock"
 version = "0.1.0"
 dependencies = [
@@ -2787,6 +2792,7 @@ dependencies = [
  "e32",
  "modem-ipc",
  "neoapp",
+ "neoaudio",
  "neoui-kit",
  "neoui-proto",
  "slint",

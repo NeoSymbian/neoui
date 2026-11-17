@@ -9,7 +9,7 @@ use alloc::vec::Vec;
 use e32::display::Display;
 use e32::fs::{File, Fs, Volume};
 use e32::ipc::{Session, TIpcArgs, TVersion};
-use e32::sys::TPtr8;
+use e32::sys::{TPtr8, TPtrC8};
 use e32::{dprintln, time};
 use modem_ipc::{Status, op};
 use neoapp::{hal, sys};
@@ -339,6 +339,11 @@ pub fn actions(key: &str) -> Vec<&'static str> {
             "Loopback: mic to the loudspeaker",
             "Loopback: mic to the earpiece",
             "Stop the loopback",
+            "NeoAudio: play a tone",
+            "NeoAudio: play two tones mixed",
+            "NeoAudio: media on both speakers",
+            "NeoAudio: media on the bottom speaker",
+            "NeoAudio: media on the earpiece",
         ][..],
         "modem" => &["Refresh the status"][..],
         _ => &[][..],
@@ -510,6 +515,110 @@ pub fn audio_test(what: i32) -> String {
     };
     dprintln!("devtools: audio test {} -> {} ({})", what, r, text);
     text
+}
+
+fn audio_session() -> Result<Session, i32> {
+    let (major, minor, build) = neoaudio::VERSION;
+    Session::connect(
+        neoaudio::NAME,
+        TVersion {
+            major: major as u8,
+            minor: minor as u8,
+            build: build as u16,
+        },
+    )
+}
+
+/// NeoAudio's playback test (docs/audio.md): each tone plays 3 s on its own thread and stream; the result goes to the
+/// log ("devtools: neoaudio ..."). 1 = 440 Hz at 44.1 kHz stereo; 2 = that and 660 Hz at 22.05 kHz mono together.
+pub fn neoaudio_play(what: i32) -> String {
+    let tones: &[(u32, u32, u32)] = if what == 2 {
+        &[(440, 44_100, 2), (660, 22_050, 1)]
+    } else {
+        &[(440, 44_100, 2)]
+    };
+    for &(freq, rate, channels) in tones {
+        if let Err(e) = e32::thread::spawn(move || play_tone(freq, rate, channels)) {
+            return format!("no thread for the tone ({e})");
+        }
+    }
+    String::from("playing for 3 s through NeoAudio (the result is in the log)")
+}
+
+fn play_tone(freq: u32, rate: u32, channels: u32) -> i32 {
+    let s = match audio_session() {
+        Ok(s) => s,
+        Err(e) => {
+            dprintln!("devtools: neoaudio: no service ({})", e);
+            return e;
+        }
+    };
+    let mut a = TIpcArgs::new();
+    a.int(0, rate as i32).int(1, channels as i32).int(2, 0);
+    if let Err(e) = s.send_receive(neoaudio::op::OPEN, &a) {
+        dprintln!(
+            "devtools: neoaudio: open {} Hz x{} -> {}",
+            rate,
+            channels,
+            e
+        );
+        return e;
+    }
+    let pcm = neoaudio::tone(freq, 3_000, rate, channels, 8_000);
+    let t0 = time::millis();
+    for chunk in pcm.chunks(8_192) {
+        let des = TPtrC8::new(chunk);
+        let mut a = TIpcArgs::new();
+        a.desc8(0, &des);
+        if let Err(e) = s.send_receive(neoaudio::op::WRITE, &a) {
+            dprintln!("devtools: neoaudio: write -> {}", e);
+            return e;
+        }
+    }
+    // the queue plays out
+    let mut info = neoaudio::Info::default();
+    for _ in 0..100 {
+        let mut b = [0u8; neoaudio::Info::SIZE];
+        let mut des = TPtr8::new(&mut b);
+        let mut a = TIpcArgs::new();
+        a.des8(0, &mut des);
+        if s.send_receive(neoaudio::op::INFO, &a).is_ok() {
+            info = neoaudio::Info::from_bytes(&b).unwrap_or_default();
+        }
+        if info.queued == 0 {
+            break;
+        }
+        time::sleep(50_000);
+    }
+    time::sleep(100_000); // the resampler's last frames
+    dprintln!(
+        "devtools: neoaudio {} Hz ({} Hz x{}) done in {} ms: {} frames, {} underruns, sink {}",
+        freq,
+        rate,
+        channels,
+        time::millis() - t0,
+        info.frames,
+        info.underruns,
+        if info.sink == neoaudio::sink::DSP {
+            "dsp"
+        } else {
+            "clock"
+        }
+    );
+    0
+}
+
+/// NeoAudio's media route: where media plays when there is no call.
+pub fn neoaudio_route(route: i32) -> String {
+    let r = audio_session().and_then(|s| {
+        let mut a = TIpcArgs::new();
+        a.int(0, route);
+        s.send_receive(neoaudio::op::ROUTE, &a)
+    });
+    match r {
+        Ok(_) => String::from("media route set"),
+        Err(e) => format!("no NeoAudio ({e})"),
+    }
 }
 
 /// Writes 1 MB to C: in 64 KB blocks, reads it back, deletes it: the speeds.
