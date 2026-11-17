@@ -197,6 +197,8 @@ fn main() -> i32 {
         let mut to_app = false;
         // fingers after the first: the app's when they go down in its area (an old app's key pad)
         let mut fingers = neoui_proto::Fingers::default();
+        // the app those fingers went down in: they are dropped when another app comes to the front
+        let mut fingers_app: Option<&'static str> = None;
         // the press of the last release, for the frame that shows it (one frame may show several taps)
         let mut tap_end = None;
         // the next frame's start, and whether something waits for it
@@ -318,14 +320,13 @@ fn main() -> i32 {
                     };
                     let ms = time::millis();
                     let mut routed = Vec::with_capacity(evs.len());
-                    let mut extra = Vec::new();
                     for ev in evs {
                         let InputEvent::Touch { id, x, y, phase } = ev else {
                             routed.push(ev);
                             continue;
                         };
                         if id != 0 {
-                            extra.push(ev); // gestures and the shell's widgets follow the first finger only
+                            routed.push(ev); // gestures follow the first finger only; in order with it (below)
                             continue;
                         }
                         match gest.feed(phase, x, y, ms, live) {
@@ -365,6 +366,31 @@ fn main() -> i32 {
                     for event in evs {
                         let app_on_screen = host.front().is_some() && !phone.modal();
                         match event {
+                            // fingers after the first: the app's when they press in it (the shell's widgets and
+                            // gestures follow finger 0 only), until they lift or another app comes to the front
+                            InputEvent::Touch { id, x, y, phase } if id != 0 => {
+                                let front = host.front().map(|a| a.key);
+                                if fingers_app.is_some() && fingers_app != front {
+                                    fingers.take(); // the app they pressed in went away: Visible(false) told it
+                                }
+                                let in_app = front.is_some()
+                                    && !phone.modal()
+                                    && !power_menu
+                                    && !ui.overlay_open()
+                                    && contains(&host.app_area(), x, y);
+                                if phase == TouchPhase::Down && in_app {
+                                    fingers_app = front;
+                                }
+                                if fingers.route(id, phase, in_app) {
+                                    let body = host.surface_rect();
+                                    host.send(AppEvent::Input(InputEvent::Touch {
+                                        id,
+                                        x: x - body.x,
+                                        y: y - body.y,
+                                        phase,
+                                    }));
+                                }
+                            }
                             InputEvent::Touch { id, x, y, phase } => {
                                 let body = host.surface_rect();
                                 if phase == TouchPhase::Down {
@@ -483,25 +509,6 @@ fn main() -> i32 {
                                 host.send(AppEvent::Input(event))
                             }
                             InputEvent::Key { .. } => ui.dispatch(event),
-                        }
-                    }
-                    coalesce_moves(&mut extra);
-                    for ev in extra {
-                        if let InputEvent::Touch { id, x, y, phase } = ev {
-                            let in_app = host.front().is_some()
-                                && !phone.modal()
-                                && !power_menu
-                                && !ui.overlay_open()
-                                && contains(&host.app_area(), x, y);
-                            if fingers.route(id, phase, in_app) {
-                                let body = host.surface_rect();
-                                host.send(AppEvent::Input(InputEvent::Touch {
-                                    id,
-                                    x: x - body.x,
-                                    y: y - body.y,
-                                    phase,
-                                }));
-                            }
                         }
                     }
                 }
