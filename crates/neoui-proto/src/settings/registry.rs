@@ -173,6 +173,9 @@ registry! {
     /// Where media plays: 0 both speakers, 1 the earpiece, 2 the bottom speaker (NeoAudio's route).
     SOUND_MEDIA_ROUTE: i32 = "sound.media_route", default DefaultValue::Int(0),
         limit Limit::Range { min: 0, max: 2 }, owner Owner::Shell;
+    /// The microphone recordings use: 0 the main one (calls use it), 1 the second (NeoAudio's MIC).
+    SOUND_MIC: i32 = "sound.mic", default DefaultValue::Int(0),
+        limit Limit::Range { min: 0, max: 1 }, owner Owner::Shell;
     /// Dark theme.
     DISPLAY_DARK: bool = "display.dark", default DefaultValue::Bool(true), limit Limit::None, owner Owner::Shell;
     /// Screen brightness, 0 (dimmest) to 255; the UI server sends it to the panel (display HAL, 0..1023).

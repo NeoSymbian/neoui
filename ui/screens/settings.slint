@@ -475,6 +475,12 @@ export component SettingsScreen inherits Rectangle {
                 value: SystemSettings.media-route == 1 ? "Earpiece" : SystemSettings.media-route == 2 ? "Bottom speaker" : "Both speakers";
                 clicked => { SystemSettings.media-route = Math.mod(SystemSettings.media-route + 1, 3); }
             }
+            ListRow {
+                title: "Microphone";
+                value: SystemSettings.mic == 1 ? "Second" : "Main";
+                subtitle: "For recordings (calls use the main one)";
+                clicked => { SystemSettings.mic = 1 - SystemSettings.mic; }
+            }
             HorizontalLayout {
                 padding-left: Theme.margin;
                 padding-right: Theme.margin;

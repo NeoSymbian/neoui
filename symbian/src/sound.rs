@@ -19,8 +19,8 @@ use neoui_render::Renderer;
 type State = &'static Mutex<i32>;
 
 pub struct Sound {
-    /// the (volume, route) NeoAudio has
-    applied: Option<(i32, i32)>,
+    /// the (volume, route, mic) NeoAudio has
+    applied: Option<(i32, i32, i32)>,
     retry_at: u64,
     state: Option<State>,
     shown: i32,
@@ -65,15 +65,22 @@ impl Sound {
                 .get(keys::SOUND_MEDIA_ROUTE)
                 .unwrap_or(0)
                 .clamp(0, 2),
+            settings.get(keys::SOUND_MIC).unwrap_or(0).clamp(0, 1),
         );
         if self.applied != Some(want) && now >= self.retry_at {
             let r = session().and_then(|s| {
                 call(&s, neoaudio::op::MASTER, want.0)?;
-                call(&s, neoaudio::op::ROUTE, want.1)
+                call(&s, neoaudio::op::ROUTE, want.1)?;
+                call(&s, neoaudio::op::MIC, want.2)
             });
             match r {
                 Ok(_) => {
-                    dprintln!("neoui: media volume {} route {}", want.0, want.1);
+                    dprintln!(
+                        "neoui: media volume {} route {} mic {}",
+                        want.0,
+                        want.1,
+                        want.2
+                    );
                     self.applied = Some(want);
                 }
                 Err(_) => self.retry_at = now + 2_000, // MODEMD not up yet
