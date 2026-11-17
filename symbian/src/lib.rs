@@ -272,6 +272,9 @@ fn main() -> i32 {
                                 };
                                 if let Some(c) = change {
                                     set_screen(c, &mut host.refresh);
+                                    if c == screen::Change::Off && core::mem::take(&mut to_app) {
+                                        host.send(AppEvent::InputReset); // its finger's lift never comes
+                                    }
                                 }
                             }
                             Ok(ev)
@@ -502,7 +505,9 @@ fn main() -> i32 {
                 transition = None;
                 swipe = None;
                 home_press = None;
-                to_app = false;
+                if core::mem::take(&mut to_app) {
+                    host.send(AppEvent::InputReset); // the call took the screen from under its finger
+                }
             }
             // a gesture under way ends when the screen changes under it (a call, an alarm, the PIN prompt)
             if modal || ui.screen() != screen {
@@ -715,6 +720,9 @@ fn main() -> i32 {
             };
             if let Some(c) = woke.or_else(|| scr.tick(ms, timeout, phone.in_call() || power_menu)) {
                 set_screen(c, &mut host.refresh);
+                if c == screen::Change::Off && core::mem::take(&mut to_app) {
+                    host.send(AppEvent::InputReset);
+                }
             }
             if panel_max > 0 && scr.is_on() {
                 let want = screen::panel_level(
@@ -1157,6 +1165,14 @@ fn key_char(scan: i32) -> Option<char> {
         0x41..=0x5A => char::from_u32(scan as u32 + 0x20),
         _ => None,
     }
+}
+
+/// A short vibration (HAPTIC: the old apps' key pads): the kernel's `EHalGroupVariant` 0x4e27 (`qcom_telhal.cpp`,
+/// `{ms, amplitude}`, CommDD). `KErrNotSupported` where there is no motor (QEMU).
+pub(crate) fn haptic(ms: u32, amp: u32) -> i32 {
+    let mut io = [ms, amp, 0u32, 0u32];
+    // SAFETY: the function reads a 4-word {a, b, len, buf} block from a1 (len 0: no buffer); a2 is unused.
+    unsafe { e32::sys::ui::hal_function(1, 0x4e27, io.as_mut_ptr().cast(), core::ptr::null_mut()) }
 }
 
 /// The panel's highest brightness level (display HAL), or 0 when it has none (QEMU).

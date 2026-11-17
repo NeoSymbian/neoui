@@ -148,10 +148,11 @@ impl App {
         })
     }
 
-    /// The legacy bridge (a launcher, no kit): the shell draws a header over it; ⋮ when it claimed Options.
+    /// The legacy bridge (a launcher, no kit): the shell draws a header over it until it declares a page (an old
+    /// app in front: its key pad has the softkeys); ⋮ when it claimed Options.
     pub fn legacy(&self) -> (bool, bool) {
         (
-            LAUNCHERS.contains(&self.key),
+            LAUNCHERS.contains(&self.key) && self.declared.is_none(),
             self.nav & proto::NAV_OPTIONS != 0,
         )
     }
@@ -1057,6 +1058,11 @@ impl Service for Host {
                         .map(|()| core::mem::take(&mut app.arg).len() as i32)
                 };
                 m.complete(r.unwrap_or_else(|e| e));
+            }
+            proto::HAPTIC => {
+                let ms = m.int(0).clamp(0, proto::HAPTIC_MS_MAX);
+                let amp = m.int(1).clamp(0, 127);
+                m.complete(crate::haptic(ms as u32, amp as u32));
             }
             proto::DONE => {
                 // only the app in front can hand the screen back

@@ -35,6 +35,23 @@ macro_rules! bool_binding {
     };
 }
 
+/// An `i32` setting shown by an `int` property.
+macro_rules! int_binding {
+    ($key:expr, $get:ident, $set:ident) => {
+        Binding {
+            key: key_name::<i32>($key),
+            read: |g| Value::Int(g.$get()),
+            write: |g, v| match v {
+                Value::Int(i) => {
+                    g.$set(*i);
+                    true
+                }
+                _ => false,
+            },
+        }
+    };
+}
+
 const fn key_name<T: Setting>(key: Key<T>) -> &'static str {
     key.name()
 }
@@ -53,6 +70,43 @@ fn brightness_to_slider(level: i32) -> f32 {
 
 /// Every setting the shell shows.
 pub(crate) static BINDINGS: &[Binding] = &[
+    bool_binding!(
+        keys::LEGACY_PAD_VIBRATE,
+        get_legacy_pad_vibrate,
+        set_legacy_pad_vibrate
+    ),
+    int_binding!(
+        keys::LEGACY_PAD_STRENGTH,
+        get_legacy_pad_strength,
+        set_legacy_pad_strength
+    ),
+    int_binding!(
+        keys::LEGACY_PAD_DEFAULT,
+        get_legacy_pad_default,
+        set_legacy_pad_default
+    ),
+    int_binding!(
+        keys::LEGACY_PAD_DIRS,
+        get_legacy_pad_dirs,
+        set_legacy_pad_dirs
+    ),
+    int_binding!(keys::LEGACY_PAD_A, get_legacy_pad_a, set_legacy_pad_a),
+    int_binding!(keys::LEGACY_PAD_B, get_legacy_pad_b, set_legacy_pad_b),
+    bool_binding!(
+        keys::LEGACY_PAD_LEFTY,
+        get_legacy_pad_lefty,
+        set_legacy_pad_lefty
+    ),
+    bool_binding!(
+        keys::LEGACY_PAD_CONSOLE,
+        get_legacy_pad_console,
+        set_legacy_pad_console
+    ),
+    int_binding!(
+        keys::LEGACY_PAD_EPOCH,
+        get_legacy_pad_epoch,
+        set_legacy_pad_epoch
+    ),
     bool_binding!(keys::RADIO_WIFI, get_wifi, set_wifi),
     bool_binding!(keys::RADIO_BT, get_bluetooth, set_bluetooth),
     bool_binding!(keys::RADIO_DATA, get_mobile_data, set_mobile_data),

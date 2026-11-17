@@ -39,6 +39,16 @@ export global SystemSettings {
     in-out property <bool> keyboard-ru: true;
     in-out property <int> keyboard-layout: 0;
     in-out property <bool> keyboard-same-height: true;
+    // Settings -> Old apps: the key pads under old apps (LEGACY reads legacy.pad.*)
+    in-out property <bool> legacy-pad-vibrate: true;
+    in-out property <int> legacy-pad-strength: 1;
+    in-out property <int> legacy-pad-default: 0;
+    in-out property <int> legacy-pad-dirs: 0;
+    in-out property <int> legacy-pad-a: 0;
+    in-out property <int> legacy-pad-b: 0;
+    in-out property <bool> legacy-pad-lefty: false;
+    in-out property <bool> legacy-pad-console: false;
+    in-out property <int> legacy-pad-epoch: 0;
 
     // A setting changed in the UI (its registry key); the server reads the property and stores it.
     callback edited(string);
@@ -66,4 +76,13 @@ export global SystemSettings {
     changed keyboard-ru => { edited("keyboard.ru"); }
     changed keyboard-layout => { edited("keyboard.layout"); }
     changed keyboard-same-height => { edited("keyboard.same_height"); }
+    changed legacy-pad-vibrate => { edited("legacy.pad.vibrate"); }
+    changed legacy-pad-strength => { edited("legacy.pad.strength"); }
+    changed legacy-pad-default => { edited("legacy.pad.default"); }
+    changed legacy-pad-dirs => { edited("legacy.pad.dirs"); }
+    changed legacy-pad-a => { edited("legacy.pad.a"); }
+    changed legacy-pad-b => { edited("legacy.pad.b"); }
+    changed legacy-pad-lefty => { edited("legacy.pad.lefty"); }
+    changed legacy-pad-console => { edited("legacy.pad.console"); }
+    changed legacy-pad-epoch => { edited("legacy.pad.epoch"); }
 }
