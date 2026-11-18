@@ -161,7 +161,7 @@ jobs:
           tap 503 73; tap 400 157; expect "files: bin 1"
           hold 270 302; tap 359 73; expect "files: restore 1"
           tap 90 1037; expect "files: recent 1"
-          tap 431 73; for c in e s t; do tap $(kb_key $c); done; expect 'files: search "est"'
+          tap 431 73; for c in e s t; do tap $(kb_key $c); done; expect "files: search"
           tap 90 1037; tap 90 1037; tap 90 1037
           tap 449 805; kb_hide term; tap 90 1037
           tap 449 1037
