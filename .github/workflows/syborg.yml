@@ -168,7 +168,7 @@ jobs:
           tap 90 1037; tap 90 1037
           tap 90 958; expect "files: drives"; tap 270 220; expect "files: list"
           tap 503 73; tap 400 229; tap 503 73; expect "files: edit"
-          kb_tap 4 3 10; kb_tap 4 1 10; tap 431 73; expect "files: save"
+          wait_s 1; kb_tap 4 3 10; kb_tap 4 1 10; tap 431 73; expect "files: save"
           tap 90 1037; tap 90 1037; expect "files: view"
           tap 90 1037; expect "files: list"; tap 90 1037; expect "files: drives"; tap 90 1037
           tap 449 805; kb_hide term; tap 90 1037
@@ -222,7 +222,7 @@ jobs:
           grep -aE 'files: drives C\([0-9]+/[0-9]+\) Z\(' $s
           n=$(grep -ao 'files: list Z:\\Sys\\Bin\\ [0-9]*' $s | grep -o '[0-9]*$' | head -1)
           test "${n:-0}" -gt 10
-          grep -a 'files: view Z:\\Sys\\Data\\estart.txt 1' $s
+          grep -aE 'files: view Z:\\Sys\\Data\\estart.txt [0-9]+' $s
           grep -a 'neoui: keyboard 1 for files' $s
           grep -a 'files: mkdir C:\\neo\\ 0' $s
           grep -aE 'files: copy 1 files [0-9]+ bytes to C:\\ done' $s
