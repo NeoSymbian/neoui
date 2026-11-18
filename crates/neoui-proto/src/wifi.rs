@@ -270,58 +270,6 @@ impl Link {
     }
 }
 
-/// Networks the phone joined before, newest first: SSID and PMK (the password's hash, never the password), kept by
-/// the UI server in its private directory. Encoding: per network `{ssid length, ssid, pmk 32}`.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct Saved(pub Vec<(Vec<u8>, [u8; 32])>);
-
-impl Saved {
-    /// How many networks are remembered; the oldest is forgotten past this
-    pub const MAX: usize = 8;
-
-    pub fn decode(mut b: &[u8]) -> Self {
-        let mut v = Vec::new();
-        while let Some((&n, rest)) = b.split_first() {
-            let n = n as usize;
-            if n == 0 || n > 32 || rest.len() < n + 32 || v.len() == Self::MAX {
-                break; // a damaged tail is dropped, the networks before it kept
-            }
-            v.push((rest[..n].to_vec(), rest[n..n + 32].try_into().unwrap()));
-            b = &rest[n + 32..];
-        }
-        Saved(v)
-    }
-
-    pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::new();
-        for (ssid, pmk) in &self.0 {
-            b.push(ssid.len() as u8);
-            b.extend_from_slice(ssid);
-            b.extend_from_slice(pmk);
-        }
-        b
-    }
-
-    pub fn pmk(&self, ssid: &[u8]) -> Option<[u8; 32]> {
-        self.0.iter().find(|(s, _)| s == ssid).map(|(_, p)| *p)
-    }
-
-    /// Forget a network (Settings -> Wi-Fi -> its details -> Forget)
-    pub fn forget(&mut self, ssid: &[u8]) {
-        self.0.retain(|(s, _)| s != ssid);
-    }
-
-    /// Remember (or refresh) a network as the newest
-    pub fn remember(&mut self, ssid: &[u8], pmk: [u8; 32]) {
-        if ssid.is_empty() || ssid.len() > 32 {
-            return;
-        }
-        self.0.retain(|(s, _)| s != ssid);
-        self.0.insert(0, (ssid.to_vec(), pmk));
-        self.0.truncate(Self::MAX);
-    }
-}
-
 fn mac_text(b: &[u8; 6]) -> String {
     format!(
         "{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
@@ -561,31 +509,6 @@ mod tests {
         assert_eq!(Link::decode(&b), None);
         assert_eq!(Link::decode(&link(9, 0, 0, &[])), None);
         assert_eq!(Link::decode(&[1, 0, 0]), None);
-    }
-
-    #[test]
-    fn saved_networks() {
-        let mut s = Saved::default();
-        s.remember(b"home", [1; 32]);
-        s.remember(b"cafe", [2; 32]);
-        s.remember(b"home", [3; 32]);
-        assert_eq!(s.0.len(), 2);
-        assert_eq!(
-            (s.pmk(b"home"), s.pmk(b"cafe"), s.pmk(b"x")),
-            (Some([3; 32]), Some([2; 32]), None)
-        );
-        let mut b = s.encode();
-        assert_eq!(Saved::decode(&b), s);
-        b.push(200); // a damaged tail
-        assert_eq!(Saved::decode(&b), s);
-        for i in 0..20u8 {
-            s.remember(&[b'n', i], [i; 32]);
-        }
-        assert_eq!((s.0.len(), &s.0[0].0[..]), (Saved::MAX, &[b'n', 19][..]));
-        s.remember(&[], [0; 32]);
-        assert_eq!(s.0.len(), Saved::MAX);
-        s.forget(&[b'n', 19]);
-        assert_eq!((s.0.len(), s.pmk(&[b'n', 19])), (Saved::MAX - 1, None));
     }
 
     #[test]
