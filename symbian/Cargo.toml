@@ -42,7 +42,7 @@ slint = { version = "=1.18.1", default-features = false, features = ["compat-1-2
 neoapp = { path = "neoapp" }
 modem-ipc = { git = "https://github.com/NeoSymbian/telephony", rev = "4095a4b7f34359fe8df25cd0e18e81c15be719c9" }
 # NeoAudio's contract and tone helper (docs/audio.md; Apache-2.0)
-neoaudio = { git = "https://github.com/NeoSymbian/telephony", rev = "eec7db1638d3b3d9e0e1276e9586b0dabd999929" }
+neoaudio = { git = "https://github.com/NeoSymbian/telephony", rev = "7cc0b6d373c8a7895a74a9050bdc50a0cf3eb51b" }
 phone-rules = { git = "https://github.com/NeoSymbian/telephony", rev = "4095a4b7f34359fe8df25cd0e18e81c15be719c9" }
 neoui-term = { path = "../crates/neoui-term" }
 # the kit build helper (@neoui/kit.slint): every app's build.rs compiles its UI with it
