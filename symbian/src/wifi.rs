@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! Settings -> Wi-Fi: the kernel's scan results (docs wifi.md W3), scanned the way phones do it:
+//! Settings -> Wi-Fi: the kernel's scan results (docs hardware/wifi.md W3), scanned the way phones do it:
 //! - opening the Wi-Fi page scans at once unless the list is fresh (under 30 s old);
 //! - while the page is open it rescans every 30 s, and its refresh button scans now;
 //! - nothing is scanned while the page is closed (the Settings root only shows the last list).

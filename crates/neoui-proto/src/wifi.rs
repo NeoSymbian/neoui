@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Wi-Fi scan results from the kernel (HAL WlanScan 0x4e1e, kernel qcom_wcn3990.cpp; docs wifi.md W3):
+//! Wi-Fi scan results from the kernel (HAL WlanScan 0x4e1e, kernel qcom_wcn3990.cpp; docs hardware/wifi.md W3):
 //! `{version 1, state, count, scans % 256}` then per network `{bssid 6, channel, dBm (i8), flags (1 secured),
 //! ssid length, ssid 32}`.
 //! The join's status (HAL WlanLink 0x4e1f, W4): [`Link`].
@@ -184,7 +184,7 @@ impl Scan {
     }
 }
 
-/// Where the join is (HAL WlanLink 0x4e1f op 3, docs wifi.md W4)
+/// Where the join is (HAL WlanLink 0x4e1f op 3, docs hardware/wifi.md W4)
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum LinkState {
     #[default]
@@ -338,7 +338,7 @@ pub enum Internet {
     NoAccess,
 }
 
-/// The IP side of the link, from NEONET's status (docs wifi.md W5). `address` = `None` until DHCP gave one.
+/// The IP side of the link, from NEONET's status (docs hardware/wifi.md W5). `address` = `None` until DHCP gave one.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Ip {
     pub address: Option<([u8; 4], u8)>,

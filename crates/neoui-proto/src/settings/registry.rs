@@ -167,7 +167,7 @@ registry! {
     /// C7 built-in ringtone volume, matching NeoModem's 0..=10 steps.
     SOUND_RING_VOLUME: i32 = "sound.ring_volume", default DefaultValue::Int(8),
         limit Limit::Range { min: 0, max: 10 }, owner Owner::Shell;
-    /// Media volume (NeoAudio's amp volume, docs/audio.md): 0..=10; the volume keys outside a call.
+    /// Media volume (NeoAudio's amp volume, docs/hardware/audio.md): 0..=10; the volume keys outside a call.
     SOUND_MEDIA_VOLUME: i32 = "sound.media_volume", default DefaultValue::Int(7),
         limit Limit::Range { min: 0, max: 10 }, owner Owner::Shell;
     /// Where media plays: 0 both speakers, 1 the earpiece, 2 the bottom speaker (NeoAudio's route).
