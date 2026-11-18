@@ -530,7 +530,7 @@ fn audio_session() -> Result<Session, i32> {
     )
 }
 
-/// NeoAudio's playback test (docs/audio.md): each tone plays 3 s on its own thread and stream; the result goes to the
+/// NeoAudio's playback test (docs/hardware/audio.md): each tone plays 3 s on its own thread and stream; the result goes to the
 /// log ("devtools: neoaudio ..."). 1 = 440 Hz at 44.1 kHz stereo; 2 = that and 660 Hz at 22.05 kHz mono together.
 pub fn neoaudio_play(what: i32) -> String {
     let tones: &[(u32, u32, u32)] = if what == 2 {
@@ -613,7 +613,7 @@ fn play_tone(freq: u32, ms: u32, rate: u32, channels: u32) -> i32 {
     0
 }
 
-/// Which RT5514 input is the top microphone (docs/audio.md A7): a 1 kHz tone on the earpiece (top), then on the
+/// Which RT5514 input is the top microphone (docs/hardware/audio.md A7): a 1 kHz tone on the earpiece (top), then on the
 /// bottom speaker, recorded by DMIC1 and DMIC2 in turn; the mic closer to a speaker hears it louder. Four RMS levels
 /// go to the log ("devtools: mics ..."); the route and the mic go back to both speakers and DMIC1.
 pub fn neoaudio_find_mics() -> String {

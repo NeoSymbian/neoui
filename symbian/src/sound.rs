@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! Settings -> Sound -> Media (docs/audio.md A6): the media volume and route go to NeoAudio (MODEMD), the volume keys
+//! Settings -> Sound -> Media (docs/hardware/audio.md A6): the media volume and route go to NeoAudio (MODEMD), the volume keys
 //! set the media volume outside a call, and the test buttons play a test sound or record 5 s and play it back, on a
 //! thread of their own (the UI keeps running), reporting through a shared state the main loop shows.
 use crate::settings::Settings;

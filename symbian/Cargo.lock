@@ -2610,7 +2610,7 @@ dependencies = [
 [[package]]
 name = "modem-ipc"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/telephony?rev=4095a4b7f34359fe8df25cd0e18e81c15be719c9#4095a4b7f34359fe8df25cd0e18e81c15be719c9"
+source = "git+https://github.com/NeoSymbian/neohw?rev=4095a4b7f34359fe8df25cd0e18e81c15be719c9#4095a4b7f34359fe8df25cd0e18e81c15be719c9"
 
 [[package]]
 name = "moxcms"
@@ -2772,7 +2772,7 @@ dependencies = [
 [[package]]
 name = "neoaudio"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/telephony?rev=7cc0b6d373c8a7895a74a9050bdc50a0cf3eb51b#7cc0b6d373c8a7895a74a9050bdc50a0cf3eb51b"
+source = "git+https://github.com/NeoSymbian/neohw?rev=7cc0b6d373c8a7895a74a9050bdc50a0cf3eb51b#7cc0b6d373c8a7895a74a9050bdc50a0cf3eb51b"
 
 [[package]]
 name = "neoclock"
@@ -2862,7 +2862,7 @@ version = "0.1.0"
 [[package]]
 name = "net"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/neolink?rev=fe8ade0dde23e20ecd8067f819c4d7023c57729d#fe8ade0dde23e20ecd8067f819c4d7023c57729d"
+source = "git+https://github.com/NeoSymbian/neohw?rev=fe8ade0dde23e20ecd8067f819c4d7023c57729d#fe8ade0dde23e20ecd8067f819c4d7023c57729d"
 dependencies = [
  "e32",
  "heapless",
@@ -3411,7 +3411,7 @@ checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 [[package]]
 name = "phone-rules"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/telephony?rev=4095a4b7f34359fe8df25cd0e18e81c15be719c9#4095a4b7f34359fe8df25cd0e18e81c15be719c9"
+source = "git+https://github.com/NeoSymbian/neohw?rev=4095a4b7f34359fe8df25cd0e18e81c15be719c9#4095a4b7f34359fe8df25cd0e18e81c15be719c9"
 
 [[package]]
 name = "pico-args"
@@ -5362,7 +5362,7 @@ dependencies = [
 [[package]]
 name = "wpa"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/neolink?rev=fe8ade0dde23e20ecd8067f819c4d7023c57729d#fe8ade0dde23e20ecd8067f819c4d7023c57729d"
+source = "git+https://github.com/NeoSymbian/neohw?rev=fe8ade0dde23e20ecd8067f819c4d7023c57729d#fe8ade0dde23e20ecd8067f819c4d7023c57729d"
 dependencies = [
  "aes-kw",
  "hmac",

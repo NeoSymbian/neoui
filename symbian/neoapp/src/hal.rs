@@ -177,7 +177,7 @@ pub fn battery() -> Result<neoui_proto::battery::Snapshot, i32> {
     neoui_proto::battery::Snapshot::decode(&buf[..n]).ok_or(-20)
 }
 
-/// The latest Wi-Fi scan (kernel HAL WlanScan 0x4e1e, docs wifi.md W3); `rescan` asks the driver for a new one.
+/// The latest Wi-Fi scan (kernel HAL WlanScan 0x4e1e, docs hardware/wifi.md W3); `rescan` asks the driver for a new one.
 ///
 /// # Errors
 /// The HAL's error (-5 without Wi-Fi, e.g. on QEMU).
@@ -201,7 +201,7 @@ pub fn wifi_scan(rescan: bool) -> Result<neoui_proto::wifi::Scan, i32> {
     neoui_proto::wifi::Scan::decode(&buf[..n]).ok_or(-20)
 }
 
-/// One Wi-Fi link operation (kernel HAL WlanLink 0x4e1f, docs wifi.md W4): a1 = the op, a2 = a TDes8 the kernel
+/// One Wi-Fi link operation (kernel HAL WlanLink 0x4e1f, docs hardware/wifi.md W4): a1 = the op, a2 = a TDes8 the kernel
 /// reads (join, send, key) or fills (status, recv). `buf` holds the input, or is the output's room.
 fn wifi_link(op: usize, buf: &mut [u8], input: bool) -> Result<usize, i32> {
     let mut des = if input {
