@@ -179,6 +179,9 @@ export component Shell inherits Window {
     in property <bool> wifi-scanning;
     // the Wi-Fi page's refresh button (symbian/src/wifi.rs scans at once)
     callback wifi-refresh();
+    // Sound -> Media's test buttons and what they report (symbian/src/sound.rs)
+    callback sound-action(string);
+    in property <string> sound-feedback;
     // Connect on a network's sheet (BSSID, password) and how that join is going (symbian/src/wifi.rs)
     callback wifi-connect(string, string);
     in property <string> wifi-message;
@@ -430,6 +433,8 @@ export component Shell inherits Window {
                 wifi-hidden: root.wifi-hidden;
                 wifi-scanning: root.wifi-scanning;
                 wifi-refresh => { root.wifi-refresh(); }
+                sound-action(a) => { root.sound-action(a); }
+                sound-feedback: root.sound-feedback;
                 wifi-connect(b, p) => { root.wifi-connect(b, p); }
                 wifi-message: root.wifi-message;
                 wifi-link: root.wifi-link;

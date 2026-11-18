@@ -88,6 +88,23 @@ pub fn bind(ctx: &Rc<Ctx>, s: &DevState<'_>) {
                 };
                 c.model.borrow_mut().dev_result = probe::audio_test(what);
             }
+            Some("NeoAudio: find the microphones") => {
+                c.model.borrow_mut().dev_result = probe::neoaudio_find_mics();
+            }
+            Some(a) if a.starts_with("NeoAudio: play") => {
+                c.model.borrow_mut().dev_result =
+                    probe::neoaudio_play(if a.contains("two") { 2 } else { 1 });
+            }
+            Some(a) if a.starts_with("NeoAudio: media") => {
+                let route = if a.ends_with("earpiece") {
+                    neoaudio::route::EARPIECE
+                } else if a.ends_with("bottom speaker") {
+                    neoaudio::route::BOTTOM
+                } else {
+                    neoaudio::route::SPEAKER
+                };
+                c.model.borrow_mut().dev_result = probe::neoaudio_route(route);
+            }
             Some("Refresh the status") => {
                 c.refresh_devices();
                 c.model.borrow_mut().dev_result = String::from("refreshed");

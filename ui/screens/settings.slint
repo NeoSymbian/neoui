@@ -213,6 +213,9 @@ export component SettingsScreen inherits Rectangle {
     in property <int> wifi-hidden;
     in property <bool> wifi-scanning;
     callback wifi-refresh();
+    // Sound -> Media: "test" plays a test sound, "record" records 5 s and plays it back (symbian/src/sound.rs)
+    callback sound-action(string);
+    in property <string> sound-feedback;
     // Connect on a network's sheet: its BSSID ("aa:bb:..") and the typed password
     callback wifi-connect(string, string);
     in property <string> wifi-message;
@@ -453,6 +456,39 @@ export component SettingsScreen inherits Rectangle {
                 Button { text: "Louder"; clicked => { SystemSettings.ring-volume = min(10, root.ring-volume + 1); } }
             }
             if phone-feedback != "": ListRow { title: phone-feedback; }
+
+            SectionHeader { text: "Media"; }
+            ListRow {
+                title: "Media volume";
+                value: SystemSettings.media-volume;
+                subtitle: "Apps, games and the volume keys outside a call";
+            }
+            HorizontalLayout {
+                padding-left: Theme.margin;
+                padding-right: Theme.margin;
+                spacing: 12 * Theme.dp;
+                Button { text: "Quieter"; clicked => { SystemSettings.media-volume = max(0, SystemSettings.media-volume - 1); } }
+                Button { text: "Louder"; clicked => { SystemSettings.media-volume = min(10, SystemSettings.media-volume + 1); } }
+            }
+            ListRow {
+                title: "Play media on";
+                value: SystemSettings.media-route == 1 ? "Earpiece" : SystemSettings.media-route == 2 ? "Bottom speaker" : "Both speakers";
+                clicked => { SystemSettings.media-route = Math.mod(SystemSettings.media-route + 1, 3); }
+            }
+            ListRow {
+                title: "Microphone";
+                value: SystemSettings.mic == 1 ? "Second" : "Main";
+                subtitle: "For recordings (calls use the main one)";
+                clicked => { SystemSettings.mic = 1 - SystemSettings.mic; }
+            }
+            HorizontalLayout {
+                padding-left: Theme.margin;
+                padding-right: Theme.margin;
+                spacing: 12 * Theme.dp;
+                Button { text: "Test sound"; clicked => { root.sound-action("test"); } }
+                Button { text: "Record and play back"; clicked => { root.sound-action("record"); } }
+            }
+            if sound-feedback != "": ListRow { title: sound-feedback; }
         }
     }
 

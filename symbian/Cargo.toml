@@ -22,6 +22,8 @@ e32 = { workspace = true }
 neoapp = { workspace = true }
 # NeoSymbian/telephony: the NeoModem server's contract (MODEMD.EXE; Apache-2.0)
 modem-ipc = { workspace = true }
+# NeoAudio's contract (MODEMD.EXE serves it; Settings -> Sound -> Media, docs/audio.md; Apache-2.0)
+neoaudio = { workspace = true }
 # telephony C8: dial-string rules (the SIM prompt's emergency call; Apache-2.0)
 phone-rules = { workspace = true }
 # NeoSymbian/neolink: the WPA2-PSK supplicant handshakes (Wi-Fi W4; Apache-2.0)
@@ -39,6 +41,8 @@ neoui-proto = { path = "../crates/neoui-proto" }
 slint = { version = "=1.18.1", default-features = false, features = ["compat-1-2", "unsafe-single-threaded", "libm", "renderer-software"] }
 neoapp = { path = "neoapp" }
 modem-ipc = { git = "https://github.com/NeoSymbian/telephony", rev = "4095a4b7f34359fe8df25cd0e18e81c15be719c9" }
+# NeoAudio's contract and tone helper (docs/audio.md; Apache-2.0)
+neoaudio = { git = "https://github.com/NeoSymbian/telephony", rev = "7cc0b6d373c8a7895a74a9050bdc50a0cf3eb51b" }
 phone-rules = { git = "https://github.com/NeoSymbian/telephony", rev = "4095a4b7f34359fe8df25cd0e18e81c15be719c9" }
 neoui-term = { path = "../crates/neoui-term" }
 # the kit build helper (@neoui/kit.slint): every app's build.rs compiles its UI with it

@@ -16,6 +16,11 @@ export global SystemSettings {
     in-out property <bool> silent: false;
     in-out property <bool> vibrate: true;
     in-out property <int> ring-volume: 8;
+    // media (NeoAudio): amp volume 0..10, route 0 both speakers, 1 earpiece, 2 bottom speaker
+    in-out property <int> media-volume: 7;
+    in-out property <int> media-route: 0;
+    // the microphone recordings use: 0 main, 1 second (sound.mic)
+    in-out property <int> mic: 0;
     in-out property <bool> dark: true;
     // 0.0 to 1.0; stored as 0 to 255 (display.brightness)
     in-out property <float> brightness: 160 / 255;
@@ -60,6 +65,9 @@ export global SystemSettings {
     changed silent => { edited("sound.silent"); }
     changed vibrate => { edited("sound.vibrate"); }
     changed ring-volume => { edited("sound.ring_volume"); }
+    changed media-volume => { edited("sound.media_volume"); }
+    changed media-route => { edited("sound.media_route"); }
+    changed mic => { edited("sound.mic"); }
     changed dark => { edited("display.dark"); }
     changed brightness => { edited("display.brightness"); }
     changed clock-24h => { edited("clock.24h"); }

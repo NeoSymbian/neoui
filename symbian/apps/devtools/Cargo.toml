@@ -19,6 +19,7 @@ neoui-proto.workspace = true
 slint.workspace = true
 neoapp.workspace = true
 modem-ipc.workspace = true
+neoaudio.workspace = true
 
 [build-dependencies]
 neoui-kit.workspace = true
