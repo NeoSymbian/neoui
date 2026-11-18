@@ -8,7 +8,7 @@
 //! primary action, options and dots after the header, still decodes; those parts are ignored). `Query` = `[flags,
 //! buttons n]` then the text and the buttons. `Note` = the text then the action. `Notification` = `[id u32 LE, page u16
 //! LE]` then the title and the text; since 1.9 `[actions n]` and the action labels may follow (a 1.8 one still
-//! decodes, with none).
+//! decodes, with none), then the avatar's initials, tint and time; since 1.11 one progress byte (0-100) may end it.
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -52,7 +52,8 @@ pub const NOTIFICATION_MAX: usize = 6
     + INITIALS_MAX
     + 4
     + 1
-    + TIME_MAX;
+    + TIME_MAX
+    + 1;
 
 /// What an app shows now. Send it again whenever any of it changes.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -110,6 +111,8 @@ pub struct Notification {
     pub tint: u32,
     /// When, as the app writes it ("10:05"; at most [`TIME_MAX`] bytes; "" = none).
     pub time: String,
+    /// A bar under the text, 0-100 (1.11: a copy in Files); `None` = no bar.
+    pub progress: Option<u8>,
 }
 
 /// A [`Page`] or [`Query`] that is malformed or over a limit (`KErrArgument`).
@@ -227,7 +230,10 @@ impl Notification {
         out.extend_from_slice(&self.page.to_le_bytes());
         put(&mut out, &self.title, TITLE_MAX)?;
         put(&mut out, &self.text, TEXT_MAX)?;
-        let extra = !self.initials.is_empty() || !self.time.is_empty() || self.tint != 0;
+        let extra = !self.initials.is_empty()
+            || !self.time.is_empty()
+            || self.tint != 0
+            || self.progress.is_some();
         if !self.actions.is_empty() || extra {
             if self.actions.len() > NOTIFY_ACTIONS_MAX {
                 return Err(PageError);
@@ -241,6 +247,12 @@ impl Notification {
             put(&mut out, &self.initials, INITIALS_MAX)?;
             out.extend_from_slice(&self.tint.to_le_bytes());
             put(&mut out, &self.time, TIME_MAX)?;
+        }
+        if let Some(p) = self.progress {
+            if p > 100 {
+                return Err(PageError);
+            }
+            out.push(p);
         }
         Ok(out)
     }
@@ -274,6 +286,13 @@ impl Notification {
             n.tint = u32::from_le_bytes([t[0], t[1], t[2], t[3]]);
             r.0 = &r.0[4..];
             n.time = r.text(TIME_MAX)?;
+        }
+        if !r.0.is_empty() {
+            let p = r.byte()?;
+            if p > 100 {
+                return Err(PageError);
+            }
+            n.progress = Some(p);
         }
         if !r.0.is_empty() {
             return Err(PageError);
@@ -506,6 +525,7 @@ mod tests {
             initials: "i".repeat(INITIALS_MAX),
             tint: 0x22b46a,
             time: "t".repeat(TIME_MAX),
+            progress: Some(100),
         };
         assert_eq!(big.encode().unwrap().len(), NOTIFICATION_MAX);
         assert_eq!(Notification::decode(&big.encode().unwrap()), Ok(big));
@@ -518,6 +538,44 @@ mod tests {
         for n in 0..good.len() {
             assert_eq!(Notification::decode(&good[..n]), Err(PageError));
         }
+    }
+
+    #[test]
+    fn notifications_carry_progress_since_1_11() {
+        let plain = Notification {
+            id: 1,
+            title: s("Files"),
+            text: s("Copying file 2 of 2"),
+            actions: vec![s("Cancel")],
+            ..Notification::default()
+        };
+        let pb = plain.encode().unwrap();
+        // a 1.10 record (no progress byte) still decodes, without a bar
+        assert_eq!(Notification::decode(&pb), Ok(plain.clone()));
+        let copying = Notification {
+            progress: Some(45),
+            ..plain
+        };
+        let cb = copying.encode().unwrap();
+        assert_eq!(cb.last(), Some(&45));
+        assert_eq!(Notification::decode(&cb), Ok(copying.clone()));
+        // with nothing else after the text, the progress still has its actions/avatar bytes in front of it
+        let bare = Notification {
+            progress: Some(0),
+            ..Notification::default()
+        };
+        assert_eq!(Notification::decode(&bare.encode().unwrap()), Ok(bare));
+        let over = Notification {
+            progress: Some(101),
+            ..copying
+        };
+        assert_eq!(over.encode(), Err(PageError));
+        let mut bad = cb;
+        *bad.last_mut().unwrap() = 101;
+        assert_eq!(Notification::decode(&bad), Err(PageError));
+        bad.pop();
+        bad.extend([50, 0]);
+        assert_eq!(Notification::decode(&bad), Err(PageError));
     }
 
     #[test]

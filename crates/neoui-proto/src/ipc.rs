@@ -25,14 +25,15 @@
 //! the number), hand the user back when a task ends ([`DONE`]), and a notification carries actions
 //! ([`AppEvent::Notified`]). Since 1.10 an app can ask for a short vibration ([`HAPTIC`]: the old apps' key pads) and is
 //! told when the fingers it had were taken away ([`AppEvent::InputReset`]: the screen went off, the app lost the
-//! front), and the legacy bridge loses the shell's header once it declares a [`PAGE`].
+//! front), and the legacy bridge loses the shell's header once it declares a [`PAGE`]. Since 1.11 a shade entry can
+//! carry a progress bar ([`crate::page::Notification::progress`]).
 
 use crate::{InputEvent, TouchPhase};
 
 /// The server's name (no leading `!`: that needs ProtServ).
 pub const SERVER: &str = "NeoUi";
 /// Protocol version (major, minor); a connect with another major is refused.
-pub const VERSION: (u8, u8) = (1, 10);
+pub const VERSION: (u8, u8) = (1, 11);
 
 /// `[Des8 out: GEOMETRY_LEN bytes = width, height, dp × 256 (u32 LE)]` → 0. `dp` is the shell's design unit in
 /// pixels (`min(screen w, h) / 360`), so apps size things like the shell does.

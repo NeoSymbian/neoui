@@ -63,9 +63,12 @@ jobs:
 
       # NeoSymbian/files: NEOFILES.EXE (Files; moved out of neoui, docs files-app.md FA0). The shell starts it by its
       # key, `files` (host::APPS).
+      # FILES_REF: a branch while a files change and its taps here are reviewed together; main otherwise
       - name: NeoSymbian/files
+        env:
+          FILES_REF: main
         run: |
-          git clone -q --depth 1 https://github.com/NeoSymbian/files.git
+          git clone -q --depth 1 --branch "$FILES_REF" https://github.com/NeoSymbian/files.git
           cd files/symbian && cargo arm
           cp target/armv5te-none-eabi/release/libneofiles.a ../../build/rust/
           grep -E '^NEOFILES\.EXE' exes.txt >> ../../build/rust/exes.txt
@@ -112,10 +115,13 @@ jobs:
       # - Clock; a tap inside it (270,500); ←.
       # - Terminal: `dir` on the system keyboard (R6c, above the key row), `neotest` on hardware keys, the keyboard's
       #   hide key, ←.
-      # - Files (R8): Z: card (270,387) -> Sys (row 2, y 424) -> Bin (row 0, y 208); ← -> Data (row 1, 316) ->
-      #   estart.txt (row 0) in the viewer; ← x4 to the drives.
-      # - Files on C: (270,207): ⋮ (497,73) -> New folder (400,157) -> `neo` on the keyboard; a long press on the neo
-      #   row (row 0) -> the selection header's Delete (497,73) -> Delete in the shell's dialog (297,524).
+      # - Files (v2, files-app.md FA1/FA2; rows 64 dp from y 120 dp, from 220.5 dp under a read-only drive's banner):
+      #   the Z: row (270,341) -> Sys (row 2, y 559) -> Bin (row 0, y 367); ← -> Data (row 1, 463) -> estart.txt
+      #   (row 0) in the viewer; ← to Data; a long press on estart.txt -> the selection header's Copy (359,73): the
+      #   paste bar; ← x3 to the drives.
+      # - Files on C: (270,220): the paste bar's Paste here (449,877) copies estart.txt on the worker; ⋮ (503,73) ->
+      #   New folder (400,157) -> `neo` on the keyboard; a long press on the neo row (row 0, y 217) -> the selection
+      #   header's Delete (431,73) -> Move to bin in the shell's dialog (297,524): into C:\.trash\.
       # - Files again: New folder with the globe key twice (Russian); ← x2 (C:\ -> drives -> the app closes).
       # - R10: apps keep running, and ← returns to the menu, so each app is opened from the menu directly. Terminal is
       #   reopened (resumed, not restarted). Open apps (▢) closes all three with the first card's × (227,160).
@@ -135,14 +141,17 @@ jobs:
           type_text neotest; expect "passed, 0 failed"
           kb_hide term; tap 90 1037
           tap 90 805; expect "files: drives"
-          tap 270 387; expect "files: list"; tap 270 424; expect "files: list"; tap 270 208; expect "files: list"
-          tap 90 1037; expect "files: list"; tap 270 316; expect "files: list"; tap 270 208; expect "files: view"
-          for i in 1 2 3; do tap 90 1037; expect "files: list"; done
+          tap 270 341; expect "files: list"; tap 270 559; expect "files: list"; tap 270 367; expect "files: list"
+          tap 90 1037; expect "files: list"; tap 270 463; expect "files: list"; tap 270 367; expect "files: view"
+          tap 90 1037; expect "files: list"
+          hold 270 367; tap 359 73
+          for i in 1 2; do tap 90 1037; expect "files: list"; done
           tap 90 1037; expect "files: drives"
-          tap 270 207; expect "files: list"; tap 497 73; tap 400 157
+          tap 270 220; expect "files: list"; tap 449 877; expect "bytes to C:"
+          tap 503 73; tap 400 157
           kb_type neo; expect "files: mkdir"
-          hold 270 208; tap 497 73; tap 297 524; expect "files: delete"
-          tap 497 73; tap 400 157; kb_globe; kb_globe
+          hold 270 217; tap 431 73; tap 297 524; expect "files: trash"
+          tap 503 73; tap 400 157; kb_globe; kb_globe
           kb_tap 2 8.5 12; kb_tap 2 6.5 12; kb_tap 1 5 12; kb_enter; expect "files: mkdir"
           tap 90 1037; expect "files: drives"; tap 90 1037
           tap 449 805; kb_hide term; tap 90 1037
@@ -189,8 +198,9 @@ jobs:
           grep -aE 'neotest: [0-9]+ passed, 0 failed' $s
           grep -a 'term: quit' $s
           grep -a 'neoui: app terminal exited (type 0, reason 0)' $s
-          # R8: the Files app on the file server -- drives, a 40+ entry listing, the text viewer, mkdir and delete
-          # typed and tapped, Back walking up (claimed) and finally closing the app (unclaimed at the drive list)
+          # The Files app on the file server -- drives, a 40+ entry listing, the text viewer, a copy on the worker
+          # through the paste bar, mkdir and the Recycle bin, Back walking up (claimed) and finally closing the app
+          # (unclaimed at the drives)
           grep -a 'neoui: app files started' $s
           grep -aE 'files: drives C\([0-9]+/[0-9]+\) Z\(' $s
           n=$(grep -ao 'files: list Z:\\Sys\\Bin\\ [0-9]*' $s | grep -o '[0-9]*$' | head -1)
@@ -198,7 +208,8 @@ jobs:
           grep -a 'files: view Z:\\Sys\\Data\\estart.txt 1' $s
           grep -a 'neoui: keyboard 1 for files' $s
           grep -a 'files: mkdir C:\\neo\\ 0' $s
-          grep -a 'files: delete neo 0' $s   # the app logs the row's name (kit selection)
+          grep -aE 'files: copy 1 files [0-9]+ bytes to C:\\ done' $s
+          grep -a 'files: trash C:\\neo\\ 0' $s
           # the keyboard's globe key, twice (English -> Armenian -> Russian), and a folder named "дом" on the FAT C:
           grep -a 'files: mkdir C:' $s | grep -av 'C:\\neo\\' | grep -aq '\\ 0'
           grep -a 'files: quit' $s

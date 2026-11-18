@@ -95,6 +95,18 @@ fn pixel() {
     common::tap(&mut r, (w / 2) as i32, (12.0 * d) as i32);
     common::frame(&mut r, &mut buf, w, "shade");
     common::write_png("shade-pixel.png", &buf, w, h);
+    // a copy in Files (1.11): its entry with a progress bar and a plain Cancel pill (files2-progress)
+    let copying = neoui_render::Notification {
+        id: 1,
+        title: "Files · Copying file 2 of 2".into(),
+        text: "live-take.flac · 12.6 of 28 MB · 45 %".into(),
+        actions: vec!["Cancel".into()],
+        progress: Some(45),
+        ..neoui_render::Notification::default()
+    };
+    r.set_notes(&[&copying, &timer]);
+    common::frame(&mut r, &mut buf, w, "shade progress");
+    common::write_png("shade-progress-pixel.png", &buf, w, h);
 
     // Wi-Fi connected (W4): "Current network" above the list, the status bar's icon, then its details sheet
     let mut link = alloc_link();

@@ -508,6 +508,7 @@ impl Renderer {
                     time: n.time.as_str().into(),
                     // only the newest entry opens up (p2-msg-notify)
                     expanded: i == 0,
+                    progress: n.progress.map_or(-1.0, |p| f32::from(p) / 100.0),
                 }
             })
             .collect();
