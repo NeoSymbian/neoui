@@ -122,7 +122,11 @@ jobs:
       # - Files on C: (270,220): the paste bar's Paste here (449,877) copies estart.txt on the worker; ⋮ (503,73) ->
       #   New folder (400,157) -> `neo` on the keyboard; a long press on the neo row (row 0, y 217) -> the selection
       #   header's Delete (431,73) -> Move to bin in the shell's dialog (297,524): into C:\.trash\.
-      # - Files again: New folder with the globe key twice (Russian); ← x2 (C:\ -> drives -> the app closes).
+      # - Files again: New folder with the globe key twice (Russian); ← to the drives.
+      # - FA3: the Recent tab (270,958: the footer's middle, 615 dp) lists estart.txt; root ⋮ -> Recycle bin
+      #   (400,157); a long press on its one row (y 302, under the "Kept for 30 days" card) -> Restore (359,73); ← to
+      #   Recent; search (431,73), "дом" on the keyboard (still Russian; no Enter); ← hides the keyboard, ← closes
+      #   search, ← leaves.
       # - R10: apps keep running, and ← returns to the menu, so each app is opened from the menu directly. Terminal is
       #   reopened (resumed, not restarted). Open apps (▢) closes all three with the first card's × (227,160).
       # - Last, Navigation once more: Gestures again, for the later steps.
@@ -153,7 +157,13 @@ jobs:
           hold 270 217; tap 431 73; tap 297 524; expect "files: trash"
           tap 503 73; tap 400 157; kb_globe; kb_globe
           kb_tap 2 8.5 12; kb_tap 2 6.5 12; kb_tap 1 5 12; kb_enter; expect "files: mkdir"
-          tap 90 1037; expect "files: drives"; tap 90 1037
+          tap 90 1037; expect "files: drives"
+          tap 270 958; expect "files: recent 1"
+          tap 503 73; tap 400 157; expect "files: bin 1"
+          hold 270 302; tap 359 73; expect "files: restore 1"
+          tap 90 1037; expect "files: recent 1"
+          tap 431 73; kb_tap 2 8.5 12; kb_tap 2 6.5 12; kb_tap 1 5 12; expect "files: search"
+          tap 90 1037; tap 90 1037; tap 90 1037
           tap 449 805; kb_hide term; tap 90 1037
           tap 449 1037
           for i in 1 2 3; do tap 227 160; expect "exited (type 0"; done
@@ -210,6 +220,10 @@ jobs:
           grep -a 'files: mkdir C:\\neo\\ 0' $s
           grep -aE 'files: copy 1 files [0-9]+ bytes to C:\\ done' $s
           grep -a 'files: trash C:\\neo\\ 0' $s
+          # FA3: the index walked on its worker, Recent, the bin's Restore, search over the index (the C:\дом\ folder)
+          grep -aE 'files: index [0-9]+ entries in [0-9]+ ms' $s
+          grep -a 'files: restore 1 0' $s
+          grep -aE 'files: search "дом" [1-9]' $s
           # the keyboard's globe key, twice (English -> Armenian -> Russian), and a folder named "дом" on the FAT C:
           grep -a 'files: mkdir C:' $s | grep -av 'C:\\neo\\' | grep -aq '\\ 0'
           grep -a 'files: quit' $s
