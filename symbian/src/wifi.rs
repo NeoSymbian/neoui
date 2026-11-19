@@ -271,6 +271,7 @@ impl Wifi {
             }
             fail::HAL => "Wi-Fi is not available".into(),
             fail::HANDSHAKE => "Wrong password".into(),
+            fail::NO_DATA => "No data from the network: Wi-Fi rejoins after a restart".into(),
             _ => link.message(),
         };
         if text != self.shown {

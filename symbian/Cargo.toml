@@ -27,9 +27,9 @@ neoaudio = { workspace = true }
 # telephony C8: dial-string rules (the SIM prompt's emergency call; Apache-2.0)
 phone-rules = { workspace = true }
 # NeoSymbian/neohw: the NeoWifi contract (WIFID.EXE joins and runs WPA2, docs hardware.md S5; Apache-2.0)
-wifi = { git = "https://github.com/NeoSymbian/neohw", rev = "6f1f08fe2d3e5f80d34f37c9d99dbd170112a96c" }
+wifi = { git = "https://github.com/NeoSymbian/neohw", rev = "06b03ddb4c16e8609328e1ca4814df00daab78bb" }
 # NeoSymbian/neohw: the NeoNet client (NEONET.EXE, the IP stack over Wi-Fi, W5; Apache-2.0).
-net = { git = "https://github.com/NeoSymbian/neohw", rev = "6f1f08fe2d3e5f80d34f37c9d99dbd170112a96c", features = ["client"] }
+net = { git = "https://github.com/NeoSymbian/neohw", rev = "06b03ddb4c16e8609328e1ca4814df00daab78bb", features = ["client"] }
 
 [workspace]
 members = ["apps/clock", "apps/term", "apps/devtools", "apps/kit", "neoapp"]
@@ -40,10 +40,10 @@ e32 = { git = "https://github.com/NeoSymbian/e32-rs", rev = "0489694ee55f6879a0f
 neoui-proto = { path = "../crates/neoui-proto" }
 slint = { version = "=1.18.1", default-features = false, features = ["compat-1-2", "unsafe-single-threaded", "libm", "renderer-software"] }
 neoapp = { path = "neoapp" }
-modem-ipc = { git = "https://github.com/NeoSymbian/neohw", rev = "4095a4b7f34359fe8df25cd0e18e81c15be719c9" }
+modem-ipc = { git = "https://github.com/NeoSymbian/neohw", rev = "06b03ddb4c16e8609328e1ca4814df00daab78bb" }
 # NeoAudio's contract and tone helper (docs/hardware/audio.md; Apache-2.0)
-neoaudio = { git = "https://github.com/NeoSymbian/neohw", rev = "7cc0b6d373c8a7895a74a9050bdc50a0cf3eb51b" }
-phone-rules = { git = "https://github.com/NeoSymbian/neohw", rev = "4095a4b7f34359fe8df25cd0e18e81c15be719c9" }
+neoaudio = { git = "https://github.com/NeoSymbian/neohw", rev = "06b03ddb4c16e8609328e1ca4814df00daab78bb" }
+phone-rules = { git = "https://github.com/NeoSymbian/neohw", rev = "06b03ddb4c16e8609328e1ca4814df00daab78bb" }
 neoui-term = { path = "../crates/neoui-term" }
 # the kit build helper (@neoui/kit.slint): every app's build.rs compiles its UI with it
 neoui-kit = { path = "../crates/neoui-kit" }
