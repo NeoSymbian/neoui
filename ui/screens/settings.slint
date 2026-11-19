@@ -80,7 +80,7 @@ component SettingRow inherits Rectangle {
 }
 
 // The sheet a tapped Wi-Fi network opens (Android/iOS style): what the phone knows about it, the password and
-// Connect (Wi-Fi W4, docs hardware/wifi.md: symbian/src/wifi.rs joins and runs the WPA2 handshake).
+// Connect (Wi-Fi W4, docs hardware/wifi.md: symbian/src/wifi.rs asks WIFID (neohw), which joins and runs WPA2).
 component WifiSheet inherits Rectangle {
     in property <WifiNet> net;
     // what was typed in the password field (for joining, Wi-Fi W4)

@@ -287,7 +287,7 @@ impl Wifi {
         }
     }
 
-    /// `radio_on`: Settings' Wi-Fi switch (WIFID's: off, nothing is joined or scanned on its own).
+    /// `radio_on`: Settings' Wi-Fi switch (WIFID's: off leaves the network, nothing is joined or scanned on its own).
     /// shortcut: the kernel keeps the radio up while the switch is off; power it down once the driver can.
     pub fn poll(&mut self, ui: &mut Renderer, now: u64, radio_on: bool) {
         self.poll_link(ui, now, radio_on);
