@@ -1575,7 +1575,7 @@ source = "git+https://github.com/NeoSymbian/neohw?rev=06b03ddb4c16e8609328e1ca48
 [[package]]
 name = "hub-ipc"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/neohw?rev=e2248256548b714fd8cce9785527e6489ad98b24#e2248256548b714fd8cce9785527e6489ad98b24"
+source = "git+https://github.com/NeoSymbian/neohw?rev=208b8780919d89d5380eb305d9cbfbc8f0218322#208b8780919d89d5380eb305d9cbfbc8f0218322"
 
 [[package]]
 name = "i-slint-backend-linuxkms"
@@ -2382,10 +2382,10 @@ checksum = "4744e383959f0db86ede514b809b1c53251889093803c05267acc7d4e7030d70"
 [[package]]
 name = "loc"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/neohw?rev=e2248256548b714fd8cce9785527e6489ad98b24#e2248256548b714fd8cce9785527e6489ad98b24"
+source = "git+https://github.com/NeoSymbian/neohw?rev=208b8780919d89d5380eb305d9cbfbc8f0218322#208b8780919d89d5380eb305d9cbfbc8f0218322"
 dependencies = [
- "hub-ipc 0.1.0 (git+https://github.com/NeoSymbian/neohw?rev=e2248256548b714fd8cce9785527e6489ad98b24)",
- "qrtr 0.1.0 (git+https://github.com/NeoSymbian/neohw?rev=e2248256548b714fd8cce9785527e6489ad98b24)",
+ "hub-ipc 0.1.0 (git+https://github.com/NeoSymbian/neohw?rev=208b8780919d89d5380eb305d9cbfbc8f0218322)",
+ "qrtr 0.1.0 (git+https://github.com/NeoSymbian/neohw?rev=208b8780919d89d5380eb305d9cbfbc8f0218322)",
 ]
 
 [[package]]
@@ -3504,7 +3504,7 @@ source = "git+https://github.com/NeoSymbian/neohw?rev=06b03ddb4c16e8609328e1ca48
 [[package]]
 name = "qrtr"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/neohw?rev=e2248256548b714fd8cce9785527e6489ad98b24#e2248256548b714fd8cce9785527e6489ad98b24"
+source = "git+https://github.com/NeoSymbian/neohw?rev=208b8780919d89d5380eb305d9cbfbc8f0218322#208b8780919d89d5380eb305d9cbfbc8f0218322"
 
 [[package]]
 name = "quick-error"

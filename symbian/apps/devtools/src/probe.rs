@@ -105,7 +105,10 @@ fn gnss_state(s: &loc::ipc::Status) -> (State, String) {
         ),
         state::SEARCHING => (
             State::Starting,
-            format!("searching, {} satellites seen", s.seen),
+            format!(
+                "searching, {} satellites heard, best {} dB-Hz",
+                s.seen, s.snr
+            ),
         ),
         state::FAILED => (State::Error, "no fix within 15 minutes".into()),
         state::LOCKED => (State::Error, "the modem's engine is locked".into()),
@@ -510,7 +513,13 @@ pub fn facts(dev: &Device, r: &Readings, extra: &crate::state::Model) -> Vec<(St
                     put("Altitude", format!("{} m", s.alt_dm / 10));
                     put("Fix time (UTC ms)", format!("{}", s.utc_ms));
                 }
-                put("Satellites", format!("{} used, {} seen", s.used, s.seen));
+                put(
+                    "Satellites",
+                    format!(
+                        "{} used, {} heard, best {} dB-Hz (a fix needs about 25+)",
+                        s.used, s.seen, s.snr
+                    ),
+                );
                 if s.ttff_ms != 0 {
                     put(
                         "Time to first fix",
