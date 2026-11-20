@@ -101,6 +101,7 @@ fn run() -> Result<(), i32> {
         ui: ui.as_weak(),
         model: RefCell::new(model),
         console_rows: rows,
+        gnss: RefCell::new(None),
     });
     pages::bind(&ctx, &ui);
     ctx.refresh_log();

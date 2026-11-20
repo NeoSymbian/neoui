@@ -1573,6 +1573,11 @@ version = "0.1.0"
 source = "git+https://github.com/NeoSymbian/neohw?rev=06b03ddb4c16e8609328e1ca4814df00daab78bb#06b03ddb4c16e8609328e1ca4814df00daab78bb"
 
 [[package]]
+name = "hub-ipc"
+version = "0.1.0"
+source = "git+https://github.com/NeoSymbian/neohw?rev=208b8780919d89d5380eb305d9cbfbc8f0218322#208b8780919d89d5380eb305d9cbfbc8f0218322"
+
+[[package]]
 name = "i-slint-backend-linuxkms"
 version = "1.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2375,6 +2380,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4744e383959f0db86ede514b809b1c53251889093803c05267acc7d4e7030d70"
 
 [[package]]
+name = "loc"
+version = "0.1.0"
+source = "git+https://github.com/NeoSymbian/neohw?rev=208b8780919d89d5380eb305d9cbfbc8f0218322#208b8780919d89d5380eb305d9cbfbc8f0218322"
+dependencies = [
+ "hub-ipc 0.1.0 (git+https://github.com/NeoSymbian/neohw?rev=208b8780919d89d5380eb305d9cbfbc8f0218322)",
+ "qrtr 0.1.0 (git+https://github.com/NeoSymbian/neohw?rev=208b8780919d89d5380eb305d9cbfbc8f0218322)",
+]
+
+[[package]]
 name = "lock_api"
 version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2679,6 +2693,7 @@ name = "neodevtools"
 version = "0.1.0"
 dependencies = [
  "e32",
+ "loc",
  "modem-ipc",
  "neoapp",
  "neoaudio",
@@ -3485,6 +3500,11 @@ checksum = "d55d956fa96f5ec02be2e13af0e20391a5aa83d6a074e3ad368959d0fab299ea"
 name = "qrtr"
 version = "0.1.0"
 source = "git+https://github.com/NeoSymbian/neohw?rev=06b03ddb4c16e8609328e1ca4814df00daab78bb#06b03ddb4c16e8609328e1ca4814df00daab78bb"
+
+[[package]]
+name = "qrtr"
+version = "0.1.0"
+source = "git+https://github.com/NeoSymbian/neohw?rev=208b8780919d89d5380eb305d9cbfbc8f0218322#208b8780919d89d5380eb305d9cbfbc8f0218322"
 
 [[package]]
 name = "quick-error"
@@ -4912,8 +4932,8 @@ name = "wifi"
 version = "0.1.0"
 source = "git+https://github.com/NeoSymbian/neohw?rev=06b03ddb4c16e8609328e1ca4814df00daab78bb#06b03ddb4c16e8609328e1ca4814df00daab78bb"
 dependencies = [
- "hub-ipc",
- "qrtr",
+ "hub-ipc 0.1.0 (git+https://github.com/NeoSymbian/neohw?rev=06b03ddb4c16e8609328e1ca4814df00daab78bb)",
+ "qrtr 0.1.0 (git+https://github.com/NeoSymbian/neohw?rev=06b03ddb4c16e8609328e1ca4814df00daab78bb)",
  "wlfw",
 ]
 

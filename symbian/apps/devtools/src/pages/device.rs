@@ -12,6 +12,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use alloc::{format, vec};
 use e32::dprintln;
+use e32::ipc::TIpcArgs;
 use neoapp::hal;
 
 /// Log lines shown under a device.
@@ -104,6 +105,36 @@ pub fn bind(ctx: &Rc<Ctx>, s: &DevState<'_>) {
                     neoaudio::route::SPEAKER
                 };
                 c.model.borrow_mut().dev_result = probe::neoaudio_route(route);
+            }
+            Some("Start a fix") => {
+                let text = if c.gnss.borrow().is_some() {
+                    String::from("already asked for fixes")
+                } else {
+                    match probe::gnss_session().and_then(|s| {
+                        s.send_receive(loc::ipc::op::START, &TIpcArgs::new())
+                            .map(|_| s)
+                    }) {
+                        Ok(s) => {
+                            *c.gnss.borrow_mut() = Some(s);
+                            String::from("searching: outdoors or by a window; refresh to see it")
+                        }
+                        Err(e) => format!("GNSSD unavailable ({e})"),
+                    }
+                };
+                c.model.borrow_mut().dev_result = text;
+                c.refresh_devices();
+            }
+            Some("End the fixes") => {
+                // closing the session stops its fixes too
+                let text = match c.gnss.borrow_mut().take() {
+                    Some(s) => {
+                        let _ = s.send_receive(loc::ipc::op::STOP, &TIpcArgs::new());
+                        String::from("fixes stopped")
+                    }
+                    None => String::from("no fixes were asked for"),
+                };
+                c.model.borrow_mut().dev_result = text;
+                c.refresh_devices();
             }
             Some("Refresh the status") => {
                 c.refresh_devices();
