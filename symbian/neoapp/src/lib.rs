@@ -27,12 +27,15 @@ use alloc::vec;
 use core::cell::{Cell, RefCell};
 use core::time::Duration;
 use e32::chunk::Chunk;
+use e32::fs::{File, SharedFile};
 use e32::ipc::{Session, TIpcArgs, TVersion};
 use e32::rt::{self, Either};
 use e32::sys::{TPtr8, TPtrC8};
 use e32::time;
 use neoui_proto::ipc as proto;
 pub use neoui_proto::ipc::AppEvent;
+/// Which apps open which files, and the pages of Files other apps open (protocol 1.12).
+pub use neoui_proto::open;
 pub use neoui_proto::page::{Note, Notification, Page, Query};
 use neoui_proto::settings::value::ENCODED_MAX;
 use neoui_proto::settings::{Key as SettingKey, Setting, Value, kerr};
@@ -610,6 +613,67 @@ impl App {
     /// The clipboard's text, shared by every app and the shell (Copy text, Paste); `None` when empty.
     pub fn clipboard(&self) -> Option<alloc::string::String> {
         clip_get(&self.server)
+    }
+
+    /// What the clipboard holds: `proto::CLIP_TEXT`, or files (`CLIP_PATHS_COPY`, `CLIP_PATHS_MOVE`) whose full
+    /// paths are its text, one per line (`proto::CLIP_KIND`).
+    pub fn clipboard_kind(&self) -> i32 {
+        self.server
+            .send_receive(proto::CLIP_KIND, &TIpcArgs::new())
+            .unwrap_or(proto::CLIP_TEXT)
+    }
+
+    /// Put files on the clipboard to copy or move (`kind`: `proto::CLIP_PATHS_COPY` or `CLIP_PATHS_MOVE`); false when
+    /// the paths are over `proto::CLIP_MAX` bytes together or the server refused.
+    pub fn set_clipboard_paths(&self, kind: i32, paths: &[&str]) -> bool {
+        let text = paths.join("\n");
+        if text.len() > proto::CLIP_MAX {
+            return false;
+        }
+        let t = TPtrC8::new(text.as_bytes());
+        let mut args = TIpcArgs::new();
+        args.desc8(0, &t).int(1, kind);
+        self.server.send_receive(proto::CLIP_SET, &args).is_ok()
+    }
+
+    /// Open app `key` on its page `page` with an open file (`proto::OPEN_FILE`), e.g. Open with: it takes the file
+    /// with [`App::arg_file`]. `file`'s session must be shared (`Fs::share_protected`); `file` stays open here.
+    pub fn open_file(&self, key: &str, page: u16, file: &File<'_>) -> Result<(), i32> {
+        let k = TPtrC8::new(key.as_bytes());
+        let mut args = TIpcArgs::new();
+        args.desc8(0, &k).int(1, i32::from(page));
+        file.transfer_to_server(&mut args, 2, 3)?;
+        self.server.send_receive(proto::OPEN_FILE, &args).map(drop)
+    }
+
+    /// The file the last `OPEN_FILE` of this app carried, if it hasn't been taken yet (`proto::ARG_FILE`).
+    pub fn arg_file(&self) -> Option<SharedFile> {
+        self.take_file(proto::ARG_FILE)
+    }
+
+    /// The file an app this one opened answered with (a file picked or saved in Files), once this app is shown
+    /// again (`AppEvent::Visible(true)`); `None` when it answered without one (`proto::RESULT_FILE`).
+    pub fn result_file(&self) -> Option<SharedFile> {
+        self.take_file(proto::RESULT_FILE)
+    }
+
+    /// Finish the task with a file for the app that opened this one, which takes it with [`App::result_file`]
+    /// (`proto::DONE_FILE`); the shell shows that app again, as [`App::done`].
+    pub fn done_file(&self, file: &File<'_>) -> Result<(), i32> {
+        let mut args = TIpcArgs::new();
+        file.transfer_to_server(&mut args, 0, 1)?;
+        self.server.send_receive(proto::DONE_FILE, &args).map(drop)
+    }
+
+    fn take_file(&self, function: i32) -> Option<SharedFile> {
+        let mut handle = [0u8; 4];
+        let fs = {
+            let mut des = TPtr8::new(&mut handle);
+            let mut args = TIpcArgs::new();
+            args.des8(0, &mut des);
+            self.server.send_receive(function, &args).ok()?
+        };
+        SharedFile::adopt_from_server(fs, i32::from_le_bytes(handle)).ok()
     }
 
     /// Put `text` on the clipboard; false when it is over `proto::CLIP_MAX` bytes or the server refused.

@@ -19,6 +19,8 @@ pub enum Owner {
     App(&'static str),
     /// Any of these apps, and the UI server: a key apps share (Phone and Contacts: speed dial, the name order).
     Apps(&'static [&'static str]),
+    /// Every app: a system-wide choice any app may make for the user (`open.always`).
+    Any,
 }
 
 /// What values a registered key accepts beyond its type.
@@ -304,6 +306,9 @@ registry! {
     /// The stopwatch (`clock::stopwatch::Stopwatch` blob; empty = reset).
     CLOCK_STOPWATCH: Bytes = "clock.stopwatch", default DefaultValue::Bytes(&[]), limit Limit::None,
         owner Owner::App("clock");
+    /// The app that always opens a file type, chosen in an Open with sheet's "Always" (`crate::open::always`:
+    /// `ext=key;` entries).
+    OPEN_ALWAYS: Bytes = "open.always", default DefaultValue::Bytes(&[]), limit Limit::None, owner Owner::Any;
 }
 
 #[cfg(test)]

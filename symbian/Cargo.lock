@@ -865,7 +865,7 @@ dependencies = [
 [[package]]
 name = "e32"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/e32-rs?rev=0489694ee55f6879a0f769d1e6d17077b22d4e32#0489694ee55f6879a0f769d1e6d17077b22d4e32"
+source = "git+https://github.com/NeoSymbian/e32-rs?rev=cedbcd2ee7540e2e73e1dc1f7dc19dd6d42721f8#cedbcd2ee7540e2e73e1dc1f7dc19dd6d42721f8"
 dependencies = [
  "critical-section",
  "e32-sys",
@@ -875,7 +875,7 @@ dependencies = [
 [[package]]
 name = "e32-sys"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/e32-rs?rev=0489694ee55f6879a0f769d1e6d17077b22d4e32#0489694ee55f6879a0f769d1e6d17077b22d4e32"
+source = "git+https://github.com/NeoSymbian/e32-rs?rev=cedbcd2ee7540e2e73e1dc1f7dc19dd6d42721f8#cedbcd2ee7540e2e73e1dc1f7dc19dd6d42721f8"
 
 [[package]]
 name = "either"
@@ -1570,12 +1570,12 @@ checksum = "48ce8546b993eaf241d69ded33b1be6d205dd9857ec879d9d18bd05d3676e144"
 [[package]]
 name = "hub-ipc"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/neohw?rev=06b03ddb4c16e8609328e1ca4814df00daab78bb#06b03ddb4c16e8609328e1ca4814df00daab78bb"
+source = "git+https://github.com/NeoSymbian/neohw?rev=208b8780919d89d5380eb305d9cbfbc8f0218322#208b8780919d89d5380eb305d9cbfbc8f0218322"
 
 [[package]]
 name = "hub-ipc"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/neohw?rev=208b8780919d89d5380eb305d9cbfbc8f0218322#208b8780919d89d5380eb305d9cbfbc8f0218322"
+source = "git+https://github.com/NeoSymbian/neohw?rev=99cdeb32adceb968bda06ecc39a0e4286f8eb4cc#99cdeb32adceb968bda06ecc39a0e4286f8eb4cc"
 
 [[package]]
 name = "i-slint-backend-linuxkms"
@@ -2513,7 +2513,7 @@ dependencies = [
 [[package]]
 name = "modem-ipc"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/neohw?rev=06b03ddb4c16e8609328e1ca4814df00daab78bb#06b03ddb4c16e8609328e1ca4814df00daab78bb"
+source = "git+https://github.com/NeoSymbian/neohw?rev=99cdeb32adceb968bda06ecc39a0e4286f8eb4cc#99cdeb32adceb968bda06ecc39a0e4286f8eb4cc"
 
 [[package]]
 name = "moxcms"
@@ -2675,7 +2675,7 @@ dependencies = [
 [[package]]
 name = "neoaudio"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/neohw?rev=06b03ddb4c16e8609328e1ca4814df00daab78bb#06b03ddb4c16e8609328e1ca4814df00daab78bb"
+source = "git+https://github.com/NeoSymbian/neohw?rev=99cdeb32adceb968bda06ecc39a0e4286f8eb4cc#99cdeb32adceb968bda06ecc39a0e4286f8eb4cc"
 
 [[package]]
 name = "neoclock"
@@ -2766,7 +2766,7 @@ version = "0.1.0"
 [[package]]
 name = "net"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/neohw?rev=06b03ddb4c16e8609328e1ca4814df00daab78bb#06b03ddb4c16e8609328e1ca4814df00daab78bb"
+source = "git+https://github.com/NeoSymbian/neohw?rev=99cdeb32adceb968bda06ecc39a0e4286f8eb4cc#99cdeb32adceb968bda06ecc39a0e4286f8eb4cc"
 dependencies = [
  "e32",
  "heapless",
@@ -3305,7 +3305,7 @@ checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 [[package]]
 name = "phone-rules"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/neohw?rev=06b03ddb4c16e8609328e1ca4814df00daab78bb#06b03ddb4c16e8609328e1ca4814df00daab78bb"
+source = "git+https://github.com/NeoSymbian/neohw?rev=99cdeb32adceb968bda06ecc39a0e4286f8eb4cc#99cdeb32adceb968bda06ecc39a0e4286f8eb4cc"
 
 [[package]]
 name = "pico-args"
@@ -3499,12 +3499,12 @@ checksum = "d55d956fa96f5ec02be2e13af0e20391a5aa83d6a074e3ad368959d0fab299ea"
 [[package]]
 name = "qrtr"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/neohw?rev=06b03ddb4c16e8609328e1ca4814df00daab78bb#06b03ddb4c16e8609328e1ca4814df00daab78bb"
+source = "git+https://github.com/NeoSymbian/neohw?rev=208b8780919d89d5380eb305d9cbfbc8f0218322#208b8780919d89d5380eb305d9cbfbc8f0218322"
 
 [[package]]
 name = "qrtr"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/neohw?rev=208b8780919d89d5380eb305d9cbfbc8f0218322#208b8780919d89d5380eb305d9cbfbc8f0218322"
+source = "git+https://github.com/NeoSymbian/neohw?rev=99cdeb32adceb968bda06ecc39a0e4286f8eb4cc#99cdeb32adceb968bda06ecc39a0e4286f8eb4cc"
 
 [[package]]
 name = "quick-error"
@@ -4930,10 +4930,10 @@ dependencies = [
 [[package]]
 name = "wifi"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/neohw?rev=06b03ddb4c16e8609328e1ca4814df00daab78bb#06b03ddb4c16e8609328e1ca4814df00daab78bb"
+source = "git+https://github.com/NeoSymbian/neohw?rev=99cdeb32adceb968bda06ecc39a0e4286f8eb4cc#99cdeb32adceb968bda06ecc39a0e4286f8eb4cc"
 dependencies = [
- "hub-ipc 0.1.0 (git+https://github.com/NeoSymbian/neohw?rev=06b03ddb4c16e8609328e1ca4814df00daab78bb)",
- "qrtr 0.1.0 (git+https://github.com/NeoSymbian/neohw?rev=06b03ddb4c16e8609328e1ca4814df00daab78bb)",
+ "hub-ipc 0.1.0 (git+https://github.com/NeoSymbian/neohw?rev=99cdeb32adceb968bda06ecc39a0e4286f8eb4cc)",
+ "qrtr 0.1.0 (git+https://github.com/NeoSymbian/neohw?rev=99cdeb32adceb968bda06ecc39a0e4286f8eb4cc)",
  "wlfw",
 ]
 
@@ -5265,7 +5265,7 @@ dependencies = [
 [[package]]
 name = "wlfw"
 version = "0.1.0"
-source = "git+https://github.com/NeoSymbian/neohw?rev=06b03ddb4c16e8609328e1ca4814df00daab78bb#06b03ddb4c16e8609328e1ca4814df00daab78bb"
+source = "git+https://github.com/NeoSymbian/neohw?rev=99cdeb32adceb968bda06ecc39a0e4286f8eb4cc#99cdeb32adceb968bda06ecc39a0e4286f8eb4cc"
 
 [[package]]
 name = "write-fonts"

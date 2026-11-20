@@ -9,6 +9,7 @@ pub mod clock;
 pub mod devtools;
 pub mod gesture;
 pub mod ipc;
+pub mod open;
 pub mod page;
 pub mod recents;
 pub mod settings;
