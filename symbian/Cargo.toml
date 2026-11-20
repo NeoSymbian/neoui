@@ -45,7 +45,7 @@ modem-ipc = { git = "https://github.com/NeoSymbian/neohw", rev = "06b03ddb4c16e8
 neoaudio = { git = "https://github.com/NeoSymbian/neohw", rev = "06b03ddb4c16e8609328e1ca4814df00daab78bb" }
 phone-rules = { git = "https://github.com/NeoSymbian/neohw", rev = "06b03ddb4c16e8609328e1ca4814df00daab78bb" }
 # NeoLocation, GNSSD.EXE's contract (docs hardware/gnss.md; Apache-2.0)
-loc = { git = "https://github.com/NeoSymbian/neohw", rev = "9698de23eb92c8ab64e2ad8f73ab425ca3ffd634" }
+loc = { git = "https://github.com/NeoSymbian/neohw", rev = "e2248256548b714fd8cce9785527e6489ad98b24" }
 neoui-term = { path = "../crates/neoui-term" }
 # the kit build helper (@neoui/kit.slint): every app's build.rs compiles its UI with it
 neoui-kit = { path = "../crates/neoui-kit" }
