@@ -56,8 +56,10 @@ component FilesPage inherits Rectangle {
                 text: "The file";
             }
 
+            // a name or a line in any keyboard language (Armenian, Cyrillic): NeoSans has Latin only
             Text {
                 text: FileDemo.name;
+                font-family: "DejaVu Sans";
                 color: Theme.text;
                 font-size: Theme.font-body;
                 wrap: word-wrap;
@@ -71,6 +73,7 @@ component FilesPage inherits Rectangle {
 
             Text {
                 text: FileDemo.first-line;
+                font-family: "DejaVu Sans";
                 color: Theme.text-secondary;
                 font-size: Theme.font-body;
                 wrap: word-wrap;
