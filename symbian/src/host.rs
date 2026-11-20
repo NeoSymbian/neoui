@@ -19,6 +19,7 @@ use alloc::vec::Vec;
 use core::ops::ControlFlow;
 use e32::chunk::Chunk;
 use e32::dprintln;
+use e32::fs::SharedFile;
 use e32::process::Process;
 use e32::server::{Message, Service};
 use e32::sys::{TVersion, err};
@@ -112,6 +113,12 @@ pub struct App {
     shown: bool,
     /// The argument of the last `OPEN` of it, until it reads it (`ARG`).
     arg: String,
+    /// The file of the last `OPEN_FILE` of it, until it takes it (`ARG_FILE`).
+    file: Option<SharedFile>,
+    /// The app that last opened it (`OPEN`, `OPEN_FILE`): where a `DONE_FILE` result goes.
+    opened_by: Option<&'static str>,
+    /// The file an app it opened answered with (`DONE_FILE`), until it takes it (`RESULT_FILE`).
+    result: Option<SharedFile>,
 }
 
 impl App {
@@ -232,6 +239,8 @@ pub struct Host {
     pub badges_changed: bool,
     /// The clipboard (`CLIP_SET`, `CLIP_GET`), shared by every app.
     clipboard: String,
+    /// What the clipboard holds (`proto::CLIP_TEXT`, `CLIP_PATHS_COPY`, `CLIP_PATHS_MOVE`; `CLIP_KIND`).
+    clip_kind: i32,
 }
 
 impl Host {
@@ -270,6 +279,7 @@ impl Host {
             notes_changed: false,
             badges_changed: false,
             clipboard: String::new(),
+            clip_kind: proto::CLIP_TEXT,
         }
     }
 
@@ -346,21 +356,30 @@ impl Host {
         self.requested_screen = Some(key);
     }
 
-    /// App `from` opens app `key` on `page` with `arg` (ipc `OPEN`): started or brought to the front, told, and
-    /// shown with `from` as where Back returns.
+    /// App `from` opens app `key` on `page` with `arg` (ipc `OPEN`) or a file (`OPEN_FILE`): started or brought to
+    /// the front, told, and shown with `from` as where Back returns.
     fn open_app(
         &mut self,
         from: &'static str,
         key: &'static str,
         page: u16,
         arg: String,
+        file: Option<SharedFile>,
         now_ms: u64,
     ) {
-        dprintln!("neoui: {} opens {} page {}", from, key, page);
+        dprintln!(
+            "neoui: {} opens {} page {}{}",
+            from,
+            key,
+            page,
+            if file.is_some() { " with a file" } else { "" }
+        );
         self.limit_running(key, now_ms);
         self.start(key);
         if let Some(app) = self.apps.find_mut(|a| a.key == key && a.quit_at.is_none()) {
             app.arg = arg;
+            app.file = file;
+            app.opened_by = Some(from);
             app.send(AppEvent::Open { page });
         }
         self.requested_screen = Some(key);
@@ -576,6 +595,9 @@ impl Host {
                     nav: 0,
                     shown: false,
                     arg: String::new(),
+                    file: None,
+                    opened_by: None,
+                    result: None,
                 });
             }
             Err(e) => dprintln!("neoui: app {} failed to start ({})", key, e),
@@ -974,13 +996,25 @@ impl Service for Host {
                 self.badges_changed = true;
                 m.complete(0);
             }
-            proto::CLIP_SET => match read_text(&m, 0, proto::CLIP_MAX) {
-                Ok(t) => {
-                    self.clipboard = t;
-                    m.complete(0);
+            proto::CLIP_SET => {
+                let kind = m.int(1);
+                if !(proto::CLIP_TEXT..=proto::CLIP_PATHS_MOVE).contains(&kind) {
+                    return m.complete(kerr::ARGUMENT);
                 }
-                Err(e) => m.complete(e),
-            },
+                match read_text(&m, 0, proto::CLIP_MAX) {
+                    Ok(t) => {
+                        self.clipboard = t;
+                        self.clip_kind = kind;
+                        m.complete(0);
+                    }
+                    Err(e) => m.complete(e),
+                }
+            }
+            proto::CLIP_KIND => m.complete(if self.clipboard.is_empty() {
+                proto::CLIP_TEXT
+            } else {
+                self.clip_kind
+            }),
             proto::CLIP_GET => {
                 let r = clip_get(&self.clipboard, &m);
                 m.complete(r.unwrap_or_else(|e| e));
@@ -1033,7 +1067,7 @@ impl Service for Host {
                 self.requested_screen = Some(key);
                 m.complete(0);
             }
-            proto::OPEN => {
+            proto::OPEN | proto::OPEN_FILE => {
                 let from = app.key;
                 let target = read_text(&m, 0, proto::KEY_MAX)
                     .ok()
@@ -1044,12 +1078,52 @@ impl Service for Host {
                 let Ok(page) = u16::try_from(m.int(1)) else {
                     return m.complete(kerr::ARGUMENT);
                 };
-                match read_text(&m, 2, proto::ARG_MAX) {
-                    Ok(arg) => {
-                        self.open_app(from, target, page, arg, e32::time::millis());
+                let (arg, file) = if m.function() == proto::OPEN {
+                    match read_text(&m, 2, proto::ARG_MAX) {
+                        Ok(arg) => (arg, None),
+                        Err(_) => return m.complete(kerr::ARGUMENT),
+                    }
+                } else {
+                    match SharedFile::adopt_from_client(&m, 2, 3) {
+                        Ok(f) => (String::new(), Some(f)),
+                        Err(e) => {
+                            dprintln!("neoui: {} open file failed {}", from, e);
+                            return m.complete(e);
+                        }
+                    }
+                };
+                self.open_app(from, target, page, arg, file, e32::time::millis());
+                m.complete(0);
+            }
+            proto::ARG_FILE | proto::RESULT_FILE => {
+                let slot = if m.function() == proto::ARG_FILE {
+                    &mut app.file
+                } else {
+                    &mut app.result
+                };
+                match slot.take() {
+                    // the server's copy closes when `f` drops; the app has its own handle by then
+                    Some(f) => drop(f.transfer_to_client(m, 0)),
+                    None => m.complete(err::KERR_NOT_FOUND),
+                }
+            }
+            proto::DONE_FILE => {
+                let file = match SharedFile::adopt_from_client(&m, 0, 1) {
+                    Ok(f) => f,
+                    Err(e) => return m.complete(e),
+                };
+                let (key, opener) = (app.key, app.opened_by);
+                if front == Some(key) {
+                    dprintln!("neoui: app {} done with a file for {:?}", key, opener);
+                    self.leave = true;
+                }
+                match opener.and_then(|o| self.apps.find_mut(|a| a.key == o && a.quit_at.is_none()))
+                {
+                    Some(o) => {
+                        o.result = Some(file);
                         m.complete(0);
                     }
-                    Err(_) => m.complete(kerr::ARGUMENT),
+                    None => m.complete(err::KERR_NOT_FOUND),
                 }
             }
             proto::ARG => {

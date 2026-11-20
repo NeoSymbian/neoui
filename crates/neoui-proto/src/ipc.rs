@@ -26,14 +26,19 @@
 //! ([`AppEvent::Notified`]). Since 1.10 an app can ask for a short vibration ([`HAPTIC`]: the old apps' key pads) and is
 //! told when the fingers it had were taken away ([`AppEvent::InputReset`]: the screen went off, the app lost the
 //! front), and the legacy bridge loses the shell's header once it declares a [`PAGE`]. Since 1.11 a shade entry can
-//! carry a progress bar ([`crate::page::Notification::progress`]).
+//! carry a progress bar ([`crate::page::Notification::progress`]). Since 1.12 apps pass open files to each other
+//! (Files' Open with and its file picker, docs files-app.md FA8): [`OPEN_FILE`] opens an app with a file, which it takes
+//! with [`ARG_FILE`]; a picker answers with [`DONE_FILE`] and its opener takes the file with [`RESULT_FILE`]. Files go
+//! by handle (`e32::fs::SharedFile`), so a private file or a long path is no problem. The clipboard has a kind
+//! ([`CLIP_SET`]'s second argument, [`CLIP_KIND`]): copied files are their paths, one per line, so plain-text readers
+//! still paste something. Which apps open which file types is [`crate::open`].
 
 use crate::{InputEvent, TouchPhase};
 
 /// The server's name (no leading `!`: that needs ProtServ).
 pub const SERVER: &str = "NeoUi";
 /// Protocol version (major, minor); a connect with another major is refused.
-pub const VERSION: (u8, u8) = (1, 11);
+pub const VERSION: (u8, u8) = (1, 12);
 
 /// `[Des8 out: GEOMETRY_LEN bytes = width, height, dp × 256 (u32 LE)]` → 0. `dp` is the shell's design unit in
 /// pixels (`min(screen w, h) / 360`), so apps size things like the shell does.
@@ -116,8 +121,13 @@ pub const NOTIFICATIONS_MAX: usize = 16;
 /// `[id: u32, count: u32]` → 0: a red count on the app's launcher icon (missed calls, unread messages); `id` names
 /// the counter (the app sums them), 0 removes it. Shown as 99+ past 99.
 pub const BADGE: i32 = 19;
-/// `[Des8 text]` (UTF-8, at most [`CLIP_MAX`] bytes) → 0: the clipboard's text, shared by every app and the shell.
+/// `[Des8 text, kind]` (UTF-8, at most [`CLIP_MAX`] bytes) → 0: the clipboard's text, shared by every app and the
+/// shell. `kind` (since 1.12; older apps send 0) says what the text is: [`CLIP_TEXT`], or files to copy or move
+/// ([`CLIP_PATHS_COPY`], [`CLIP_PATHS_MOVE`]: full paths, one per line). Another kind gives `KErrArgument`.
 pub const CLIP_SET: i32 = 20;
+pub const CLIP_TEXT: i32 = 0;
+pub const CLIP_PATHS_COPY: i32 = 1;
+pub const CLIP_PATHS_MOVE: i32 = 2;
 /// `[Des8 out text]` → the text's length (0: empty), written into argument 0; `KErrOverflow` when it doesn't fit.
 pub const CLIP_GET: i32 = 21;
 pub const CLIP_MAX: usize = 2048;
@@ -139,6 +149,21 @@ pub const DONE: i32 = 24;
 /// `KErrNotSupported` on a device without a vibration motor.
 pub const HAPTIC: i32 = 25;
 pub const HAPTIC_MS_MAX: i32 = 50;
+/// `[Des8 key, page: u16, handle fs, file]` → 0: [`OPEN`] with an open file instead of an arg: the opener puts the
+/// file in slots 2 and 3 (`File::transfer_to_server`; its session shared with `Fs::share_protected`). The target
+/// takes it with [`ARG_FILE`]. Same errors as `OPEN`, or the file's (`KErrBadHandle`, `KErrPermissionDenied`).
+pub const OPEN_FILE: i32 = 26;
+/// `[Des8 out file: 4 bytes]` → a file-server session handle, with the file's handle written into argument 0
+/// (`SharedFile::adopt_from_server`): the file the last [`OPEN_FILE`] of this app carried; taking it removes it.
+/// `KErrNotFound` when there is none.
+pub const ARG_FILE: i32 = 27;
+/// `[handle fs, file]` → 0: [`DONE`] with a result: a file picked or saved for the app that opened this one (the
+/// file in slots 0 and 1, as for [`OPEN_FILE`]). That app takes it with [`RESULT_FILE`] when it is shown again.
+pub const DONE_FILE: i32 = 28;
+/// `[Des8 out file: 4 bytes]` → as [`ARG_FILE`], for the file the app this one opened answered with ([`DONE_FILE`]).
+pub const RESULT_FILE: i32 = 29;
+/// `[]` → the clipboard's kind ([`CLIP_TEXT`] when empty or set by a 1.11 app).
+pub const CLIP_KIND: i32 = 30;
 /// The longest launcher key, in bytes.
 pub const KEY_MAX: usize = 16;
 

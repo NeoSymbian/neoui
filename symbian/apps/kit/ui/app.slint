@@ -7,16 +7,87 @@ import "@neoui/fonts/NeoSans-Medium.ttf";
 import "@neoui/fonts/NeoSans-SemiBold.ttf";
 import "@neoui/fonts/NeoSans-Bold.ttf";
 import "@neoui/fonts/DejaVuSans.ttf";
-import { Theme, Kit, Scroll, Header } from "@neoui/kit.slint";
+import { Theme, Kit, Scroll, Header, Button, SectionHeader } from "@neoui/kit.slint";
 import { GalleryPages, GalleryState } from "@neoui/gallery/gallery.slint";
 
 export { Theme, Kit, Scroll, GalleryState }
+
+// The "Files" page (protocol 1.12, docs files-app.md FA8): files picked and saved through Files, and files other
+// apps open here with Open with. The app fills `file-*` from the file it got (its name, size and first line).
+export global FileDemo {
+    in property <string> status: "Pick a file in Files, or save one there.";
+    in property <string> name;
+    in property <string> size;
+    in property <string> first-line;
+    callback pick();
+    callback save();
+}
+
+component FilesPage inherits Rectangle {
+    VerticalLayout {
+        padding: Theme.margin;
+        spacing: Theme.margin;
+        alignment: start;
+        Button {
+            text: "Pick a file";
+            clicked => {
+                FileDemo.pick();
+            }
+        }
+
+        Button {
+            text: "Save a file";
+            primary: false;
+            clicked => {
+                FileDemo.save();
+            }
+        }
+
+        Text {
+            text: FileDemo.status;
+            color: Theme.text-secondary;
+            font-size: Theme.font-label;
+            wrap: word-wrap;
+        }
+
+        if FileDemo.name != "": VerticalLayout {
+            spacing: 4 * Theme.dp;
+            SectionHeader {
+                text: "The file";
+            }
+
+            // a name or a line in any keyboard language (Armenian, Cyrillic): NeoSans has Latin only
+            Text {
+                text: FileDemo.name;
+                font-family: "DejaVu Sans";
+                color: Theme.text;
+                font-size: Theme.font-body;
+                wrap: word-wrap;
+            }
+
+            Text {
+                text: FileDemo.size;
+                color: Theme.text-dim;
+                font-size: Theme.font-label;
+            }
+
+            Text {
+                text: FileDemo.first-line;
+                font-family: "DejaVu Sans";
+                color: Theme.text-secondary;
+                font-size: Theme.font-body;
+                wrap: word-wrap;
+            }
+        }
+    }
+}
 
 export component KitApp inherits Window {
     default-font-family: "NeoSans";
     background: Theme.bg;
     property <[string]> names: [
-        "Headers", "Footer", "Lists", "Menus", "Date picker", "Time picker", "Controls", "Feedback", "Phone parts"
+        "Headers", "Footer", "Lists", "Menus", "Date picker", "Time picker", "Controls", "Feedback", "Phone parts",
+        "Files"
     ];
     VerticalLayout {
         Header {
@@ -28,7 +99,10 @@ export component KitApp inherits Window {
             }
         }
 
-        GalleryPages {
+        if GalleryState.page < 9: GalleryPages {
+            vertical-stretch: 1;
+        }
+        if GalleryState.page == 9: FilesPage {
             vertical-stretch: 1;
         }
     }

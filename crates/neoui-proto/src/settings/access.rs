@@ -28,6 +28,7 @@ impl Caller<'_> {
                 Some(spec) => match spec.owner {
                     Owner::App(owner) => owner == app,
                     Owner::Apps(owners) => owners.contains(&app),
+                    Owner::Any => true,
                     Owner::Shell => false,
                 },
                 None => namespace(name) == app,
