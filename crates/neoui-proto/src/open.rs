@@ -8,7 +8,8 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
-/// An app that opens files: [`crate::ipc::OPEN_FILE`] on `key`'s page `page`.
+/// An app that opens files: [`crate::ipc::OPEN_FILE`] on `key`'s page `page`, or [`crate::ipc::OPEN`] with the
+/// file's path as the arg when `by_path` (an app written before 1.12; the path must fit [`crate::ipc::ARG_MAX`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Handler {
     pub key: &'static str,
@@ -17,6 +18,7 @@ pub struct Handler {
     pub label: &'static str,
     /// Lower-case extensions without the dot; `"*"` takes any file.
     pub exts: &'static [&'static str],
+    pub by_path: bool,
 }
 
 /// Files, as other apps see it.
@@ -43,12 +45,14 @@ pub const HANDLERS: &[Handler] = &[
         page: 3, // phone-core's contacts::IMPORT
         label: "Contacts",
         exts: &["vcf"],
+        by_path: true,
     },
     Handler {
         key: kit::KEY,
         page: kit::VIEW,
         label: "Kit file viewer",
         exts: &["*"],
+        by_path: false,
     },
 ];
 
