@@ -66,7 +66,7 @@ jobs:
       # FILES_REF: a branch while a files change and its taps here are reviewed together; main otherwise
       - name: NeoSymbian/files
         env:
-          FILES_REF: main
+          FILES_REF: fa8
         run: |
           git clone -q --depth 1 --branch "$FILES_REF" https://github.com/NeoSymbian/files.git
           cd files/symbian && cargo arm
@@ -317,6 +317,9 @@ jobs:
       # - Clock (449,603). Up and held still for Open apps.
       # - Clock again from the menu; along the band rightwards: the previous app.
       # - Clock's ⋮ (497,73) -> Settings (400,157), the kit's menu.
+      # - Protocol 1.12 (Files FA8): the UI kit (Apps row 4, 449,985) -> ⋮ (500,73) -> Files (menu row 9, 400,805) ->
+      #   Save a file (270,244) opens Files' Save as on C:\ (no C:\Data there); its Save (470,998) answers the kit
+      #   with the new file by handle, and the kit writes into it.
       # Then the N9 map (Navigation once more, 270,201): the right edge's drag is Open apps.
       - name: Boot again; gesture navigation (the Thumb map, then N9)
         working-directory: build
@@ -338,6 +341,11 @@ jobs:
           wait_s 1; tap 449 603
           wait_s 1; tap 497 73; wait_s 1; tap 400 157; expect "clock: view settings"
           wait_s 1; swipe 270 1075 270 900; expect "neoui: screen home"
+          wait_s 1; tap 485 973; tap 449 985; expect "neoui: app kit started"
+          wait_s 1; tap 500 73; wait_s 1; tap 400 805; wait_s 1
+          tap 270 244; expect "files: opened on page 2"; wait_s 2
+          tap 470 998; expect "kit: saved"
+          wait_s 1; swipe 270 1075 270 900; expect "neoui: screen home"
           wait_s 1; tap 485 973; tap 270 805; tap 270 588; tap 270 201; wait_s 1
           swipe 534 540 340 540; expect "neoui: screen switcher"
           MON_GAP=0.1 MONITOR="$M" SECS=180 ./boot.sh
@@ -345,6 +353,11 @@ jobs:
           for g in back home menu apps prev; do grep -a "neoui: gesture $g" $s; done
           grep -a 'clock: view settings' $s
           grep -a 'clock: visible false' $s
+          # protocol 1.12: Files' Save as answered the kit with a file it wrote through the handle
+          grep -a 'neoui: kit opens files page 2' $s
+          grep -a 'files: saved C:\\note.txt for the caller' $s
+          grep -a 'neoui: app files done with a file for Some("kit")' $s
+          grep -a 'kit: saved C:\\note.txt 15 bytes' $s
           ! grep -aq 'K::Fault\|Kern::Fault\|\[EKERN\] panic\|rust panic' $s
 
       - uses: actions/upload-artifact@v4
