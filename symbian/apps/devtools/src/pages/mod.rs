@@ -33,6 +33,8 @@ pub struct Ctx {
     pub model: RefCell<Model>,
     /// The Console's rows: a fixed-size model whose rows change in place.
     pub console_rows: Rc<VecModel<SharedString>>,
+    /// The NeoLocation session that asked for fixes ("Start a fix"); closing it stops them.
+    pub gnss: RefCell<Option<e32::ipc::Session>>,
 }
 
 impl Ctx {

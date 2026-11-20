@@ -201,7 +201,13 @@ pub static CATALOGUE: &[Component] = &[
     ),
     c("wifi", "Wi-Fi", Group::Connectivity, &[], &[]),
     c("bluetooth", "Bluetooth", Group::Connectivity, &[], &[]),
-    c("gnss", "Location (GNSS)", Group::Connectivity, &[], &[]),
+    c(
+        "gnss",
+        "Location (GNSS)",
+        Group::Connectivity,
+        &[],
+        &["gnssd"],
+    ),
     c(
         "battery",
         "Battery and charger",

@@ -37,6 +37,8 @@ pub struct Readings {
     pub slot: Option<Result<String, i32>>,
     pub console: Option<Result<bool, i32>>,
     pub battery: Option<Result<neoui_proto::battery::Snapshot, i32>>,
+    /// GNSSD's NeoLocation record; None without GNSSD
+    pub gnss: Option<loc::ipc::Status>,
 }
 
 /// Reads everything (a few HAL calls, one NeoModem request, the drives' volume info).
@@ -63,7 +65,59 @@ pub fn read() -> Readings {
         slot: Some(hal::slot_info()),
         console: Some(hal::console_shown()),
         battery: Some(hal::battery()),
+        gnss: gnss_status(),
     }
+}
+
+/// A session with GNSSD (NeoLocation).
+pub fn gnss_session() -> Result<Session, i32> {
+    let (major, minor, build) = loc::ipc::VERSION;
+    let v = TVersion {
+        major: major as u8,
+        minor: minor as u8,
+        build: build as u16,
+    };
+    Session::connect(loc::ipc::NAME, v)
+}
+
+fn gnss_status() -> Option<loc::ipc::Status> {
+    let session = gnss_session().ok()?;
+    let mut b = [0u8; loc::ipc::SIZE];
+    let mut des = TPtr8::new(&mut b);
+    let mut args = TIpcArgs::new();
+    args.des8(0, &mut des);
+    session.send_receive(loc::ipc::op::STATUS, &args).ok()?;
+    loc::ipc::Status::decode(&b)
+}
+
+fn gnss_state(s: &loc::ipc::Status) -> (State, String) {
+    use loc::ipc::{flag, state};
+    if s.flags & flag::SERVICE == 0 {
+        return (
+            State::Off,
+            "no LOC service (no modem, or not up yet)".into(),
+        );
+    }
+    match s.state {
+        state::FIX => (
+            State::Ok,
+            format!("fix ±{} m, {} satellites", s.h_acc_dm / 10, s.used),
+        ),
+        state::SEARCHING => (
+            State::Starting,
+            format!("searching, {} satellites seen", s.seen),
+        ),
+        state::FAILED => (State::Error, "no fix within 15 minutes".into()),
+        state::LOCKED => (State::Error, "the modem's engine is locked".into()),
+        _ => (State::Off, "idle (LOC service up)".into()),
+    }
+}
+
+/// A coordinate, degrees × 10^7, as text.
+fn degrees(e7: i32) -> String {
+    let sign = if e7 < 0 { "-" } else { "" };
+    let a = e7.unsigned_abs();
+    format!("{sign}{}.{:07}", a / 10_000_000, a % 10_000_000)
 }
 
 fn modem_session() -> Result<Session, i32> {
@@ -215,6 +269,10 @@ pub fn probes(r: &Readings, cpus: u32, cpu_khz: Option<u32>) -> Vec<Probe> {
     if let Some(Ok(s)) = &r.slot {
         put("slot", State::Ok, s.clone());
     }
+    if let Some(s) = &r.gnss {
+        let (state, detail) = gnss_state(s);
+        put("gnss", state, detail);
+    }
     out
 }
 
@@ -347,6 +405,7 @@ pub fn actions(key: &str) -> Vec<&'static str> {
             "NeoAudio: find the microphones",
         ][..],
         "modem" => &["Refresh the status"][..],
+        "gnss" => &["Start a fix", "End the fixes", "Refresh the status"][..],
         _ => &[][..],
     });
     a
@@ -435,6 +494,43 @@ pub fn facts(dev: &Device, r: &Readings, extra: &crate::state::Model) -> Vec<(St
                 put("Kernel UTC", format!("{utc} s"));
             }
             None => put("RTC", "not readable here (no NeoSymbian RTC call)".into()),
+        },
+        "gnss" => match &r.gnss {
+            Some(s) => {
+                put("GNSSD", gnss_state(s).1);
+                if s.utc_ms != 0 {
+                    put(
+                        "Position",
+                        format!("{}, {}", degrees(s.lat_e7), degrees(s.lon_e7)),
+                    );
+                    put(
+                        "Accuracy",
+                        format!("±{}.{} m", s.h_acc_dm / 10, s.h_acc_dm % 10),
+                    );
+                    put("Altitude", format!("{} m", s.alt_dm / 10));
+                    put("Fix time (UTC ms)", format!("{}", s.utc_ms));
+                }
+                put("Satellites", format!("{} used, {} seen", s.used, s.seen));
+                if s.ttff_ms != 0 {
+                    put(
+                        "Time to first fix",
+                        format!("{}.{} s", s.ttff_ms / 1000, s.ttff_ms % 1000 / 100),
+                    );
+                }
+                put(
+                    "XTRA",
+                    match (s.xtra_age_s, s.flags & loc::ipc::flag::XTRA_VALID != 0) {
+                        (loc::ipc::NO_XTRA, false) => "none".into(),
+                        (loc::ipc::NO_XTRA, true) => "valid (from before)".into(),
+                        (age, valid) => format!(
+                            "injected {} min ago{}",
+                            age / 60,
+                            if valid { ", valid" } else { "" }
+                        ),
+                    },
+                );
+            }
+            None => put("GNSSD", "not running".into()),
         },
         "modem" => {
             if let Some(s) = &r.modem {
