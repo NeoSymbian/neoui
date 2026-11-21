@@ -5,16 +5,10 @@ name: syborg
 # with NeoSymbian/build (estart then runs it instead of the window server) plus the Clock app, boot on QEMU,
 # drive it through the QEMU monitor (open Clock, tap it, go back) and check the serial log and the screen. Only the screenshot and logs are published,
 # never the ROM (it links Slint under GPL-3.0 with EPL-1.0 Symbian code).
+# Manual only for now: the user side is ARMv8 with VFP (NeoSymbian/docs user-side-smp.md US2), which the 2010 Syborg
+# kernel can't run, so this job fails against build's main. These UI checks move to QEMU virt with our kernel (US6b).
 on:
-  push:
-    branches: [main]     # a PR branch runs once, as its pull_request
-    paths-ignore: ['**/*.md', 'design/**', 'snapshots/**']
-  pull_request:
-    paths-ignore: ['**/*.md', 'design/**', 'snapshots/**']
   workflow_dispatch:
-  # nightly against build's main head: a build change that breaks the UI shows up within a day, not at the next neoui push
-  schedule:
-    - cron: '30 3 * * *'
 
 # a newer push to the same PR cancels its older run; main keeps one result per commit
 concurrency:
