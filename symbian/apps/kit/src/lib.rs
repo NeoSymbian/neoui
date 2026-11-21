@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! NEOKIT.EXE: the neoui kit gallery on the device, and the smallest complete neoui app (docs `neoui-kit.md`):
+//! NEOKIT.EXE: the neoui kit gallery on the device, and the smallest complete neoui app (docs `neoui-shell/kit.md`):
 //! connect, show the UI, describe the page, then [`neoapp::App::run`]: input, resizes, Slint timers and drawing are
 //! neoapp's; the app handles Back (through the kit's layers first) and what is its own. Its "Files" page shows how an
 //! app uses Files' file picker and takes files from Open with (protocol 1.12: `open_file`, `result_file`, `arg_file`).

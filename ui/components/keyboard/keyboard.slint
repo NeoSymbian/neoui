@@ -103,7 +103,7 @@ export component Keyboard inherits Rectangle {
     property <bool> digits: SystemSettings.keyboard-same-height && layout.rows.length < Layouts.tallest;
     property <int> rows: layout.rows.length + (digits ? 1 : 0);
     property <length> pitch: 48 * Theme.dp;
-    // the top band with the hide key (docs gestures.md: the keyboard covers the strip and puts itself away)
+    // the top band with the hide key (docs neoui-shell/navigation.md: the keyboard covers the strip and puts itself away)
     property <length> bar: 30 * Theme.dp;
     // out: the height in each mode, for the UI server to tell apps (it changes with the language and settings)
     out property <length> text-h: bar + 6 * Theme.dp + (rows + 1) * pitch;

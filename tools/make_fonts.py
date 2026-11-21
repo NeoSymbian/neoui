@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-"""NeoSans: Inter with Noto Sans Armenian's letters, at 400, 500, 600 and 700 (docs neoui-kit.md, "Fonts").
+"""NeoSans: Inter with Noto Sans Armenian's letters, at 400, 500, 600 and 700 (docs neoui-shell/kit.md, "Fonts").
 
 Slint draws a Text in one font with no fallback, and Inter has no Armenian: the design (the canvas, Inter with Noto
 Sans Armenian after it) needs one family with both. Static cuts of both variable fonts are subset to the scripts the

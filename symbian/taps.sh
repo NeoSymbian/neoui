@@ -15,7 +15,7 @@ at() { add "mouse_move $(((2 * $1 + 1) * 16384 / SW)) $(((2 * $2 + 1) * 16384 / 
 tap() { at "$1" "$2"; add "mouse_button 1"; add "mouse_button 0"; add "expect neoui: tap from Some(($1, $2))"; }
 # expect TEXT: wait until TEXT appears in the serial log after the previous expect's match (run-syborg EXPECT_MAX)
 expect() { add "expect $*"; }
-# swipe X1 Y1 X2 Y2: press at (X1, Y1), move to (X2, Y2) in 8 steps, release; an edge gesture (docs gestures.md)
+# swipe X1 Y1 X2 Y2: press at (X1, Y1), move to (X2, Y2) in 8 steps, release; an edge gesture (docs neoui-shell/navigation.md)
 # starts within 16 dp of the edge
 swipe() {
 	at "$1" "$2"; add "mouse_button 1"

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! What an app tells the shell about its screen (protocol 1.8, docs `neoui-kit.md`): the page it shows ([`Page`]:
+//! What an app tells the shell about its screen (protocol 1.8, docs `neoui-shell/kit.md`): the page it shows ([`Page`]:
 //! its name, whether Back stays inside it, full screen), a dialog ([`Query`]), a toast ([`Note`]) and an entry in the
 //! shade ([`Notification`]). Since 1.8 the app draws its own header and footer with the kit; the shell draws the
 //! status bar, the key row or gesture band, dialogs, toasts and the shade.

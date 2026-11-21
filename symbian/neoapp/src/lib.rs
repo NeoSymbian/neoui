@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! The neoui app API (protocol 1.8; docs `neoui-kit.md`): everything an app process does with the shell.
+//! The neoui app API (protocol 1.8; docs `neoui-shell/kit.md`): everything an app process does with the shell.
 //!
 //! - [`App::connect`]: the `NeoUi` session, the geometry, the surface chunk, and Slint's platform drawing into it.
 //! - [`App::next_event`]: the event loop's one outstanding `NEXT_EVENT`. While it waits it runs Slint's timers and

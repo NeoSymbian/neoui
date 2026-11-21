@@ -580,7 +580,7 @@ impl Renderer {
         self.ui.set_key_row_peek(on);
     }
 
-    /// Do what a finished edge gesture asks (docs `gestures.md`, Navigation v2). Back runs the shell's Back, so an app
+    /// Do what a finished edge gesture asks (docs `neoui-shell/navigation.md`, Navigation v2). Back runs the shell's Back, so an app
     /// whose page goes back inside it hears of it through [`Renderer::take_nav`]. Home from home opens the Apps menu.
     /// The last, previous and next apps come from the running apps (most recent first, [`Renderer::set_running`]).
     pub fn gesture(&mut self, g: neoui_proto::gesture::Gesture) {

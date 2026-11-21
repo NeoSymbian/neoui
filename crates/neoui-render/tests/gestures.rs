@@ -7,7 +7,7 @@ use neoui_proto::gesture::Gesture;
 use neoui_proto::settings::Value;
 use neoui_render::{Nav, Page};
 
-/// Edge gestures (docs gestures.md) do what the key row and the menus do; Gestures has a band, not keys.
+/// Edge gestures (docs neoui-shell/navigation.md) do what the key row and the menus do; Gestures has a band, not keys.
 #[test]
 fn gestures_take_the_shells_paths() {
     let (w, h) = (1080, 2160);

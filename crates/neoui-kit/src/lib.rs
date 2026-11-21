@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The neoui kit for apps in any repo: one theme, one set of components, one look (docs `neoui-kit.md`).
+//! The neoui kit for apps in any repo: one theme, one set of components, one look (docs `neoui-shell/kit.md`).
 //!
 //! The kit is the Slint library in neoui's `ui/` folder, imported as `@neoui`:
 //! `import { Theme, Header, Footer, NeoList, ListRow } from "@neoui/kit.slint";`. Use this crate as a
