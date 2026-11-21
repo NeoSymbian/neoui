@@ -47,7 +47,7 @@ pub const APPS: &[(&str, &str, &str)] = &[
     ("phone", "neophone", ""),
     ("contacts", "neocont", ""),
     ("messages", "neomsg", ""),
-    // the browser (NeoSymbian/browser, docs browser-ui.md): its own chrome over a page engine
+    // the browser (NeoSymbian/browser, docs browser/ui.md): its own chrome over a page engine
     ("browser", "neoweb", ""),
 ];
 
