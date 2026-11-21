@@ -20,7 +20,7 @@ fn s(t: &str) -> String {
     t.into()
 }
 
-/// Navigation v2 (docs gestures.md, design canvas Navigation): the bottom is Buttons' key row (← ⌂ ▢, 56 dp) or
+/// Navigation v2 (docs neoui-shell/navigation.md, design canvas Navigation): the bottom is Buttons' key row (← ⌂ ▢, 56 dp) or
 /// the gesture band (16 dp), the same for the shell's screens and apps, so an app has 639 dp or 679 dp. Back goes
 /// into the app while its page says so, else out of it; a dialog takes Back first; the toast's action and the
 /// shade's app entries come back to the server.

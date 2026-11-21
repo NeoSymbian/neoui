@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Edge gestures (docs `gestures.md`, Navigation v2 rules 07 and 08), in two maps ([`Map`]):
+//! Edge gestures (docs `neoui-shell/navigation.md`, Navigation v2 rules 07 and 08), in two maps ([`Map`]):
 //! - the Thumb map (Gestures, the default): in from either side for Back; up from the bottom for Home, up and hold
 //!   still (about 300 ms, [`Recognizer::tick`]) for Open apps; along the bottom band for the previous / next app;
 //! - the N9 map (N9 gestures): in from the left for Back; from the right a drag for Open apps, a quick flick for the
@@ -76,7 +76,7 @@ pub enum Step {
     Cancel,
 }
 
-/// Sizes in dp (docs `gestures.md`, "The recognizer").
+/// Sizes in dp (docs `neoui-shell/navigation.md`, "The recognizer").
 const ZONE_DP: i32 = 16;
 const SLOP_DP: i32 = 8;
 const SIDE_DP: i32 = 72;

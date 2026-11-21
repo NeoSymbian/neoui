@@ -102,7 +102,7 @@ jobs:
 
       # A phone-shaped screen with odd sizes (half of the Pixel's 1079x2159 touch range), so the UI must adapt to
       # whatever the device reports. The path is the design's contract, in screen pixels (1 dp = 1.497 px; Navigation
-      # v2, docs gestures.md and neoui-kit.md):
+      # v2, docs neoui-shell/navigation.md and neoui-shell/kit.md):
       # - The status bar is 37 px and a header 72 px, so shell screens and apps start their content at y 109.
       # - Buttons' key row is 84 px: ← (90,1037), ⌂ (270,1037), ▢ (449,1037).
       # - Gestures' band is 24 px. In the home dock, Apps is at (485,973) in Gestures and (485,913) in Buttons.
@@ -309,7 +309,7 @@ jobs:
           grep -a 'neocont: opened on page 0' $s
           ! grep -aq 'K::Fault\|Kern::Fault\|\[EKERN\] panic\|rust panic' $s
 
-      # Navigation v2's gestures (docs gestures.md; edge zone 16 dp = 24 px, sides and the band commit at 72 dp =
+      # Navigation v2's gestures (docs neoui-shell/navigation.md; edge zone 16 dp = 24 px, sides and the band commit at 72 dp =
       # 108 px, Home at 80 dp = 120 px). The Thumb map (Gestures, the default):
       # - Settings (via Apps 485,973 and 270,805) -> Home screen & navigation (270,588).
       # - The left edge goes Back (the sub-view), the right edge too (Settings' origin, the menu).

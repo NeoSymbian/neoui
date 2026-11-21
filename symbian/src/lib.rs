@@ -214,7 +214,7 @@ fn main() -> i32 {
         let mut swallow = false;
         let mut phone_modal = false;
         let (slop, turn) = ((8 * dp256 / 256) as i32, (60 * dp256 / 256) as i32);
-        // gesture navigation (docs gestures.md G1): the edge recognizer, the touches it holds back (the press and the
+        // gesture navigation (docs neoui-shell/navigation.md G1): the edge recognizer, the touches it holds back (the press and the
         // latest move), the hint it asks for (edge, progress, the finger across the edge) and where it was drawn
         let mut gest = Recognizer::new(w as u32, h as u32, dp256);
         let mut held: Vec<InputEvent> = Vec::new();
@@ -963,7 +963,7 @@ fn slide(
     }
 }
 
-/// The edge gesture's hint (docs gestures.md): for Back (rule 09, `back`) a 36 dp bubble with ← that follows the
+/// The edge gesture's hint (docs neoui-shell/navigation.md): for Back (rule 09, `back`) a 36 dp bubble with ← that follows the
 /// finger in from the edge and turns accent at the commit point; otherwise a 4 dp bar along the edge, longer as the
 /// finger goes in, accent once letting go acts, white at the bottom's second point (`progress` 512: N9's Apps menu,
 /// the Thumb map's Open apps).

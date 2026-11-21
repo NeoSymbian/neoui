@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // neoui design tokens: "Belle, modernized". Sizes are dp: 1 dp = min(window width, height) / 360, so a 360x640
-// layout scales to any screen (1080x2160 = 3 px per dp). Where each value comes from: design/DESIGN.md
+// layout scales to any screen (1080x2160 = 3 px per dp). Where each value comes from: docs neoui-shell/design-system.md
 // (measured facts from the Symbian^3 open layout data and from screenshots; no artwork is copied).
 
 export global Theme {
@@ -9,7 +9,7 @@ export global Theme {
 
     // Frame (measured: thin status pane 25, toolbar 61 at 360x640)
     out property <length> status-h: 25 * dp;
-    // the bottom strip (docs gestures.md, Five places): the same height in Classic and Gestures
+    // the bottom strip (docs neoui-shell/navigation.md, Five places): the same height in Classic and Gestures
     out property <length> strip-h: 56 * dp;
     out property <length> toolbar-icon: 26 * dp;
     out property <length> status-icon: 15 * dp;
@@ -46,7 +46,7 @@ export global Theme {
     out property <color> pressed: #ffffff26;
     out property <color> selected: #ffffff1a;
 
-    // Components (dp; modernized from the measured Belle/S^3 frame, see design/DESIGN.md)
+    // Components (dp; modernized from the measured Belle/S^3 frame, see docs neoui-shell/design-system.md)
     out property <length> title-h: 52 * dp;
     out property <length> row-icon: 26 * dp;
     out property <length> avatar: 44 * dp;
