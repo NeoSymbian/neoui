@@ -139,15 +139,17 @@ impl Scan {
         })
     }
 
-    /// One row per network name, its strongest access point first; hidden ones last
+    /// One row per network name, shown by the access point WIFID joins (neohw `wifi::kernel::Scan::best`: its
+    /// strongest 5 GHz one at -70 dBm or better, else its strongest); strongest rows first, hidden ones last
     pub fn list(&self) -> Vec<Network> {
+        let rank = |n: &Network| (n.channel > 14 && n.dbm >= -70, n.dbm);
         let mut v: Vec<Network> = Vec::new();
         for n in &self.networks {
             match v
                 .iter_mut()
                 .find(|m| !n.ssid.is_empty() && m.ssid == n.ssid)
             {
-                Some(m) if m.dbm < n.dbm => *m = n.clone(),
+                Some(m) if rank(m) < rank(n) => *m = n.clone(),
                 Some(_) => {}
                 None => v.push(n.clone()),
             }
@@ -420,7 +422,7 @@ mod tests {
     #[test]
     fn decodes_and_lists_strongest_per_name() {
         let mut b = alloc::vec![1, 2, 4, 7];
-        b.extend(entry(1, 44, -70, true, "Home"));
+        b.extend(entry(1, 44, -72, true, "Home")); // a weak 5 GHz AP: the row is the 2.4 GHz one
         b.extend(entry(2, 11, -46, true, "Home"));
         b.extend(entry(3, 36, -90, false, ""));
         b.extend(entry(4, 1, -60, false, "Cafe"));
@@ -439,6 +441,15 @@ mod tests {
             (s.named(), s.hidden(), l[0].signal(), l[2].signal()),
             (2, 1, "Excellent", "Very weak")
         );
+    }
+
+    #[test]
+    fn a_dual_band_row_shows_its_good_5ghz_ap() {
+        let mut b = alloc::vec![1, 2, 2, 1];
+        b.extend(entry(0x66, 1, -40, true, "HUAWEI"));
+        b.extend(entry(0x6a, 44, -46, true, "HUAWEI"));
+        let l = Scan::decode(&b).unwrap().list();
+        assert_eq!((l.len(), l[0].bssid[5], l[0].band()), (1, 0x6a, "5 GHz"));
     }
 
     #[test]
