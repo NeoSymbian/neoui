@@ -189,6 +189,7 @@ export component Shell inherits Window {
     in property <WifiLink> wifi-link;
     callback wifi-disconnect();
     callback wifi-forget();
+    callback wifi-sign-in();
     // in: the modem (telephony C5, from MODEMD's NeoModem server): signal bars (-1 = no modem), operator, technology,
     // and whether a call is up (the shade's "return to call"); out: what the SIM prompt and the Retry banner asked
     // ("pin", "sim-dismiss", "dial", "retry"). The Phone app (NEOPHONE) draws the calls themselves.
@@ -440,6 +441,7 @@ export component Shell inherits Window {
                 wifi-link: root.wifi-link;
                 wifi-disconnect => { root.wifi-disconnect(); }
                 wifi-forget => { root.wifi-forget(); }
+                wifi-sign-in => { root.wifi-sign-in(); }
                 radio-online: root.radio-online;
                 phone-feedback: root.phone-feedback;
             }

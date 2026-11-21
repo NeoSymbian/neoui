@@ -144,6 +144,8 @@ component WifiDetailsSheet inherits Rectangle {
     callback closed;
     callback disconnect();
     callback forget();
+    // the network wants its login page (browser UI5): it opens in the browser
+    callback sign-in();
     background: #000000b0;
     TouchArea { clicked => { root.closed(); } }
 
@@ -181,7 +183,8 @@ component WifiDetailsSheet inherits Rectangle {
                 padding-top: 8 * Theme.dp;
                 spacing: 12 * Theme.dp;
                 Button { text: "Forget"; primary: false; clicked => { root.forget(); } }
-                Button { text: link.connected ? "Disconnect" : "Cancel"; clicked => { root.disconnect(); } }
+                if link.sign-in: Button { text: "Sign in"; clicked => { root.sign-in(); } }
+                Button { text: link.connected ? "Disconnect" : "Cancel"; primary: !link.sign-in; clicked => { root.disconnect(); } }
             }
         }
     }
@@ -223,6 +226,8 @@ export component SettingsScreen inherits Rectangle {
     in property <WifiLink> wifi-link;
     callback wifi-disconnect();
     callback wifi-forget();
+    // Sign in on the current network (its row, or its details): the login page in the browser (browser UI5)
+    callback wifi-sign-in();
     property <bool> wifi-details;
     // the network whose sheet is open: a copy, so a rescan that reorders the list can't swap it
     property <WifiNet> wifi-current;
@@ -769,7 +774,13 @@ export component SettingsScreen inherits Rectangle {
                     icon: @image-url("../icons/sys/wifi.svg");
                     icon-tint: wifi-link.connected ? Theme.accent : Theme.text-secondary;
                     chevron: true;
-                    clicked => { root.wifi-details = true; }
+                    clicked => {
+                        if wifi-link.sign-in {
+                            root.wifi-sign-in();
+                        } else {
+                            root.wifi-details = true;
+                        }
+                    }
                 }
 
                 // the section header with "Searching…" and the refresh button on its baseline
@@ -843,6 +854,7 @@ export component SettingsScreen inherits Rectangle {
             closed => { root.wifi-details = false; }
             disconnect => { root.wifi-details = false; root.wifi-disconnect(); }
             forget => { root.wifi-details = false; root.wifi-forget(); }
+            sign-in => { root.wifi-details = false; root.wifi-sign-in(); }
         }
         if wifi-sheet: WifiSheet {
             width: parent.width;

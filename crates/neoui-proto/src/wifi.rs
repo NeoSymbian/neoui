@@ -284,6 +284,8 @@ pub enum Internet {
     Checking,
     Ok,
     NoAccess,
+    /// a web page answered for the check: the network wants a login first (a cafe's or hotel's, browser UI5)
+    SignIn,
 }
 
 /// The IP side of the link, from NEONET's status (docs hardware/wifi.md W5). `address` = `None` until DHCP gave one.
@@ -314,6 +316,8 @@ pub struct LinkView {
     /// the status bar icon's band label: "2.4" or "5" ("" when the network's scan entry is unknown)
     pub band: String,
     pub details: Vec<(String, String)>,
+    /// the network wants a login page first: Settings offers Sign in (browser UI5, br2-captive)
+    pub sign_in: bool,
 }
 
 impl LinkView {
@@ -365,6 +369,7 @@ impl LinkView {
                 String::from(n.band().trim_end_matches(" GHz"))
             }),
             details,
+            sign_in: false,
         }
     }
 
@@ -389,8 +394,13 @@ impl LinkView {
             Internet::Checking => "Checking…",
             Internet::Ok => "Connected",
             Internet::NoAccess => "No access",
+            Internet::SignIn => "Sign in needed",
         };
         row("Internet", String::from(internet));
+        if ip.internet == Internet::SignIn {
+            self.sign_in = true;
+            self.subtitle = String::from("Connected · Sign in needed");
+        }
         self
     }
 }
@@ -581,6 +591,19 @@ mod tests {
         assert_eq!(
             rows(&bare),
             ["IP address: 192.168.3.57/24", "Internet: No access"]
+        );
+        // a login page answered: Sign in, on the row and in the details
+        let portal = Ip {
+            internet: Internet::SignIn,
+            ..ip
+        };
+        let v = LinkView::new(&Link::decode(&link(3, 1, 0, &[])).unwrap(), None).with_ip(&portal);
+        assert!(v.sign_in);
+        assert_eq!(v.subtitle, "Connected · Sign in needed");
+        assert!(
+            !LinkView::new(&Link::decode(&link(3, 1, 0, &[])).unwrap(), None)
+                .with_ip(&ip)
+                .sign_in
         );
         // not connected: no IP rows at all
         let joining = Link::decode(&link(1, 0, 0, &[])).unwrap();
