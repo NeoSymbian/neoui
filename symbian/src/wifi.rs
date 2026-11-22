@@ -208,10 +208,15 @@ impl Wifi {
                 _ => Internet::Checking,
             },
         };
-        let portal = (self.ip.internet == Internet::SignIn)
-            .then(|| alloc::format!("http://{}/generate_204\n{}", check_host(), self.view.name));
-        if portal.is_some() != self.portal.is_some() {
-            self.portal = portal;
+        // the host is read once per login page; the network's name follows the scan (its MAC until the scan names it)
+        if self.ip.internet != Internet::SignIn {
+            self.portal = None;
+        } else {
+            let url = match self.portal.as_deref().and_then(|p| p.split_once('\n')) {
+                Some((url, _)) => alloc::string::String::from(url),
+                None => alloc::format!("http://{}/generate_204", check_host()),
+            };
+            self.portal = Some(alloc::format!("{url}\n{}", self.view.name));
         }
     }
 
