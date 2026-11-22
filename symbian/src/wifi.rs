@@ -30,11 +30,17 @@ type HttpTime = Option<&'static Mutex<Option<(i64, u64)>>>;
 /// A list this old is refreshed when the page opens, and rescanned while it stays open
 const FRESH_MS: u64 = 30_000;
 
-/// The internet check: Android's captive-portal probe, an empty 204 answer when the internet is reachable.
-/// shortcut: a portal's login page shows as "No access"; open it when there is a browser.
+/// The internet check: Android's captive-portal probe, an empty 204 answer when the internet is reachable. Another
+/// answer is a login page in the way (a cafe's or hotel's): Settings and the shade offer Sign in, which opens the
+/// probe's address in the browser, where the network shows its page (browser UI5, br2-captive).
 const CHECK_HOST: &str = "connectivitycheck.gstatic.com";
+/// shortcut: for testing a login page without one, this file can name another host to check (fshell writes it).
+const CHECK_HOST_FILE: &str = "C:\\private\\e0002001\\check-host.txt";
 const CHECK_OK: i32 = 1;
 const CHECK_FAILED: i32 = 2;
+const CHECK_PORTAL: i32 = 3;
+/// After the login: a network that wanted one is checked again this often, so Sign in goes once it's done
+const PORTAL_RECHECK_MS: u64 = 30_000;
 
 pub struct Wifi {
     next_read: u64,
@@ -63,6 +69,10 @@ pub struct Wifi {
     /// the running internet check, the address it was started for, and its result (0 while it runs)
     check: Option<JoinHandle>,
     checked: Option<[u8; 4]>,
+    /// when the last internet check started (a login page is checked again every [`PORTAL_RECHECK_MS`])
+    checked_at: u64,
+    /// the joined network wants its login page: the browser's argument for it (`<url>\n<network>`, UI5)
+    portal: Option<alloc::string::String>,
     internet: Failed,
     http_time: HttpTime,
 }
@@ -89,6 +99,8 @@ impl Wifi {
             next_ip: 0,
             check: None,
             checked: None,
+            checked_at: 0,
+            portal: None,
             internet: shared(),
             http_time: Mutex::new(None)
                 .ok()
@@ -167,10 +179,17 @@ impl Wifi {
         {
             h.join();
         }
+        if self.ip.internet == Internet::SignIn
+            && self.check.is_none()
+            && now.saturating_sub(self.checked_at) >= PORTAL_RECHECK_MS
+        {
+            self.checked = None;
+        }
         if let Some((a, _)) = address
             && self.checked != Some(a)
             && self.check.is_none()
         {
+            self.checked_at = now;
             set(self.internet, 0);
             let (shared, http) = (self.internet, self.http_time);
             match e32::thread::spawn(move || internet_check(shared, http)) {
@@ -185,9 +204,27 @@ impl Wifi {
             internet: match self.internet.map_or(0, |m| *m.lock()) {
                 CHECK_OK => Internet::Ok,
                 CHECK_FAILED => Internet::NoAccess,
+                CHECK_PORTAL => Internet::SignIn,
+                // a login page's re-check keeps Sign in on screen until it answers
+                _ if self.ip.internet == Internet::SignIn => Internet::SignIn,
                 _ => Internet::Checking,
             },
         };
+        // the host is read once per login page; the network's name follows the scan (its MAC until the scan names it)
+        if self.ip.internet != Internet::SignIn {
+            self.portal = None;
+        } else {
+            let url = match self.portal.as_deref().and_then(|p| p.split_once('\n')) {
+                Some((url, _)) => alloc::string::String::from(url),
+                None => alloc::format!("http://{}/generate_204", check_host()),
+            };
+            self.portal = Some(alloc::format!("{url}\n{}", self.view.name));
+        }
+    }
+
+    /// The joined network wants its login page: the browser's argument for it (`<url>\n<network>`).
+    pub fn portal(&self) -> Option<alloc::string::String> {
+        self.portal.clone()
     }
 
     /// The joined network's latest scan entry (for its name and signal)
@@ -347,13 +384,15 @@ fn shared() -> Failed {
 /// The internet check thread: resolve, connect, fetch `/generate_204`, expect "204"; the result goes into `result`,
 /// the response's `Date:` into `http` (the clock).
 fn internet_check(result: Failed, http: HttpTime) -> i32 {
-    let fetch = || -> Result<bool, i32> {
+    let fetch = || -> Result<i32, i32> {
+        let host = check_host();
         let net = net::client::Net::connect()?;
-        let ip = net.resolve(CHECK_HOST)?;
+        let ip = net.resolve(&host)?;
         let mut s = net.tcp_connect(ip, 80)?;
-        s.write_all(
-            b"GET /generate_204 HTTP/1.1\r\nHost: connectivitycheck.gstatic.com\r\nConnection: close\r\n\r\n",
-        )?;
+        let request = alloc::format!(
+            "GET /generate_204 HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n"
+        );
+        s.write_all(request.as_bytes())?;
         // the status line and the headers (a 204 has no body)
         let mut b = [0u8; 1024];
         let mut n = 0;
@@ -366,19 +405,35 @@ fn internet_check(result: Failed, http: HttpTime) -> i32 {
         if let (Some(m), Some(date)) = (http, neoui_proto::clock::datetime::http_date(&b[..n])) {
             *m.lock() = Some((date as i64, e32::time::millis()));
         }
-        Ok(b[..n].starts_with(b"HTTP/1.1 204") || b[..n].starts_with(b"HTTP/1.0 204"))
+        Ok(
+            if b[..n].starts_with(b"HTTP/1.1 204") || b[..n].starts_with(b"HTTP/1.0 204") {
+                CHECK_OK
+            } else if b[..n].starts_with(b"HTTP/") {
+                CHECK_PORTAL // a web server answered instead: a login page in the way
+            } else {
+                CHECK_FAILED
+            },
+        )
     };
     let r = fetch();
     e32::dprintln!("neoui: wifi: internet check {:?}", r);
-    set(
-        result,
-        if r == Ok(true) {
-            CHECK_OK
-        } else {
-            CHECK_FAILED
-        },
-    );
+    set(result, r.unwrap_or(CHECK_FAILED));
     0
+}
+
+/// The host the internet check asks: [`CHECK_HOST`], or the one [`CHECK_HOST_FILE`] names.
+fn check_host() -> alloc::string::String {
+    let named = e32::fs::Fs::connect().ok().and_then(|fs| {
+        let f = e32::fs::File::open(&fs, CHECK_HOST_FILE, e32::fs::mode::READ).ok()?;
+        let mut b = [0u8; 128];
+        let n = f.read_at(0, &mut b).ok()?;
+        let t = core::str::from_utf8(&b[..n]).ok()?.trim();
+        (!t.is_empty()
+            && t.bytes()
+                .all(|c| c.is_ascii_alphanumeric() || b".-:".contains(&c)))
+        .then(|| alloc::string::String::from(t))
+    });
+    named.unwrap_or_else(|| CHECK_HOST.into())
 }
 
 fn set(failed: Failed, why: i32) {

@@ -578,6 +578,9 @@ fn main() -> i32 {
                 }
                 repaint_all = true;
             }
+            if let Some(view) = host.requested_settings.take() {
+                ui.show("settings", &view);
+            }
             if let Some(key) = host.requested_screen.take() {
                 match host.requested_from.take() {
                     Some(from) => ui.show_from(key, from),
@@ -736,6 +739,11 @@ fn main() -> i32 {
                 time::millis(),
                 host.settings.get(keys::RADIO_WIFI).unwrap_or(true),
             );
+            // a Wi-Fi login page (browser UI5): the shade's entry, and Settings' Sign in
+            host.set_portal(wifi.portal());
+            if ui.take_wifi_sign_in() {
+                host.open_portal(ms);
+            }
             mirror.sync(&mut ui, &mut host.settings, ms);
             phone.sync_settings(&host.settings, ms); // (phone.poll runs right after the select, C7)
             sound.poll(&host.settings, &mut ui, ms);

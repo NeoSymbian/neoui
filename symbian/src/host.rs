@@ -69,6 +69,13 @@ pub const PAGES: &[(&str, &str, u16)] = &[
 /// Apps started (hidden) at boot and never closed for room: an incoming call must show at once; Messages posts a
 /// shade entry per conversation as texts arrive.
 pub const RESIDENT: &[&str] = &["phone", "messages"];
+
+/// The browser's key, and its page for a Wi-Fi login (NeoSymbian/browser NEOWEB `PAGE_PORTAL`, UI5)
+const BROWSER: &str = "browser";
+const PORTAL_PAGE: u16 = 5;
+/// The id of the shell's "Sign in to Wi-Fi network" entry (posted as the browser's; the browser numbers its own
+/// download entries from 1)
+const PORTAL_ENTRY: u32 = 0xE000_0001;
 /// A resident app that ended is started again after this long.
 const RESIDENT_RETRY_MS: u64 = 10_000;
 
@@ -208,6 +215,10 @@ pub struct Host {
     pub requested_screen: Option<&'static str>,
     /// With [`Self::requested_screen`] from `OPEN`: the app that opened it (Back at its root returns there).
     pub requested_from: Option<&'static str>,
+    /// An app's `OPEN` of the shell's own Settings on this view ("wifi": the browser's Check Wi-Fi, UI5)
+    pub requested_settings: Option<String>,
+    /// The joined network wants its login page: the browser's argument for it (`<url>\n<network>`, UI5)
+    portal: Option<String>,
     /// The front app said `DONE`: the main loop takes the shell's Back past it.
     pub leave: bool,
     /// Kept by app key, not process: installed entries survive exit and restart.
@@ -263,6 +274,8 @@ impl Host {
             front: None,
             requested_screen: None,
             requested_from: None,
+            requested_settings: None,
+            portal: None,
             leave: false,
             entries: Vec::new(),
             entries_changed: false,
@@ -347,6 +360,11 @@ impl Host {
             key,
             action
         );
+        // the shell's own entry for a Wi-Fi login: the browser opens on the login page
+        if key == BROWSER && n.id == PORTAL_ENTRY {
+            self.open_portal(now_ms);
+            return;
+        }
         self.limit_running(key, now_ms);
         self.start(key);
         if action == 0 {
@@ -354,6 +372,39 @@ impl Host {
         }
         self.post(key, AppEvent::Notified { id: n.id, action });
         self.requested_screen = Some(key);
+    }
+
+    /// The joined network wants a login page (`arg` = `<url>\n<network>`), or no longer does: the shade's "Sign in to
+    /// Wi-Fi network" entry (posted as the browser's) comes or goes.
+    pub fn set_portal(&mut self, arg: Option<String>) {
+        if self.portal == arg {
+            return;
+        }
+        let network = arg
+            .as_deref()
+            .and_then(|a| a.split_once('\n'))
+            .map_or("", |(_, n)| n);
+        let n = Notification {
+            id: PORTAL_ENTRY,
+            title: if arg.is_some() {
+                "Sign in to Wi-Fi network".into()
+            } else {
+                String::new()
+            },
+            text: alloc::format!("'{network}' · tap to open"),
+            page: PORTAL_PAGE,
+            ..Notification::default()
+        };
+        let _ = notify(&mut self.notifications, BROWSER, n);
+        self.notes_changed = true;
+        self.portal = arg;
+    }
+
+    /// Settings' Sign in, or the shade's entry: the browser on the network's login page.
+    pub fn open_portal(&mut self, now_ms: u64) {
+        if let Some(arg) = self.portal.clone() {
+            self.open_app("settings", BROWSER, PORTAL_PAGE, arg, None, now_ms);
+        }
     }
 
     /// App `from` opens app `key` on `page` with `arg` (ipc `OPEN`) or a file (`OPEN_FILE`): started or brought to
@@ -1069,9 +1120,16 @@ impl Service for Host {
             }
             proto::OPEN | proto::OPEN_FILE => {
                 let from = app.key;
-                let target = read_text(&m, 0, proto::KEY_MAX)
-                    .ok()
-                    .and_then(|k| APPS.iter().find(|(a, _, _)| *a == k).map(|(a, _, _)| *a));
+                let key = read_text(&m, 0, proto::KEY_MAX).ok();
+                // the shell's own Settings, on the view the argument names (the browser's Check Wi-Fi, UI5)
+                if key.as_deref() == Some("settings") && m.function() == proto::OPEN {
+                    let view = read_text(&m, 2, proto::ARG_MAX).unwrap_or_default();
+                    dprintln!("neoui: {} opens settings {}", from, view);
+                    self.requested_settings = Some(view);
+                    return m.complete(0);
+                }
+                let target =
+                    key.and_then(|k| APPS.iter().find(|(a, _, _)| *a == k).map(|(a, _, _)| *a));
                 let Some(target) = target else {
                     return m.complete(err::KERR_NOT_FOUND);
                 };

@@ -142,6 +142,8 @@ pub struct Renderer {
     power: Rc<RefCell<Vec<i32>>>,
     phone: Rc<RefCell<Vec<(String, String)>>>,
     wifi_refresh: Rc<RefCell<bool>>,
+    /// Sign in pressed on the current network (browser UI5)
+    wifi_sign_in: Rc<RefCell<bool>>,
     sound_actions: Rc<RefCell<Vec<String>>>,
     zone_next: Rc<RefCell<bool>>,
     wifi_connect: Rc<RefCell<Option<(String, String)>>>,
@@ -262,6 +264,9 @@ impl Renderer {
         ui.on_wifi_disconnect(move || *sink.borrow_mut() = Some(false));
         let sink = wifi_leave.clone();
         ui.on_wifi_forget(move || *sink.borrow_mut() = Some(true));
+        let wifi_sign_in: Rc<RefCell<bool>> = Rc::default();
+        let sink = wifi_sign_in.clone();
+        ui.on_wifi_sign_in(move || *sink.borrow_mut() = true);
         let wifi_connect: Rc<RefCell<Option<(String, String)>>> = Rc::default();
         let sink = wifi_connect.clone();
         ui.on_wifi_connect(move |b, p| {
@@ -282,6 +287,7 @@ impl Renderer {
             power,
             phone,
             wifi_refresh,
+            wifi_sign_in,
             sound_actions,
             zone_next,
             wifi_connect,
@@ -721,6 +727,11 @@ impl Renderer {
         self.ui.set_sound_feedback(text.into());
     }
 
+    /// Sign in was pressed on the current network since the last call (its login page goes to the browser).
+    pub fn take_wifi_sign_in(&mut self) -> bool {
+        core::mem::take(&mut *self.wifi_sign_in.borrow_mut())
+    }
+
     /// The Wi-Fi page's refresh button was pressed since the last call.
     pub fn take_wifi_refresh(&mut self) -> bool {
         core::mem::take(&mut *self.wifi_refresh.borrow_mut())
@@ -755,6 +766,7 @@ impl Renderer {
             bars: i32::from(v.bars),
             band: v.band.as_str().into(),
             details: slint::ModelRc::new(slint::VecModel::from(details)),
+            sign_in: v.sign_in,
         });
     }
 
