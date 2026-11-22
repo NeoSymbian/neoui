@@ -205,6 +205,8 @@ impl Wifi {
                 CHECK_OK => Internet::Ok,
                 CHECK_FAILED => Internet::NoAccess,
                 CHECK_PORTAL => Internet::SignIn,
+                // a login page's re-check keeps Sign in on screen until it answers
+                _ if self.ip.internet == Internet::SignIn => Internet::SignIn,
                 _ => Internet::Checking,
             },
         };
