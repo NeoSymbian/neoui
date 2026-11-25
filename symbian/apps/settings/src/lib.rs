@@ -24,11 +24,13 @@ use core::time::Duration;
 use e32::dprintln;
 use neoapp::{App, AppEvent, Page as AppPage, Query};
 use neoui_proto::ipc as proto;
+use neoui_proto::settings::Value;
 use neoui_proto::settings::keys;
 use neoui_proto::settings_app::choices::{KEYBOARDS, TIMEOUTS};
 use neoui_proto::settings_app::info::{Battery, Clock};
 use neoui_proto::settings_app::page::Page;
-use settings_ui::{KeyboardFocus, Kit, SetState, SettingsApp, Theme};
+use neoui_proto::settings_app::rows;
+use settings_ui::{KeyboardFocus, Kit, SearchHit, SetState, SettingsApp, Theme};
 use slint::{ComponentHandle, ModelRc, SharedString, Timer, TimerMode, VecModel};
 
 e32::main!(main);
@@ -59,6 +61,46 @@ struct Ctx {
     asked_reset: Cell<bool>,
     /// the keyboard as last asked of the shell (KeyboardFocus open, seq, mode)
     kb: Cell<(bool, i32, i32)>,
+}
+
+/// A search result's value: what its row shows now (switches as On/Off); "" for rows without one.
+fn live_value(s: &SetState<'_>, id: &str) -> String {
+    let on = |b: bool| String::from(if b { "On" } else { "Off" });
+    match id {
+        "root.wifi" | "wifi.switch" | "conn.wifi" => {
+            let l = s.get_wifi_link();
+            if !s.get_wifi() {
+                "Off".into()
+            } else if l.connected {
+                l.name.into()
+            } else {
+                "Not connected".into()
+            }
+        }
+        "root.bt" | "bt.switch" | "conn.bt" => on(s.get_bluetooth()),
+        "conn.data" | "mobile.data" => on(s.get_mobile_data()),
+        "root.airplane" | "conn.airplane" => on(s.get_airplane()),
+        "root.mobile" => s.get_rat().into(),
+        "display.dark" => on(s.get_dark()),
+        "display.timeout" => s.get_timeout_text().into(),
+        "sounds.silent" => on(s.get_silent()),
+        "sounds.vibrate" => on(s.get_vibrate()),
+        "sounds.ring" => alloc::format!("{}", s.get_ring_volume()),
+        "sounds.media" => alloc::format!("{}", s.get_media_volume()),
+        "time.auto" => on(s.get_time_auto()),
+        "time.auto_zone" => on(s.get_time_auto_zone()),
+        "time.zone" => s.get_zone().into(),
+        "time.24h" => on(s.get_clock_24h()),
+        "time.seconds" => on(s.get_status_seconds()),
+        "time.shade_date" => on(s.get_shade_date()),
+        "time.format" => s.get_date_text().into(),
+        "kb.same_height" => on(s.get_same_height()),
+        "dev.usb" => on(s.get_usb_debugging()),
+        "pads.vibrate" => on(s.get_pad_vibrate()),
+        "pads.lefty" => on(s.get_pad_lefty()),
+        "pads.console" => on(s.get_pad_console()),
+        _ => String::new(),
+    }
 }
 
 fn run() -> Result<(), i32> {
@@ -382,6 +424,34 @@ impl Ctx {
                     },
                     "",
                 );
+            }
+            "root-grid" => {
+                let r = app.set_setting_raw(store::ROOT_GRID, &Value::Bool(value == "1"));
+                dprintln!("settings: root grid {} ({:?})", value, r);
+                store::load(app, &ui);
+            }
+            "search" => {
+                let hits: Vec<SearchHit> = rows::search(value)
+                    .into_iter()
+                    .map(|r| SearchHit {
+                        title: r.title.into(),
+                        path: if r.on == Page::Root {
+                            "Settings"
+                        } else {
+                            r.on.title()
+                        }
+                        .into(),
+                        value: live_value(&s, r.id).into(),
+                        page: i32::from(r.opens.id()),
+                    })
+                    .collect();
+                dprintln!("settings: search {} results", hits.len());
+                s.set_results(ModelRc::new(VecModel::from(hits)));
+            }
+            // Dev tools on one of its pages ("console", "tools")
+            "devtools" => {
+                let r = app.open("devtools", 0, value);
+                dprintln!("settings: open devtools {} ({:?})", value, r);
             }
             // another app's own settings (protocol 1.9 OPEN: Back comes back here)
             "app" => {

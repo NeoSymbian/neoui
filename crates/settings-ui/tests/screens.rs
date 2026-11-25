@@ -4,7 +4,7 @@
 mod common;
 
 use common::{BUTTONS, Shot, model, strings};
-use settings_ui::{SetState, WifiDetail, WifiLink, WifiNet};
+use settings_ui::{SearchHit, SetState, WifiDetail, WifiLink, WifiNet};
 use slint::{ComponentHandle, Model, SharedString};
 
 /// The sample state the boards show (set2-root-list's values).
@@ -199,6 +199,33 @@ fn every_page() {
     sh.shoot("set2-root-list");
     sh.shoot_at("set2-root-buttons", BUTTONS);
 
+    // the Nokia grid (S01, ⋮ → View as grid) and search (set2-search) with what it found for "time"
+    s.set_root_grid(true);
+    sh.shoot("set2-root-grid");
+    s.set_root_grid(false);
+    let hit = |title: &str, path: &str, value: &str, page| SearchHit {
+        title: title.into(),
+        path: path.into(),
+        value: value.into(),
+        page,
+    };
+    s.set_results(model(vec![
+        hit("Date & time", "Settings", "", 9),
+        hit("Automatic time", "Date & time", "On", 9),
+        hit("Automatic time zone", "Date & time", "On", 9),
+        hit("Time zone", "Date & time", "UTC+04:00 · Yerevan", 9),
+        hit("24-hour time", "Date & time", "On", 9),
+        hit("Screen timeout", "Display", "30 seconds", 5),
+    ]));
+    s.set_searching(true);
+    sh.shoot("set2-search");
+    sh.tap(100.0, 48.0 + 36.0);
+    assert!(
+        sh.take_acts()
+            .contains(&("open".to_string(), "9".to_string()))
+    );
+    s.set_searching(false);
+
     for (id, title, name) in [
         (1, "Wi-Fi", "set2-wifi"),
         (2, "Mobile network", "set2-mobile"),
@@ -215,6 +242,7 @@ fn every_page() {
         (13, "Apps", "set2-apps"),
         (14, "Old apps", "pad-settings"),
         (15, "Privacy", "set2-privacy"),
+        (16, "Licences", "set2-licences"),
     ] {
         page(&sh, id, title);
         sh.shoot(name);

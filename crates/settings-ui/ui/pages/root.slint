@@ -2,7 +2,7 @@
 // The root, List variant (set2-root-list, S01): Connections · Device · Personal · Apps · System, colour tiles, live
 // values; Wi-Fi and Bluetooth carry their switch (S02). Notifications, Storage and Lock screen come with their stages
 // (SE3-SE6), so they are not drawn yet.
-import { Theme, NeoList, SectionHeader } from "@neoui/kit.slint";
+import { Theme, NeoList, SectionHeader, ListRow } from "@neoui/kit.slint";
 import { SettingRow } from "../parts.slint";
 import { SetState } from "../state.slint";
 
@@ -127,6 +127,106 @@ export component RootPage inherits NeoList {
             icon: @image-url("@neoui/icons/sys/info.svg");
             tint: #5b6472;
             clicked => { SetState.act("open", "12"); }
+        }
+    }
+}
+
+// one tile of the Nokia grid: a big coloured icon, its label under it
+component GridTile inherits Rectangle {
+    in property <string> label;
+    in property <image> icon;
+    in property <color> tint;
+    in property <int> page;
+    // three equal columns whatever the labels' widths
+    horizontal-stretch: 1;
+    preferred-width: 0px;
+    min-width: 0px;
+    height: 104 * Theme.dp;
+    background: t.pressed ? Theme.pressed : transparent;
+    border-radius: 12 * Theme.dp;
+    t := TouchArea {
+        clicked => { SetState.act("open", root.page); }
+    }
+
+    VerticalLayout {
+        alignment: center;
+        spacing: 8 * Theme.dp;
+        HorizontalLayout {
+            alignment: center;
+            Rectangle {
+                width: 56 * Theme.dp;
+                height: self.width;
+                border-radius: 14 * Theme.dp;
+                background: root.tint;
+                Image {
+                    width: 30 * Theme.dp;
+                    height: self.width;
+                    source: root.icon;
+                    colorize: white;
+                }
+            }
+        }
+
+        Text {
+            text: root.label;
+            color: Theme.text;
+            font-size: Theme.font-label;
+            horizontal-alignment: center;
+        }
+    }
+}
+
+// The root, Nokia grid variant (set2-root-grid, S01): the categories in 3 columns; the pages are the list's. Only
+// categories with a page today (Notifications, Storage and Security come with their stages).
+export component RootGridPage inherits NeoList {
+    VerticalLayout {
+        alignment: start;
+        padding: 12 * Theme.dp;
+        spacing: 4 * Theme.dp;
+        for r in [
+            [{ l: "Connectivity", i: @image-url("@neoui/icons/sys/wifi.svg"), c: #2f80ed, p: 4 },
+             { l: "Display", i: @image-url("@neoui/icons/sys/brightness.svg"), c: #e2a92a, p: 5 },
+             { l: "Sounds", i: @image-url("@neoui/icons/sys/volume.svg"), c: #e5484d, p: 7 }],
+            [{ l: "Navigation", i: @image-url("@neoui/icons/sys/home.svg"), c: #3d8bfd, p: 6 },
+             { l: "Battery", i: @image-url("@neoui/icons/sys/battery_saver.svg"), c: #14a37f, p: 8 },
+             { l: "Privacy", i: @image-url("@neoui/icons/sys/privacy.svg"), c: #5b6472, p: 15 }],
+            [{ l: "Time", i: @image-url("@neoui/icons/sys/stopwatch.svg"), c: #3d8bfd, p: 9 },
+             { l: "Language", i: @image-url("@neoui/icons/sys/language.svg"), c: #1fa9c4, p: 10 },
+             { l: "Apps", i: @image-url("@neoui/icons/sys/apps.svg"), c: #8656e8, p: 13 }],
+            [{ l: "Mobile", i: @image-url("@neoui/icons/sys/signal.svg"), c: #22b46a, p: 2 },
+             { l: "Developer", i: @image-url("@neoui/icons/sys/usb.svg"), c: #5b6472, p: 11 },
+             { l: "About", i: @image-url("@neoui/icons/sys/info.svg"), c: #5b6472, p: 12 }],
+        ]: HorizontalLayout {
+            spacing: 4 * Theme.dp;
+            for t in r: GridTile {
+                label: t.l;
+                icon: t.i;
+                tint: t.c;
+                page: t.p;
+            }
+        }
+    }
+}
+
+// Search (set2-search): every row whose title, other names or page matches, with where it is and its value; a tap
+// opens its page.
+export component SearchPage inherits NeoList {
+    VerticalLayout {
+        alignment: start;
+        for hit in SetState.results: ListRow {
+            title: hit.title;
+            subtitle: hit.path;
+            value: hit.value;
+            chevron: true;
+            clicked => { SetState.act("open", hit.page); }
+        }
+        if SetState.results.length == 0: Text {
+            x: Theme.margin;
+            height: 64 * Theme.dp;
+            vertical-alignment: center;
+            text: "Type to search every setting.";
+            color: Theme.text-secondary;
+            font-size: Theme.font-body;
         }
     }
 }

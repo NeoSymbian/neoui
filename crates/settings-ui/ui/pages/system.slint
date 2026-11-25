@@ -134,6 +134,21 @@ export component DeveloperPage inherits NeoList {
             switch-toggled(v) => { SetState.act("developer.usb_debugging", v ? "1" : "0"); }
         }
 
+        SectionHeader { text: "Logs"; }
+        ListRow {
+            title: "Kernel log";
+            subtitle: "Live, in Dev tools › Console";
+            chevron: true;
+            clicked => { SetState.act("devtools", "console"); }
+        }
+
+        ListRow {
+            title: "Save logs";
+            subtitle: "To E:\\logs (C:\\logs without E:), in Dev tools › Tools";
+            chevron: true;
+            clicked => { SetState.act("devtools", "tools"); }
+        }
+
         SectionHeader { text: "Tools"; }
         ListRow {
             title: "Open Dev tools";
@@ -210,6 +225,14 @@ export component AboutPage inherits NeoList {
             color: Theme.text;
             font-size: Theme.font-label;
             wrap: word-wrap;
+        }
+
+        ListRow {
+            title: "Licences";
+            subtitle: "Apache-2.0 · EPL · GPL-3.0 (Slint) · fonts";
+            chevron: true;
+            divider: false;
+            clicked => { SetState.act("open", "16"); }
         }
     }
 }

@@ -8,15 +8,16 @@ import "@neoui/fonts/NeoSans-SemiBold.ttf";
 import "@neoui/fonts/NeoSans-Bold.ttf";
 import "@neoui/fonts/DejaVuSans.ttf";
 import { Theme, Scroll, KeyboardFocus, Kit, Header, ChoiceSheet } from "@neoui/kit.slint";
-import { SetState, WifiNet, WifiLink, WifiDetail } from "state.slint";
-import { RootPage } from "pages/root.slint";
+import { SetState, WifiNet, WifiLink, WifiDetail, SearchHit } from "state.slint";
+import { RootPage, RootGridPage, SearchPage } from "pages/root.slint";
+import { LicencesPage } from "pages/licences.slint";
 import { WifiPage, WifiJoinSheet, WifiDetailsSheet } from "pages/wifi.slint";
 import { ConnectivityPage, MobilePage, BluetoothPage } from "pages/connections.slint";
 import { DisplayPage, NavigationPage, SoundsPage, BatteryPage } from "pages/device.slint";
 import { DateTimePage, ZoneSheet, KeyboardPage, PrivacyPage } from "pages/personal.slint";
 import { AppsPage, OldAppsPage, DeveloperPage, AboutPage } from "pages/system.slint";
 
-export { Theme, Scroll, KeyboardFocus, Kit, SetState, WifiNet, WifiLink, WifiDetail }
+export { Theme, Scroll, KeyboardFocus, Kit, SetState, WifiNet, WifiLink, WifiDetail, SearchHit }
 
 export component SettingsApp inherits Window {
     default-font-family: "NeoSans";
@@ -37,18 +38,30 @@ export component SettingsApp inherits Window {
         y: 0;
         title: SetState.title;
         has-back: SetState.page != 0;
-        search: false;  // Search every page comes with SE1
+        // the root searches every page's rows (set2-search); ⋮ switches the root between the list and the grid
+        search: SetState.page == 0;
+        search-placeholder: "Search settings";
+        searching <=> SetState.searching;
+        menu: SetState.page == 0 ? [SetState.root-grid ? "View as list" : "View as grid"] : [];
         tap-to-top: false;
         alt: true;
         back => {
             SetState.act("back", "");
+        }
+        searched(q) => {
+            SetState.act("search", q);
+        }
+        menu-picked(i) => {
+            SetState.act("root-grid", SetState.root-grid ? "0" : "1");
         }
     }
 
     Rectangle {
         y: header.height;
         height: root.height - header.height;
-        if SetState.page == 0: RootPage { }
+        if SetState.page == 0 && SetState.searching: SearchPage { }
+        if SetState.page == 0 && !SetState.searching && !SetState.root-grid: RootPage { }
+        if SetState.page == 0 && !SetState.searching && SetState.root-grid: RootGridPage { }
         if SetState.page == 1: WifiPage { }
         if SetState.page == 2: MobilePage { }
         if SetState.page == 3: BluetoothPage { }
@@ -64,6 +77,7 @@ export component SettingsApp inherits Window {
         if SetState.page == 13: AppsPage { }
         if SetState.page == 14: OldAppsPage { }
         if SetState.page == 15: PrivacyPage { }
+        if SetState.page == 16: LicencesPage { }
     }
 
     // the sheets: full size, last, so they cover the header and the page

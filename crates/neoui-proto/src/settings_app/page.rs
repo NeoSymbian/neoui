@@ -22,9 +22,10 @@ pub enum Page {
     Apps = 13,
     OldApps = 14,
     Privacy = 15,
+    Licences = 16,
 }
 
-pub const ALL: [Page; 16] = [
+pub const ALL: [Page; 17] = [
     Page::Root,
     Page::Wifi,
     Page::Mobile,
@@ -41,6 +42,7 @@ pub const ALL: [Page; 16] = [
     Page::Apps,
     Page::OldApps,
     Page::Privacy,
+    Page::Licences,
 ];
 
 impl Page {
@@ -74,6 +76,7 @@ impl Page {
             Page::Apps => "apps",
             Page::OldApps => "oldapps",
             Page::Privacy => "privacy",
+            Page::Licences => "licences",
         }
     }
 
@@ -112,6 +115,7 @@ impl Page {
             Page::Apps => "Apps",
             Page::OldApps => "Old apps",
             Page::Privacy => "Privacy",
+            Page::Licences => "Licences",
         }
     }
 
@@ -121,6 +125,7 @@ impl Page {
         match self {
             Page::Root => None,
             Page::OldApps => Some(Page::Apps),
+            Page::Licences => Some(Page::About),
             _ => Some(Page::Root),
         }
     }
@@ -137,7 +142,7 @@ mod tests {
             assert_eq!(Page::from_id(p.id()), Some(*p));
             assert_eq!(Page::from_name(p.name()), Some(*p));
         }
-        assert_eq!(Page::from_id(16), None);
+        assert_eq!(Page::from_id(17), None);
     }
 
     #[test]

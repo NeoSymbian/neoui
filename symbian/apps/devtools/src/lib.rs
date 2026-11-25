@@ -177,6 +177,12 @@ fn run() -> Result<(), i32> {
                         ctx.show();
                     }
                 }
+                // another app opened a page by name (Settings' Developer options: "console", "tools"; protocol 1.9)
+                AppEvent::Open { .. } => {
+                    let name = ctx.app.arg().unwrap_or_default();
+                    dprintln!("devtools: opened on {:?}", name);
+                    ctx.open_page(&name);
+                }
                 // the kit's layers first (a menu, a sheet), then a sub-view (kept only while one is open)
                 AppEvent::Back if neoapp::kit_back!(ui) => {}
                 AppEvent::Back => ctx.back(),

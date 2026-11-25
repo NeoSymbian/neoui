@@ -6,6 +6,8 @@
 export struct WifiNet { name: string, detail: string, bars: int, secured: bool, band: string, signal: string, channel: int, bssid: string }
 // the current link (neoui-proto wifi::LinkView, with the shell's IP rows)
 export struct WifiDetail { label: string, value: string }
+// a search result (set2-search): the row's title, where it is ("Date & time"), its live value, the page it opens
+export struct SearchHit { title: string, path: string, value: string, page: int }
 export struct WifiLink { shown: bool, connected: bool, name: string, subtitle: string, bars: int, band: string, details: [WifiDetail], sign-in: bool }
 
 export global SetState {
@@ -14,6 +16,11 @@ export global SetState {
     // 13 Apps, 14 Old apps, 15 Privacy) and its title; the app sets both
     in property <int> page;
     in property <string> title: "Settings";
+    // the root as the Nokia grid (settings.root_grid, S01) or the list
+    in property <bool> root-grid;
+    // the root header's search: open, and what it found
+    in-out property <bool> searching;
+    in property <[SearchHit]> results;
 
     // the settings the pages show, as stored (the app reloads them on AppEvent::Settings)
     in-out property <bool> wifi;
@@ -113,6 +120,7 @@ export global SetState {
     // - "wifi-refresh", "wifi-connect" (wifi-current, password), "wifi-disconnect", "wifi-forget", "wifi-sign-in";
     // - "sound" + "test" | "record"; "keyboard" + an index to turn on or off ("+0"/"-0"); "keyboard-next";
     // - "city-query" + the search text; "pad-reset" (QUERY first); "clip-clear";
-    // - "app" + "phone" | "messages" | "devtools" (another app's settings).
+    // - "app" + "phone" | "messages" | "devtools" (another app's settings); "devtools" + a page ("console", "tools");
+    // - "search" + the query; "root-grid" + "1" | "0".
     callback act(string, string);
 }
