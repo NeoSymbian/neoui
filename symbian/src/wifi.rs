@@ -12,6 +12,7 @@
 //! IP (W5): NEONET.EXE (neohw `net`, started by WIFID) gets an address by DHCP once the link is connected. The
 //! details sheet shows its lease, and one internet check per address fetches a `generate_204` page through the
 //! NeoNet client API, the way apps use it.
+use alloc::sync::Arc;
 use e32::ipc::{Session, TIpcArgs, TVersion};
 use e32::sync::Mutex;
 use e32::sys::{TPtr8, TPtrC8};
@@ -20,12 +21,11 @@ use neoui_proto::wifi::{Internet, Ip, Link, LinkState, LinkView, Scan, State};
 use neoui_render::Renderer;
 use wifi::ipc::{Connect, fail, op};
 
-/// Why the internet check ended (0 while it runs); shared with its thread (leaked: it lives as long as SYSSTART, and
-/// Arc needs compare-and-swap, which ARMv5TE lacks)
-type Failed = Option<&'static Mutex<i32>>;
+/// Why the internet check ended (0 while it runs); shared with its thread
+type Failed = Option<Arc<Mutex<i32>>>;
 /// An HTTP Date from the internet check (Unix seconds) and when it was read (ms since boot), for the clock;
-/// shared with the check's thread (leaked, as [`Failed`])
-type HttpTime = Option<&'static Mutex<Option<(i64, u64)>>>;
+/// shared with the check's thread
+type HttpTime = Option<Arc<Mutex<Option<(i64, u64)>>>>;
 
 /// A list this old is refreshed when the page opens, and rescanned while it stays open
 const FRESH_MS: u64 = 30_000;
@@ -102,15 +102,13 @@ impl Wifi {
             checked_at: 0,
             portal: None,
             internet: shared(),
-            http_time: Mutex::new(None)
-                .ok()
-                .map(|m| &*alloc::boxed::Box::leak(alloc::boxed::Box::new(m))),
+            http_time: Mutex::new(None).ok().map(Arc::new),
         }
     }
 
     /// The internet check's HTTP Date, once (for the network clock).
     pub fn take_http_time(&mut self) -> Option<(i64, u64)> {
-        self.http_time.and_then(|m| m.lock().take())
+        self.http_time.as_ref().and_then(|m| m.lock().take())
     }
 
     /// Start WIFID (it starts the IP stack; a second start finds it running and exits).
@@ -173,7 +171,7 @@ impl Wifi {
             return;
         };
         let address = (status.state == net::proto::State::Up).then_some((status.ip, status.prefix));
-        let result = self.internet.map_or(0, |m| *m.lock());
+        let result = self.internet.as_ref().map_or(0, |m| *m.lock());
         if result != 0
             && let Some(h) = self.check.take()
         {
@@ -190,8 +188,8 @@ impl Wifi {
             && self.check.is_none()
         {
             self.checked_at = now;
-            set(self.internet, 0);
-            let (shared, http) = (self.internet, self.http_time);
+            set(&self.internet, 0);
+            let (shared, http) = (self.internet.clone(), self.http_time.clone());
             match e32::thread::spawn(move || internet_check(shared, http)) {
                 Ok(h) => (self.check, self.checked) = (Some(h), Some(a)),
                 Err(e) => e32::dprintln!("neoui: wifi: no internet check thread ({})", e),
@@ -201,7 +199,7 @@ impl Wifi {
             address,
             gateway: status.gateway,
             dns: status.dns[0],
-            internet: match self.internet.map_or(0, |m| *m.lock()) {
+            internet: match self.internet.as_ref().map_or(0, |m| *m.lock()) {
                 CHECK_OK => Internet::Ok,
                 CHECK_FAILED => Internet::NoAccess,
                 CHECK_PORTAL => Internet::SignIn,
@@ -374,11 +372,9 @@ impl Wifi {
     }
 }
 
-/// A result shared with a thread (leaked: see [`Failed`])
+/// A result shared with a thread
 fn shared() -> Failed {
-    Mutex::new(0)
-        .ok()
-        .map(|m| &*alloc::boxed::Box::leak(alloc::boxed::Box::new(m)))
+    Mutex::new(0).ok().map(Arc::new)
 }
 
 /// The internet check thread: resolve, connect, fetch `/generate_204`, expect "204"; the result goes into `result`,
@@ -417,7 +413,7 @@ fn internet_check(result: Failed, http: HttpTime) -> i32 {
     };
     let r = fetch();
     e32::dprintln!("neoui: wifi: internet check {:?}", r);
-    set(result, r.unwrap_or(CHECK_FAILED));
+    set(&result, r.unwrap_or(CHECK_FAILED));
     0
 }
 
@@ -436,7 +432,7 @@ fn check_host() -> alloc::string::String {
     named.unwrap_or_else(|| CHECK_HOST.into())
 }
 
-fn set(failed: Failed, why: i32) {
+fn set(failed: &Failed, why: i32) {
     if let Some(m) = failed {
         *m.lock() = why;
     }

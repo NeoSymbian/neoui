@@ -1,8 +1,8 @@
 # neoui
 
 neoui is the Rust touch UI server for NeoSymbian. It will run on the 32-bit ARM
-Symbian user side (`no_std` + `alloc`) and draw into a raw framebuffer, first
-under QEMU Syborg (768x640), later on a Pixel 3a XL (1080x2160).
+Symbian user side (`no_std` + `alloc`, ARMv8-A AArch32) and draws into a raw framebuffer: on a Pixel 3a XL
+(1080x2160), earlier under QEMU Syborg (768x640).
 
 This first step proves the rendering path: a phone launcher written in Slint,
 rendered by Slint's **software renderer** into a caller-owned `&mut [u32]`
@@ -67,17 +67,16 @@ The snapshot tests render both sizes, check the frame is not blank, tap the
 Messages tile and check that pixels change and that every changed pixel lies
 inside the reported damage.
 
-## On Symbian (QEMU Syborg)
+## On Symbian (the phone)
 
 `symbian/` runs the launcher on the 2010 Symbian user side **instead of the window server**: estart starts
 `SYSSTART.EXE` when the ROM has one. It reads the frame buffer from the HAL, registers as the window server to take
 raw pointer and key events from the kernel, renders into a RAM frame and copies the damaged rectangles to the screen.
-On Syborg the first frame takes about 80 ms.
 
 ```sh
 cd symbian && cargo arm        # target/armv8a-neosymbian-eabi/release/libneoui_symbian.a (nightly pinned here)
 # with NeoSymbian/build: copy the .a and exes.txt into its rust/, then
-./build.sh && MONITOR="mouse_move 3243 27904;mouse_button 1;mouse_button 0" ./boot.sh   # out/fb.png, out/serial.log
+neo rom && DTB=… neo kernel bonito && neo flash   # RAM-boots the image on the phone
 ```
 
 **Apps are separate processes (R6).** The UI server is also the `NeoUi` IPC server (protocol in
@@ -101,7 +100,7 @@ the screen during calls, the volume keys in a call, the radio and ring settings 
 our terminal. The grid (`crates/neoui-term`, host-tested) follows the stock console's rules: newline mode, wrap,
 destructive backspace, tabs, scrolling. Keys come from the system keyboard in its terminal mode (Esc, Tab and arrows
 on top) and from hardware keys. `dir` and
-`neotest` run in it on Syborg. Apps share their plumbing (connect, surface, Slint platform) in `symbian/neoapp`.
+`neotest` run in it. Apps share their plumbing (connect, surface, Slint platform) in `symbian/neoapp`.
 
 **Dev tools (`NEODEV.EXE`, `symbian/apps/devtools`): the phone as a developer sees it.** Five tabs: Home (uptime,
 memory, CPU, storage, processes, devices, modem, kernel), Devices, Console (the kernel log, live or the last boot's,
@@ -114,12 +113,11 @@ parts (registry lines, merging, log tags, stats) are host-tested in `neoui-proto
 calls are in `neoapp::hal` and `neoapp::sys`.
 
 The UI adapts to whatever the device reports: the display size comes from the HAL, touches are raw screen pixels
-(Syborg's pointer driver was fixed in the NeoSymbian adaptation fork to report exact pixels), and the layout follows
-the design's `dp` unit. The `syborg` CI job runs a phone-shaped, odd-sized screen (539x1079, half the Pixel's
-1079x2159 touch range): it opens the Apps menu, opens Clock, taps it and goes back (`symbian/taps.sh` builds the
-QEMU monitor script for any `SCREEN`; each step waits for its line in the serial log, not a fixed time), and checks
-the serial log and the screen. It publishes the screenshot and the
-log, never the ROM (see the licence note below).
+and the layout follows the design's `dp` unit. The UI checks of the retired Syborg job (a phone-shaped, odd-sized
+539x1079 screen: open the Apps menu, open Clock, tap it, go back, gestures, old apps; `symbian/taps.sh` builds the
+QEMU monitor script, each step waits for its line in the serial log) are kept in `symbian/us6b/syborg-taps.yml` as the
+spec for the same checks on QEMU virt (US6b). Such jobs publish screenshots and logs, never the ROM (see the licence
+note below).
 
 ## Licence
 

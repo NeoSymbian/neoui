@@ -1,6 +1,6 @@
 # SPDX-License-Identifier: GPL-3.0-only
 # The neoui launcher as a Symbian EXE (SYSSTART.EXE: estart runs it instead of the window server). Its own workspace:
-# it is built only for armv5te-none-eabi with a pinned nightly (build-std), unlike the host crates around it.
+# it is built only for targets/armv8a-neosymbian-eabi.json with a pinned nightly (build-std), unlike the host crates.
 # GPL-3.0 because it links Slint under GPL-3.0 (NeoSymbian decision 2026-11-06: revisit before any ROM release).
 [package]
 name = "neoui-symbian"
