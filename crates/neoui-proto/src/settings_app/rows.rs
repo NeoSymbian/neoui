@@ -301,13 +301,6 @@ pub const ROWS: &[Row] = &[
     row("apps.messages", Apps, Apps, "Messages", &["sms"]),
     row("apps.browser", Apps, Apps, "Browser", &["web"]),
     row(
-        "apps.legacy",
-        Apps,
-        Apps,
-        "Open Old apps",
-        &["s60", "legacy"],
-    ),
-    row(
         "apps.oldapps",
         Apps,
         OldApps,

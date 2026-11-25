@@ -26,7 +26,6 @@ pub const VALUELESS: &[&str] = &[
     "apps.contacts",
     "apps.messages",
     "apps.browser",
-    "apps.legacy",
     "apps.oldapps",
     "dev.log",
     "dev.save",

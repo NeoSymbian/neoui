@@ -36,7 +36,7 @@ pub const APPS: &[App] = &[
     app("terminal", "neoterm", "Terminal"),
     app("files", "neofiles", "Files"),
     App {
-        settings: Some(("devtools", 0, "")),
+        settings: Some(("devtools", 0, "settings")),
         ..app("devtools", "neodev", "Dev tools")
     },
     // the kit gallery and the template for new apps (symbian/apps/kit)
@@ -50,7 +50,7 @@ pub const APPS: &[App] = &[
         ..app("phone", "neophone", "Phone")
     },
     App {
-        settings: Some(("phone", 3, "")),
+        settings: Some(("phone", 3, "contacts")),
         ..app("contacts", "neocont", "Contacts")
     },
     App {

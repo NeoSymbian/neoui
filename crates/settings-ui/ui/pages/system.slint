@@ -56,12 +56,16 @@ export component AppsPage inherits NeoList {
         if SetState.old-ok && SetState.old-apps.length == 0: Note {
             text: "Old apps are listed once Old apps has been opened since the phone started.";
         }
-        if SetState.old-ok && SetState.old-apps.length == 0: ListRow {
-            title: "Open Old apps";
-            has-icon: true;
-            icon: root.app-icon("", true);
-            chevron: true;
-            clicked => { SetState.act("app-open", "legacy"); }
+        // a button, not a row: search can't lead to it once old apps are listed
+        if SetState.old-ok && SetState.old-apps.length == 0: HorizontalLayout {
+            padding-left: Theme.margin;
+            padding-right: Theme.margin;
+            padding-bottom: 8 * Theme.dp;
+            Button {
+                text: "Open Old apps";
+                primary: false;
+                clicked => { SetState.act("app-open", "legacy"); }
+            }
         }
         if !SetState.old-ok: Note { text: "This UI server can't list old apps."; }
         ListRow {
@@ -245,7 +249,7 @@ export component DeveloperPage inherits NeoList {
             icon: @image-url("@neoui/icons/sys/options.svg");
             chevron: true;
             divider: false;
-            clicked => { SetState.act("app", "devtools"); }
+            clicked => { SetState.act("app-open", "devtools"); }
         }
     }
 }

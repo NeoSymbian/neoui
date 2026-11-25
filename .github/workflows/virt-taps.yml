@@ -182,9 +182,9 @@ jobs:
           # (app y 80 dp) -> Apps; its first row, Clock (118 dp), opens the app's sheet; Open (588 dp) opens Clock
           NAV=gestures
           wait_s 1; tap 36 73; expect "settings: back"
-          tap 426 73; wait_s 1; kb_type apps
+          tap 426 73; wait_s 1; kb_globe; kb_type apps   # the keyboard is still Russian (Files): globe -> English
           tap 270 157; expect "settings: page apps"; wait_s 1
-          tap 270 214; wait_s 1; tap 270 917; expect "settings: open app clock (Ok"
+          tap 270 214; wait_s 1; tap 270 917; expect "settings: open app clock (Ok"; expect "clock: visible true"
           ui_run 330
 
       - name: Check the output

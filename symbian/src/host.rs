@@ -676,16 +676,17 @@ impl Host {
         }
     }
 
-    pub fn open_entry(&mut self, key: &str, id: u32, now_ms: u64) {
+    /// Start launcher app `key` if needed and tell it entry `id` was chosen; false if it isn't one, or didn't start.
+    pub fn open_entry(&mut self, key: &str, id: u32, now_ms: u64) -> bool {
         let Some(key) = APPS.iter().find(|a| a.key == key).map(|a| a.key) else {
-            return;
+            return false;
         };
         if !self.entries(key).iter().any(|entry| entry.id == id) {
-            return;
+            return false;
         }
         self.limit_running(key, now_ms);
         self.start(key);
-        self.post(key, AppEvent::Entry { id });
+        self.post(key, AppEvent::Entry { id })
     }
 
     /// Sends `e` to app `key` (queued until it asks for events); false when it is not running (or leaving).
@@ -802,6 +803,9 @@ fn read_text(m: &Message, param: usize, max: usize) -> Result<String, i32> {
 }
 
 /// Validate descriptors before changing the cache, including removals and replacements at capacity.
+/// The most refused launcher entries remembered per app (`INFO_APPS`' total counts no more).
+const REFUSED_MAX: usize = 1024;
+
 fn entry(
     entries: &mut Vec<(&'static str, Vec<LauncherEntry>)>,
     refused: &mut Vec<(&'static str, u32)>,
@@ -839,12 +843,14 @@ fn entry(
         }
     } else if !caption.is_empty() {
         if entries.len() >= proto::ENTRIES_MAX {
-            // remembered (bounded) so Settings can say how many there are
-            if !refused.contains(&(key, id)) && refused.len() < 1024 {
+            // remembered so Settings can say how many there are (at most REFUSED_MAX per app: the total says "at least")
+            let mine = refused.iter().filter(|(k, _)| *k == key).count();
+            if !refused.contains(&(key, id)) && mine < REFUSED_MAX {
                 refused.push((key, id));
             }
             return Err(kerr::OVERFLOW);
         }
+        refused.retain(|r| *r != (key, id));
         entries.push(LauncherEntry { id, caption, icon });
     }
     Ok(0)
@@ -1151,15 +1157,16 @@ impl Service for Host {
                             kerr::PERMISSION_DENIED
                         } else {
                             let mut b = [0u8; 4];
-                            match m.read8(1, &mut b, 0) {
-                                Ok(4) => {
+                            match (m.des_len(1), m.read8(1, &mut b, 0)) {
+                                (Ok(4), Ok(4)) => {
                                     let id = u32::from_le_bytes(b);
-                                    if self.entries(LEGACY).iter().any(|e| e.id == id) {
+                                    if !self.entries(LEGACY).iter().any(|e| e.id == id) {
+                                        err::KERR_NOT_FOUND
+                                    } else if self.open_entry(LEGACY, id, e32::time::millis()) {
                                         dprintln!("neoui: settings opens old app {:08x}", id);
-                                        self.open_entry(LEGACY, id, e32::time::millis());
                                         0
                                     } else {
-                                        err::KERR_NOT_FOUND
+                                        err::KERR_NOT_READY // the bridge didn't start
                                     }
                                 }
                                 _ => kerr::ARGUMENT,
