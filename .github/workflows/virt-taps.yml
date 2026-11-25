@@ -4,7 +4,7 @@ name: virt-taps
 # The launcher on the 2010 Symbian user side, on QEMU virt with our AArch64 kernel (docs user-side-smp.md US6b; until
 # 2026-11-25 this ran on Syborg): build symbian/ (SYSSTART.EXE) for ARMv8, put it in the ROM with NeoSymbian/build
 # (estart then runs it instead of the window server) with the apps, boot it on virt (539x1079 ramfb screen, virtio
-# tablet and keyboard), drive it through QMP (the kernel's baseport/arm64/tools/ui-qemu.py, scripts from
+# tablet and keyboard), drive it through QMP (NeoSymbian/neoqemu's ui-qemu.py in the toolchain image, scripts from
 # symbian/taps.sh) and check the serial log and the screen. Only the screenshot and logs are published, never the ROM
 # (it links Slint under GPL-3.0 with EPL-1.0 Symbian code).
 on:
