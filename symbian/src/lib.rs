@@ -39,6 +39,7 @@ use host::Host;
 use neoui_proto::gesture::{Edge, Map, Recognizer, Step};
 use neoui_proto::ipc::{self as proto, AppEvent};
 use neoui_proto::settings::keys;
+use neoui_proto::settings_app::info::encode_ip;
 use neoui_proto::{Damage, InputEvent, Rect, TouchPhase, coalesce_moves, next_deadline};
 use neoui_render::layer::{self, Slide, Transition};
 use neoui_render::{HOME_PAGES, Renderer};
@@ -111,12 +112,10 @@ fn main() -> i32 {
     // the settings (docs/neoui-shell.md, Part 1), shown before the first frame
     let settings = settings::open();
     let mut mirror = settings::UiMirror::new(&mut ui, &settings);
-    // which kernel, ROM and neoui this is: in the log of every run, and in Settings -> About phone
-    let build = neoapp::build::lines();
-    for line in &build {
+    // which kernel, ROM and neoui this is: in the log of every run (the Settings app's About phone reads them too)
+    for line in neoapp::build::lines() {
         dprintln!("neoui: build {}", line);
     }
-    ui.set_build_info(&build);
 
     let t0 = time::millis();
     let mut perf = perf::Perf::new();
@@ -578,9 +577,6 @@ fn main() -> i32 {
                 }
                 repaint_all = true;
             }
-            if let Some(view) = host.requested_settings.take() {
-                ui.show("settings", &view);
-            }
             if let Some(key) = host.requested_screen.take() {
                 match host.requested_from.take() {
                     Some(from) => ui.show_from(key, from),
@@ -733,20 +729,20 @@ fn main() -> i32 {
                 battery.save();
                 clockwork.power(a);
             }
-            battery.poll(&mut ui, time::millis());
+            if battery.poll(&mut ui, time::millis()) {
+                host.set_info(proto::INFO_BATTERY, battery.info());
+            }
             wifi.poll(
                 &mut ui,
                 time::millis(),
                 host.settings.get(keys::RADIO_WIFI).unwrap_or(true),
             );
-            // a Wi-Fi login page (browser UI5): the shade's entry, and Settings' Sign in
+            // a Wi-Fi login page (browser UI5): the shade's entry, and the Settings app's Sign in (SETTINGS_ACTION)
             host.set_portal(wifi.portal());
-            if ui.take_wifi_sign_in() {
-                host.open_portal(ms);
-            }
+            host.set_info(proto::INFO_NET, encode_ip(wifi.ip()));
             mirror.sync(&mut ui, &mut host.settings, ms);
             phone.sync_settings(&host.settings, ms); // (phone.poll runs right after the select, C7)
-            sound.poll(&host.settings, &mut ui, ms);
+            sound.poll(&host.settings, ms);
             if let Some(worker) = usb_debug.as_mut() {
                 worker.set(usb_debugging(&host.settings));
             }

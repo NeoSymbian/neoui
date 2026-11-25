@@ -7,15 +7,16 @@
 
 use crate::clock;
 use crate::host::Host;
-use crate::settings::{self, Settings};
+use crate::settings::Settings;
 use alloc::format;
 use alloc::string::String;
 use e32::{dprintln, time};
 use neoui_proto::clock::alarm::{Alarms, Minute};
 use neoui_proto::clock::face::{Face, LocalTime};
 use neoui_proto::clock::{datetime, world};
-use neoui_proto::ipc::AppEvent;
-use neoui_proto::settings::{Caller, Value, keys};
+use neoui_proto::ipc::{self as proto, AppEvent};
+use neoui_proto::settings::keys;
+use neoui_proto::settings_app::info::Clock;
 use neoui_render::Renderer;
 
 /// The Clock app's screen key (`host::APPS`).
@@ -32,6 +33,8 @@ pub struct Clockwork {
     checked: Option<Minute>,
     /// The last minute the zone's rule was applied.
     zone_checked: Option<Minute>,
+    /// The zone (`time.zone`) as last seen.
+    zone_seen: String,
     /// An alarm that rang, until the Clock app has been told.
     ringing: Option<u16>,
 }
@@ -45,6 +48,7 @@ impl Clockwork {
             synced: String::from("Not yet"),
             checked: None,
             zone_checked: None,
+            zone_seen: String::new(),
             ringing: None,
         }
     }
@@ -54,18 +58,10 @@ impl Clockwork {
         self.keeper.tick(now_ms);
         let auto_zone = host.settings.get(keys::TIME_AUTO_ZONE).unwrap_or(true);
         let zone = host.settings.get(keys::TIME_ZONE).unwrap_or_default();
-        if ui.take_zone_next() && !auto_zone {
-            let (utc, offset) = time::utc_now();
-            let city = datetime::next_zone(&zone, offset, utc);
-            let r = settings::set(
-                &mut host.settings,
-                Caller::Shell,
-                keys::TIME_ZONE.name(),
-                Value::Str(city.name.into()),
-                now_ms,
-            );
-            dprintln!("neoui: clock: zone -> {} ({:?})", city.name, r);
-            self.zone_checked = None; // apply it now
+        // a new zone (the Settings app's city sheet) is applied now, not at the next minute
+        if zone != self.zone_seen {
+            self.zone_seen.clone_from(&zone);
+            self.zone_checked = None;
         }
         let (now, second) = local_now();
         // the zone's rule (summer time) while the network doesn't set the zone; once a minute
@@ -101,11 +97,12 @@ impl Clockwork {
             ui.set_clock(&text);
             ui.set_now(&face);
             let format = host.settings.get(keys::TIME_DATE_FORMAT).unwrap_or(0);
-            ui.set_datetime(
-                &datetime::date_text(&now, format),
-                &datetime::zone_text(time::utc_now().0, offset, &zone),
-                &self.synced,
-            );
+            ui.set_date_text(&datetime::date_text(&now, format));
+            let info = Clock {
+                zone: datetime::zone_text(time::utc_now().0, offset, &zone),
+                synced: self.synced.clone(),
+            };
+            host.set_info(proto::INFO_CLOCK, info.encode());
         }
         if self.checked != Some(minute) {
             self.checked = Some(minute);

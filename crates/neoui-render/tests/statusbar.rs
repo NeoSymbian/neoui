@@ -2,7 +2,7 @@
 #[allow(dead_code)]
 mod common;
 
-use neoui_proto::battery::{History, Snapshot};
+use neoui_proto::battery::Snapshot;
 use neoui_proto::wifi::{Link, LinkState, LinkView, Network};
 
 /// The status bar with a modem, Wi-Fi and a battery: the radio cluster sits at the right with the other icons, and a
@@ -35,7 +35,7 @@ fn modem_cluster_stays_right() {
         voltage_uv: 4_200_000,
         ..Snapshot::default()
     };
-    r.set_battery(&battery, &History::default(), false);
+    r.set_battery(&battery);
     common::frame(&mut r, &mut buf, w, "status bar with a modem");
     common::write_png("statusbar-modem-pixel.png", &buf, w, h);
 

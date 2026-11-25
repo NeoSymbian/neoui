@@ -13,9 +13,13 @@ fn a_scrolled_list_shifts_and_matches_a_full_redraw() {
     let mut r = common::renderer(w, h);
     let mut buf = vec![0u32; (w * h) as usize];
     r.set_server_transitions(true);
-    // the Settings list: taller than the screen
-    r.show("settings", "");
-    common::frame(&mut r, &mut buf, w, "settings");
+    // Open apps with a dozen cards: taller than the screen
+    r.set_running(&[
+        "clock", "terminal", "files", "devtools", "kit", "legacy", "phone", "contacts", "messages",
+        "browser", "settings", "camera",
+    ]);
+    r.show("switcher", "");
+    common::frame(&mut r, &mut buf, w, "switcher");
 
     let x = 540;
     let touch = |r: &mut neoui_render::Renderer, y, phase| {

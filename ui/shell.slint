@@ -40,8 +40,7 @@ import { PhotosScreen } from "screens/photos.slint";
 import { MusicScreen } from "screens/music.slint";
 import { CalendarScreen } from "screens/calendar.slint";
 import { ClockScreen } from "screens/clock.slint";
-import { SettingsScreen } from "screens/settings.slint";
-import { WifiNet, WifiLink } from "data.slint";
+import { WifiLink } from "data.slint";
 import { TerminalScreen } from "screens/terminal.slint";
 import { SwitcherScreen } from "screens/switcher.slint";
 
@@ -70,8 +69,6 @@ export component Shell inherits Window {
     in-out property <string> view: "";
     in-out property <string> origin: "home";
     in-out property <bool> shade-open;
-    // in: which build is running (kernel, user-side ROM, neoui), for Settings -> About phone
-    in property <[string]> build-info;
     // in: the UI server draws the screen-change fade itself from snapshots (smooth-ui S2); Slint switches at once
     in property <bool> server-transitions;
     changed server-transitions => {
@@ -162,34 +159,11 @@ export component Shell inherits Window {
     // in: the status bar's time, from the system clock (the default is the design's mock time)
     in property <string> clock: "10:24";
     in property <int> battery-percent: -1;
-    in property <string> battery-text: "--%";
     in property <bool> battery-charging;
     in property <bool> battery-connected;
     in property <bool> battery-full;
-    in property <string> battery-voltage: "unknown";
-    in property <string> battery-state: "Unknown";
-    in property <string> battery-usb: "unknown";
-    in property <string> battery-storage;
-    in property <[float]> battery-history;
-    // Wi-Fi scan results (symbian/src/wifi.rs, kernel HAL WlanScan)
-    in property <string> wifi-status: "Searching…";
-    in property <[WifiNet]> wifi-networks;
-    in property <int> wifi-count;
-    in property <int> wifi-hidden;
-    in property <bool> wifi-scanning;
-    // the Wi-Fi page's refresh button (symbian/src/wifi.rs scans at once)
-    callback wifi-refresh();
-    // Sound -> Media's test buttons and what they report (symbian/src/sound.rs)
-    callback sound-action(string);
-    in property <string> sound-feedback;
-    // Connect on a network's sheet (BSSID, password) and how that join is going (symbian/src/wifi.rs)
-    callback wifi-connect(string, string);
-    in property <string> wifi-message;
-    // the current link (Settings' "Current network" + details, the status bar's Wi-Fi icon) and its buttons
+    // the current link: the status bar's Wi-Fi icon (the Settings app, NEOSET, shows the rest itself)
     in property <WifiLink> wifi-link;
-    callback wifi-disconnect();
-    callback wifi-forget();
-    callback wifi-sign-in();
     // in: the modem (telephony C5, from MODEMD's NeoModem server): signal bars (-1 = no modem), operator, technology,
     // and whether a call is up (the shade's "return to call"); out: what the SIM prompt and the Retry banner asked
     // ("pin", "sim-dismiss", "dial", "retry"). The Phone app (NEOPHONE) draws the calls themselves.
@@ -204,7 +178,6 @@ export component Shell inherits Window {
     // unread messages (MODEMD, C9) and the shade's line for the newest ("+374 91 234567: Running late…")
     in property <int> unread-messages;
     in property <string> unread-line;
-    in property <bool> radio-online;
     in property <bool> sim-pin-required;
     in property <bool> sim-blocked;
     in property <int> pin-attempts: -1;
@@ -228,8 +201,8 @@ export component Shell inherits Window {
     callback phone-action(string, string);
 
     public function open(app: string) {
-        // Back returns to the Apps menu or Settings (its Calls & Messages row), else home
-        root.origin = root.screen == "menu" || root.screen == "settings" ? root.screen : "home";
+        // Back returns to the Apps menu, else home (an app another app opened returns to it: protocol 1.9 DONE)
+        root.origin = root.screen == "menu" ? root.screen : "home";
         root.screen = app;
         root.view = "";
         root.shade-open = false;
@@ -293,7 +266,7 @@ export component Shell inherits Window {
         : s == "calendar" ? "Calendar"
         : s == "clock" ? "Clock"
         : s == "files" ? "Files"
-        : s == "settings" ? settings-title(v)
+        : s == "settings" ? "Settings"
         : s == "terminal" ? "Terminal"
         : s == "devtools" ? "Dev tools"
         : s == "kit" ? "UI kit"
@@ -302,20 +275,6 @@ export component Shell inherits Window {
         : s
     }
 
-    pure function settings-title(v: string) -> string {
-        v == "" ? "Settings"
-        : v == "connectivity" ? "Connectivity"
-        : v == "wifi" ? "Wi-Fi"
-        : v == "display" ? "Display"
-        : v == "navigation" ? "Home screen & navigation"
-        : v == "developer" ? "Developer options"
-        : v == "battery" ? "Battery"
-        : v == "keyboard" ? "Language & keyboard"
-        : v == "datetime" ? "Date & time"
-        : v == "sounds" ? "Sounds"
-        : v == "oldapps" ? "Old apps"
-        : "About phone"
-    }
 
     // A tap that no row, button or field takes lands here: the focused field lets go, so the keyboard closes.
     TouchArea {
@@ -417,37 +376,6 @@ export component Shell inherits Window {
         }
 
         Slot {
-            active: screen == "settings";
-            SettingsScreen {
-                view <=> root.view;
-                build: root.build-info;
-                open-view(a, v) => { root.open(a); root.view = v; }
-                battery-text: root.battery-text;
-                battery-voltage: root.battery-voltage;
-                battery-state: root.battery-state;
-                battery-usb: root.battery-usb;
-                battery-storage: root.battery-storage;
-                battery-history: root.battery-history;
-                wifi-status: root.wifi-status;
-                wifi-networks: root.wifi-networks;
-                wifi-count: root.wifi-count;
-                wifi-hidden: root.wifi-hidden;
-                wifi-scanning: root.wifi-scanning;
-                wifi-refresh => { root.wifi-refresh(); }
-                sound-action(a) => { root.sound-action(a); }
-                sound-feedback: root.sound-feedback;
-                wifi-connect(b, p) => { root.wifi-connect(b, p); }
-                wifi-message: root.wifi-message;
-                wifi-link: root.wifi-link;
-                wifi-disconnect => { root.wifi-disconnect(); }
-                wifi-forget => { root.wifi-forget(); }
-                wifi-sign-in => { root.wifi-sign-in(); }
-                radio-online: root.radio-online;
-                phone-feedback: root.phone-feedback;
-            }
-        }
-
-        Slot {
             active: screen == "terminal" && !root.app-front;
             TerminalScreen { }
         }
@@ -481,7 +409,6 @@ export component Shell inherits Window {
 
     StatusBar {
         battery-percent: root.battery-percent;
-        battery-text: root.battery-text;
         battery-charging: root.battery-charging;
         battery-connected: root.battery-connected;
         battery-full: root.battery-full;

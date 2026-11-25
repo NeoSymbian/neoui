@@ -15,20 +15,17 @@
 use alloc::sync::Arc;
 use e32::ipc::{Session, TIpcArgs, TVersion};
 use e32::sync::Mutex;
-use e32::sys::{TPtr8, TPtrC8};
+use e32::sys::TPtr8;
 use e32::thread::JoinHandle;
-use neoui_proto::wifi::{Internet, Ip, Link, LinkState, LinkView, Scan, State};
+use neoui_proto::wifi::{Internet, Ip, Link, LinkState, LinkView, Scan};
 use neoui_render::Renderer;
-use wifi::ipc::{Connect, fail, op};
+use wifi::ipc::op;
 
 /// Why the internet check ended (0 while it runs); shared with its thread
 type Failed = Option<Arc<Mutex<i32>>>;
 /// An HTTP Date from the internet check (Unix seconds) and when it was read (ms since boot), for the clock;
 /// shared with the check's thread
 type HttpTime = Option<Arc<Mutex<Option<(i64, u64)>>>>;
-
-/// A list this old is refreshed when the page opens, and rescanned while it stays open
-const FRESH_MS: u64 = 30_000;
 
 /// The internet check: Android's captive-portal probe, an empty 204 answer when the internet is reachable. Another
 /// answer is a login page in the way (a cafe's or hotel's): Settings and the shade offer Sign in, which opens the
@@ -44,20 +41,13 @@ const PORTAL_RECHECK_MS: u64 = 30_000;
 
 pub struct Wifi {
     next_read: u64,
-    /// when the latest scan completed (its `scans` counter changed)
-    listed_at: Option<u64>,
-    page_open: bool,
-    asked_at: Option<u64>,
     last: Option<Scan>,
     /// a session with WIFID (made when first needed)
     neowifi: Option<Session>,
     /// the switch as WIFID last heard it
     radio_sent: Option<bool>,
     link: Link,
-    /// why WIFID's last join gave up (wifi::ipc::fail, 0 = it didn't)
-    failed: i32,
-    /// the sheet's message as last shown, and when the link state is read next (every 200 ms)
-    shown: alloc::string::String,
+    /// when the link state is read next (every 200 ms)
     next_link: u64,
     view: LinkView,
     /// the link view changed: publish the list again (with or without the current network)
@@ -82,18 +72,13 @@ impl Wifi {
         Self::start_net();
         Self {
             next_read: 0,
-            listed_at: None,
-            page_open: false,
-            asked_at: None,
             last: None,
             neowifi: None,
             radio_sent: None,
             link: Link::default(),
-            shown: alloc::string::String::new(),
             next_link: 0,
             view: LinkView::default(),
             relist: false,
-            failed: 0,
             net: None,
             ip: Ip::default(),
             next_ip: 0,
@@ -244,42 +229,6 @@ impl Wifi {
                 self.radio_sent = Some(radio_on);
             }
         }
-        if let Some(forget) = ui.take_wifi_leave() {
-            let mut args = TIpcArgs::new();
-            args.int(0, i32::from(forget));
-            let _ = self.call(op::LEAVE, &args);
-            self.next_link = 0; // show the change now
-        }
-        if let Some((bssid, password)) = ui.take_wifi_connect() {
-            let net = self
-                .last
-                .as_ref()
-                .and_then(|s| s.networks.iter().find(|n| n.bssid_text() == bssid).cloned());
-            match net {
-                // shortcut: the SSID's bytes as the scan decoded them (UTF-8); a non-UTF-8 SSID hashes wrong
-                Some(n) if !n.secured || (8..=63).contains(&password.len()) => {
-                    let c = Connect {
-                        bssid: n.bssid,
-                        ssid: n.ssid.as_bytes().to_vec(),
-                        password: if n.secured {
-                            password.as_bytes().to_vec()
-                        } else {
-                            alloc::vec::Vec::new()
-                        },
-                    }
-                    .encode();
-                    let des = TPtrC8::new(&c);
-                    let mut args = TIpcArgs::new();
-                    args.desc8(0, &des);
-                    if let Err(e) = self.call(op::CONNECT, &args) {
-                        e32::dprintln!("neoui: wifi: connect -> {}", e);
-                        ui.set_wifi_message("Wi-Fi is not available");
-                    }
-                }
-                Some(_) => ui.set_wifi_message("A WPA2 password has 8 to 63 characters"),
-                None => ui.set_wifi_message("The network is gone; refresh the list"),
-            }
-        }
         if now < self.next_link {
             return;
         }
@@ -288,31 +237,11 @@ impl Wifi {
         let mut des = TPtr8::new(&mut b);
         let mut args = TIpcArgs::new();
         args.des8(0, &mut des);
-        let (link, failed) = match self.call(op::LINK, &args) {
-            Ok(f) => {
-                let n = des.len();
-                (Link::decode(&b[..n]).unwrap_or_default(), f)
-            }
-            Err(_) => (Link::default(), 0),
+        // (joins, leaving and why a join failed are the Settings app's, over its own NeoWifi session)
+        let link = match self.call(op::LINK, &args) {
+            Ok(_) => Link::decode(&b[..des.len()]).unwrap_or_default(),
+            Err(_) => Link::default(),
         };
-        self.failed = failed;
-        let text = match failed {
-            fail::SECURITY => {
-                "This network's security is not supported (WPA2-PSK with CCMP only)".into()
-            }
-            fail::RANDOM => "No random numbers for the handshake".into(),
-            fail::DOWNGRADE => {
-                "The network's security changed during the handshake: not joined".into()
-            }
-            fail::HAL => "Wi-Fi is not available".into(),
-            fail::HANDSHAKE => "Wrong password".into(),
-            fail::NO_DATA => "No data from the network: Wi-Fi rejoins after a restart".into(),
-            _ => link.message(),
-        };
-        if text != self.shown {
-            ui.set_wifi_message(&text);
-            self.shown = text;
-        }
         self.link = link;
         self.poll_ip(now);
         let view = LinkView::new(&self.link, self.joined().as_ref()).with_ip(&self.ip);
@@ -323,52 +252,23 @@ impl Wifi {
         }
     }
 
-    /// `radio_on`: Settings' Wi-Fi switch (WIFID's: off leaves the network, nothing is joined or scanned on its own).
+    /// `radio_on`: the Wi-Fi switch (WIFID's: off leaves the network, nothing is joined or scanned on its own).
     /// shortcut: the kernel keeps the radio up while the switch is off; power it down once the driver can.
     pub fn poll(&mut self, ui: &mut Renderer, now: u64, radio_on: bool) {
         self.poll_link(ui, now, radio_on);
-        let page = ui.screen() == "settings" && ui.view() == "wifi";
-        let refresh = ui.take_wifi_refresh();
-        let opened = page && !self.page_open;
-        self.page_open = page;
-        let stale = self
-            .listed_at
-            .is_none_or(|t| now.saturating_sub(t) >= FRESH_MS);
-        // one request at a time: the kernel queues a single scan, so don't ask again for 5 s
-        let waiting = self.asked_at.is_some_and(|t| now.saturating_sub(t) < 5000);
-        // WIFID scans in the background for remembered networks; this page only while it is open
-        let rescan =
-            page && !waiting && (refresh || opened && stale || stale && self.asked_at.is_some());
-        if !rescan && !opened && !self.relist && now < self.next_read {
+        // the joined network's scan entry gives the status bar its bars and band; the Settings app lists and scans
+        if !core::mem::take(&mut self.relist) && now < self.next_read {
             return;
         }
-        self.next_read = now.saturating_add(if page { 500 } else { 5000 });
-        if rescan {
-            self.asked_at = Some(now);
-        }
-        let scan = self.scan(rescan).unwrap_or_else(|| Scan {
-            state: State::Error,
-            ..Scan::default()
-        });
-        if self.last.as_ref().is_none_or(|l| l.scans != scan.scans) && scan.state != State::Off {
-            self.listed_at = Some(now);
-        }
-        let relist = core::mem::take(&mut self.relist);
-        if self.last.as_ref() != Some(&scan) || rescan || relist {
-            // a requested scan shows as searching at once, before the kernel's state catches up; the network we
-            // are on shows under "Current network", not in the list
-            let mut shown = scan.clone();
-            if self.view.shown {
-                shown
-                    .networks
-                    .retain(|n| n.ssid.is_empty() || n.ssid != self.view.name);
-            }
-            if rescan && shown.state == State::Ready {
-                shown.state = State::Scanning;
-            }
-            ui.set_wifi(&shown);
+        self.next_read = now.saturating_add(5000);
+        if let Some(scan) = self.scan(false) {
             self.last = Some(scan);
         }
+    }
+
+    /// The link's IP side, for the Settings app (`SETTINGS_INFO` `INFO_NET`).
+    pub fn ip(&self) -> &Ip {
+        &self.ip
     }
 }
 

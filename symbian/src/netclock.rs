@@ -28,10 +28,23 @@ impl NetClock {
         if let Some(n) = fresh {
             self.seen = Some((n.seq, n.utc));
         }
+        let auto_zone = settings.get(keys::TIME_AUTO_ZONE).unwrap_or(true);
         if !settings.get(keys::TIME_AUTO).unwrap_or(true) {
+            // Automatic time zone works on its own: the network's offset, with the clock's own UTC kept
+            if let (Some(n), true) = (fresh, auto_zone) {
+                let (utc, offset) = time::utc_now();
+                let want = i32::from(n.tz) * 900;
+                if want != offset {
+                    let r = time::set_utc_and_offset(utc, want);
+                    dprintln!(
+                        "neoui: clock: zone from the network -> offset {} s ({:?})",
+                        want,
+                        r
+                    );
+                }
+            }
             return None;
         }
-        let auto_zone = settings.get(keys::TIME_AUTO_ZONE).unwrap_or(true);
         // shortcut: NITZ is taken as of now (MODEMD publishes it at once); its age in the status is not counted
         let (utc, offset, source) = match (fresh, http) {
             (Some(n), _) => (
