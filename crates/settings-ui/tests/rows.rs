@@ -64,6 +64,11 @@ fn page_rows() -> BTreeSet<(&'static str, String)> {
     for (_, name, _) in KEYBOARDS {
         out.insert((Page::Keyboard.name(), name.to_string()));
     }
+    let system = std::fs::read_to_string(pages.join("system.slint")).unwrap();
+    assert!(system.contains("for a in SetState.apps: ListRow"));
+    for a in neoui_proto::apps::listed() {
+        out.insert((Page::Apps.name(), a.name.to_string()));
+    }
     out
 }
 

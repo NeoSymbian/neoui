@@ -606,8 +606,14 @@ impl App {
 
     /// Ask the shell to act for the Settings app (`proto::SETTINGS_ACTION`, e.g. `proto::ACTION_SIGN_IN`).
     pub fn settings_action(&self, kind: i32) -> Result<(), i32> {
+        self.settings_action_with(kind, &[])
+    }
+
+    /// [`Self::settings_action`] with its request (`proto::ACTION_OPEN_ENTRY`: the old app's id, u32 LE).
+    pub fn settings_action_with(&self, kind: i32, request: &[u8]) -> Result<(), i32> {
+        let des = TPtrC8::new(request);
         let mut args = TIpcArgs::new();
-        args.int(0, kind);
+        args.int(0, kind).desc8(1, &des);
         self.server
             .send_receive(proto::SETTINGS_ACTION, &args)
             .map(drop)

@@ -10,6 +10,8 @@ export struct WifiDetail { label: string, value: string }
 export struct SearchHit { id: string, title: string, path: string, value: string, page: int }
 // a network WIFID remembers (Saved networks): its name, "Connected · Secured" / "Secured · not in range"
 export struct WifiSaved { name: string, detail: string }
+// an app on the Apps page: a ROM app by its screen key, or an old app (old: true) by its id in hex
+export struct AppRow { key: string, name: string, old: bool, settings: bool }
 export struct WifiLink { shown: bool, connected: bool, name: string, subtitle: string, bars: int, band: string, details: [WifiDetail], sign-in: bool }
 
 export global SetState {
@@ -95,6 +97,14 @@ export global SetState {
     in property <[WifiSaved]> wifi-saved;
     in property <bool> wifi-saved-ok;
 
+    // Apps: the ROM apps (neoui-proto apps), the old apps the legacy bridge registered (INFO_APPS: none until it has
+    // run; old-total counts any it had no room for), and the app the sheet is about; false: a shell older than 1.14
+    in property <[AppRow]> apps;
+    in property <[AppRow]> old-apps;
+    in property <int> old-total;
+    in property <bool> old-ok: true;
+    in-out property <AppRow> app-current;
+
     // the modem (MODEMD): operator, SIM, technology ("LTE", "3G", "2G", "" = no service), radio on
     in property <string> operator;
     in property <string> sim;
@@ -127,6 +137,7 @@ export global SetState {
     // - "open" + a page id; "back";
     // - "wifi-refresh", "wifi-connect" (wifi-current, password), "wifi-disconnect", "wifi-forget", "wifi-sign-in";
     //   "wifi-saved-forget" + a saved network's row (the app asks to confirm first);
+    // - "app-open" + a ROM app's key; "old-open" + an old app's id (hex); "app" + an app's key (its own settings);
     // - "sound" + "test" | "record"; "keyboard" + an index to turn on or off ("+0"/"-0"); "keyboard-next";
     // - "city-query" + the search text; "pad-reset" (QUERY first); "clip-clear";
     // - "app" + "phone" | "messages" | "devtools" (another app's settings); "devtools" + a page ("console", "tools");

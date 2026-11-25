@@ -4,7 +4,7 @@
 mod common;
 
 use common::{BUTTONS, Shot, model, strings};
-use settings_ui::{SearchHit, SetState, WifiDetail, WifiLink, WifiNet, WifiSaved};
+use settings_ui::{AppRow, SearchHit, SetState, WifiDetail, WifiLink, WifiNet, WifiSaved};
 use slint::{ComponentHandle, Model, SharedString};
 
 /// The sample state the boards show (set2-root-list's values).
@@ -149,6 +149,31 @@ fn fill(sh: &Shot) {
     ]));
     s.set_wifi_hidden(1);
     s.set_wifi_saved_ok(true);
+    s.set_apps(model(
+        neoui_proto::apps::listed()
+            .map(|a| AppRow {
+                key: a.key.into(),
+                name: a.name.into(),
+                old: false,
+                settings: a.settings.is_some(),
+            })
+            .collect(),
+    ));
+    s.set_old_apps(model(vec![
+        AppRow {
+            key: "20009aa3".into(),
+            name: "X-plore".into(),
+            old: true,
+            settings: false,
+        },
+        AppRow {
+            key: "2001a7b1".into(),
+            name: "Frozen Bubble".into(),
+            old: true,
+            settings: false,
+        },
+    ]));
+    s.set_old_total(2);
     s.set_wifi_saved(model(vec![
         WifiSaved {
             name: "Home-5G".into(),
@@ -319,6 +344,41 @@ fn every_page() {
         acts(&[("nav.mode", "0")]),
         "after {first:?}"
     );
+
+    // Apps: a row opens its sheet; Open and App settings ask for the app (SE1d)
+    page(&sh, 13, "Apps");
+    sh.draw();
+    sh.take_acts();
+    s.set_app_current(s.get_apps().row_data(5).unwrap()); // Phone: it has settings of its own
+    sheet(&sh, "app");
+    sh.shoot("set2-app-sheet");
+    sheet(&sh, "");
+    // the old apps (a short ROM list so they are in view): two, more than the grid keeps, and none yet
+    let rom = s.get_apps();
+    s.set_apps(model(vec![
+        rom.row_data(0).unwrap(),
+        rom.row_data(5).unwrap(),
+    ]));
+    sh.shoot("set2-apps");
+    s.set_old_total(70);
+    sh.shoot("set2-apps-many");
+    let old = s.get_old_apps();
+    s.set_old_apps(model(Vec::new()));
+    s.set_old_total(0);
+    sh.shoot("set2-apps-no-old");
+    s.set_old_apps(old);
+    s.set_old_total(2);
+    s.set_apps(rom);
+    // a row opens its sheet; Open asks for that app
+    sh.draw();
+    sh.take_acts();
+    sh.tap(100.0, 118.0);
+    assert_eq!(s.get_sheet().as_str(), "app");
+    assert_eq!(s.get_app_current().key.as_str(), "clock");
+    sh.shoot("set2-app-sheet-clock");
+    sh.tap(180.0, 588.0);
+    assert_eq!(sh.take_acts(), acts(&[("app-open", "clock")]));
+    sheet(&sh, "");
 
     // Saved networks: a row asks to forget that network (the app confirms first)
     page(&sh, 17, "Saved networks");

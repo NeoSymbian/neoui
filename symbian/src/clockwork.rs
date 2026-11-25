@@ -19,7 +19,7 @@ use neoui_proto::settings::keys;
 use neoui_proto::settings_app::info::Clock;
 use neoui_render::Renderer;
 
-/// The Clock app's screen key (`host::APPS`).
+/// The Clock app's screen key (`neoui_proto::apps`).
 const CLOCK_APP: &str = "clock";
 
 pub struct Clockwork {

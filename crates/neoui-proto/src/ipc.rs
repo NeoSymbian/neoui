@@ -35,13 +35,15 @@
 //! Since 1.13 Settings is an app (`NEOSET.EXE`, docs neoui-shell/settings.md SE0): it reads what only the shell
 //! knows ([`SETTINGS_INFO`]: battery history, the Wi-Fi link's IP and captive portal, the clock's sync) and asks the
 //! shell to act ([`SETTINGS_ACTION`]); its writes to shell-owned settings are allowed by its secure ID.
+//! Since 1.14 (SE1d) it also lists the old apps the legacy bridge registered ([`INFO_APPS`]) and opens one
+//! ([`ACTION_OPEN_ENTRY`]).
 
 use crate::{InputEvent, TouchPhase};
 
 /// The server's name (no leading `!`: that needs ProtServ).
 pub const SERVER: &str = "NeoUi";
 /// Protocol version (major, minor); a connect with another major is refused.
-pub const VERSION: (u8, u8) = (1, 13);
+pub const VERSION: (u8, u8) = (1, 14);
 
 /// `[Des8 out: GEOMETRY_LEN bytes = width, height, dp × 256 (u32 LE)]` → 0. `dp` is the shell's design unit in
 /// pixels (`min(screen w, h) / 360`), so apps size things like the shell does.
@@ -168,18 +170,23 @@ pub const RESULT_FILE: i32 = 29;
 /// `[]` → the clipboard's kind ([`CLIP_TEXT`] when empty or set by a 1.11 app).
 pub const CLIP_KIND: i32 = 30;
 /// `[kind, cursor: unused (0), Des8 out]` → the snapshot's length: something only the shell knows, encoded by
-/// [`crate::settings_app::info`] ([`INFO_BATTERY`], [`INFO_NET`], [`INFO_CLOCK`]). `KErrOverflow` when `out` is
+/// [`crate::settings_app::info`] ([`INFO_BATTERY`], [`INFO_NET`], [`INFO_CLOCK`], [`INFO_APPS`]). `KErrOverflow` when `out` is
 /// too short, `KErrArgument` for an unknown kind. Opcodes 31–39 are reserved (docs neoui-shell/protocol.md).
 pub const SETTINGS_INFO: i32 = 40;
 /// `[kind, Des8 request]` → 0: ask the shell to act. [`ACTION_SIGN_IN`]: open the browser on the current Wi-Fi
-/// network's sign-in page (`KErrNotReady` when there is no captive portal now).
+/// network's sign-in page (`KErrNotReady` when there is no captive portal now). [`ACTION_OPEN_ENTRY`] (1.14,
+/// Settings only, else `KErrPermissionDenied`): request = an id (u32 LE) of [`INFO_APPS`]; the legacy bridge opens that
+/// old app, as a tap in its grid does (`KErrNotFound` for an id it hasn't registered).
 pub const SETTINGS_ACTION: i32 = 41;
 /// [`SETTINGS_INFO`] kinds.
 pub const INFO_BATTERY: i32 = 1;
 pub const INFO_NET: i32 = 2;
 pub const INFO_CLOCK: i32 = 3;
+/// 1.14: the old apps the legacy bridge registered with [`ENTRY`] ([`crate::settings_app::info::OldApps`]).
+pub const INFO_APPS: i32 = 4;
 /// [`SETTINGS_ACTION`] kinds.
 pub const ACTION_SIGN_IN: i32 = 1;
+pub const ACTION_OPEN_ENTRY: i32 = 2;
 /// The longest launcher key, in bytes.
 pub const KEY_MAX: usize = 16;
 

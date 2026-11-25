@@ -9,8 +9,14 @@ use alloc::vec::Vec;
 
 /// Minute columns in the battery history (24 hours).
 pub const BATTERY_SLOTS: usize = 1440;
-/// The longest encoding of any kind (the out buffer the app passes).
-pub const INFO_MAX: usize = 1 + BATTERY_SLOTS;
+/// The battery record's length.
+pub const BATTERY_MAX: usize = 1 + BATTERY_SLOTS;
+/// The longest encoding of any kind (the out buffer the app passes): the old apps' list since 1.14.
+pub const INFO_MAX: usize = if OLD_APPS_MAX > BATTERY_MAX {
+    OLD_APPS_MAX
+} else {
+    BATTERY_MAX
+};
 
 /// Battery → its 24-hour chart: `[save_error: u8][slot: u8 × 1440]`, a slot 0..=100 percent or 255 = no reading.
 #[derive(Clone, Debug, PartialEq)]
@@ -24,7 +30,7 @@ pub struct Battery {
 impl Battery {
     #[must_use]
     pub fn encode(&self) -> Vec<u8> {
-        let mut b = Vec::with_capacity(INFO_MAX);
+        let mut b = Vec::with_capacity(BATTERY_MAX);
         b.push(u8::from(self.save_error));
         b.extend((0..BATTERY_SLOTS).map(|i| match self.bars.get(i) {
             Some(&v) if v >= 0.0 => (v.min(1.0) * 100.0 + 0.5) as u8,
@@ -116,6 +122,57 @@ impl Clock {
     }
 }
 
+/// The old apps the legacy bridge registered (`ipc::INFO_APPS`): `[count u8][total u16 LE]` then `count` times
+/// `[id u32 LE][len u8][caption]`. At most `ipc::ENTRIES_MAX` are listed (the shell keeps no more), each caption at
+/// most `ipc::TITLE_MAX` bytes; `total` counts the ones the shell had to refuse too, so a page can say "64 of 70".
+/// Empty: the bridge hasn't run since the phone started.
+// shortcut: no icons (64 entries of 128 px ARGB would be 4 MB); a kind 5 asking for one small icon by id is the upgrade.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct OldApps {
+    pub total: u16,
+    pub apps: Vec<(u32, String)>,
+}
+
+/// The longest [`OldApps`] record.
+pub const OLD_APPS_MAX: usize = 3 + crate::ipc::ENTRIES_MAX * (5 + crate::ipc::TITLE_MAX);
+
+impl OldApps {
+    #[must_use]
+    pub fn encode(&self) -> Vec<u8> {
+        let apps = &self.apps[..self.apps.len().min(crate::ipc::ENTRIES_MAX)];
+        let total = self.total.max(apps.len() as u16);
+        let mut b = alloc::vec![apps.len() as u8];
+        b.extend_from_slice(&total.to_le_bytes());
+        for (id, caption) in apps {
+            let c = clip(caption, crate::ipc::TITLE_MAX);
+            b.extend_from_slice(&id.to_le_bytes());
+            b.push(c.len() as u8);
+            b.extend_from_slice(c.as_bytes());
+        }
+        b
+    }
+
+    #[must_use]
+    pub fn decode(b: &[u8]) -> Option<Self> {
+        let (&[count, t0, t1], mut rest) = b.split_first_chunk::<3>()?;
+        let total = u16::from_le_bytes([t0, t1]);
+        if usize::from(count) > crate::ipc::ENTRIES_MAX || total < u16::from(count) {
+            return None;
+        }
+        let mut apps = Vec::new();
+        for _ in 0..count {
+            let (id, r) = rest.split_first_chunk::<4>()?;
+            let (caption, r) = take_str(r)?;
+            if caption.len() > crate::ipc::TITLE_MAX {
+                return None;
+            }
+            apps.push((u32::from_le_bytes(*id), caption));
+            rest = r;
+        }
+        rest.is_empty().then_some(OldApps { total, apps })
+    }
+}
+
 fn take_str(b: &[u8]) -> Option<(String, &[u8])> {
     let (&n, rest) = b.split_first()?;
     let n = usize::from(n);
@@ -138,6 +195,44 @@ mod tests {
     use alloc::vec;
 
     #[test]
+    fn old_apps_round_trip_limits_and_the_total() {
+        let a = OldApps {
+            total: 2,
+            apps: vec![
+                (0x1000_0001, "X-plore".into()),
+                (0x2000_0002, "Frozen Bubble".into()),
+            ],
+        };
+        assert_eq!(OldApps::decode(&a.encode()), Some(a.clone()));
+        assert_eq!(
+            OldApps::decode(&OldApps::default().encode()),
+            Some(OldApps::default())
+        );
+        // 64 entries of 48 bytes fill the record; more than the shell keeps are cut, the total says how many
+        let full = OldApps {
+            total: 70,
+            apps: (0..70).map(|i| (i, "x".repeat(48))).collect(),
+        };
+        let b = full.encode();
+        assert_eq!(b.len(), OLD_APPS_MAX);
+        let d = OldApps::decode(&b).unwrap();
+        assert_eq!((d.total, d.apps.len()), (70, 64));
+        // a caption cut to 48 bytes on a character boundary
+        let long = OldApps {
+            total: 0,
+            apps: vec![(1, "é".repeat(30))],
+        };
+        let d = OldApps::decode(&long.encode()).unwrap();
+        assert_eq!((d.total, d.apps[0].1.len()), (1, 48));
+        // damaged: short, trailing bytes, a total under the count, too many
+        assert_eq!(OldApps::decode(&a.encode()[..5]), None);
+        assert_eq!(OldApps::decode(&[a.encode(), vec![0]].concat()), None);
+        assert_eq!(OldApps::decode(&[1, 0, 0, 1, 0, 0, 0, 0]), None);
+        assert_eq!(OldApps::decode(&[65, 65, 0]), None);
+        assert_eq!(OldApps::decode(&[]), None);
+    }
+
+    #[test]
     fn battery_round_trips_with_gaps() {
         let mut bars = vec![-1.0; BATTERY_SLOTS];
         bars[0] = 0.72;
@@ -147,7 +242,7 @@ mod tests {
             bars,
         };
         let e = b.encode();
-        assert_eq!(e.len(), INFO_MAX);
+        assert_eq!(e.len(), BATTERY_MAX);
         let d = Battery::decode(&e).unwrap();
         assert!(d.save_error);
         assert_eq!(d.bars[0], 0.72);
