@@ -1,0 +1,168 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// The Settings app's own rows: the root's tile rows (set2-root-list: a coloured tile, the title, a live value or a
+// switch, S02) and the notes under a section.
+import { Theme, Switch } from "@neoui/kit.slint";
+
+component Tile inherits Rectangle {
+    in property <image> icon;
+    in property <color> tint;
+    width: 30 * Theme.dp;
+    height: self.width;
+    border-radius: 8 * Theme.dp;
+    background: tint;
+    Image {
+        width: 18 * Theme.dp;
+        height: self.width;
+        source: icon;
+        colorize: white;
+    }
+}
+
+// A root row: the tile, the title, then a value and › or a switch (S02: the switch toggles, the rest of the row opens
+// the page).
+export component SettingRow inherits Rectangle {
+    in property <string> title;
+    in property <string> value;
+    in property <image> icon;
+    in property <color> tint;
+    in property <bool> has-switch;
+    in-out property <bool> switch-on;
+    callback clicked;
+    callback switch-toggled(bool);
+    height: Theme.list-row-h;
+    background: t.pressed ? Theme.pressed : transparent;
+    t := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.margin + 4 * Theme.dp;
+        padding-right: Theme.margin + 4 * Theme.dp;
+        spacing: 14 * Theme.dp;
+        VerticalLayout {
+            alignment: center;
+            Tile {
+                icon: root.icon;
+                tint: root.tint;
+            }
+        }
+
+        Text {
+            text: root.title;
+            color: Theme.text;
+            font-size: Theme.font-body;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+        }
+
+        Text {
+            text: root.value;
+            color: Theme.text-dim;
+            font-size: Theme.font-label;
+            vertical-alignment: center;
+        }
+
+        if !root.has-switch: VerticalLayout {
+            alignment: center;
+            Image {
+                width: 18 * Theme.dp;
+                height: self.width;
+                source: @image-url("@neoui/icons/sys/chevron_right.svg");
+                colorize: Theme.text-dim;
+            }
+        }
+        if root.has-switch: VerticalLayout {
+            alignment: center;
+            Switch {
+                on <=> root.switch-on;
+                toggled(v) => {
+                    root.switch-toggled(v);
+                }
+            }
+        }
+    }
+}
+
+// A line of explanation under a section (set2-airplane, set2-bluetooth).
+export component Note inherits HorizontalLayout {
+    in property <string> text;
+    padding-left: Theme.margin + 4 * Theme.dp;
+    padding-right: Theme.margin + 4 * Theme.dp;
+    padding-top: 10 * Theme.dp;
+    padding-bottom: 10 * Theme.dp;
+    Text {
+        text: root.text;
+        color: Theme.text-secondary;
+        font-size: Theme.font-label;
+        wrap: word-wrap;
+    }
+}
+
+// Two buttons side by side (Quieter / Louder, Test sound / Record and play back).
+export component Pair inherits HorizontalLayout {
+    padding-left: Theme.margin;
+    padding-right: Theme.margin;
+    padding-top: 4 * Theme.dp;
+    padding-bottom: 8 * Theme.dp;
+    spacing: 12 * Theme.dp;
+    @children
+}
+
+// One of a few choices on the page itself (set2-navigation's modes): title, what it does, a radio on the right.
+export component ChoiceRow inherits Rectangle {
+    in property <string> title;
+    in property <string> subtitle;
+    in property <bool> on;
+    callback clicked;
+    height: max(Theme.list-row-double-h, lay.preferred-height);
+    background: t.pressed ? Theme.pressed : transparent;
+    t := TouchArea {
+        clicked => {
+            root.clicked();
+        }
+    }
+
+    lay := HorizontalLayout {
+        padding-left: Theme.margin + 4 * Theme.dp;
+        padding-right: Theme.margin + 4 * Theme.dp;
+        padding-top: 10 * Theme.dp;
+        padding-bottom: 10 * Theme.dp;
+        spacing: 14 * Theme.dp;
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            spacing: 3 * Theme.dp;
+            Text {
+                text: root.title;
+                color: Theme.text;
+                font-size: Theme.font-body;
+            }
+
+            Text {
+                text: root.subtitle;
+                color: Theme.text-secondary;
+                font-size: Theme.font-label;
+                wrap: word-wrap;
+            }
+        }
+
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 22 * Theme.dp;
+                height: self.width;
+                border-radius: self.width / 2;
+                border-width: 2 * Theme.dp;
+                border-color: root.on ? Theme.accent : Theme.text-dim;
+                if root.on: Rectangle {
+                    width: 10 * Theme.dp;
+                    height: self.width;
+                    border-radius: self.width / 2;
+                    background: Theme.accent;
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,208 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Wi-Fi (set2-wifi, set2-wifi-off, set2-wifi-join, set2-wifi-details): the switch, the current network, the networks
+// WIFID found, the join sheet and the current network's details. Saved networks and Add hidden network are SE1.
+import { Theme, NeoList, SectionHeader, ListRow, Sheet, TextField, Button } from "@neoui/kit.slint";
+import { Note } from "../parts.slint";
+import { SetState } from "../state.slint";
+
+export component WifiPage inherits NeoList {
+    VerticalLayout {
+        alignment: start;
+        ListRow {
+            title: "Wi-Fi";
+            subtitle: !SetState.wifi ? "Off" : SetState.wifi-link.connected ? "Connected to " + SetState.wifi-link.name : "Not connected";
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/wifi.svg");
+            has-switch: true;
+            switch-on <=> SetState.wifi;
+            switch-toggled(v) => { SetState.act("radio.wifi", v ? "1" : "0"); }
+        }
+
+        if SetState.wifi && SetState.wifi-link.shown: SectionHeader { text: "Current network"; }
+        if SetState.wifi && SetState.wifi-link.shown: ListRow {
+            title: SetState.wifi-link.name;
+            subtitle: SetState.wifi-link.subtitle;
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/wifi.svg");
+            icon-tint: SetState.wifi-link.connected ? Theme.accent : Theme.text-secondary;
+            chevron: true;
+            clicked => {
+                if SetState.wifi-link.sign-in {
+                    SetState.act("wifi-sign-in", "");
+                } else {
+                    SetState.sheet = "wifi-details";
+                }
+            }
+        }
+
+        // the section header with "Searching…" and the refresh button on its baseline
+        if SetState.wifi: Rectangle {
+            height: 48 * Theme.dp;
+            SectionHeader {
+                y: parent.height - self.height;
+                width: parent.width;
+                text: "Available networks";
+            }
+
+            Text {
+                x: parent.width - self.width - 56 * Theme.dp;
+                y: parent.height - self.height - 6 * Theme.dp;
+                text: SetState.wifi-scanning ? "Searching…" : "";
+                color: Theme.text-dim;
+                font-size: Theme.font-status;
+            }
+
+            Image {
+                width: 22 * Theme.dp;
+                height: self.width;
+                x: parent.width - self.width - Theme.margin;
+                y: parent.height - self.height - 4 * Theme.dp;
+                source: @image-url("@neoui/icons/sys/refresh.svg");
+                colorize: SetState.wifi-scanning ? Theme.text-dim : Theme.accent;
+            }
+
+            TouchArea {
+                x: parent.width - 64 * Theme.dp;
+                width: 64 * Theme.dp;
+                clicked => {
+                    if !SetState.wifi-scanning {
+                        SetState.act("wifi-refresh", "");
+                    }
+                }
+            }
+        }
+
+        for net in (SetState.wifi ? SetState.wifi-networks : []): ListRow {
+            title: net.name;
+            subtitle: net.detail;
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/wifi.svg");
+            icon-tint: net.bars >= 3 ? Theme.text : net.bars >= 1 ? Theme.text-secondary : Theme.text-dim;
+            clicked => {
+                SetState.wifi-current = net;
+                SetState.password = "";
+                SetState.sheet = "wifi-join";
+            }
+        }
+
+        if SetState.wifi && SetState.wifi-networks.length == 0: Note {
+            text: SetState.wifi-scanning ? "Looking for networks…" : "No networks found. Tap refresh to search again.";
+        }
+        if SetState.wifi && SetState.wifi-hidden > 0: Note {
+            text: SetState.wifi-hidden == 1 ? "1 hidden network nearby" : SetState.wifi-hidden + " hidden networks nearby";
+        }
+        if !SetState.wifi: Note {
+            text: "Turn on Wi-Fi to see available networks.";
+        }
+    }
+}
+
+// A tapped network: what the phone knows about it, the password, Connect (set2-wifi-join).
+export component WifiJoinSheet inherits Sheet {
+    property <bool> tried;
+    title: SetState.wifi-current.name;
+    VerticalLayout {
+        padding-left: 20 * Theme.dp;
+        padding-right: 20 * Theme.dp;
+        spacing: 14 * Theme.dp;
+        Text {
+            text: "Signal " + SetState.wifi-current.signal + " · " + (SetState.wifi-current.secured ? "Secured (WPA2/WPA3)" : "Open") + " · " + SetState.wifi-current.band + " · channel " + SetState.wifi-current.channel;
+            font-size: Theme.font-label;
+            color: Theme.text-secondary;
+            wrap: word-wrap;
+        }
+
+        if SetState.wifi-current.secured: TextField {
+            placeholder: "Password";
+            password: true;
+            autofocus: true;
+            text <=> SetState.password;
+            accepted => {
+                root.tried = true;
+                SetState.act("wifi-connect", "");
+            }
+        }
+        if root.tried && SetState.wifi-message != "": Text {
+            text: SetState.wifi-message;
+            font-size: Theme.font-status;
+            color: Theme.text-dim;
+            wrap: word-wrap;
+        }
+        HorizontalLayout {
+            spacing: 12 * Theme.dp;
+            Button {
+                text: "Cancel";
+                primary: false;
+                clicked => {
+                    root.close();
+                }
+            }
+
+            Button {
+                text: "Connect";
+                clicked => {
+                    root.tried = true;
+                    SetState.act("wifi-connect", "");
+                }
+            }
+        }
+    }
+}
+
+// The current network's details (set2-wifi-details): what the link is, Forget, Sign in, Disconnect.
+export component WifiDetailsSheet inherits Sheet {
+    title: SetState.wifi-link.name;
+    VerticalLayout {
+        padding-left: 20 * Theme.dp;
+        padding-right: 20 * Theme.dp;
+        spacing: 10 * Theme.dp;
+        for d in SetState.wifi-link.details: HorizontalLayout {
+            spacing: 12 * Theme.dp;
+            Text {
+                text: d.label;
+                width: 38%;
+                color: Theme.text-secondary;
+                font-size: Theme.font-label;
+            }
+
+            Text {
+                text: d.value;
+                horizontal-stretch: 1;
+                color: Theme.text;
+                font-size: Theme.font-label;
+                wrap: word-wrap;
+            }
+        }
+
+        HorizontalLayout {
+            padding-top: 8 * Theme.dp;
+            spacing: 12 * Theme.dp;
+            Button {
+                text: "Forget";
+                primary: false;
+                clicked => {
+                    SetState.act("wifi-forget", "");
+                    root.close();
+                }
+            }
+
+            if SetState.wifi-link.sign-in: Button {
+                text: "Sign in";
+                clicked => {
+                    SetState.act("wifi-sign-in", "");
+                    root.close();
+                }
+            }
+            Button {
+                text: SetState.wifi-link.connected ? "Disconnect" : "Cancel";
+                primary: !SetState.wifi-link.sign-in;
+                clicked => {
+                    if SetState.wifi-link.connected {
+                        SetState.act("wifi-disconnect", "");
+                    }
+                    root.close();
+                }
+            }
+        }
+    }
+}

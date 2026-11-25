@@ -1,0 +1,132 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// The root, List variant (set2-root-list, S01): Connections · Device · Personal · Apps · System, colour tiles, live
+// values; Wi-Fi and Bluetooth carry their switch (S02). Notifications, Storage and Lock screen come with their stages
+// (SE3-SE6), so they are not drawn yet.
+import { Theme, NeoList, SectionHeader } from "@neoui/kit.slint";
+import { SettingRow } from "../parts.slint";
+import { SetState } from "../state.slint";
+
+export component RootPage inherits NeoList {
+    VerticalLayout {
+        alignment: start;
+        SectionHeader { text: "Connections"; }
+        SettingRow {
+            title: "Wi-Fi";
+            value: !SetState.wifi ? "" : SetState.wifi-link.connected ? SetState.wifi-link.name : "Not connected";
+            icon: @image-url("@neoui/icons/sys/wifi.svg");
+            tint: #2f80ed;
+            has-switch: true;
+            switch-on <=> SetState.wifi;
+            switch-toggled(v) => { SetState.act("radio.wifi", v ? "1" : "0"); }
+            clicked => { SetState.act("open", "1"); }
+        }
+
+        SettingRow {
+            title: "Mobile network";
+            value: SetState.airplane ? "Off" : SetState.rat == "" ? "No service" : SetState.rat;
+            icon: @image-url("@neoui/icons/sys/signal.svg");
+            tint: #22b46a;
+            clicked => { SetState.act("open", "2"); }
+        }
+
+        SettingRow {
+            title: "Bluetooth";
+            icon: @image-url("@neoui/icons/sys/bluetooth.svg");
+            tint: #2f80ed;
+            has-switch: true;
+            switch-on <=> SetState.bluetooth;
+            switch-toggled(v) => { SetState.act("radio.bt", v ? "1" : "0"); }
+            clicked => { SetState.act("open", "3"); }
+        }
+
+        SettingRow {
+            title: "Airplane mode";
+            value: SetState.airplane ? "On" : "Off";
+            icon: @image-url("@neoui/icons/sys/lock.svg");
+            tint: #e2a92a;
+            clicked => { SetState.act("open", "4"); }
+        }
+
+        SectionHeader { text: "Device"; }
+        SettingRow {
+            title: "Display";
+            value: SetState.dark ? "Dark" : "Light";
+            icon: @image-url("@neoui/icons/sys/brightness.svg");
+            tint: #e2a92a;
+            clicked => { SetState.act("open", "5"); }
+        }
+
+        SettingRow {
+            title: "Home & navigation";
+            value: SetState.nav-modes.length > SetState.nav-mode ? SetState.nav-modes[SetState.nav-mode] : "";
+            icon: @image-url("@neoui/icons/sys/home.svg");
+            tint: #3d8bfd;
+            clicked => { SetState.act("open", "6"); }
+        }
+
+        SettingRow {
+            title: "Sounds";
+            value: SetState.silent ? "Silent" : "Ringing";
+            icon: @image-url("@neoui/icons/sys/volume.svg");
+            tint: #e5484d;
+            clicked => { SetState.act("open", "7"); }
+        }
+
+        SettingRow {
+            title: "Battery";
+            value: SetState.battery-text;
+            icon: @image-url("@neoui/icons/sys/battery_saver.svg");
+            tint: #14a37f;
+            clicked => { SetState.act("open", "8"); }
+        }
+
+        SectionHeader { text: "Personal"; }
+        SettingRow {
+            title: "Date & time";
+            value: SetState.time-auto ? "Automatic" : "Manual";
+            icon: @image-url("@neoui/icons/sys/stopwatch.svg");
+            tint: #3d8bfd;
+            clicked => { SetState.act("open", "9"); }
+        }
+
+        SettingRow {
+            title: "Language & keyboard";
+            value: SetState.keyboard-names.length > SetState.keyboard ? SetState.keyboard-names[SetState.keyboard] : "";
+            icon: @image-url("@neoui/icons/sys/language.svg");
+            tint: #1fa9c4;
+            clicked => { SetState.act("open", "10"); }
+        }
+
+        SettingRow {
+            title: "Privacy";
+            icon: @image-url("@neoui/icons/sys/privacy.svg");
+            tint: #5b6472;
+            clicked => { SetState.act("open", "15"); }
+        }
+
+        SectionHeader { text: "Apps"; }
+        SettingRow {
+            title: "Apps";
+            value: "Phone, old apps";
+            icon: @image-url("@neoui/icons/sys/apps.svg");
+            tint: #8656e8;
+            clicked => { SetState.act("open", "13"); }
+        }
+
+        SectionHeader { text: "System"; }
+        SettingRow {
+            title: "Developer options";
+            value: SetState.usb-debugging ? "USB debugging" : "Off";
+            icon: @image-url("@neoui/icons/sys/usb.svg");
+            tint: #5b6472;
+            clicked => { SetState.act("open", "11"); }
+        }
+
+        SettingRow {
+            title: "About phone";
+            icon: @image-url("@neoui/icons/sys/info.svg");
+            tint: #5b6472;
+            clicked => { SetState.act("open", "12"); }
+        }
+    }
+}

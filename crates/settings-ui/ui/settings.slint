@@ -1,0 +1,136 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// NEOSET.EXE, the Settings app (docs neoui-shell/settings.md "The Settings app", the canvas's set2-* boards): the v2
+// header ([Settings] on the root, [← Title] below it), one page at a time, and the page's sheets above everything.
+// The shell keeps the status bar, the key row or band, dialogs (QUERY) and toasts (NOTE).
+import "@neoui/fonts/NeoSans-Regular.ttf";
+import "@neoui/fonts/NeoSans-Medium.ttf";
+import "@neoui/fonts/NeoSans-SemiBold.ttf";
+import "@neoui/fonts/NeoSans-Bold.ttf";
+import "@neoui/fonts/DejaVuSans.ttf";
+import { Theme, Scroll, KeyboardFocus, Kit, Header, ChoiceSheet } from "@neoui/kit.slint";
+import { SetState, WifiNet, WifiLink, WifiDetail } from "state.slint";
+import { RootPage } from "pages/root.slint";
+import { WifiPage, WifiJoinSheet, WifiDetailsSheet } from "pages/wifi.slint";
+import { ConnectivityPage, MobilePage, BluetoothPage } from "pages/connections.slint";
+import { DisplayPage, NavigationPage, SoundsPage, BatteryPage } from "pages/device.slint";
+import { DateTimePage, ZoneSheet, KeyboardPage, PrivacyPage } from "pages/personal.slint";
+import { AppsPage, OldAppsPage, DeveloperPage, AboutPage } from "pages/system.slint";
+
+export { Theme, Scroll, KeyboardFocus, Kit, SetState, WifiNet, WifiLink, WifiDetail }
+
+export component SettingsApp inherits Window {
+    default-font-family: "NeoSans";
+    background: Theme.bg;
+
+    // a tap no row or button takes lands here: the focused field lets go and the keyboard closes
+    sink := FocusScope { }
+    TouchArea {
+        clicked => {
+            sink.focus();
+            KeyboardFocus.open = false;
+        }
+    }
+
+    header := Header {
+        y: 0;
+        title: SetState.title;
+        has-back: SetState.page != 0;
+        search: false;  // Search every page comes with SE1
+        tap-to-top: false;
+        alt: true;
+        back => {
+            SetState.act("back", "");
+        }
+    }
+
+    Rectangle {
+        y: header.height;
+        height: root.height - header.height;
+        if SetState.page == 0: RootPage { }
+        if SetState.page == 1: WifiPage { }
+        if SetState.page == 2: MobilePage { }
+        if SetState.page == 3: BluetoothPage { }
+        if SetState.page == 4: ConnectivityPage { }
+        if SetState.page == 5: DisplayPage { }
+        if SetState.page == 6: NavigationPage { }
+        if SetState.page == 7: SoundsPage { }
+        if SetState.page == 8: BatteryPage { }
+        if SetState.page == 9: DateTimePage { }
+        if SetState.page == 10: KeyboardPage { }
+        if SetState.page == 11: DeveloperPage { }
+        if SetState.page == 12: AboutPage { }
+        if SetState.page == 13: AppsPage { }
+        if SetState.page == 14: OldAppsPage { }
+        if SetState.page == 15: PrivacyPage { }
+    }
+
+    // the sheets: full size, last, so they cover the header and the page
+    if SetState.sheet == "wifi-join": WifiJoinSheet {
+        open: true;
+        dismissed => { SetState.sheet = ""; SetState.password = ""; }
+    }
+    if SetState.sheet == "wifi-details": WifiDetailsSheet {
+        open: true;
+        dismissed => { SetState.sheet = ""; }
+    }
+    if SetState.sheet == "zone": ZoneSheet {
+        open: true;
+        dismissed => { SetState.sheet = ""; }
+    }
+    if SetState.sheet == "timeout": ChoiceSheet {
+        open: true;
+        title: "Screen timeout";
+        choices: SetState.timeouts;
+        current: SetState.timeout-index;
+        chosen(i) => { SetState.act("timeout-pick", i); }
+        dismissed => { SetState.sheet = ""; }
+    }
+    if SetState.sheet == "date-format": ChoiceSheet {
+        open: true;
+        title: "Date format";
+        choices: SetState.date-formats;
+        current: SetState.date-format;
+        chosen(i) => { SetState.act("time.date_format", i); }
+        dismissed => { SetState.sheet = ""; }
+    }
+    if SetState.sheet == "pad-strength": ChoiceSheet {
+        open: true;
+        title: "Vibration strength";
+        choices: SetState.pad-strengths;
+        current: SetState.pad-strength;
+        chosen(i) => { SetState.act("legacy.pad.strength", i); }
+        dismissed => { SetState.sheet = ""; }
+    }
+    if SetState.sheet == "pad-default": ChoiceSheet {
+        open: true;
+        title: "Default pad for new apps";
+        choices: SetState.pad-defaults;
+        current: SetState.pad-default;
+        chosen(i) => { SetState.act("legacy.pad.default", i); }
+        dismissed => { SetState.sheet = ""; }
+    }
+    if SetState.sheet == "pad-dirs": ChoiceSheet {
+        open: true;
+        title: "Gamepad directions";
+        choices: SetState.pad-dirs-names;
+        current: SetState.pad-dirs;
+        chosen(i) => { SetState.act("legacy.pad.dirs", i); }
+        dismissed => { SetState.sheet = ""; }
+    }
+    if SetState.sheet == "pad-a": ChoiceSheet {
+        open: true;
+        title: "Gamepad A button";
+        choices: SetState.pad-a-names;
+        current: SetState.pad-a;
+        chosen(i) => { SetState.act("legacy.pad.a", i); }
+        dismissed => { SetState.sheet = ""; }
+    }
+    if SetState.sheet == "pad-b": ChoiceSheet {
+        open: true;
+        title: "Gamepad B button";
+        choices: SetState.pad-b-names;
+        current: SetState.pad-b;
+        chosen(i) => { SetState.act("legacy.pad.b", i); }
+        dismissed => { SetState.sheet = ""; }
+    }
+}

@@ -1,0 +1,116 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// What the Settings app shows and what its pages ask for (`act`). The device crate (symbian/apps/settings) fills the
+// `in` properties from the settings store, WIFID, MODEMD, the HAL and the shell's SETTINGS_INFO, and answers `act`.
+
+// one scanned Wi-Fi network (neoui-proto wifi::Network): name, "Secured · 5 GHz · -46 dBm", 0..4 bars
+export struct WifiNet { name: string, detail: string, bars: int, secured: bool, band: string, signal: string, channel: int, bssid: string }
+// the current link (neoui-proto wifi::LinkView, with the shell's IP rows)
+export struct WifiDetail { label: string, value: string }
+export struct WifiLink { shown: bool, connected: bool, name: string, subtitle: string, bars: int, band: string, details: [WifiDetail], sign-in: bool }
+
+export global SetState {
+    // the page (neoui-proto settings_app::Page ids: 0 root, 1 Wi-Fi, 2 Mobile, 3 Bluetooth, 4 Connectivity, 5 Display,
+    // 6 Home & navigation, 7 Sounds, 8 Battery, 9 Date & time, 10 Language & keyboard, 11 Developer, 12 About,
+    // 13 Apps, 14 Old apps, 15 Privacy) and its title; the app sets both
+    in property <int> page;
+    in property <string> title: "Settings";
+
+    // the settings the pages show, as stored (the app reloads them on AppEvent::Settings)
+    in-out property <bool> wifi;
+    in-out property <bool> bluetooth;
+    in-out property <bool> mobile-data;
+    in-out property <bool> airplane;
+    in-out property <bool> silent;
+    in-out property <bool> vibrate;
+    in property <int> ring-volume;
+    in property <int> media-volume;
+    in property <int> media-route;
+    in property <int> mic;
+    in-out property <bool> dark;
+    in-out property <float> brightness;  // 0..1 (display.brightness / 255)
+    in property <int> timeout;  // display.timeout, seconds (0 = never)
+    in property <int> nav-mode;
+    in-out property <bool> time-auto;
+    in-out property <bool> time-auto-zone;
+    in-out property <bool> clock-24h;
+    in-out property <bool> status-seconds;
+    in-out property <bool> shade-date;
+    in-out property <bool> usb-debugging;
+    in property <[bool]> keyboards;  // English, Armenian, Russian on
+    in property <int> keyboard;  // the current one
+    in-out property <bool> same-height;
+    in-out property <bool> pad-vibrate;
+    in property <int> pad-strength;
+    in property <int> pad-default;
+    in property <int> pad-dirs;
+    in property <int> pad-a;
+    in property <int> pad-b;
+    in-out property <bool> pad-lefty;
+    in-out property <bool> pad-console;
+
+    // texts the app makes (choices, values)
+    in property <string> timeout-text;
+    in property <[string]> timeouts;
+    in property <int> timeout-index;
+    in property <string> date-text;
+    in property <[string]> date-formats;
+    in property <int> date-format;
+    in property <string> zone;
+    in property <string> synced;
+    in property <[string]> cities;  // the city sheet's rows, filtered by its search ("Yerevan · UTC+04:00")
+    in property <[string]> nav-modes;
+    in property <[string]> nav-hints;
+    in property <[string]> media-routes;
+    in property <[string]> mics;
+    in property <[string]> keyboard-names;
+    in property <[string]> keyboard-hints;
+    in property <[string]> pad-strengths;
+    in property <[string]> pad-defaults;
+    in property <[string]> pad-dirs-names;
+    in property <[string]> pad-a-names;
+    in property <[string]> pad-b-names;
+
+    // Wi-Fi (WIFID), its link and the shell's IP rows
+    in property <string> wifi-status: "Searching…";
+    in property <[WifiNet]> wifi-networks;
+    in property <int> wifi-hidden;
+    in property <bool> wifi-scanning;
+    in property <WifiLink> wifi-link;
+    in property <string> wifi-message;
+
+    // the modem (MODEMD): operator, SIM, technology ("LTE", "3G", "2G", "" = no service), radio on
+    in property <string> operator;
+    in property <string> sim;
+    in property <string> rat;
+    in property <bool> roaming;
+    in property <bool> radio-online;
+    in property <string> phone-feedback;
+
+    // the battery (HAL now, the shell's 24-hour history)
+    in property <string> battery-text: "--%";
+    in property <string> battery-state: "Unknown";
+    in property <string> battery-usb: "unknown";
+    in property <string> battery-voltage: "unknown";
+    in property <[float]> battery-history;
+    in property <string> battery-storage;
+
+    // About phone: the kernel's, the ROM's and neoui's build lines; Sounds: the test's progress
+    in property <[string]> build;
+    in property <string> sound-feedback;
+
+    // the open sheet: "" none, "timeout", "date-format", "zone", "pad-strength", "pad-default", "pad-dirs", "pad-a",
+    // "pad-b", "wifi-join", "wifi-details"; the network the join sheet is for, and what is typed in it
+    in-out property <string> sheet;
+    in-out property <WifiNet> wifi-current;
+    in-out property <string> password;
+    in-out property <string> city-query;
+
+    // What the pages ask for:
+    // - a setting's key and its new value: "radio.wifi" "1", "display.brightness" "160", "time.zone" "Yerevan" …;
+    // - "open" + a page id; "back";
+    // - "wifi-refresh", "wifi-connect" (wifi-current, password), "wifi-disconnect", "wifi-forget", "wifi-sign-in";
+    // - "sound" + "test" | "record"; "keyboard" + an index to turn on or off ("+0"/"-0"); "keyboard-next";
+    // - "city-query" + the search text; "pad-reset" (QUERY first); "clip-clear";
+    // - "app" + "phone" | "messages" | "devtools" (another app's settings).
+    callback act(string, string);
+}

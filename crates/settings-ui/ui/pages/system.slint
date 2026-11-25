@@ -1,0 +1,215 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Apps (set2-apps, a thin first cut: the apps with settings of their own), Old apps' key pads (pad-settings*:
+// every choice LEGACY reads, the B button too), Developer options (set2-developer) and About phone (set2-about).
+import { Theme, NeoList, SectionHeader, ListRow, Card } from "@neoui/kit.slint";
+import { Note } from "../parts.slint";
+import { SetState } from "../state.slint";
+
+export component AppsPage inherits NeoList {
+    VerticalLayout {
+        alignment: start;
+        SectionHeader { text: "Apps with their own settings"; }
+        ListRow {
+            title: "Phone & Contacts";
+            subtitle: "Calls, call log, contacts";
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/call.svg");
+            chevron: true;
+            clicked => { SetState.act("app", "phone"); }
+        }
+
+        ListRow {
+            title: "Messages";
+            subtitle: "Delivery reports, message centre, alert";
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/message.svg");
+            chevron: true;
+            clicked => { SetState.act("app", "messages"); }
+        }
+
+        ListRow {
+            title: "Old apps";
+            subtitle: "Key pads for S60 apps";
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/keyboard.svg");
+            chevron: true;
+            divider: false;
+            clicked => { SetState.act("open", "14"); }
+        }
+    }
+}
+
+export component OldAppsPage inherits NeoList {
+    VerticalLayout {
+        alignment: start;
+        SectionHeader { text: "Vibration"; }
+        ListRow {
+            title: "Key vibration";
+            has-switch: true;
+            switch-on <=> SetState.pad-vibrate;
+            switch-toggled(v) => { SetState.act("legacy.pad.vibrate", v ? "1" : "0"); }
+        }
+
+        ListRow {
+            title: "Vibration strength";
+            subtitle: SetState.pad-strengths.length > SetState.pad-strength ? SetState.pad-strengths[SetState.pad-strength] : "";
+            chevron: true;
+            clicked => { SetState.sheet = "pad-strength"; }
+        }
+
+        SectionHeader { text: "Pads"; }
+        ListRow {
+            title: "Default pad for new apps";
+            subtitle: SetState.pad-default == 0 ? "Auto · games get Gamepad" : SetState.pad-defaults.length > SetState.pad-default ? SetState.pad-defaults[SetState.pad-default] : "";
+            chevron: true;
+            clicked => { SetState.sheet = "pad-default"; }
+        }
+
+        ListRow {
+            title: "Gamepad directions";
+            subtitle: SetState.pad-dirs-names.length > SetState.pad-dirs ? SetState.pad-dirs-names[SetState.pad-dirs] : "";
+            chevron: true;
+            clicked => { SetState.sheet = "pad-dirs"; }
+        }
+
+        ListRow {
+            title: "Gamepad A button";
+            subtitle: SetState.pad-a-names.length > SetState.pad-a ? SetState.pad-a-names[SetState.pad-a] : "";
+            chevron: true;
+            clicked => { SetState.sheet = "pad-a"; }
+        }
+
+        ListRow {
+            title: "Gamepad B button";
+            subtitle: SetState.pad-b-names.length > SetState.pad-b ? SetState.pad-b-names[SetState.pad-b] : "";
+            chevron: true;
+            clicked => { SetState.sheet = "pad-b"; }
+        }
+
+        ListRow {
+            title: "Left-handed gamepad";
+            subtitle: "Swaps the d-pad and the buttons";
+            has-switch: true;
+            switch-on <=> SetState.pad-lefty;
+            switch-toggled(v) => { SetState.act("legacy.pad.lefty", v ? "1" : "0"); }
+        }
+
+        ListRow {
+            title: "Open games in the console";
+            subtitle: "Landscape: d-pad left, buttons right";
+            has-switch: true;
+            switch-on <=> SetState.pad-console;
+            switch-toggled(v) => { SetState.act("legacy.pad.console", v ? "1" : "0"); }
+        }
+
+        Rectangle {
+            height: Theme.list-row-h;
+            background: reset.pressed ? Theme.pressed : transparent;
+            Text {
+                x: Theme.margin + 4 * Theme.dp;
+                text: "Reset remembered pads";
+                color: Theme.danger;
+                font-size: Theme.font-body;
+                vertical-alignment: center;
+            }
+
+            reset := TouchArea {
+                clicked => { SetState.act("pad-reset", ""); }
+            }
+        }
+    }
+}
+
+export component DeveloperPage inherits NeoList {
+    VerticalLayout {
+        alignment: start;
+        SectionHeader { text: "Debugging"; }
+        ListRow {
+            title: "USB debugging";
+            subtitle: SetState.usb-debugging ? "Shell on the second USB port (phone.py sh)" : "Off";
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/usb.svg");
+            has-switch: true;
+            switch-on <=> SetState.usb-debugging;
+            switch-toggled(v) => { SetState.act("developer.usb_debugging", v ? "1" : "0"); }
+        }
+
+        SectionHeader { text: "Tools"; }
+        ListRow {
+            title: "Open Dev tools";
+            subtitle: "Devices, the kernel log, processes, saving logs";
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/options.svg");
+            chevron: true;
+            divider: false;
+            clicked => { SetState.act("app", "devtools"); }
+        }
+    }
+}
+
+export component AboutPage inherits NeoList {
+    VerticalLayout {
+        padding: Theme.margin;
+        spacing: 12 * Theme.dp;
+        alignment: start;
+        Card {
+            height: 132 * Theme.dp;
+            VerticalLayout {
+                padding: Theme.card-pad;
+                spacing: 4 * Theme.dp;
+                alignment: center;
+                Text {
+                    text: "NeoSymbian";
+                    color: Theme.text;
+                    font-size: Theme.font-title * 1.3;
+                    font-weight: 700;
+                }
+
+                Text {
+                    text: "Developer preview · neoui";
+                    color: Theme.text-secondary;
+                    font-size: Theme.font-body;
+                }
+
+                Text {
+                    text: "EKA2 on AArch64 (ILP32) · 2010 user side";
+                    color: Theme.text-dim;
+                    font-size: Theme.font-label;
+                }
+            }
+        }
+
+        for kv in [["Model", "Pixel 3a XL (bonito)"], ["Kernel", "EKA2, AArch64 ILP32"], ["User side", "Symbian^3 (2010), ARMv8-A"], ["UI", "neoui (Rust + Slint)"]]: HorizontalLayout {
+            height: 36 * Theme.dp;
+            padding-left: 4 * Theme.dp;
+            padding-right: 4 * Theme.dp;
+            Text {
+                text: kv[0];
+                color: Theme.text-dim;
+                font-size: Theme.font-body;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+            }
+
+            Text {
+                text: kv[1];
+                color: Theme.text;
+                font-size: Theme.font-body;
+                vertical-alignment: center;
+            }
+        }
+
+        Text {
+            text: "Build";
+            color: Theme.text-dim;
+            font-size: Theme.font-label;
+        }
+
+        for line in (SetState.build.length > 0 ? SetState.build : ["—"]): Text {
+            text: line;
+            color: Theme.text;
+            font-size: Theme.font-label;
+            wrap: word-wrap;
+        }
+    }
+}
