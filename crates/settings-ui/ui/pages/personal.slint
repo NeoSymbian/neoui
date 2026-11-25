@@ -75,6 +75,8 @@ export component DateTimePage inherits NeoList {
 
 // Time zone (set2-timezone): search the cities, a tap picks one; each city brings its summer-time rule.
 export component ZoneSheet inherits Sheet {
+    // the shell's keyboard over the surface's bottom: the list shrinks by it, so the field stays above
+    in property <length> kb;
     property <string> query: SetState.city-query;
     changed query => {
         SetState.act("city-query", self.query);
@@ -90,7 +92,7 @@ export component ZoneSheet inherits Sheet {
         }
 
         NeoList {
-            height: 380 * Theme.dp;
+            height: max(120 * Theme.dp, 380 * Theme.dp - root.kb);
             VerticalLayout {
                 alignment: start;
                 for city[i] in SetState.cities: ListRow {
@@ -102,6 +104,10 @@ export component ZoneSheet inherits Sheet {
                 }
                 if SetState.cities.length == 0: Note { text: "No city by that name."; }
             }
+        }
+
+        Rectangle {
+            height: root.kb;
         }
     }
 }

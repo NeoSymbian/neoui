@@ -225,6 +225,12 @@ fn every_page() {
     s.set_wifi_current(s.get_wifi_networks().row_data(0).unwrap());
     sheet(&sh, "wifi-join");
     sh.shoot("set2-wifi-join");
+    // with the shell's keyboard up (276 dp of text keyboard + digits): the card's field and buttons stay above it
+    let kf = sh.ui.global::<settings_ui::KeyboardFocus>();
+    kf.set_open(true);
+    kf.set_text_h(276.0 * 3.0);
+    sh.shoot("set2-wifi-join-keyboard");
+    kf.set_open(false);
     sheet(&sh, "wifi-details");
     sh.shoot("set2-wifi-details");
     s.set_wifi(false);

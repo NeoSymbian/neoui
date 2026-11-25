@@ -68,18 +68,18 @@ export component SettingsApp inherits Window {
 
     // the sheets: full size, last, so they cover the header and the page
     if SetState.sheet == "wifi-join": WifiJoinSheet {
-        height: root.height - root.kb;
+        kb: root.kb;
         open: true;
-        dismissed => { SetState.sheet = ""; SetState.password = ""; }
+        dismissed => { SetState.sheet = ""; SetState.password = ""; KeyboardFocus.open = false; }
     }
     if SetState.sheet == "wifi-details": WifiDetailsSheet {
         open: true;
         dismissed => { SetState.sheet = ""; }
     }
     if SetState.sheet == "zone": ZoneSheet {
-        height: root.height - root.kb;
+        kb: root.kb;
         open: true;
-        dismissed => { SetState.sheet = ""; }
+        dismissed => { SetState.sheet = ""; KeyboardFocus.open = false; }
     }
     if SetState.sheet == "timeout": ChoiceSheet {
         open: true;

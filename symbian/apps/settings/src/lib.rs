@@ -173,6 +173,7 @@ impl Ctx {
                 proto::KEYBOARD_HIDDEN
             };
             let h = self.app.keyboard(mode).unwrap_or(0);
+            dprintln!("settings: keyboard mode {} h {}", mode, h);
             kf.set_text_h(h as f32);
         }
     }
@@ -184,6 +185,7 @@ impl Ctx {
         s.set_page(i32::from(page.id()));
         s.set_title(page.title().into());
         s.set_sheet(SharedString::new());
+        ui.global::<KeyboardFocus>().set_open(false);
         dprintln!("settings: page {}", page.name());
         self.tick(true);
     }
@@ -193,6 +195,8 @@ impl Ctx {
         let s = ui.global::<SetState>();
         if !s.get_sheet().is_empty() {
             s.set_sheet(SharedString::new());
+            // the sheet's field went with it: let its keyboard go too (else it comes back on resume)
+            ui.global::<KeyboardFocus>().set_open(false);
         } else if let Some(parent) = self.page.get().parent() {
             dprintln!("settings: back");
             self.open(parent);
@@ -205,6 +209,8 @@ impl Ctx {
         if !self.visible.get() {
             return;
         }
+        // a field focused by a timer-driven frame (autofocus) asks for its keyboard here at the latest
+        self.keyboard();
         let Some(ui) = self.ui() else { return };
         let n = if now { 0 } else { self.ticks.get() + 1 };
         self.ticks.set(n);
@@ -392,6 +398,7 @@ impl Ctx {
             _ => dprintln!("settings: unknown act {} {}", action, value),
         }
         if self.ui().is_some() {
+            self.keyboard();
             let _ = self.describe();
         }
     }

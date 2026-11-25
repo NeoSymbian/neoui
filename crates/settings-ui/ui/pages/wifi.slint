@@ -99,6 +99,8 @@ export component WifiPage inherits NeoList {
 
 // A tapped network: what the phone knows about it, the password, Connect (set2-wifi-join).
 export component WifiJoinSheet inherits Sheet {
+    // the shell's keyboard over the surface's bottom: the card grows by it, so its field and buttons stay above
+    in property <length> kb;
     property <bool> tried;
     title: SetState.wifi-current.name;
     VerticalLayout {
@@ -145,6 +147,10 @@ export component WifiJoinSheet inherits Sheet {
                     SetState.act("wifi-connect", "");
                 }
             }
+        }
+
+        Rectangle {
+            height: root.kb;
         }
     }
 }
