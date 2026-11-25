@@ -7,7 +7,7 @@ export struct WifiNet { name: string, detail: string, bars: int, secured: bool, 
 // the current link (neoui-proto wifi::LinkView, with the shell's IP rows)
 export struct WifiDetail { label: string, value: string }
 // a search result (set2-search): the row's title, where it is ("Date & time"), its live value, the page it opens
-export struct SearchHit { title: string, path: string, value: string, page: int }
+export struct SearchHit { id: string, title: string, path: string, value: string, page: int }
 export struct WifiLink { shown: bool, connected: bool, name: string, subtitle: string, bars: int, band: string, details: [WifiDetail], sign-in: bool }
 
 export global SetState {
@@ -21,6 +21,9 @@ export global SetState {
     // the root header's search: open, and what it found
     in-out property <bool> searching;
     in property <[SearchHit]> results;
+    in-out property <string> query;
+    // the row a search result opened (settings_app::rows id): it shows selected until the page changes
+    in property <string> found;
 
     // the settings the pages show, as stored (the app reloads them on AppEvent::Settings)
     in-out property <bool> wifi;

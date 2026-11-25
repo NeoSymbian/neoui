@@ -4,6 +4,7 @@
 //! a title here is missing from the `.slint` pages, or a page's row is missing here, so the two can't drift.
 
 use super::page::Page;
+use alloc::string::String;
 use alloc::vec::Vec;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -151,6 +152,28 @@ pub const ROWS: &[Row] = &[
         "Screen timeout",
         &["sleep", "lock"],
     ),
+    // Home & navigation: the three modes (choices::NAV_MODES, drawn from a model)
+    row(
+        "nav.0",
+        Navigation,
+        Navigation,
+        "Buttons",
+        &["keys", "navigation"],
+    ),
+    row(
+        "nav.1",
+        Navigation,
+        Navigation,
+        "Gestures",
+        &["thumb", "navigation"],
+    ),
+    row(
+        "nav.2",
+        Navigation,
+        Navigation,
+        "N9 gestures",
+        &["navigation"],
+    ),
     // Sounds
     row("sounds.silent", Sounds, Sounds, "Silent", &["mute"]),
     row("sounds.vibrate", Sounds, Sounds, "Vibrate", &[]),
@@ -215,6 +238,28 @@ pub const ROWS: &[Row] = &[
     ),
     row("time.format", DateTime, DateTime, "Date format", &[]),
     // Language & keyboard
+    // the keyboard's languages (choices::KEYBOARDS, drawn from a model)
+    row(
+        "kb.0",
+        Keyboard,
+        Keyboard,
+        "English",
+        &["qwerty", "keyboard"],
+    ),
+    row(
+        "kb.1",
+        Keyboard,
+        Keyboard,
+        "Armenian",
+        &["hayeren", "keyboard"],
+    ),
+    row(
+        "kb.2",
+        Keyboard,
+        Keyboard,
+        "Russian",
+        &["cyrillic", "keyboard"],
+    ),
     row(
         "kb.current",
         Keyboard,
@@ -307,10 +352,11 @@ pub const ROWS: &[Row] = &[
     ),
 ];
 
-/// The rows matching `query` (case-insensitive, anywhere in the title, an alias or the page's title), best first:
-/// title matches, then aliases, then the page's title. An empty query finds nothing.
+/// The rows matching `query` (case-insensitive, anywhere in the title, an alias, the page's title or the row's live
+/// value as `value` gives it), best first: title matches, then aliases, then the page's title, then the value. An empty
+/// query finds nothing.
 #[must_use]
-pub fn search(query: &str) -> Vec<&'static Row> {
+pub fn search_with(query: &str, value: impl Fn(&Row) -> String) -> Vec<&'static Row> {
     let q = query.trim().to_lowercase();
     if q.is_empty() {
         return Vec::new();
@@ -322,6 +368,8 @@ pub fn search(query: &str) -> Vec<&'static Row> {
             Some(1)
         } else if r.on != Page::Root && r.on.title().to_lowercase().contains(&q) {
             Some(2)
+        } else if value(r).to_lowercase().contains(&q) {
+            Some(3)
         } else {
             None
         }
@@ -344,6 +392,24 @@ mod tests {
         for (i, a) in ROWS.iter().enumerate() {
             assert!(ROWS[i + 1..].iter().all(|b| b.id != a.id), "{}", a.id);
         }
+    }
+
+    /// Search without live values.
+    fn search(query: &str) -> Vec<&'static Row> {
+        search_with(query, |_| String::new())
+    }
+
+    #[test]
+    fn live_values_are_found_last() {
+        let hits = search_with("30 sec", |r| {
+            if r.id == "display.timeout" {
+                "30 seconds".into()
+            } else {
+                String::new()
+            }
+        });
+        assert_eq!(hits.len(), 1);
+        assert_eq!(hits[0].id, "display.timeout");
     }
 
     #[test]

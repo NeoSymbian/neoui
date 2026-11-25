@@ -218,7 +218,7 @@ export component SearchPage inherits NeoList {
             subtitle: hit.path;
             value: hit.value;
             chevron: true;
-            clicked => { SetState.act("open", hit.page); }
+            clicked => { SetState.act("found", hit.id); }
         }
         if SetState.results.length == 0: Text {
             x: Theme.margin;

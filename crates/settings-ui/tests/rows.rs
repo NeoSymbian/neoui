@@ -1,12 +1,35 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! The search table (`neoui_proto::settings_app::rows::ROWS`) and the pages can't drift: every row title the
-//! `.slint` pages draw is in the table, and every table title is on its pages. Licences (not settings) is left out.
+//! The search table (`neoui_proto::settings_app::rows::ROWS`) and the pages can't drift: every (page, row title) the
+//! `.slint` pages draw, literal or from a model (`choices`), is in the table, and every table row is on its page.
+//! Licences (not settings), sheets and the search results themselves are left out.
+use neoui_proto::settings_app::choices::{KEYBOARDS, NAV_MODES};
+use neoui_proto::settings_app::page::Page;
 use neoui_proto::settings_app::rows::ROWS;
 use std::collections::BTreeSet;
 use std::path::Path;
 
-/// The literal `title: "…"` of every row the pages draw.
-fn page_titles() -> BTreeSet<String> {
+/// The page component each page is drawn by.
+const COMPONENTS: &[(&str, Page)] = &[
+    ("RootPage", Page::Root),
+    ("WifiPage", Page::Wifi),
+    ("ConnectivityPage", Page::Connectivity),
+    ("MobilePage", Page::Mobile),
+    ("BluetoothPage", Page::Bluetooth),
+    ("DisplayPage", Page::Display),
+    ("NavigationPage", Page::Navigation),
+    ("SoundsPage", Page::Sounds),
+    ("BatteryPage", Page::Battery),
+    ("DateTimePage", Page::DateTime),
+    ("KeyboardPage", Page::Keyboard),
+    ("PrivacyPage", Page::Privacy),
+    ("AppsPage", Page::Apps),
+    ("OldAppsPage", Page::OldApps),
+    ("DeveloperPage", Page::Developer),
+    ("AboutPage", Page::About),
+];
+
+/// (page, title) of every row the pages draw.
+fn page_rows() -> BTreeSet<(&'static str, String)> {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("ui/pages");
     let mut out = BTreeSet::new();
     for entry in std::fs::read_dir(dir).unwrap() {
@@ -14,29 +37,45 @@ fn page_titles() -> BTreeSet<String> {
         if path.file_name().unwrap() == "licences.slint" {
             continue;
         }
-        let text = std::fs::read_to_string(&path).unwrap();
-        for line in text.lines() {
+        let mut page = None;
+        for line in std::fs::read_to_string(&path).unwrap().lines() {
             let line = line.trim();
-            if let Some(rest) = line.strip_prefix("title: \"") {
-                out.insert(rest.split('"').next().unwrap().to_string());
+            if let Some(rest) = line.strip_prefix("export component ") {
+                let name = rest.split_whitespace().next().unwrap();
+                page = COMPONENTS
+                    .iter()
+                    .find(|(c, _)| *c == name)
+                    .map(|(_, p)| p.name());
+            } else if let (Some(p), Some(rest)) = (page, line.strip_prefix("title: \"")) {
+                out.insert((p, rest.split('"').next().unwrap().to_string()));
             }
         }
+    }
+    // rows drawn from a model
+    for (name, _) in NAV_MODES {
+        out.insert((Page::Navigation.name(), name.to_string()));
+    }
+    for (_, name, _) in KEYBOARDS {
+        out.insert((Page::Keyboard.name(), name.to_string()));
     }
     out
 }
 
 #[test]
 fn the_search_table_matches_the_pages() {
-    let pages = page_titles();
-    let table: BTreeSet<String> = ROWS.iter().map(|r| r.title.to_string()).collect();
+    let pages = page_rows();
+    let table: BTreeSet<(&'static str, String)> = ROWS
+        .iter()
+        .map(|r| (r.on.name(), r.title.to_string()))
+        .collect();
     let missing_in_table: Vec<_> = pages.difference(&table).collect();
     let missing_on_pages: Vec<_> = table.difference(&pages).collect();
     assert!(
         missing_in_table.is_empty(),
-        "rows on the pages but not in settings_app::rows: {missing_in_table:?}"
+        "(page, row) on the pages but not in settings_app::rows: {missing_in_table:?}"
     );
     assert!(
         missing_on_pages.is_empty(),
-        "rows in settings_app::rows but on no page: {missing_on_pages:?}"
+        "(page, row) in settings_app::rows but not on that page: {missing_on_pages:?}"
     );
 }

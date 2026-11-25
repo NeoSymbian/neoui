@@ -11,6 +11,7 @@ export component DateTimePage inherits NeoList {
         SectionHeader { text: "Network time"; }
         ListRow {
             title: "Automatic time";
+            checked: SetState.found == "time.auto";
             subtitle: "Last set: " + SetState.synced;
             has-switch: true;
             switch-on <=> SetState.time-auto;
@@ -19,6 +20,7 @@ export component DateTimePage inherits NeoList {
 
         ListRow {
             title: "Automatic time zone";
+            checked: SetState.found == "time.auto_zone";
             subtitle: "From the mobile network";
             has-switch: true;
             switch-on <=> SetState.time-auto-zone;
@@ -27,6 +29,7 @@ export component DateTimePage inherits NeoList {
 
         ListRow {
             title: "Time zone";
+            checked: SetState.found == "time.zone";
             subtitle: SetState.zone;
             value: SetState.time-auto-zone ? "Network" : "";
             chevron: !SetState.time-auto-zone;
@@ -43,6 +46,7 @@ export component DateTimePage inherits NeoList {
         SectionHeader { text: "Format"; }
         ListRow {
             title: "24-hour time";
+            checked: SetState.found == "time.24h";
             has-switch: true;
             switch-on <=> SetState.clock-24h;
             switch-toggled(v) => { SetState.act("clock.24h", v ? "1" : "0"); }
@@ -50,6 +54,7 @@ export component DateTimePage inherits NeoList {
 
         ListRow {
             title: "Seconds in the status bar";
+            checked: SetState.found == "time.seconds";
             subtitle: "Uses more battery";
             has-switch: true;
             switch-on <=> SetState.status-seconds;
@@ -58,6 +63,7 @@ export component DateTimePage inherits NeoList {
 
         ListRow {
             title: "Date in the shade";
+            checked: SetState.found == "time.shade_date";
             has-switch: true;
             switch-on <=> SetState.shade-date;
             switch-toggled(v) => { SetState.act("shade.date", v ? "1" : "0"); }
@@ -65,6 +71,7 @@ export component DateTimePage inherits NeoList {
 
         ListRow {
             title: "Date format";
+            checked: SetState.found == "time.format";
             value: SetState.date-text;
             chevron: true;
             divider: false;
@@ -121,6 +128,7 @@ export component KeyboardPage inherits NeoList {
             subtitle: SetState.keyboard-hints[i];
             has-switch: true;
             switch-on: SetState.keyboards[i];
+            checked: SetState.found == "kb." + i;
             // the app keeps the last language on (it reloads the switch when it refuses)
             switch-toggled(on) => { SetState.act("keyboard", (on ? "+" : "-") + i); }
         }
@@ -128,6 +136,7 @@ export component KeyboardPage inherits NeoList {
         SectionHeader { text: "Typing"; }
         ListRow {
             title: "Current language";
+            checked: SetState.found == "kb.current";
             value: SetState.keyboard-names.length > SetState.keyboard ? SetState.keyboard-names[SetState.keyboard] : "";
             has-icon: true;
             icon: @image-url("@neoui/icons/sys/language.svg");
@@ -136,6 +145,7 @@ export component KeyboardPage inherits NeoList {
 
         ListRow {
             title: "Same height for all languages";
+            checked: SetState.found == "kb.same_height";
             subtitle: "Shorter ones get a row of digits";
             has-icon: true;
             icon: @image-url("@neoui/icons/sys/keypad.svg");
@@ -153,6 +163,7 @@ export component PrivacyPage inherits NeoList {
         SectionHeader { text: "Clipboard"; }
         ListRow {
             title: "Clear clipboard";
+            checked: SetState.found == "privacy.clip";
             subtitle: "It holds up to 2048 bytes until the next copy";
             has-icon: true;
             icon: @image-url("@neoui/icons/sys/delete.svg");

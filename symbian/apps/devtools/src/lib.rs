@@ -181,6 +181,13 @@ fn run() -> Result<(), i32> {
                 AppEvent::Open { .. } => {
                     let name = ctx.app.arg().unwrap_or_default();
                     dprintln!("devtools: opened on {:?}", name);
+                    // a sub-view left open (Tools) would cover the tab asked for; the console shows the live log
+                    if ctx.model.borrow().view != View::None {
+                        ctx.open(View::None);
+                    }
+                    if name == "console" {
+                        ctx.model.borrow_mut().console.last = false;
+                    }
                     ctx.open_page(&name);
                 }
                 // the kit's layers first (a menu, a sheet), then a sub-view (kept only while one is open)

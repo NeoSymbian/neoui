@@ -3804,6 +3804,7 @@ name = "settings-ui"
 version = "0.1.0"
 dependencies = [
  "neoui-kit",
+ "neoui-proto",
  "png",
  "slint",
 ]

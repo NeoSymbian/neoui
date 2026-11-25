@@ -11,6 +11,7 @@ export component ConnectivityPage inherits NeoList {
         SectionHeader { text: "Wireless"; }
         ListRow {
             title: "Wi-Fi";
+            checked: SetState.found == "conn.wifi";
             subtitle: !SetState.wifi ? "Off" : SetState.wifi-link.connected ? "Connected to " + SetState.wifi-link.name : SetState.wifi-status;
             has-icon: true;
             icon: @image-url("@neoui/icons/sys/wifi.svg");
@@ -22,7 +23,10 @@ export component ConnectivityPage inherits NeoList {
 
         ListRow {
             title: "Bluetooth";
+            checked: SetState.found == "conn.bt";
             subtitle: SetState.bluetooth ? "On · no driver yet" : "Off";
+            chevron: true;
+            clicked => { SetState.act("open", "3"); }
             has-icon: true;
             icon: @image-url("@neoui/icons/sys/bluetooth.svg");
             has-switch: true;
@@ -33,6 +37,7 @@ export component ConnectivityPage inherits NeoList {
         SectionHeader { text: "Mobile"; }
         ListRow {
             title: "Mobile data";
+            checked: SetState.found == "conn.data";
             subtitle: !SetState.mobile-data ? "Off" : SetState.rat == "" ? "No service" : SetState.rat;
             has-icon: true;
             icon: @image-url("@neoui/icons/sys/data.svg");
@@ -43,6 +48,7 @@ export component ConnectivityPage inherits NeoList {
 
         ListRow {
             title: "Airplane mode";
+            checked: SetState.found == "conn.airplane";
             subtitle: SetState.airplane ? (SetState.radio-online ? "Turning radio off…" : "Radio off") : (SetState.radio-online ? "Radio on" : "Waiting for radio");
             has-icon: true;
             icon: @image-url("@neoui/icons/sys/lock.svg");
@@ -62,6 +68,7 @@ export component MobilePage inherits NeoList {
         SectionHeader { text: "SIM"; }
         ListRow {
             title: "SIM card & operator";
+            checked: SetState.found == "mobile.sim";
             subtitle: (SetState.operator == "" ? "No operator" : SetState.operator) + " · " + SetState.sim;
             has-icon: true;
             icon: @image-url("@neoui/icons/sys/signal.svg");
@@ -70,6 +77,7 @@ export component MobilePage inherits NeoList {
         SectionHeader { text: "Data"; }
         ListRow {
             title: "Mobile data";
+            checked: SetState.found == "mobile.data";
             subtitle: SetState.airplane ? "Airplane mode" : SetState.rat == "" ? "No service" : SetState.rat + (SetState.roaming ? " · roaming" : "");
             has-icon: true;
             icon: @image-url("@neoui/icons/sys/data.svg");
@@ -88,6 +96,7 @@ export component BluetoothPage inherits NeoList {
         alignment: start;
         ListRow {
             title: "Bluetooth";
+            checked: SetState.found == "bt.switch";
             subtitle: SetState.bluetooth ? "On" : "Off";
             has-icon: true;
             icon: @image-url("@neoui/icons/sys/bluetooth.svg");

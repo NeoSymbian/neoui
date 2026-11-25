@@ -204,6 +204,7 @@ fn every_page() {
     sh.shoot("set2-root-grid");
     s.set_root_grid(false);
     let hit = |title: &str, path: &str, value: &str, page| SearchHit {
+        id: "root.datetime".into(),
         title: title.into(),
         path: path.into(),
         value: value.into(),
@@ -222,7 +223,7 @@ fn every_page() {
     sh.tap(100.0, 48.0 + 36.0);
     assert!(
         sh.take_acts()
-            .contains(&("open".to_string(), "9".to_string()))
+            .contains(&("found".to_string(), "root.datetime".to_string()))
     );
     s.set_searching(false);
 

@@ -42,6 +42,7 @@ export component SettingsApp inherits Window {
         search: SetState.page == 0;
         search-placeholder: "Search settings";
         searching <=> SetState.searching;
+        query <=> SetState.query;
         menu: SetState.page == 0 ? [SetState.root-grid ? "View as list" : "View as grid"] : [];
         tap-to-top: false;
         alt: true;
@@ -58,7 +59,8 @@ export component SettingsApp inherits Window {
 
     Rectangle {
         y: header.height;
-        height: root.height - header.height;
+        // the results end above the keyboard the search field brought up
+        height: root.height - header.height - (SetState.page == 0 && SetState.searching ? root.kb : 0);
         if SetState.page == 0 && SetState.searching: SearchPage { }
         if SetState.page == 0 && !SetState.searching && !SetState.root-grid: RootPage { }
         if SetState.page == 0 && !SetState.searching && SetState.root-grid: RootGridPage { }

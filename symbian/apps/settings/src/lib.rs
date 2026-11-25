@@ -59,6 +59,8 @@ struct Ctx {
     cities: RefCell<Vec<&'static str>>,
     /// "Reset remembered pads" asked its QUERY: the answer resets them
     asked_reset: Cell<bool>,
+    /// the root search's query (results are refreshed with it while searching)
+    query: RefCell<String>,
     /// the keyboard as last asked of the shell (KeyboardFocus open, seq, mode)
     kb: Cell<(bool, i32, i32)>,
 }
@@ -81,6 +83,8 @@ fn live_value(s: &SetState<'_>, id: &str) -> String {
         "conn.data" | "mobile.data" => on(s.get_mobile_data()),
         "root.airplane" | "conn.airplane" => on(s.get_airplane()),
         "root.mobile" => s.get_rat().into(),
+        "root.battery" => s.get_battery_text().into(),
+        "root.datetime" => s.get_zone().into(),
         "display.dark" => on(s.get_dark()),
         "display.timeout" => s.get_timeout_text().into(),
         "sounds.silent" => on(s.get_silent()),
@@ -120,6 +124,7 @@ fn run() -> Result<(), i32> {
         cities: RefCell::default(),
         asked_reset: Cell::new(false),
         kb: Cell::new((false, 0, 0)),
+        query: RefCell::default(),
     });
     // watch first: a change between the first read and the watch would be missed
     if let Err(e) = app.watch_settings("") {
@@ -234,6 +239,7 @@ impl Ctx {
         s.set_page(i32::from(page.id()));
         s.set_title(page.title().into());
         s.set_sheet(SharedString::new());
+        s.set_found(SharedString::new());
         ui.global::<KeyboardFocus>().set_open(false);
         dprintln!("settings: page {}", page.name());
         self.tick(true);
@@ -287,7 +293,7 @@ impl Ctx {
         if page == Page::DateTime && every(5) {
             store::dates(&self.app, &ui);
         }
-        if page == Page::DateTime
+        if matches!(page, Page::DateTime | Page::Root)
             && every(5)
             && let Some(c) = self
                 .app
@@ -299,9 +305,34 @@ impl Ctx {
             s.set_zone(c.zone.into());
             s.set_synced(c.synced.into());
         }
+        if page == Page::Root && ui.global::<SetState>().get_searching() && every(2) {
+            self.search(&ui);
+        }
         if let Some(text) = self.sound.changed() {
             ui.global::<SetState>().set_sound_feedback(text.into());
         }
+    }
+
+    /// The root's search results for the last query, values as they are now (again each tick while searching).
+    fn search(&self, ui: &SettingsApp) {
+        let s = ui.global::<SetState>();
+        let query = self.query.borrow();
+        let hits: Vec<SearchHit> = rows::search_with(&query, |r| live_value(&s, r.id))
+            .into_iter()
+            .map(|r| SearchHit {
+                id: r.id.into(),
+                title: r.title.into(),
+                path: if r.on == Page::Root {
+                    "Settings"
+                } else {
+                    r.on.title()
+                }
+                .into(),
+                value: live_value(&s, r.id).into(),
+                page: i32::from(r.opens.id()),
+            })
+            .collect();
+        s.set_results(ModelRc::new(VecModel::from(hits)));
     }
 
     fn battery(&self, ui: &SettingsApp) {
@@ -431,22 +462,19 @@ impl Ctx {
                 store::load(app, &ui);
             }
             "search" => {
-                let hits: Vec<SearchHit> = rows::search(value)
-                    .into_iter()
-                    .map(|r| SearchHit {
-                        title: r.title.into(),
-                        path: if r.on == Page::Root {
-                            "Settings"
-                        } else {
-                            r.on.title()
-                        }
-                        .into(),
-                        value: live_value(&s, r.id).into(),
-                        page: i32::from(r.opens.id()),
-                    })
-                    .collect();
-                dprintln!("settings: search {} results", hits.len());
-                s.set_results(ModelRc::new(VecModel::from(hits)));
+                self.query.replace(String::from(value));
+                self.search(&ui);
+            }
+            // a search result: its page opens with the row selected, and search closes
+            "found" => {
+                if let Some(r) = rows::ROWS.iter().find(|r| r.id == value) {
+                    s.set_searching(false);
+                    s.set_query(SharedString::new());
+                    self.open(r.opens);
+                    if r.on != Page::Root {
+                        s.set_found(r.id.into());
+                    }
+                }
             }
             // Dev tools on one of its pages ("console", "tools")
             "devtools" => {
