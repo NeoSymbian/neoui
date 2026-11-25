@@ -11,6 +11,7 @@ export component AppsPage inherits NeoList {
         SectionHeader { text: "Apps with their own settings"; }
         ListRow {
             title: "Phone & Contacts";
+            checked: SetState.found == "apps.phone";
             subtitle: "Calls, call log, contacts";
             has-icon: true;
             icon: @image-url("@neoui/icons/sys/call.svg");
@@ -20,6 +21,7 @@ export component AppsPage inherits NeoList {
 
         ListRow {
             title: "Messages";
+            checked: SetState.found == "apps.messages";
             subtitle: "Delivery reports, message centre, alert";
             has-icon: true;
             icon: @image-url("@neoui/icons/sys/message.svg");
@@ -29,6 +31,7 @@ export component AppsPage inherits NeoList {
 
         ListRow {
             title: "Old apps";
+            checked: SetState.found == "apps.oldapps";
             subtitle: "Key pads for S60 apps";
             has-icon: true;
             icon: @image-url("@neoui/icons/sys/keyboard.svg");
@@ -45,6 +48,7 @@ export component OldAppsPage inherits NeoList {
         SectionHeader { text: "Vibration"; }
         ListRow {
             title: "Key vibration";
+            checked: SetState.found == "pads.vibrate";
             has-switch: true;
             switch-on <=> SetState.pad-vibrate;
             switch-toggled(v) => { SetState.act("legacy.pad.vibrate", v ? "1" : "0"); }
@@ -52,6 +56,7 @@ export component OldAppsPage inherits NeoList {
 
         ListRow {
             title: "Vibration strength";
+            checked: SetState.found == "pads.strength";
             subtitle: SetState.pad-strengths.length > SetState.pad-strength ? SetState.pad-strengths[SetState.pad-strength] : "";
             chevron: true;
             clicked => { SetState.sheet = "pad-strength"; }
@@ -60,6 +65,7 @@ export component OldAppsPage inherits NeoList {
         SectionHeader { text: "Pads"; }
         ListRow {
             title: "Default pad for new apps";
+            checked: SetState.found == "pads.default";
             subtitle: SetState.pad-default == 0 ? "Auto · games get Gamepad" : SetState.pad-defaults.length > SetState.pad-default ? SetState.pad-defaults[SetState.pad-default] : "";
             chevron: true;
             clicked => { SetState.sheet = "pad-default"; }
@@ -67,6 +73,7 @@ export component OldAppsPage inherits NeoList {
 
         ListRow {
             title: "Gamepad directions";
+            checked: SetState.found == "pads.dirs";
             subtitle: SetState.pad-dirs-names.length > SetState.pad-dirs ? SetState.pad-dirs-names[SetState.pad-dirs] : "";
             chevron: true;
             clicked => { SetState.sheet = "pad-dirs"; }
@@ -74,6 +81,7 @@ export component OldAppsPage inherits NeoList {
 
         ListRow {
             title: "Gamepad A button";
+            checked: SetState.found == "pads.a";
             subtitle: SetState.pad-a-names.length > SetState.pad-a ? SetState.pad-a-names[SetState.pad-a] : "";
             chevron: true;
             clicked => { SetState.sheet = "pad-a"; }
@@ -81,6 +89,7 @@ export component OldAppsPage inherits NeoList {
 
         ListRow {
             title: "Gamepad B button";
+            checked: SetState.found == "pads.b";
             subtitle: SetState.pad-b-names.length > SetState.pad-b ? SetState.pad-b-names[SetState.pad-b] : "";
             chevron: true;
             clicked => { SetState.sheet = "pad-b"; }
@@ -88,6 +97,7 @@ export component OldAppsPage inherits NeoList {
 
         ListRow {
             title: "Left-handed gamepad";
+            checked: SetState.found == "pads.lefty";
             subtitle: "Swaps the d-pad and the buttons";
             has-switch: true;
             switch-on <=> SetState.pad-lefty;
@@ -96,6 +106,7 @@ export component OldAppsPage inherits NeoList {
 
         ListRow {
             title: "Open games in the console";
+            checked: SetState.found == "pads.console";
             subtitle: "Landscape: d-pad left, buttons right";
             has-switch: true;
             switch-on <=> SetState.pad-console;
@@ -126,6 +137,7 @@ export component DeveloperPage inherits NeoList {
         SectionHeader { text: "Debugging"; }
         ListRow {
             title: "USB debugging";
+            checked: SetState.found == "dev.usb";
             subtitle: SetState.usb-debugging ? "Shell on the second USB port (phone.py sh)" : "Off";
             has-icon: true;
             icon: @image-url("@neoui/icons/sys/usb.svg");
@@ -134,9 +146,27 @@ export component DeveloperPage inherits NeoList {
             switch-toggled(v) => { SetState.act("developer.usb_debugging", v ? "1" : "0"); }
         }
 
+        SectionHeader { text: "Logs"; }
+        ListRow {
+            title: "Kernel log";
+            checked: SetState.found == "dev.log";
+            subtitle: "Live, in Dev tools › Console";
+            chevron: true;
+            clicked => { SetState.act("devtools", "console"); }
+        }
+
+        ListRow {
+            title: "Save logs";
+            checked: SetState.found == "dev.save";
+            subtitle: "To E:\\logs (C:\\logs without E:), in Dev tools › Tools";
+            chevron: true;
+            clicked => { SetState.act("devtools", "tools"); }
+        }
+
         SectionHeader { text: "Tools"; }
         ListRow {
             title: "Open Dev tools";
+            checked: SetState.found == "dev.tools";
             subtitle: "Devices, the kernel log, processes, saving logs";
             has-icon: true;
             icon: @image-url("@neoui/icons/sys/options.svg");
@@ -210,6 +240,15 @@ export component AboutPage inherits NeoList {
             color: Theme.text;
             font-size: Theme.font-label;
             wrap: word-wrap;
+        }
+
+        ListRow {
+            title: "Licences";
+            checked: SetState.found == "about.licences";
+            subtitle: "Apache-2.0 · EPL · GPL-3.0 (Slint) · fonts";
+            chevron: true;
+            divider: false;
+            clicked => { SetState.act("open", "16"); }
         }
     }
 }

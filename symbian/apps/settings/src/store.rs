@@ -84,9 +84,14 @@ pub fn dates(app: &App, ui: &SettingsApp) {
     s.set_date_formats(strings((0..4).map(|f| date_text(&today, f))));
 }
 
+/// The root as the Nokia grid: the app's own key (`settings.*`, its namespace in `settings::access`; no registry row,
+/// so a missing or retyped value is the list).
+pub const ROOT_GRID: &str = "settings.root_grid";
+
 /// Every setting a page shows.
 pub fn load(app: &App, ui: &SettingsApp) {
     let s = ui.global::<SetState>();
+    s.set_root_grid(matches!(app.setting_raw(ROOT_GRID), Ok(Value::Bool(true))));
     s.set_wifi(get(app, keys::RADIO_WIFI));
     s.set_bluetooth(get(app, keys::RADIO_BT));
     s.set_mobile_data(get(app, keys::RADIO_DATA));

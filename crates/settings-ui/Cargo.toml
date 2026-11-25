@@ -16,3 +16,5 @@ neoui-kit = { path = "../neoui-kit" }
 
 [dev-dependencies]
 png.workspace = true
+# the search table the pages must match (tests/rows.rs)
+neoui-proto.workspace = true

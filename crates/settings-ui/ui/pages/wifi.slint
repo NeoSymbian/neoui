@@ -10,6 +10,7 @@ export component WifiPage inherits NeoList {
         alignment: start;
         ListRow {
             title: "Wi-Fi";
+            checked: SetState.found == "wifi.switch";
             subtitle: !SetState.wifi ? "Off" : SetState.wifi-link.connected ? "Connected to " + SetState.wifi-link.name : "Not connected";
             has-icon: true;
             icon: @image-url("@neoui/icons/sys/wifi.svg");

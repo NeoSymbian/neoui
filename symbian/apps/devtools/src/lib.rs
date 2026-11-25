@@ -177,6 +177,22 @@ fn run() -> Result<(), i32> {
                         ctx.show();
                     }
                 }
+                // another app opened a page by name (Settings' Developer options: "console", "tools"; protocol 1.9)
+                AppEvent::Open { .. } => {
+                    let name = ctx.app.arg().unwrap_or_default();
+                    dprintln!("devtools: opened on {:?}", name);
+                    // a sub-view left open (Tools) would cover the tab asked for; the console shows the live log
+                    if ctx.model.borrow().view != View::None {
+                        ctx.open(View::None);
+                    }
+                    if name == "console" {
+                        let mut m = ctx.model.borrow_mut();
+                        m.console.last = false;
+                        m.console.back = 0;
+                        m.console.tag = None;
+                    }
+                    ctx.open_page(&name);
+                }
                 // the kit's layers first (a menu, a sheet), then a sub-view (kept only while one is open)
                 AppEvent::Back if neoapp::kit_back!(ui) => {}
                 AppEvent::Back => ctx.back(),

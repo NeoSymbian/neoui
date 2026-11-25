@@ -115,9 +115,11 @@ export component ChoiceRow inherits Rectangle {
     in property <string> title;
     in property <string> subtitle;
     in property <bool> on;
+    // a search result opened this row
+    in property <bool> found;
     callback clicked;
     height: max(Theme.list-row-double-h, lay.preferred-height);
-    background: t.pressed ? Theme.pressed : transparent;
+    background: t.pressed ? Theme.pressed : found ? Theme.selected : transparent;
     t := TouchArea {
         clicked => {
             root.clicked();

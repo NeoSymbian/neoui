@@ -24,11 +24,13 @@ use core::time::Duration;
 use e32::dprintln;
 use neoapp::{App, AppEvent, Page as AppPage, Query};
 use neoui_proto::ipc as proto;
+use neoui_proto::settings::Value;
 use neoui_proto::settings::keys;
 use neoui_proto::settings_app::choices::{KEYBOARDS, TIMEOUTS};
 use neoui_proto::settings_app::info::{Battery, Clock};
 use neoui_proto::settings_app::page::Page;
-use settings_ui::{KeyboardFocus, Kit, SetState, SettingsApp, Theme};
+use neoui_proto::settings_app::rows;
+use settings_ui::{KeyboardFocus, Kit, SearchHit, SetState, SettingsApp, Theme, live_value};
 use slint::{ComponentHandle, ModelRc, SharedString, Timer, TimerMode, VecModel};
 
 e32::main!(main);
@@ -57,6 +59,12 @@ struct Ctx {
     cities: RefCell<Vec<&'static str>>,
     /// "Reset remembered pads" asked its QUERY: the answer resets them
     asked_reset: Cell<bool>,
+    /// the root search's query (results are refreshed with it while searching), and the hits shown (the model is
+    /// replaced only when they change: a new model drops a row's press, and with it the tap)
+    query: RefCell<String>,
+    hits: RefCell<Vec<SearchHit>>,
+    /// the pages Back returns through (a page opened from another page, not from the root, returns there)
+    trail: RefCell<Vec<Page>>,
     /// the keyboard as last asked of the shell (KeyboardFocus open, seq, mode)
     kb: Cell<(bool, i32, i32)>,
 }
@@ -78,6 +86,9 @@ fn run() -> Result<(), i32> {
         cities: RefCell::default(),
         asked_reset: Cell::new(false),
         kb: Cell::new((false, 0, 0)),
+        query: RefCell::default(),
+        hits: RefCell::default(),
+        trail: RefCell::default(),
     });
     // watch first: a change between the first read and the watch would be missed
     if let Err(e) = app.watch_settings("") {
@@ -104,9 +115,13 @@ fn run() -> Result<(), i32> {
             AppEvent::Back => ctx.back(),
             AppEvent::Open { page } => {
                 let arg = app.arg().unwrap_or_default();
+                ctx.trail.borrow_mut().clear();
                 ctx.open(Page::opened(page, &arg));
             }
-            AppEvent::Page { page } => ctx.open(Page::from_id(page).unwrap_or(Page::Root)),
+            AppEvent::Page { page } => {
+                ctx.trail.borrow_mut().clear();
+                ctx.open(Page::from_id(page).unwrap_or(Page::Root));
+            }
             AppEvent::Settings { .. } => store::load(&app, &ui),
             // the shell's keyboard: its height (0 while a field keeps the focus: the user put it away)
             AppEvent::Keyboard { h } => {
@@ -192,6 +207,7 @@ impl Ctx {
         s.set_page(i32::from(page.id()));
         s.set_title(page.title().into());
         s.set_sheet(SharedString::new());
+        s.set_found(SharedString::new());
         ui.global::<KeyboardFocus>().set_open(false);
         dprintln!("settings: page {}", page.name());
         self.tick(true);
@@ -204,9 +220,9 @@ impl Ctx {
             s.set_sheet(SharedString::new());
             // the sheet's field went with it: let its keyboard go too (else it comes back on resume)
             ui.global::<KeyboardFocus>().set_open(false);
-        } else if let Some(parent) = self.page.get().parent() {
+        } else if let Some(prev) = self.trail.borrow_mut().pop().or(self.page.get().parent()) {
             dprintln!("settings: back");
-            self.open(parent);
+            self.open(prev);
         }
     }
 
@@ -245,7 +261,7 @@ impl Ctx {
         if page == Page::DateTime && every(5) {
             store::dates(&self.app, &ui);
         }
-        if page == Page::DateTime
+        if matches!(page, Page::DateTime | Page::Root)
             && every(5)
             && let Some(c) = self
                 .app
@@ -257,9 +273,46 @@ impl Ctx {
             s.set_zone(c.zone.into());
             s.set_synced(c.synced.into());
         }
+        if page == Page::Root && ui.global::<SetState>().get_searching() && every(2) {
+            self.search(&ui);
+        }
         if let Some(text) = self.sound.changed() {
             ui.global::<SetState>().set_sound_feedback(text.into());
         }
+    }
+
+    /// The root's search results for the last query, values as they are now (again each tick while searching).
+    fn search(&self, ui: &SettingsApp) {
+        let s = ui.global::<SetState>();
+        let query = self.query.borrow();
+        let hits: Vec<SearchHit> = rows::search_with(&query, |r| live_value(&s, r.id))
+            .into_iter()
+            .map(|r| SearchHit {
+                id: r.id.into(),
+                title: r.title.into(),
+                path: if r.on == Page::Root {
+                    "Settings"
+                } else {
+                    r.on.title()
+                }
+                .into(),
+                value: live_value(&s, r.id).into(),
+                page: i32::from(r.opens.id()),
+            })
+            .collect();
+        if *self.hits.borrow() != hits {
+            s.set_results(ModelRc::new(VecModel::from(hits.clone())));
+            *self.hits.borrow_mut() = hits;
+        }
+    }
+
+    /// A page opened from this app's own pages: Back comes back here.
+    fn go(&self, page: Page) {
+        let here = self.page.get();
+        if here != page {
+            self.trail.borrow_mut().push(here);
+        }
+        self.open(page);
     }
 
     fn battery(&self, ui: &SettingsApp) {
@@ -296,7 +349,7 @@ impl Ctx {
         match action {
             "open" => {
                 if let Some(p) = value.parse().ok().and_then(Page::from_id) {
-                    self.open(p);
+                    self.go(p);
                 }
             }
             "back" => self.back(),
@@ -382,6 +435,34 @@ impl Ctx {
                     },
                     "",
                 );
+            }
+            "root-grid" => {
+                let r = app.set_setting_raw(store::ROOT_GRID, &Value::Bool(value == "1"));
+                dprintln!("settings: root grid {} ({:?})", value, r);
+                store::load(app, &ui);
+            }
+            "search" => {
+                self.query.replace(String::from(value));
+                self.search(&ui);
+            }
+            // a search result: its page opens with the row selected, and search closes
+            "found" => {
+                if let Some(r) = rows::ROWS.iter().find(|r| r.id == value) {
+                    s.set_searching(false);
+                    s.set_query(SharedString::new());
+                    self.query.borrow_mut().clear();
+                    self.hits.borrow_mut().clear();
+                    s.set_results(ModelRc::new(VecModel::from(Vec::<SearchHit>::new())));
+                    self.go(r.opens);
+                    if r.on != Page::Root {
+                        s.set_found(r.id.into());
+                    }
+                }
+            }
+            // Dev tools on one of its pages ("console", "tools")
+            "devtools" => {
+                let r = app.open("devtools", 0, value);
+                dprintln!("settings: open devtools {} ({:?})", value, r);
             }
             // another app's own settings (protocol 1.9 OPEN: Back comes back here)
             "app" => {
