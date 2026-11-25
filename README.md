@@ -30,7 +30,7 @@ Mac the buffer is just shown in a window.
 | `crates/neoui-proto` `ipc` | The app ↔ UI server protocol: `GEOMETRY`, `SURFACE`, `DAMAGE`, `NEXT_EVENT`, `SETTING_GET`/`SET`/`WATCH`, 16-byte events |
 | `crates/neoui-proto` `settings` | The settings system (pure, host-tested): typed keys, the registry of system settings, the store, the versioned file format, access rules, the service with save delay and change subscriptions |
 | `crates/neoui-render` `settings` + `ui/system-settings.slint` | The shell's view of the settings: the `SystemSettings` global and the binding table between it and the store |
-| `symbian/` | The launcher as a Symbian EXE (`SYSSTART.EXE`, GPL-3.0): its own workspace, built for `armv5te-none-eabi` with [e32-rs](https://github.com/NeoSymbian/e32-rs) |
+| `symbian/` | The launcher as a Symbian EXE (`SYSSTART.EXE`, GPL-3.0): its own workspace, built for ARMv8-A AArch32 softfp (`symbian/targets/armv8a-neosymbian-eabi.json`) with [e32-rs](https://github.com/NeoSymbian/e32-rs) |
 
 Settings store: done (Part 1). Planned: a notification service, editable home pages and widgets; the design is
 [neoui-shell.md](https://github.com/NeoSymbian/docs/blob/main/neoui-shell.md).
@@ -75,7 +75,7 @@ raw pointer and key events from the kernel, renders into a RAM frame and copies 
 On Syborg the first frame takes about 80 ms.
 
 ```sh
-cd symbian && cargo arm        # target/armv5te-none-eabi/release/libneoui_symbian.a (nightly pinned here)
+cd symbian && cargo arm        # target/armv8a-neosymbian-eabi/release/libneoui_symbian.a (nightly pinned here)
 # with NeoSymbian/build: copy the .a and exes.txt into its rust/, then
 ./build.sh && MONITOR="mouse_move 3243 27904;mouse_button 1;mouse_button 0" ./boot.sh   # out/fb.png, out/serial.log
 ```

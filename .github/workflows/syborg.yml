@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 name: syborg
 
-# The launcher on the 2010 Symbian user side: build symbian/ (SYSSTART.EXE) for armv5te, put it in the Syborg ROM
+# The launcher on the 2010 Symbian user side: build symbian/ (SYSSTART.EXE) for ARMv8 (US4), put it in the Syborg ROM
 # with NeoSymbian/build (estart then runs it instead of the window server) plus the Clock app, boot on QEMU,
 # drive it through the QEMU monitor (open Clock, tap it, go back) and check the serial log and the screen. Only the screenshot and logs are published,
 # never the ROM (it links Slint under GPL-3.0 with EPL-1.0 Symbian code).
@@ -41,10 +41,10 @@ jobs:
         working-directory: neoui/symbian
         run: |
           cargo fmt --all --check
-          cargo clippy --workspace --release --target armv5te-none-eabi -Zbuild-std=core,alloc,compiler_builtins -- -D warnings
+          cargo clippy-arm --workspace -- -D warnings
           cargo arm --workspace
           mkdir -p ../../build/rust
-          cp target/armv5te-none-eabi/release/{libneoui_symbian,libneoclock,libneoterm,libneodevtools,libneokit}.a exes.txt ../../build/rust/
+          cp target/armv8a-neosymbian-eabi/release/{libneoui_symbian,libneoclock,libneoterm,libneodevtools,libneokit}.a exes.txt ../../build/rust/
 
       # NeoSymbian/phone: NEOPHONE.EXE (Phone), NEOCONT.EXE (Contacts), NEOMSG.EXE (Messages). Phone and Messages are
       # resident (host::RESIDENT); the three open each other (ipc OPEN, protocol 1.9).
@@ -52,7 +52,7 @@ jobs:
         run: |
           git clone -q --depth 1 https://github.com/NeoSymbian/phone.git
           cd phone/symbian && cargo arm
-          cp target/armv5te-none-eabi/release/{libneophone,libneocont,libneomsg}.a ../../build/rust/
+          cp target/armv8a-neosymbian-eabi/release/{libneophone,libneocont,libneomsg}.a ../../build/rust/
           grep -E '^NEO(PHONE|CONT|MSG)\.EXE' exes.txt >> ../../build/rust/exes.txt
 
       # NeoSymbian/files: NEOFILES.EXE (Files; moved out of neoui, docs files-app.md FA0). The shell starts it by its
@@ -64,7 +64,7 @@ jobs:
         run: |
           git clone -q --depth 1 --branch "$FILES_REF" https://github.com/NeoSymbian/files.git
           cd files/symbian && cargo arm
-          cp target/armv5te-none-eabi/release/libneofiles.a ../../build/rust/
+          cp target/armv8a-neosymbian-eabi/release/libneofiles.a ../../build/rust/
           grep -E '^NEOFILES\.EXE' exes.txt >> ../../build/rust/exes.txt
 
       # NEOTEST.EXE (e32-rs's on-device tests), so ESHELL in the Terminal app has a 2010-style text program to run
@@ -72,7 +72,7 @@ jobs:
         run: |
           git clone -q --depth 1 https://github.com/NeoSymbian/e32-rs.git
           cd e32-rs && cargo arm -p neotest
-          cp target/armv5te-none-eabi/release/libneotest.a ../build/rust/
+          cp target/armv8a-neosymbian-eabi/release/libneotest.a ../build/rust/
           grep '^NEOTEST.EXE' symbian/exes.txt >> ../build/rust/exes.txt
           # Syborg's moving memory model takes at most 80 KB of user stack; the phone's default (128 KB, build
           # 9213007) is refused with KErrTooBig and SYSSTART never runs (every line, NEOPHONE's too: appended above)

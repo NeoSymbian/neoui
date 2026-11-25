@@ -1,0 +1,30 @@
+{
+  "abi": "eabi",
+  "arch": "arm",
+  "asm-args": [
+    "-march=armv8-a+crc+crypto",
+    "-mfpu=crypto-neon-fp-armv8",
+    "-mlittle-endian"
+  ],
+  "c-enum-min-bits": 32,
+  "crt-objects-fallback": "false",
+  "data-layout": "e-m:e-p:32:32-Fi8-i64:64-v128:64:128-a:0:32-n32-S64",
+  "emit-debug-gdb-scripts": false,
+  "features": "+v8,+thumb2,+neon,+fp-armv8,+d32,+crc,+aes,+sha2,-soft-float,+strict-align,+no-movt",
+  "frame-pointer": "always",
+  "has-thumb-interworking": true,
+  "linker": "rust-lld",
+  "linker-flavor": "gnu-lld",
+  "llvm-floatabi": "soft",
+  "llvm-target": "armv8a-none-eabi",
+  "max-atomic-width": 64,
+  "metadata": {
+    "description": "NeoSymbian user side, no_std: ARMv8-A AArch32 (ARM state) with VFP/NEON/CRC/AES/SHA, soft-float calling convention (softfp); +no-movt: E32 relocates whole words only",
+    "host_tools": false,
+    "std": false,
+    "tier": 3
+  },
+  "panic-strategy": "abort",
+  "relocation-model": "static",
+  "target-pointer-width": 32
+}
