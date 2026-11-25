@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Animation frames composed from snapshots ("layers") instead of Slint renders (smooth-ui S2): a screen is drawn
-//! once, then a transition only blends or shifts pixels that are already there. Plain integer code for armv5te (no
-//! NEON, no hardware divide).
+//! once, then a transition only blends or shifts pixels that are already there. Plain integer code (written for ARMv5;
+//! on ARMv8 since US4 the compiler may vectorise it with NEON).
 
 /// Blend two XRGB8888 rows into `dst`: each channel `(a * (256 - t) + b * t) >> 8`, `t` in 0..=256 (0 = all `a`,
 /// 256 = all `b`). Red and blue share one multiply: each lane's product stays under 0x10000, so nothing carries.
