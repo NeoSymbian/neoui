@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Who may write which setting. Reading is open to every client; writing follows the key's owner:
 //! - the UI server (the shell) may write everything;
-//! - an app may write registered keys it owns ([`Owner::App`]) and unregistered keys in its own namespace.
+//! - an app may write registered keys it owns ([`Owner::App`]) and unregistered keys in its own namespace;
+//! - the Settings app (`NEOSET.EXE`, recognised by its secure ID, not its app key) may also write every shell-owned
+//!   key and the few app keys it shows ([`SETTINGS_ALSO`]).
 //!
-//! Step 0 of docs/neoui-shell.md (caller identity by secure ID and capabilities) extends [`Caller`] here.
+//! Step 0 of docs/neoui-shell.md (caller identity by secure ID) started with [`Caller::Settings`].
 
 use super::key::namespace;
 use super::registry::{self, Owner};
@@ -16,7 +18,15 @@ pub enum Caller<'a> {
     Shell,
     /// An app, by its key (`"clock"`).
     App(&'a str),
+    /// The Settings app, whose messages carry its secure ID ([`SETTINGS_SID`]).
+    Settings,
 }
+
+/// `NEOSET.EXE`'s UID3, which the kernel reports as the secure ID of its messages.
+pub const SETTINGS_SID: u32 = 0xE000_2007;
+
+/// App-owned keys the Settings app shows and may change (Date & time's 24-hour time is Clock's key).
+pub const SETTINGS_ALSO: &[&str] = &["clock.24h"];
 
 impl Caller<'_> {
     /// Whether this caller may write `name` (a valid key name).
@@ -24,6 +34,10 @@ impl Caller<'_> {
     pub fn may_write(&self, name: &str) -> bool {
         match *self {
             Caller::Shell => true,
+            Caller::Settings => match registry::lookup(name) {
+                Some(spec) => spec.owner == Owner::Shell || SETTINGS_ALSO.contains(&name),
+                None => namespace(name) == "settings",
+            },
             Caller::App(app) => match registry::lookup(name) {
                 Some(spec) => match spec.owner {
                     Owner::App(owner) => owner == app,
@@ -42,6 +56,7 @@ impl fmt::Display for Caller<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Caller::Shell => f.write_str("shell"),
+            Caller::Settings => f.write_str("settings"),
             Caller::App(app) => f.write_str(app),
         }
     }
@@ -55,6 +70,22 @@ mod tests {
     fn the_shell_writes_everything() {
         assert!(Caller::Shell.may_write("radio.wifi"));
         assert!(Caller::Shell.may_write("clock.scratch"));
+    }
+
+    #[test]
+    fn the_settings_app_writes_shell_keys_and_its_own() {
+        let s = Caller::Settings;
+        assert!(s.may_write("radio.wifi"));
+        assert!(s.may_write("legacy.pad.b"));
+        assert!(s.may_write("clock.24h"));
+        assert!(s.may_write("settings.root_grid"));
+        // an app's own records stay the app's
+        assert!(!s.may_write("clock.alarms"));
+        assert!(!s.may_write("phone.speed"));
+        assert!(!s.may_write("files.sort"));
+        // an app that calls itself "settings" is still only an app: no shell keys
+        assert!(!Caller::App("settings").may_write("radio.wifi"));
+        assert_eq!(alloc::format!("{s}"), "settings");
     }
 
     #[test]

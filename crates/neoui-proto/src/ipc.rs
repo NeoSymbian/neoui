@@ -32,13 +32,16 @@
 //! by handle (`e32::fs::SharedFile`), so a private file or a long path is no problem. The clipboard has a kind
 //! ([`CLIP_SET`]'s second argument, [`CLIP_KIND`]): copied files are their paths, one per line, so plain-text readers
 //! still paste something. Which apps open which file types is [`crate::open`].
+//! Since 1.13 Settings is an app (`NEOSET.EXE`, docs neoui-shell/settings.md SE0): it reads what only the shell
+//! knows ([`SETTINGS_INFO`]: battery history, the Wi-Fi link's IP and captive portal, the clock's sync) and asks the
+//! shell to act ([`SETTINGS_ACTION`]); its writes to shell-owned settings are allowed by its secure ID.
 
 use crate::{InputEvent, TouchPhase};
 
 /// The server's name (no leading `!`: that needs ProtServ).
 pub const SERVER: &str = "NeoUi";
 /// Protocol version (major, minor); a connect with another major is refused.
-pub const VERSION: (u8, u8) = (1, 12);
+pub const VERSION: (u8, u8) = (1, 13);
 
 /// `[Des8 out: GEOMETRY_LEN bytes = width, height, dp × 256 (u32 LE)]` → 0. `dp` is the shell's design unit in
 /// pixels (`min(screen w, h) / 360`), so apps size things like the shell does.
@@ -164,6 +167,19 @@ pub const DONE_FILE: i32 = 28;
 pub const RESULT_FILE: i32 = 29;
 /// `[]` → the clipboard's kind ([`CLIP_TEXT`] when empty or set by a 1.11 app).
 pub const CLIP_KIND: i32 = 30;
+/// `[kind, cursor: unused (0), Des8 out]` → the snapshot's length: something only the shell knows, encoded by
+/// [`crate::settings_app::info`] ([`INFO_BATTERY`], [`INFO_NET`], [`INFO_CLOCK`]). `KErrOverflow` when `out` is
+/// too short, `KErrArgument` for an unknown kind. Opcodes 31–39 are reserved (docs neoui-shell/protocol.md).
+pub const SETTINGS_INFO: i32 = 40;
+/// `[kind, Des8 request]` → 0: ask the shell to act. [`ACTION_SIGN_IN`]: open the browser on the current Wi-Fi
+/// network's sign-in page (`KErrNotReady` when there is no captive portal now).
+pub const SETTINGS_ACTION: i32 = 41;
+/// [`SETTINGS_INFO`] kinds.
+pub const INFO_BATTERY: i32 = 1;
+pub const INFO_NET: i32 = 2;
+pub const INFO_CLOCK: i32 = 3;
+/// [`SETTINGS_ACTION`] kinds.
+pub const ACTION_SIGN_IN: i32 = 1;
 /// The longest launcher key, in bytes.
 pub const KEY_MAX: usize = 16;
 
