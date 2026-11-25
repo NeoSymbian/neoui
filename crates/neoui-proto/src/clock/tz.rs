@@ -101,7 +101,21 @@ impl Rule {
         }
     }
 
-    /// Daylight saving time is in force at `utc`.
+    /// Summer time is in force at `utc`: the clock is ahead of the zone's winter offset. Not [`Rule::is_dst`] for a
+    /// negative-DST rule (Dublin's `IST-1GMT0,...`: IANA calls winter the DST part).
+    #[must_use]
+    pub fn is_summer(&self, utc: i64) -> bool {
+        self.offset_at(utc) > self.winter()
+    }
+
+    /// The lower of the zone's two offsets (winter time), seconds east of UTC.
+    #[must_use]
+    pub fn winter(&self) -> i32 {
+        self.dst
+            .map_or(self.standard, |(dst, ..)| dst.min(self.standard))
+    }
+
+    /// The rule's DST part is in force at `utc`.
     #[must_use]
     pub fn is_dst(&self, utc: i64) -> bool {
         let Some((dst, start, end)) = self.dst else {

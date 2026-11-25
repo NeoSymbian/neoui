@@ -26,6 +26,11 @@ pub mod timer;
 pub mod tz;
 pub mod wire;
 pub mod world;
+pub mod zones;
+#[cfg(test)]
+mod zones_ref;
+#[cfg(test)]
+mod zones_test;
 
 pub use local::{FIELDS, Local, days_in_month};
 pub use saved::{DIR, LEN, PATH, Saved};
