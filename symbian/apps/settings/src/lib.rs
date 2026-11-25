@@ -59,6 +59,8 @@ struct Ctx {
     cities: RefCell<Vec<&'static str>>,
     /// "Reset remembered pads" asked its QUERY: the answer resets them
     asked_reset: Cell<bool>,
+    /// Saved networks' Forget asked its QUERY for this network: the answer forgets it
+    asked_forget: RefCell<Option<String>>,
     /// the root search's query (results are refreshed with it while searching), and the hits shown (the model is
     /// replaced only when they change: a new model drops a row's press, and with it the tap)
     query: RefCell<String>,
@@ -85,6 +87,7 @@ fn run() -> Result<(), i32> {
         sound: sound::Sound::new(),
         cities: RefCell::default(),
         asked_reset: Cell::new(false),
+        asked_forget: RefCell::default(),
         kb: Cell::new((false, 0, 0)),
         query: RefCell::default(),
         hits: RefCell::default(),
@@ -142,6 +145,16 @@ fn run() -> Result<(), i32> {
                     let r = app.set_setting(keys::LEGACY_PAD_EPOCH, epoch.saturating_add(1));
                     dprintln!("settings: pads reset ({:?})", r);
                 }
+            }
+            AppEvent::Answer { i } if ctx.asked_forget.borrow().is_some() => {
+                let name = ctx.asked_forget.take().unwrap_or_default();
+                if i == 0 {
+                    let r = ctx.wifi.borrow_mut().forget(&name);
+                    if r.is_err() {
+                        let _ = app.note("Couldn't forget the network", "");
+                    }
+                }
+                ctx.tick(true);
             }
             AppEvent::Visible(v) => {
                 ctx.visible.set(v);
@@ -241,7 +254,17 @@ impl Ctx {
         let ms = e32::time::millis();
         let every = |k: u32| n.is_multiple_of(k);
         match page {
-            Page::Wifi => self.wifi.borrow_mut().poll(&self.app, &ui, ms, true, false),
+            Page::Wifi => {
+                self.wifi.borrow_mut().poll(&self.app, &ui, ms, true, false);
+                if every(5) {
+                    self.wifi.borrow_mut().saved(&ui);
+                }
+            }
+            Page::WifiSaved if every(2) => {
+                let mut w = self.wifi.borrow_mut();
+                w.poll(&self.app, &ui, ms, false, false);
+                w.saved(&ui);
+            }
             Page::Root | Page::Connectivity if every(5) => self
                 .wifi
                 .borrow_mut()
@@ -371,6 +394,19 @@ impl Ctx {
             }
             "wifi-disconnect" => self.wifi.borrow_mut().leave(false),
             "wifi-forget" => self.wifi.borrow_mut().leave(true),
+            // Saved networks: confirm first (QUERY), the answer forgets it
+            "wifi-saved-forget" => {
+                let q = Query {
+                    text: alloc::format!(
+                        "Forget {value}? The phone won't join it on its own any more; joining it again needs its password."
+                    ),
+                    buttons: alloc::vec![String::from("Forget"), String::from("Cancel")],
+                    destructive: true,
+                };
+                if app.query(&q).is_ok() {
+                    self.asked_forget.replace(Some(String::from(value)));
+                }
+            }
             "wifi-sign-in" => {
                 if let Err(e) = app.settings_action(proto::ACTION_SIGN_IN) {
                     dprintln!("settings: sign in -> {}", e);

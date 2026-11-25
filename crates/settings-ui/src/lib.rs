@@ -48,6 +48,7 @@ pub fn live_value(s: &SetState<'_>, id: &str) -> String {
                 "Not connected".into()
             }
         }
+        "wifi.saved" => format!("{}", s.get_wifi_saved().row_count()),
         "root.bt" | "bt.switch" | "conn.bt" => on(s.get_bluetooth()),
         "conn.data" | "mobile.data" => on(s.get_mobile_data()),
         "root.airplane" | "conn.airplane" => on(s.get_airplane()),

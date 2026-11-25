@@ -115,6 +115,13 @@ pub const ROWS: &[Row] = &[
     ),
     // Wi-Fi
     row("wifi.switch", Wifi, Wifi, "Wi-Fi", &["networks"]),
+    row(
+        "wifi.saved",
+        Wifi,
+        WifiSaved,
+        "Saved networks",
+        &["forget", "remembered", "known networks"],
+    ),
     // Connectivity
     row("conn.wifi", Connectivity, Connectivity, "Wi-Fi", &[]),
     row("conn.bt", Connectivity, Connectivity, "Bluetooth", &[]),

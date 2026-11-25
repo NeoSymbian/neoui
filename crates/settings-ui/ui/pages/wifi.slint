@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// Wi-Fi (set2-wifi, set2-wifi-off, set2-wifi-join, set2-wifi-details): the switch, the current network, the networks
-// WIFID found, the join sheet and the current network's details. Saved networks and Add hidden network are SE1.
+// Wi-Fi (set2-wifi, set2-wifi-off, set2-wifi-join, set2-wifi-details, set2-wifi-saved): the switch, the current
+// network, the networks WIFID found, the join sheet, the current network's details and the networks WIFID remembers.
+// Add hidden network waits for the kernel (SE1c-2).
 import { Theme, NeoList, SectionHeader, ListRow, Sheet, TextField, Button } from "@neoui/kit.slint";
 import { Note } from "../parts.slint";
 import { SetState } from "../state.slint";
@@ -95,6 +96,33 @@ export component WifiPage inherits NeoList {
         if !SetState.wifi: Note {
             text: "Turn on Wi-Fi to see available networks.";
         }
+        if SetState.wifi-saved-ok: ListRow {
+            title: "Saved networks";
+            checked: SetState.found == "wifi.saved";
+            value: SetState.wifi-saved.length;
+            chevron: true;
+            divider: false;
+            clicked => { SetState.act("open", "17"); }
+        }
+    }
+}
+
+// The networks WIFID remembers (set2-wifi-saved): each with Forget. Only networks with a key are kept, so there are no
+// "Open" rows (D4); the path is WIFID's own.
+export component WifiSavedPage inherits NeoList {
+    VerticalLayout {
+        alignment: start;
+        Note { text: "The phone rejoins these networks when it sees them. It keeps each network's key, never the password."; }
+        for net in SetState.wifi-saved: ListRow {
+            title: net.name;
+            subtitle: net.detail;
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/wifi.svg");
+            value: "Forget";
+            clicked => { SetState.act("wifi-saved-forget", net.name); }
+        }
+        if SetState.wifi-saved.length == 0: Note { text: "No saved networks. A network is saved once the phone joins it with its password."; }
+        Note { text: "Stored in C:\\private\\e0004002\\wifi.dat"; }
     }
 }
 

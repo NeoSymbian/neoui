@@ -8,10 +8,10 @@ import "@neoui/fonts/NeoSans-SemiBold.ttf";
 import "@neoui/fonts/NeoSans-Bold.ttf";
 import "@neoui/fonts/DejaVuSans.ttf";
 import { Theme, Scroll, KeyboardFocus, Kit, Header, ChoiceSheet } from "@neoui/kit.slint";
-import { SetState, WifiNet, WifiLink, WifiDetail, SearchHit } from "state.slint";
+import { SetState, WifiNet, WifiLink, WifiDetail, WifiSaved, SearchHit } from "state.slint";
 import { RootPage, RootGridPage, SearchPage } from "pages/root.slint";
 import { LicencesPage } from "pages/licences.slint";
-import { WifiPage, WifiJoinSheet, WifiDetailsSheet } from "pages/wifi.slint";
+import { WifiPage, WifiSavedPage, WifiJoinSheet, WifiDetailsSheet } from "pages/wifi.slint";
 import { ConnectivityPage, MobilePage, BluetoothPage } from "pages/connections.slint";
 import { DisplayPage, NavigationPage, SoundsPage, BatteryPage } from "pages/device.slint";
 import { DateTimePage, ZoneSheet, KeyboardPage, PrivacyPage } from "pages/personal.slint";
@@ -80,6 +80,7 @@ export component SettingsApp inherits Window {
         if SetState.page == 14: OldAppsPage { }
         if SetState.page == 15: PrivacyPage { }
         if SetState.page == 16: LicencesPage { }
+        if SetState.page == 17: WifiSavedPage { }
     }
 
     // the sheets: full size, last, so they cover the header and the page

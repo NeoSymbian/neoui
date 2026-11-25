@@ -3,7 +3,8 @@
 //! - the page scans when it opens unless the list is fresh (under 30 s old), rescans every 30 s while open, and its
 //!   refresh button scans now (one request per 5 s: the kernel queues a single scan);
 //! - Connect validates the password and asks WIFID to join; WIFID joins, runs WPA2, remembers and rejoins;
-//! - the link's IP side and the captive portal are the shell's (`SETTINGS_INFO` `INFO_NET`, `SETTINGS_ACTION`).
+//! - the link's IP side and the captive portal are the shell's (`SETTINGS_INFO` `INFO_NET`, `SETTINGS_ACTION`);
+//! - Saved networks lists what WIFID remembers (NeoWifi 1.1 `SAVED`) and forgets one by name (`FORGET`).
 use alloc::vec::Vec;
 use e32::ipc::{Session, TIpcArgs, TVersion};
 use e32::sys::{TPtr8, TPtrC8};
@@ -11,7 +12,7 @@ use neoapp::App;
 use neoui_proto::ipc as proto;
 use neoui_proto::settings_app::info;
 use neoui_proto::wifi::{Link, LinkState, LinkView, Scan, State};
-use settings_ui::{SetState, SettingsApp, WifiDetail, WifiLink, WifiNet};
+use settings_ui::{SetState, SettingsApp, WifiDetail, WifiLink, WifiNet, WifiSaved};
 use slint::{ComponentHandle, ModelRc, VecModel};
 use wifi::ipc::{Connect, fail, op};
 
@@ -215,6 +216,63 @@ impl Wifi {
             Some(_) => Some("A WPA2 password has 8 to 63 characters"),
             None => Some("The network is gone; refresh the list"),
         }
+    }
+
+    /// The networks WIFID remembers into Saved networks: connected (the link's network) or not, in the latest scan or
+    /// not. Hidden (`wifi-saved-ok` false) when WIFID has no list (NeoWifi 1.0).
+    pub fn saved(&mut self, ui: &SettingsApp) {
+        let s = ui.global::<SetState>();
+        let mut b = alloc::vec![0u8; wifi::ipc::SAVED_SIZE];
+        let mut des = TPtr8::new(&mut b);
+        let mut args = TIpcArgs::new();
+        args.des8(0, &mut des);
+        let names = match self.call(op::SAVED, &args) {
+            Ok(_) => wifi::ipc::decode_names(&b[..des.len()]),
+            Err(e) => {
+                e32::dprintln!("settings: wifi: saved -> {}", e);
+                None
+            }
+        };
+        s.set_wifi_saved_ok(names.is_some());
+        let joined = self.last.as_ref().and_then(|l| {
+            (self.link.state == LinkState::Connected)
+                .then(|| l.networks.iter().find(|n| n.bssid == self.link.bssid))
+                .flatten()
+        });
+        let rows: Vec<WifiSaved> = names
+            .unwrap_or_default()
+            .iter()
+            .map(|n| {
+                // shortcut: names shown as UTF-8 (lossy), as the scan list does
+                let name = alloc::string::String::from_utf8_lossy(n);
+                let seen = self
+                    .last
+                    .as_ref()
+                    .is_some_and(|l| l.networks.iter().any(|x| x.ssid == name));
+                let detail = if joined.is_some_and(|j| j.ssid == name) {
+                    "Connected · Secured"
+                } else if seen {
+                    "Secured"
+                } else {
+                    "Secured · not in range"
+                };
+                WifiSaved {
+                    name: name.as_ref().into(),
+                    detail: detail.into(),
+                }
+            })
+            .collect();
+        s.set_wifi_saved(ModelRc::new(VecModel::from(rows)));
+    }
+
+    /// Forget a saved network by name (WIFID leaves it first if it is the one joined).
+    pub fn forget(&mut self, name: &str) -> Result<i32, i32> {
+        let des = TPtrC8::new(name.as_bytes());
+        let mut args = TIpcArgs::new();
+        args.desc8(0, &des);
+        let r = self.call(op::FORGET, &args);
+        e32::dprintln!("settings: wifi: forget -> {:?}", r);
+        r
     }
 
     /// Disconnect (`forget` false) or Forget (true) the current network.
