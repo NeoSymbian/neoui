@@ -178,7 +178,14 @@ jobs:
           for i in 1 2 3 4; do tap 227 160; expect "exited (type 0"; done
           tap 270 1037; tap 485 913; tap 270 805; expect "neoui: app settings surface"; wait_s 2
           tap 270 672; expect "settings: page navigation"; tap 270 355; expect "neoui: settings saved"
-          ui_run 300
+          # SE1d: back to the root (←), search (🔍 426,73) "apps" on the keyboard (now in Gestures), the first result
+          # (app y 80 dp) -> Apps; its first row, Clock (118 dp), opens the app's sheet; Open (588 dp) opens Clock
+          NAV=gestures
+          wait_s 1; tap 36 73; expect "settings: back"
+          tap 426 73; wait_s 1; kb_type apps
+          tap 270 157; expect "settings: page apps"; wait_s 1
+          tap 270 214; wait_s 1; tap 270 917; expect "settings: open app clock (Ok"
+          ui_run 330
 
       - name: Check the output
         working-directory: build
@@ -191,6 +198,9 @@ jobs:
           # Settings is an app (NEOSET): it starts, and its writes to shell settings are allowed by its secure ID
           grep -a 'neoui: app settings started' $s
           grep -a 'settings: set nav.mode = 0 (Ok' $s
+          # SE1d: search found Apps, and its sheet opened Clock
+          grep -a 'settings: page apps' $s
+          grep -a 'settings: open app clock (Ok' $s
           ! grep -aq 'settings: set nav.mode = [0-9] (Err' $s
           grep -aE 'neoui: clock [0-9]{2}:[0-9]{2}' $s
           # R9: frame timing (one summary per second of activity) on the fast counter
