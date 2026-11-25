@@ -325,7 +325,7 @@ fn every_page() {
     sh.draw();
     sh.take_acts();
     sh.tap(100.0, 231.0);
-    assert_eq!(sh.take_acts(), acts(&[("wifi-saved-forget", "Cafe Guest")]));
+    assert_eq!(sh.take_acts(), acts(&[("wifi-saved-forget", "1")]));
 
     // the pad sheets (pad-settings: the B button the board leaves out, D5)
     page(&sh, 14, "Old apps");

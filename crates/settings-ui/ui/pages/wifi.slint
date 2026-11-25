@@ -113,15 +113,16 @@ export component WifiSavedPage inherits NeoList {
     VerticalLayout {
         alignment: start;
         Note { text: "The phone rejoins these networks when it sees them. It keeps each network's key, never the password."; }
-        for net in SetState.wifi-saved: ListRow {
+        for net[i] in SetState.wifi-saved: ListRow {
             title: net.name;
             subtitle: net.detail;
             has-icon: true;
             icon: @image-url("@neoui/icons/sys/wifi.svg");
             value: "Forget";
-            clicked => { SetState.act("wifi-saved-forget", net.name); }
+            clicked => { SetState.act("wifi-saved-forget", i); }
         }
-        if SetState.wifi-saved.length == 0: Note { text: "No saved networks. A network is saved once the phone joins it with its password."; }
+        if SetState.wifi-saved-ok && SetState.wifi-saved.length == 0: Note { text: "No saved networks. A network is saved once the phone joins it with its password."; }
+        if !SetState.wifi-saved-ok: Note { text: "The Wi-Fi service here is too old to list its networks."; }
         Note { text: "Stored in C:\\private\\e0004002\\wifi.dat"; }
     }
 }

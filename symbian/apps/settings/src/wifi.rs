@@ -29,6 +29,10 @@ pub struct Wifi {
     /// The network (BSSID text) the join sheet asked WIFID to join: while the sheet is open for that network it shows
     /// how the link goes; for any other it keeps the password check's own message.
     asked: Option<alloc::string::String>,
+    /// Saved networks as WIFID listed them (raw SSIDs: a row's Forget sends these bytes, not its shown name), and the
+    /// rows shown (the model is replaced only when they change: a new model drops a row's press)
+    saved: Vec<Vec<u8>>,
+    saved_rows: Vec<(alloc::string::String, &'static str)>,
 }
 
 impl Wifi {
@@ -49,7 +53,8 @@ impl Wifi {
             .session
             .as_ref()
             .map_or(Err(-18), |s| s.send_receive(function, args));
-        if matches!(r, Err(e) if e != -6) {
+        // a refused request (bad argument, not found, too long, a 1.0 WIFID's unknown op) keeps the session
+        if matches!(r, Err(e) if ![-1, -5, -6, -9].contains(&e)) {
             self.session = None;
         }
         r
@@ -239,8 +244,8 @@ impl Wifi {
                 .then(|| l.networks.iter().find(|n| n.bssid == self.link.bssid))
                 .flatten()
         });
-        let rows: Vec<WifiSaved> = names
-            .unwrap_or_default()
+        let names = names.unwrap_or_default();
+        let rows: Vec<(alloc::string::String, &'static str)> = names
             .iter()
             .map(|n| {
                 // shortcut: names shown as UTF-8 (lossy), as the scan list does
@@ -256,18 +261,31 @@ impl Wifi {
                 } else {
                     "Secured · not in range"
                 };
-                WifiSaved {
-                    name: name.as_ref().into(),
-                    detail: detail.into(),
-                }
+                (name.into_owned(), detail)
             })
             .collect();
-        s.set_wifi_saved(ModelRc::new(VecModel::from(rows)));
+        self.saved = names;
+        if rows != self.saved_rows {
+            let model: Vec<WifiSaved> = rows
+                .iter()
+                .map(|(n, d)| WifiSaved {
+                    name: n.as_str().into(),
+                    detail: (*d).into(),
+                })
+                .collect();
+            s.set_wifi_saved(ModelRc::new(VecModel::from(model)));
+            self.saved_rows = rows;
+        }
     }
 
-    /// Forget a saved network by name (WIFID leaves it first if it is the one joined).
-    pub fn forget(&mut self, name: &str) -> Result<i32, i32> {
-        let des = TPtrC8::new(name.as_bytes());
+    /// The saved network on row `i`, raw, as WIFID listed it.
+    pub fn saved_ssid(&self, i: usize) -> Option<Vec<u8>> {
+        self.saved.get(i).cloned()
+    }
+
+    /// Forget a saved network (raw SSID; WIFID leaves it first if it is the one joined).
+    pub fn forget(&mut self, ssid: &[u8]) -> Result<i32, i32> {
+        let des = TPtrC8::new(ssid);
         let mut args = TIpcArgs::new();
         args.desc8(0, &des);
         let r = self.call(op::FORGET, &args);
