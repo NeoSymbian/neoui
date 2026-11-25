@@ -120,7 +120,7 @@ impl<B: Backend> Supervisor<B> {
 #[cfg(not(test))]
 mod native {
     use super::{Backend, Event, Supervisor};
-    use alloc::boxed::Box;
+    use alloc::sync::Arc;
     use e32::process::Process;
     use e32::sync::{Mutex, Semaphore};
     use e32::thread::{self, JoinHandle};
@@ -173,7 +173,7 @@ mod native {
 
     /// The switch's worker: [`UsbDebug::set`] from the UI thread, everything else on the worker.
     pub struct UsbDebug {
-        shared: &'static Shared,
+        shared: Arc<Shared>,
         last: bool,
         _worker: JoinHandle,
     }
@@ -184,44 +184,46 @@ mod native {
         /// # Errors
         /// The kernel's error creating the mutex, semaphore or thread.
         pub fn start(on: bool) -> Result<Self, i32> {
-            // lives as long as SYSSTART (Arc needs compare-and-swap, which ARMv5TE lacks)
-            let shared: &'static Shared = Box::leak(Box::new(Shared {
+            let shared = Arc::new(Shared {
                 want: Mutex::new(on)?,
                 wake: Semaphore::new(0)?,
-            }));
-            let worker = thread::spawn(move || {
-                let mut backend = Native;
-                let mut supervisor = Supervisor::new();
-                let mut last_error = None;
-                loop {
-                    let want = *shared.want.lock();
-                    match supervisor.tick(&mut backend, want, time::millis()) {
-                        Event::Switched(on, r) => {
-                            last_error = None;
-                            dprintln!(
-                                "neoui: USB debugging {} (port -> {})",
-                                if on { "on" } else { "off" },
-                                r
-                            );
-                            continue; // start fshell now, not a tick later
+            });
+            let worker = thread::spawn({
+                let shared = Arc::clone(&shared);
+                move || {
+                    let mut backend = Native;
+                    let mut supervisor = Supervisor::new();
+                    let mut last_error = None;
+                    loop {
+                        let want = *shared.want.lock();
+                        match supervisor.tick(&mut backend, want, time::millis()) {
+                            Event::Switched(on, r) => {
+                                last_error = None;
+                                dprintln!(
+                                    "neoui: USB debugging {} (port -> {})",
+                                    if on { "on" } else { "off" },
+                                    r
+                                );
+                                continue; // start fshell now, not a tick later
+                            }
+                            Event::Started => dprintln!("neoui: USB debugging: fshell started"),
+                            Event::Exited(kind, reason, delay) => dprintln!(
+                                "neoui: USB debugging: fshell exited ({}, {}); restart in {} ms",
+                                kind,
+                                reason,
+                                delay
+                            ),
+                            Event::SpawnFailed(error) if last_error != Some(error) => {
+                                last_error = Some(error);
+                                dprintln!("neoui: USB debugging: fshell didn't start ({})", error);
+                            }
+                            Event::Missing => {
+                                dprintln!("neoui: USB debugging: no {} in this ROM", SHELL)
+                            }
+                            Event::Idle | Event::Running | Event::SpawnFailed(_) => {}
                         }
-                        Event::Started => dprintln!("neoui: USB debugging: fshell started"),
-                        Event::Exited(kind, reason, delay) => dprintln!(
-                            "neoui: USB debugging: fshell exited ({}, {}); restart in {} ms",
-                            kind,
-                            reason,
-                            delay
-                        ),
-                        Event::SpawnFailed(error) if last_error != Some(error) => {
-                            last_error = Some(error);
-                            dprintln!("neoui: USB debugging: fshell didn't start ({})", error);
-                        }
-                        Event::Missing => {
-                            dprintln!("neoui: USB debugging: no {} in this ROM", SHELL)
-                        }
-                        Event::Idle | Event::Running | Event::SpawnFailed(_) => {}
+                        shared.wake.wait_timeout(TICK_US);
                     }
-                    shared.wake.wait_timeout(TICK_US);
                 }
             })?;
             Ok(Self {

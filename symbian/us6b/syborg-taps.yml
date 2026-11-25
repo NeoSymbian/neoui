@@ -5,8 +5,9 @@ name: syborg
 # with NeoSymbian/build (estart then runs it instead of the window server) plus the Clock app, boot on QEMU,
 # drive it through the QEMU monitor (open Clock, tap it, go back) and check the serial log and the screen. Only the screenshot and logs are published,
 # never the ROM (it links Slint under GPL-3.0 with EPL-1.0 Symbian code).
-# Manual only for now: the user side is ARMv8 with VFP (NeoSymbian/docs user-side-smp.md US2), which the 2010 Syborg
-# kernel can't run, so this job fails against build's main. These UI checks move to QEMU virt with our kernel (US6b).
+# Retired 2026-11-25 (US5, NeoSymbian/docs user-side-smp.md): the 2010 Syborg kernel can't run the ARMv8 user side, and
+# build no longer makes the Syborg ROM. This was .github/workflows/syborg.yml; it stays here as the spec of the UI
+# checks (scenarios, 539x1079 tap coordinates, serial and screen assertions) that US6b ports to QEMU virt.
 on:
   workflow_dispatch:
 
