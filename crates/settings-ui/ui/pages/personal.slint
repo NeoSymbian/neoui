@@ -1,0 +1,165 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Personal: Date & time (set2-datetime; the city sheet of set2-timezone, the format sheet of set2-dateformat),
+// Language & keyboard (set2-language) and Privacy (set2-privacy: Clear clipboard; the rest is SE4).
+import { Theme, NeoList, SectionHeader, ListRow, Sheet, TextField } from "@neoui/kit.slint";
+import { Note } from "../parts.slint";
+import { SetState } from "../state.slint";
+
+export component DateTimePage inherits NeoList {
+    VerticalLayout {
+        alignment: start;
+        SectionHeader { text: "Network time"; }
+        ListRow {
+            title: "Automatic time";
+            subtitle: "Last set: " + SetState.synced;
+            has-switch: true;
+            switch-on <=> SetState.time-auto;
+            switch-toggled(v) => { SetState.act("time.auto", v ? "1" : "0"); }
+        }
+
+        ListRow {
+            title: "Automatic time zone";
+            subtitle: "From the mobile network";
+            has-switch: true;
+            switch-on <=> SetState.time-auto-zone;
+            switch-toggled(v) => { SetState.act("time.auto_zone", v ? "1" : "0"); }
+        }
+
+        ListRow {
+            title: "Time zone";
+            subtitle: SetState.zone;
+            value: SetState.time-auto-zone ? "Network" : "";
+            chevron: !SetState.time-auto-zone;
+            divider: false;
+            clicked => {
+                if !SetState.time-auto-zone {
+                    SetState.city-query = "";
+                    SetState.act("city-query", "");
+                    SetState.sheet = "zone";
+                }
+            }
+        }
+
+        SectionHeader { text: "Format"; }
+        ListRow {
+            title: "24-hour time";
+            has-switch: true;
+            switch-on <=> SetState.clock-24h;
+            switch-toggled(v) => { SetState.act("clock.24h", v ? "1" : "0"); }
+        }
+
+        ListRow {
+            title: "Seconds in the status bar";
+            subtitle: "Uses more battery";
+            has-switch: true;
+            switch-on <=> SetState.status-seconds;
+            switch-toggled(v) => { SetState.act("status.seconds", v ? "1" : "0"); }
+        }
+
+        ListRow {
+            title: "Date in the shade";
+            has-switch: true;
+            switch-on <=> SetState.shade-date;
+            switch-toggled(v) => { SetState.act("shade.date", v ? "1" : "0"); }
+        }
+
+        ListRow {
+            title: "Date format";
+            value: SetState.date-text;
+            chevron: true;
+            divider: false;
+            clicked => { SetState.sheet = "date-format"; }
+        }
+    }
+}
+
+// Time zone (set2-timezone): search the cities, a tap picks one; each city brings its summer-time rule.
+export component ZoneSheet inherits Sheet {
+    // the shell's keyboard over the surface's bottom: the list shrinks by it, so the field stays above
+    in property <length> kb;
+    property <string> query: SetState.city-query;
+    changed query => {
+        SetState.act("city-query", self.query);
+    }
+    title: "Time zone";
+    VerticalLayout {
+        padding-left: 16 * Theme.dp;
+        padding-right: 16 * Theme.dp;
+        spacing: 8 * Theme.dp;
+        TextField {
+            placeholder: "Search cities";
+            text <=> SetState.city-query;
+        }
+
+        NeoList {
+            height: max(120 * Theme.dp, 380 * Theme.dp - root.kb);
+            VerticalLayout {
+                alignment: start;
+                for city[i] in SetState.cities: ListRow {
+                    title: city;
+                    clicked => {
+                        SetState.act("zone-pick", i);
+                        root.close();
+                    }
+                }
+                if SetState.cities.length == 0: Note { text: "No city by that name."; }
+            }
+        }
+
+        if root.kb > 0: Rectangle {
+            height: root.kb;
+        }
+    }
+}
+
+export component KeyboardPage inherits NeoList {
+    VerticalLayout {
+        alignment: start;
+        SectionHeader { text: "Keyboards"; }
+        for name[i] in SetState.keyboard-names: ListRow {
+            title: name;
+            subtitle: SetState.keyboard-hints[i];
+            has-switch: true;
+            switch-on: SetState.keyboards[i];
+            // the app keeps the last language on (it reloads the switch when it refuses)
+            switch-toggled(on) => { SetState.act("keyboard", (on ? "+" : "-") + i); }
+        }
+
+        SectionHeader { text: "Typing"; }
+        ListRow {
+            title: "Current language";
+            value: SetState.keyboard-names.length > SetState.keyboard ? SetState.keyboard-names[SetState.keyboard] : "";
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/language.svg");
+            clicked => { SetState.act("keyboard-next", ""); }
+        }
+
+        ListRow {
+            title: "Same height for all languages";
+            subtitle: "Shorter ones get a row of digits";
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/keypad.svg");
+            has-switch: true;
+            switch-on <=> SetState.same-height;
+            switch-toggled(v) => { SetState.act("keyboard.same_height", v ? "1" : "0"); }
+            divider: false;
+        }
+    }
+}
+
+export component PrivacyPage inherits NeoList {
+    VerticalLayout {
+        alignment: start;
+        SectionHeader { text: "Clipboard"; }
+        ListRow {
+            title: "Clear clipboard";
+            subtitle: "It holds up to 2048 bytes until the next copy";
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/delete.svg");
+            divider: false;
+            clicked => { SetState.act("clip-clear", ""); }
+        }
+
+        Note { text: "Apps on C: get no capabilities; apps in the ROM get them all. App permissions come later (SE4)."; }
+    }
+}

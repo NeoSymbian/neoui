@@ -28,7 +28,7 @@ use neoui_proto::ipc::{self as proto, AppEvent};
 use neoui_proto::page::{NOTE_MAX, NOTIFICATION_MAX, PAGE_MAX, QUERY_MAX};
 use neoui_proto::recents::Recents;
 use neoui_proto::settings::value::ENCODED_MAX;
-use neoui_proto::settings::{Caller, KEY_MAX, Value, kerr};
+use neoui_proto::settings::{Caller, KEY_MAX, Value, access, kerr};
 use neoui_proto::{InputEvent, TouchPhase};
 use neoui_render::{LauncherEntry, Nav, Note, Notification, Page, Query};
 
@@ -49,6 +49,8 @@ pub const APPS: &[(&str, &str, &str)] = &[
     ("messages", "neomsg", ""),
     // the browser (NeoSymbian/browser, docs browser/ui.md): its own chrome over a page engine
     ("browser", "neoweb", ""),
+    // Settings (NEOSET, docs neoui-shell/settings.md "The Settings app"): writes shell settings by its secure ID
+    ("settings", "neoset", ""),
 ];
 
 /// Apps whose shell screen is a launcher grid until they request FRONT(1).
@@ -64,6 +66,10 @@ pub const PAGES: &[(&str, &str, u16)] = &[
     ("phone", "call", 2),
     ("phone", "settings", 3),
     ("phone", "speed", 4),
+    // home's long-press menu (Edit home, Wallpaper) and the browser's Check Wi-Fi (neoui_proto::settings_app::page)
+    ("settings", "wifi", 1),
+    ("settings", "display", 5),
+    ("settings", "navigation", 6),
 ];
 
 /// Apps started (hidden) at boot and never closed for room: an incoming call must show at once; Messages posts a
@@ -215,8 +221,9 @@ pub struct Host {
     pub requested_screen: Option<&'static str>,
     /// With [`Self::requested_screen`] from `OPEN`: the app that opened it (Back at its root returns there).
     pub requested_from: Option<&'static str>,
-    /// An app's `OPEN` of the shell's own Settings on this view ("wifi": the browser's Check Wi-Fi, UI5)
-    pub requested_settings: Option<String>,
+    /// What the Settings app reads with `SETTINGS_INFO` (kinds `INFO_BATTERY`, `INFO_NET`, `INFO_CLOCK` at 0..=2),
+    /// kept fresh by the main loop ([`Self::set_info`]).
+    info: [Vec<u8>; 3],
     /// The joined network wants its login page: the browser's argument for it (`<url>\n<network>`, UI5)
     portal: Option<String>,
     /// The front app said `DONE`: the main loop takes the shell's Back past it.
@@ -274,7 +281,7 @@ impl Host {
             front: None,
             requested_screen: None,
             requested_from: None,
-            requested_settings: None,
+            info: Default::default(),
             portal: None,
             leave: false,
             entries: Vec::new(),
@@ -398,6 +405,16 @@ impl Host {
         let _ = notify(&mut self.notifications, BROWSER, n);
         self.notes_changed = true;
         self.portal = arg;
+    }
+
+    /// The Settings app's `SETTINGS_INFO` of `kind` (1..=3) is now `bytes` (`neoui_proto::settings_app::info`).
+    pub fn set_info(&mut self, kind: i32, bytes: Vec<u8>) {
+        if let Some(slot) = usize::try_from(kind - 1)
+            .ok()
+            .and_then(|i| self.info.get_mut(i))
+        {
+            *slot = bytes;
+        }
     }
 
     /// Settings' Sign in, or the shade's entry: the browser on the network's login page.
@@ -873,14 +890,29 @@ fn setting_get(settings: &Settings, m: &Message) -> Result<i32, i32> {
     i32::try_from(value.len()).map_err(|_| kerr::OVERFLOW)
 }
 
+/// `SETTINGS_INFO [kind, cursor, out]` → the snapshot's length.
+fn settings_info(info: &[Vec<u8>; 3], m: &Message) -> Result<i32, i32> {
+    let bytes = m
+        .int(0)
+        .checked_sub(1)
+        .and_then(|i| usize::try_from(i).ok())
+        .and_then(|i| info.get(i))
+        .ok_or(kerr::ARGUMENT)?;
+    if bytes.len() > m.des_max_len(2)? {
+        return Err(kerr::OVERFLOW);
+    }
+    m.write8(2, bytes, 0)?;
+    i32::try_from(bytes.len()).map_err(|_| kerr::OVERFLOW)
+}
+
 /// `SETTING_SET [key, value]` → 0.
-fn setting_set(settings: &mut Settings, app: &str, m: &Message) -> Result<i32, i32> {
+fn setting_set(settings: &mut Settings, caller: Caller<'_>, m: &Message) -> Result<i32, i32> {
     let key = read_text(m, 0, KEY_MAX)?;
     if m.des_len(1)? > ENCODED_MAX {
         return Err(kerr::TOO_BIG);
     }
     let value = Value::decode(&m.read8_vec(1)?).map_err(|e| e.to_symbian())?;
-    settings::set(settings, Caller::App(app), &key, value, e32::time::millis())
+    settings::set(settings, caller, &key, value, e32::time::millis())
         .map(|_| 0)
         .map_err(|e| e.to_symbian())
 }
@@ -1080,12 +1112,34 @@ impl Service for Host {
                 m.complete(r.unwrap_or_else(|e| e));
             }
             proto::SETTING_SET => {
-                let r = setting_set(&mut self.settings, app.key, &m);
+                // the Settings app is known by its secure ID: a process named "settings" isn't enough
+                let caller = if app.key == "settings" && m.client_sid() == access::SETTINGS_SID {
+                    Caller::Settings
+                } else {
+                    Caller::App(app.key)
+                };
+                let r = setting_set(&mut self.settings, caller, &m);
                 m.complete(r.unwrap_or_else(|e| e));
             }
             proto::SETTING_WATCH => {
                 let r = setting_watch(&mut self.settings, *id, &m);
                 m.complete(r.unwrap_or_else(|e| e));
+            }
+            proto::SETTINGS_INFO => {
+                let r = settings_info(&self.info, &m);
+                m.complete(r.unwrap_or_else(|e| e));
+            }
+            proto::SETTINGS_ACTION => {
+                let r = match m.int(0) {
+                    proto::ACTION_SIGN_IN if self.portal.is_some() => {
+                        dprintln!("neoui: {} asks to sign in to the Wi-Fi network", app.key);
+                        self.open_portal(e32::time::millis());
+                        0
+                    }
+                    proto::ACTION_SIGN_IN => err::KERR_NOT_READY,
+                    _ => kerr::ARGUMENT,
+                };
+                m.complete(r);
             }
             proto::ENTRY => {
                 let r = entry(&mut self.entries, app.key, &m);
@@ -1121,13 +1175,6 @@ impl Service for Host {
             proto::OPEN | proto::OPEN_FILE => {
                 let from = app.key;
                 let key = read_text(&m, 0, proto::KEY_MAX).ok();
-                // the shell's own Settings, on the view the argument names (the browser's Check Wi-Fi, UI5)
-                if key.as_deref() == Some("settings") && m.function() == proto::OPEN {
-                    let view = read_text(&m, 2, proto::ARG_MAX).unwrap_or_default();
-                    dprintln!("neoui: {} opens settings {}", from, view);
-                    self.requested_settings = Some(view);
-                    return m.complete(0);
-                }
                 let target =
                     key.and_then(|k| APPS.iter().find(|(a, _, _)| *a == k).map(|(a, _, _)| *a));
                 let Some(target) = target else {

@@ -141,14 +141,6 @@ pub struct Renderer {
     closed: Rc<RefCell<Vec<alloc::string::String>>>,
     power: Rc<RefCell<Vec<i32>>>,
     phone: Rc<RefCell<Vec<(String, String)>>>,
-    wifi_refresh: Rc<RefCell<bool>>,
-    /// Sign in pressed on the current network (browser UI5)
-    wifi_sign_in: Rc<RefCell<bool>>,
-    sound_actions: Rc<RefCell<Vec<String>>>,
-    zone_next: Rc<RefCell<bool>>,
-    wifi_connect: Rc<RefCell<Option<(String, String)>>>,
-    /// Disconnect (false) or Forget (true) pressed on the current network's details
-    wifi_leave: Rc<RefCell<Option<bool>>>,
     /// keys of settings edited in the UI since the last `take_setting_edits` (`SystemSettings.edited`)
     edited: Rc<RefCell<Vec<String>>>,
     /// the apps' badge counts (BADGE) as last given, merged with what the shell knows itself
@@ -249,29 +241,6 @@ impl Renderer {
             sink.borrow_mut()
                 .push((a.as_str().into(), n.as_str().into()))
         });
-        let wifi_refresh: Rc<RefCell<bool>> = Rc::default();
-        let sink = wifi_refresh.clone();
-        ui.on_wifi_refresh(move || *sink.borrow_mut() = true);
-        let sound_actions: Rc<RefCell<Vec<String>>> = Rc::default();
-        let sink = sound_actions.clone();
-        ui.on_sound_action(move |a| sink.borrow_mut().push(a.as_str().into()));
-        let zone_next: Rc<RefCell<bool>> = Rc::default();
-        let sink = zone_next.clone();
-        ui.global::<Now>()
-            .on_zone_next(move || *sink.borrow_mut() = true);
-        let wifi_leave: Rc<RefCell<Option<bool>>> = Rc::default();
-        let sink = wifi_leave.clone();
-        ui.on_wifi_disconnect(move || *sink.borrow_mut() = Some(false));
-        let sink = wifi_leave.clone();
-        ui.on_wifi_forget(move || *sink.borrow_mut() = Some(true));
-        let wifi_sign_in: Rc<RefCell<bool>> = Rc::default();
-        let sink = wifi_sign_in.clone();
-        ui.on_wifi_sign_in(move || *sink.borrow_mut() = true);
-        let wifi_connect: Rc<RefCell<Option<(String, String)>>> = Rc::default();
-        let sink = wifi_connect.clone();
-        ui.on_wifi_connect(move |b, p| {
-            *sink.borrow_mut() = Some((b.as_str().into(), p.as_str().into()))
-        });
         let edited: Rc<RefCell<Vec<String>>> = Rc::default();
         let sink = edited.clone();
         ui.global::<SystemSettings>()
@@ -286,12 +255,6 @@ impl Renderer {
             closed,
             power,
             phone,
-            wifi_refresh,
-            wifi_sign_in,
-            sound_actions,
-            zone_next,
-            wifi_connect,
-            wifi_leave,
             edited,
             app_badges: Vec::new(),
             scrolling: Scrolling::default(),
@@ -396,13 +359,6 @@ impl Renderer {
     /// Show home page `n` (at once with server transitions on).
     pub fn set_home_page(&mut self, n: i32) {
         self.ui.set_home_page(n.clamp(0, HOME_PAGES - 1));
-    }
-
-    /// Which build is running, one line per part (kernel, user-side ROM, neoui): Settings -> About phone.
-    pub fn set_build_info(&mut self, lines: &[String]) {
-        let model: Vec<slint::SharedString> = lines.iter().map(|l| l.as_str().into()).collect();
-        self.ui
-            .set_build_info(Rc::new(slint::VecModel::from(model)).into());
     }
 
     /// The UI server animates screen changes itself, from snapshots (smooth-ui S2): Slint switches screens at once.
@@ -699,53 +655,14 @@ impl Renderer {
         now.set_next_alarm(face.next_alarm.as_str().into());
     }
 
-    /// Settings -> Date & time and the shade: the date in its format, the zone, and where the time last came from.
-    pub fn set_datetime(&mut self, date: &str, zone: &str, synced: &str) {
-        let now = self.ui.global::<Now>();
-        now.set_date_text(date.into());
-        now.set_zone(zone.into());
-        now.set_synced(synced.into());
-    }
-
-    /// The Time zone row was tapped since the last call (step to the next zone).
-    pub fn take_zone_next(&mut self) -> bool {
-        core::mem::take(&mut *self.zone_next.borrow_mut())
+    /// The shade's date, in its format (`time.date_format`).
+    pub fn set_date_text(&mut self, date: &str) {
+        self.ui.global::<Now>().set_date_text(date.into());
     }
 
     /// The status bar's time text, e.g. "09:41".
     pub fn set_clock(&mut self, text: &str) {
         self.ui.set_clock(text.into());
-    }
-
-    /// Sound -> Media's buttons pressed since the last call ("test", "record").
-    pub fn take_sound_actions(&mut self) -> Vec<String> {
-        core::mem::take(&mut *self.sound_actions.borrow_mut())
-    }
-
-    /// What Sound -> Media's last test did.
-    pub fn set_sound_feedback(&mut self, text: &str) {
-        self.ui.set_sound_feedback(text.into());
-    }
-
-    /// Sign in was pressed on the current network since the last call (its login page goes to the browser).
-    pub fn take_wifi_sign_in(&mut self) -> bool {
-        core::mem::take(&mut *self.wifi_sign_in.borrow_mut())
-    }
-
-    /// The Wi-Fi page's refresh button was pressed since the last call.
-    pub fn take_wifi_refresh(&mut self) -> bool {
-        core::mem::take(&mut *self.wifi_refresh.borrow_mut())
-    }
-
-    /// Connect was pressed on a network's sheet since the last call: its BSSID ("aa:bb:cc:dd:ee:ff") and the
-    /// typed password.
-    pub fn take_wifi_connect(&mut self) -> Option<(String, String)> {
-        self.wifi_connect.borrow_mut().take()
-    }
-
-    /// Disconnect (`Some(false)`) or Forget (`Some(true)`) was pressed on the current network since the last call.
-    pub fn take_wifi_leave(&mut self) -> Option<bool> {
-        self.wifi_leave.borrow_mut().take()
     }
 
     /// The current link: Settings' "Current network" and its details, the status bar's Wi-Fi icon.
@@ -770,66 +687,13 @@ impl Renderer {
         });
     }
 
-    /// How the join started from the sheet is going (shown under its password field).
-    pub fn set_wifi_message(&mut self, text: &str) {
-        self.ui.set_wifi_message(text.into());
-    }
-
-    /// The latest Wi-Fi scan for Settings -> Connectivity: the Wi-Fi row's status and one row per network.
-    pub fn set_wifi(&mut self, scan: &neoui_proto::wifi::Scan) {
-        self.ui.set_wifi_status(scan.status().into());
-        self.ui.set_wifi_count(scan.named() as i32);
-        self.ui.set_wifi_hidden(scan.hidden() as i32);
-        self.ui
-            .set_wifi_scanning(scan.state == neoui_proto::wifi::State::Scanning);
-        let rows: alloc::vec::Vec<WifiNet> = scan
-            .list()
-            .iter()
-            .filter(|n| !n.ssid.is_empty())
-            .map(|n| WifiNet {
-                name: n.title().into(),
-                detail: n.detail().into(),
-                bars: i32::from(n.bars()),
-                secured: n.secured,
-                band: n.band().into(),
-                signal: n.signal().into(),
-                channel: i32::from(n.channel),
-                bssid: n.bssid_text().into(),
-            })
-            .collect();
-        self.ui
-            .set_wifi_networks(slint::ModelRc::new(slint::VecModel::from(rows)));
-    }
-
-    /// Shares the latest observation with the status bar and Battery settings page.
-    pub fn set_battery(
-        &mut self,
-        sample: &neoui_proto::battery::Snapshot,
-        history: &neoui_proto::battery::History,
-        storage_error: bool,
-    ) {
+    /// Shares the latest observation with the status bar (the Settings app reads the rest itself).
+    pub fn set_battery(&mut self, sample: &neoui_proto::battery::Snapshot) {
         self.ui
             .set_battery_percent(sample.percent().map_or(-1, |p| p as i32));
-        self.ui.set_battery_text(sample.percent_text().into());
         self.ui.set_battery_charging(sample.charging());
         self.ui.set_battery_connected(sample.usb_connected());
         self.ui.set_battery_full(sample.full_on_usb());
-        self.ui.set_battery_voltage(sample.voltage_text().into());
-        self.ui.set_battery_state(sample.charge_text().into());
-        self.ui.set_battery_usb(sample.usb_text().into());
-        self.ui.set_battery_storage(
-            if storage_error {
-                "History unavailable or could not be saved; live readings remain available"
-            } else {
-                "History is saved every five minutes and before normal restart or shutdown"
-            }
-            .into(),
-        );
-        let now = history.points().back().map_or(0, |p| p.utc);
-        self.ui
-            .set_battery_history(slint::ModelRc::new(slint::VecModel::from(
-                history.bars(now),
-            )));
     }
 
     /// The status bar's network (telephony C5): `bars` 0..=4, or -1 without a modem; the operator's name; the
@@ -848,11 +712,6 @@ impl Renderer {
     pub fn set_phone_feedback(&mut self, pending: bool, feedback: &str) {
         self.ui.set_phone_pending(pending);
         self.ui.set_phone_feedback(feedback.into());
-    }
-
-    /// Confirmed radio state. Requested radio/sound settings remain owned by SystemSettings.
-    pub fn set_phone_settings(&mut self, online: bool) {
-        self.ui.set_radio_online(online);
     }
 
     pub fn set_sim(&mut self, pin: bool, blocked: bool, attempts: Option<u8>) {

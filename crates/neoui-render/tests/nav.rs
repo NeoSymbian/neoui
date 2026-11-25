@@ -134,16 +134,16 @@ fn the_v2_chrome() {
     r.set_app_front(false);
 
     // the shell's screens: the kit's header with the screen's name; ← in a sub-view goes up
-    r.show("settings", "display");
-    common::frame(&mut r, &mut buf, w, "settings display");
-    common::write_png("keys-settings-display-539x1079.png", &buf, w, h);
+    r.show("music", "playing");
+    common::frame(&mut r, &mut buf, w, "music playing");
+    common::write_png("keys-music-playing-539x1079.png", &buf, w, h);
     press(
         &mut r,
         &mut buf,
         (24.0 * d) as i32,
         ((25.0 + 24.0) * d) as i32,
     );
-    assert_eq!((r.screen().as_str(), r.view().as_str()), ("settings", ""));
+    assert_eq!((r.screen().as_str(), r.view().as_str()), ("music", ""));
 
     // ⌂ and ▢
     press(&mut r, &mut buf, at.home, at.y);

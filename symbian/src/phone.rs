@@ -319,7 +319,6 @@ impl Phone {
             alloc::string::String::new()
         };
         ui.set_phone_feedback(s.pending, &feedback);
-        ui.set_phone_settings(s.radio_online);
         if self.sim_dismissed.is_some_and(|d| d != s.sim) {
             self.sim_dismissed = None; // a new SIM state asks again
         }

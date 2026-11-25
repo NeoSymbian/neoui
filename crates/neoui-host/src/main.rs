@@ -150,7 +150,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut renderer =
         Renderer::new(fb_w as u32, fb_h as u32, now_ms).map_err(|e| format!("slint: {e}"))?;
     if let Some(s) = &screen {
-        // e.g. "settings/display": an app key, optionally a sub-view
+        // e.g. "music/playing": a shell screen, optionally a sub-view
         let (app, view) = s.split_once('/').unwrap_or((s, ""));
         renderer.show(app, view);
     }

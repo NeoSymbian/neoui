@@ -1,0 +1,233 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Device: Display (set2-display, set2-timeout's choice sheet), Home & navigation (set2-navigation, the three modes),
+// Sounds (today's controls: ring and media, the test sound and record-and-play-back; profiles are SE2) and Battery
+// (set2-battery: the HAL's reading and the shell's 24-hour history).
+import { Theme, NeoList, SectionHeader, ListRow, Slider, Button } from "@neoui/kit.slint";
+import { ChoiceRow, Note, Pair } from "../parts.slint";
+import { SetState } from "../state.slint";
+
+export component DisplayPage inherits NeoList {
+    // the slider has no callback: a move changes `brightness`, stored as 0..255
+    property <float> brightness: SetState.brightness;
+    changed brightness => {
+        SetState.act("display.brightness", round(self.brightness * 255));
+    }
+    VerticalLayout {
+        alignment: start;
+        SectionHeader { text: "Brightness"; }
+        HorizontalLayout {
+            padding-left: Theme.margin + 8 * Theme.dp;
+            padding-right: Theme.margin + 8 * Theme.dp;
+            height: 56 * Theme.dp;
+            Slider {
+                value <=> SetState.brightness;
+            }
+        }
+
+        SectionHeader { text: "Appearance"; }
+        ListRow {
+            title: "Dark theme";
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/theme.svg");
+            has-switch: true;
+            switch-on <=> SetState.dark;
+            switch-toggled(v) => { SetState.act("display.dark", v ? "1" : "0"); }
+        }
+
+        ListRow {
+            title: "Screen timeout";
+            value: SetState.timeout-text;
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/stopwatch.svg");
+            chevron: true;
+            divider: false;
+            clicked => { SetState.sheet = "timeout"; }
+        }
+    }
+}
+
+export component NavigationPage inherits NeoList {
+    VerticalLayout {
+        alignment: start;
+        SectionHeader { text: "Navigation"; }
+        for name[i] in SetState.nav-modes: ChoiceRow {
+            title: name;
+            subtitle: SetState.nav-hints[i];
+            on: i == SetState.nav-mode;
+            clicked => { SetState.act("nav.mode", i); }
+        }
+        Note { text: "The top edge opens the shade in every mode. Switching may resize open apps once."; }
+    }
+}
+
+export component SoundsPage inherits NeoList {
+    VerticalLayout {
+        alignment: start;
+        SectionHeader { text: "Incoming calls"; }
+        ListRow {
+            title: "Silent";
+            subtitle: "Mute the built-in ringtone";
+            has-switch: true;
+            switch-on <=> SetState.silent;
+            switch-toggled(v) => { SetState.act("sound.silent", v ? "1" : "0"); }
+        }
+
+        ListRow {
+            title: "Vibrate";
+            has-switch: true;
+            switch-on <=> SetState.vibrate;
+            switch-toggled(v) => { SetState.act("sound.vibrate", v ? "1" : "0"); }
+        }
+
+        ListRow {
+            title: "Ring volume";
+            value: SetState.ring-volume;
+            subtitle: "Built-in ringtone · 0 to 10";
+            divider: false;
+        }
+
+        Pair {
+            Button {
+                text: "Quieter";
+                primary: false;
+                clicked => { SetState.act("sound.ring_volume", max(0, SetState.ring-volume - 1)); }
+            }
+
+            Button {
+                text: "Louder";
+                primary: false;
+                clicked => { SetState.act("sound.ring_volume", min(10, SetState.ring-volume + 1)); }
+            }
+        }
+
+        if SetState.phone-feedback != "": Note { text: SetState.phone-feedback; }
+
+        SectionHeader { text: "Media"; }
+        ListRow {
+            title: "Media volume";
+            value: SetState.media-volume;
+            subtitle: "Apps, games and the volume keys outside a call";
+            divider: false;
+        }
+
+        Pair {
+            Button {
+                text: "Quieter";
+                primary: false;
+                clicked => { SetState.act("sound.media_volume", max(0, SetState.media-volume - 1)); }
+            }
+
+            Button {
+                text: "Louder";
+                primary: false;
+                clicked => { SetState.act("sound.media_volume", min(10, SetState.media-volume + 1)); }
+            }
+        }
+
+        ListRow {
+            title: "Play media on";
+            value: SetState.media-routes.length > SetState.media-route ? SetState.media-routes[SetState.media-route] : "";
+            clicked => { SetState.act("sound.media_route", Math.mod(SetState.media-route + 1, 3)); }
+        }
+
+        ListRow {
+            title: "Microphone";
+            value: SetState.mics.length > SetState.mic ? SetState.mics[SetState.mic] : "";
+            subtitle: "For recordings (calls use the main one)";
+            divider: false;
+            clicked => { SetState.act("sound.mic", 1 - SetState.mic); }
+        }
+
+        Pair {
+            Button {
+                text: "Test sound";
+                clicked => { SetState.act("sound", "test"); }
+            }
+
+            Button {
+                text: "Record and play back";
+                clicked => { SetState.act("sound", "record"); }
+            }
+        }
+
+        if SetState.sound-feedback != "": Note { text: SetState.sound-feedback; }
+    }
+}
+
+export component BatteryPage inherits NeoList {
+    VerticalLayout {
+        alignment: start;
+        spacing: 14 * Theme.dp;
+        padding: Theme.margin;
+        Text {
+            text: SetState.battery-text;
+            font-size: Theme.font-title * 2;
+            font-weight: 700;
+            color: Theme.text;
+        }
+
+        Text {
+            text: SetState.battery-state + " · USB " + SetState.battery-usb;
+            font-size: Theme.font-body;
+            color: Theme.text-secondary;
+            wrap: word-wrap;
+        }
+
+        Text {
+            text: "Battery voltage: " + SetState.battery-voltage;
+            font-size: Theme.font-label;
+            color: Theme.text;
+        }
+
+        Text {
+            text: "Reported by the PMIC · battery profile unverified";
+            font-size: Theme.font-status;
+            color: Theme.text-dim;
+            wrap: word-wrap;
+        }
+
+        SectionHeader { text: "Battery level · last 24 hours"; }
+        chart := Rectangle {
+            height: 180 * Theme.dp;
+            background: #151719;
+            border-radius: 8 * Theme.dp;
+            for value[i] in SetState.battery-history: Rectangle {
+                x: i / 1440 * chart.width;
+                width: chart.width / 1440;
+                height: value < 0 ? 0px : max(1px, value * (chart.height - 20 * Theme.dp));
+                y: chart.height - self.height;
+                background: #22b46a;
+            }
+        }
+
+        HorizontalLayout {
+            Text {
+                text: "24 hours ago";
+                font-size: Theme.font-status;
+                color: Theme.text-dim;
+            }
+
+            Text {
+                text: "Now";
+                horizontal-stretch: 1;
+                horizontal-alignment: right;
+                font-size: Theme.font-status;
+                color: Theme.text-dim;
+            }
+        }
+
+        Text {
+            text: "0–100% · one sample per minute. Gaps mean no reading; history begins with real observations.";
+            font-size: Theme.font-status;
+            color: Theme.text-dim;
+            wrap: word-wrap;
+        }
+
+        Text {
+            text: SetState.battery-storage;
+            font-size: Theme.font-status;
+            color: Theme.text-dim;
+            wrap: word-wrap;
+        }
+    }
+}

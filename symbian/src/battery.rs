@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //! Five-second observations and private, bounded battery-history snapshots.
 use alloc::vec;
+use alloc::vec::Vec;
 use e32::{
     dprintln,
     fs::{File, Fs, mode},
@@ -64,9 +65,10 @@ impl Battery {
             last_state: None,
         }
     }
-    pub fn poll(&mut self, ui: &mut Renderer, now: u64) {
+    /// Every loop; a new observation (every 5 s) returns true.
+    pub fn poll(&mut self, ui: &mut Renderer, now: u64) -> bool {
         if now < self.next {
-            return;
+            return false;
         }
         self.next = now.saturating_add(5000);
         let sample = neoapp::hal::battery().unwrap_or_default();
@@ -111,7 +113,18 @@ impl Battery {
             self.save();
             self.save_at = now.saturating_add(300_000);
         }
-        ui.set_battery(&sample, &self.history, self.storage_error);
+        ui.set_battery(&sample);
+        true
+    }
+
+    /// The 24-hour chart and whether the history saves, for the Settings app (`SETTINGS_INFO` `INFO_BATTERY`).
+    pub fn info(&self) -> Vec<u8> {
+        let now = self.history.points().back().map_or(0, |p| p.utc);
+        neoui_proto::settings_app::info::Battery {
+            save_error: self.storage_error,
+            bars: self.history.bars(now),
+        }
+        .encode()
     }
     pub fn save(&mut self) {
         let result = || -> Result<u64, i32> {

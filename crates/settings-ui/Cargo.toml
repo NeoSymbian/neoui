@@ -1,0 +1,18 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# GPL-3.0 because it links Slint under GPL-3.0 (NeoSymbian decision 2026-11-06), like phone-ui and files-ui.
+[package]
+name = "settings-ui"
+description = "The Settings app's screens (NEOSET.EXE): Slint pages on the neoui kit, snapshot-tested on the host"
+version.workspace = true
+edition.workspace = true
+license = "GPL-3.0-only"
+publish = false
+
+[dependencies]
+slint.workspace = true
+
+[build-dependencies]
+neoui-kit = { path = "../neoui-kit" }
+
+[dev-dependencies]
+png.workspace = true

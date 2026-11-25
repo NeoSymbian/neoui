@@ -14,12 +14,6 @@ const SCREENS: &[(&str, &str)] = &[
     ("calendar", ""),
     ("calendar", "day"),
     ("clock", ""),
-    ("settings", ""),
-    ("settings", "connectivity"),
-    ("settings", "wifi"),
-    ("settings", "display"),
-    ("settings", "keyboard"),
-    ("settings", "about"),
     ("terminal", ""),
 ];
 
@@ -32,37 +26,6 @@ fn pixel() {
         common::snapshot(&mut r, &mut buf, screen, view, "pixel", w, h);
     }
     common::menu_tap(&mut r, &mut buf, "pixel", w, h);
-
-    // Settings -> Wi-Fi with a scan (sample networks) and the sheet a tapped network opens
-    let mut scan = vec![1u8, 2, 3, 1];
-    for (last, ch, dbm, secured, ssid) in [
-        (1u8, 44u8, -46i8, 1u8, "Home"),
-        (2, 6, -70, 1, "Cafe Guest"),
-        (3, 36, -80, 0, ""),
-    ] {
-        let mut e = vec![
-            2,
-            0,
-            0,
-            0,
-            0,
-            last,
-            ch,
-            dbm as u8,
-            secured,
-            ssid.len() as u8,
-        ];
-        e.extend_from_slice(ssid.as_bytes());
-        e.resize(42, 0);
-        scan.extend(e);
-    }
-    r.set_wifi(&neoui_proto::wifi::Scan::decode(&scan).unwrap());
-    r.show("settings", "wifi");
-    common::frame(&mut r, &mut buf, w, "wifi list");
-    common::write_png("settings-wifi-list-pixel.png", &buf, w, h);
-    common::tap(&mut r, (w / 2) as i32, (h as f32 * 0.33) as i32); // the second network, "Cafe Guest"
-    common::frame(&mut r, &mut buf, w, "wifi sheet");
-    common::write_png("settings-wifi-sheet-pixel.png", &buf, w, h);
 
     // Overlays: the app's toast (NOTE) above the band, and the notification shade (status bar)
     let d = common::dp(w, h);
@@ -108,7 +71,7 @@ fn pixel() {
     common::frame(&mut r, &mut buf, w, "shade progress");
     common::write_png("shade-progress-pixel.png", &buf, w, h);
 
-    // Wi-Fi connected (W4): "Current network" above the list, the status bar's icon, then its details sheet
+    // Wi-Fi connected (W4): the status bar's icon (the Settings app draws the network itself)
     let mut link = alloc_link();
     link.state = neoui_proto::wifi::LinkState::Connected;
     let home = neoui_proto::wifi::Network {
@@ -119,31 +82,10 @@ fn pixel() {
         ssid: "Home".into(),
     };
     link.bssid = home.bssid;
-    let ip = neoui_proto::wifi::Ip {
-        address: Some(([192, 168, 3, 57], 24)),
-        gateway: [192, 168, 3, 1],
-        dns: [192, 168, 3, 1],
-        internet: neoui_proto::wifi::Internet::Ok,
-    };
-    r.set_wifi_link(&neoui_proto::wifi::LinkView::new(&link, Some(&home)).with_ip(&ip));
-    r.show("settings", "wifi");
-    common::frame(&mut r, &mut buf, w, "wifi page");
-    common::tap(&mut r, (w / 2) as i32, (h as f32 * 0.1) as i32); // above the open sheet's card: closes it
+    r.set_wifi_link(&neoui_proto::wifi::LinkView::new(&link, Some(&home)));
+    r.show("home", "");
     common::frame(&mut r, &mut buf, w, "wifi connected");
-    common::write_png("settings-wifi-connected-pixel.png", &buf, w, h);
-    common::tap(&mut r, (w / 2) as i32, (h as f32 * 0.232) as i32); // the current network's row
-    common::frame(&mut r, &mut buf, w, "wifi details");
-    common::write_png("settings-wifi-details-pixel.png", &buf, w, h);
-
-    // Settings -> Date & time
-    r.set_datetime(
-        "Friday, 13 November",
-        "UTC+04:00 · Yerevan",
-        "Mobile network, 23:41",
-    );
-    r.show("settings", "datetime");
-    common::frame(&mut r, &mut buf, w, "date and time");
-    common::write_png("settings-datetime-pixel.png", &buf, w, h);
+    common::write_png("home-wifi-pixel.png", &buf, w, h);
 }
 
 // a connected link as the kernel reports it (HAL WlanLink status)

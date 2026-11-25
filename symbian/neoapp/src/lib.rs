@@ -589,6 +589,30 @@ impl App {
         self.server.send_receive(proto::OPEN, &args).map(drop)
     }
 
+    /// What only the shell knows, for the Settings app (`proto::SETTINGS_INFO`): kind `proto::INFO_BATTERY`,
+    /// `INFO_NET` or `INFO_CLOCK`, encoded as `neoui_proto::settings_app::info` decodes it.
+    pub fn settings_info(&self, kind: i32) -> Result<alloc::vec::Vec<u8>, i32> {
+        let mut buf = alloc::vec![0u8; neoui_proto::settings_app::info::INFO_MAX];
+        let n = {
+            let mut des = TPtr8::new(&mut buf);
+            let mut args = TIpcArgs::new();
+            args.int(0, kind).int(1, 0).des8(2, &mut des);
+            self.server.send_receive(proto::SETTINGS_INFO, &args)?;
+            des.len()
+        };
+        buf.truncate(n);
+        Ok(buf)
+    }
+
+    /// Ask the shell to act for the Settings app (`proto::SETTINGS_ACTION`, e.g. `proto::ACTION_SIGN_IN`).
+    pub fn settings_action(&self, kind: i32) -> Result<(), i32> {
+        let mut args = TIpcArgs::new();
+        args.int(0, kind);
+        self.server
+            .send_receive(proto::SETTINGS_ACTION, &args)
+            .map(drop)
+    }
+
     /// The argument of the `OPEN` that sent the last `AppEvent::Open` (empty: none); reading takes it.
     pub fn arg(&self) -> Result<alloc::string::String, i32> {
         let mut buf = alloc::vec![0u8; proto::ARG_MAX];

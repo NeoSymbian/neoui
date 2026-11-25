@@ -1,0 +1,102 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Connectivity / Airplane mode (set2-airplane), Mobile network (set2-mobile) and Bluetooth (set2-bluetooth). Values
+// are what MODEMD reports: no "4G" or data usage it doesn't measure (D4).
+import { Theme, NeoList, SectionHeader, ListRow } from "@neoui/kit.slint";
+import { Note } from "../parts.slint";
+import { SetState } from "../state.slint";
+
+export component ConnectivityPage inherits NeoList {
+    VerticalLayout {
+        alignment: start;
+        SectionHeader { text: "Wireless"; }
+        ListRow {
+            title: "Wi-Fi";
+            subtitle: !SetState.wifi ? "Off" : SetState.wifi-link.connected ? "Connected to " + SetState.wifi-link.name : SetState.wifi-status;
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/wifi.svg");
+            has-switch: true;
+            switch-on <=> SetState.wifi;
+            switch-toggled(v) => { SetState.act("radio.wifi", v ? "1" : "0"); }
+            clicked => { SetState.act("open", "1"); }
+        }
+
+        ListRow {
+            title: "Bluetooth";
+            subtitle: SetState.bluetooth ? "On · no driver yet" : "Off";
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/bluetooth.svg");
+            has-switch: true;
+            switch-on <=> SetState.bluetooth;
+            switch-toggled(v) => { SetState.act("radio.bt", v ? "1" : "0"); }
+        }
+
+        SectionHeader { text: "Mobile"; }
+        ListRow {
+            title: "Mobile data";
+            subtitle: !SetState.mobile-data ? "Off" : SetState.rat == "" ? "No service" : SetState.rat;
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/data.svg");
+            has-switch: true;
+            switch-on <=> SetState.mobile-data;
+            switch-toggled(v) => { SetState.act("radio.data", v ? "1" : "0"); }
+        }
+
+        ListRow {
+            title: "Airplane mode";
+            subtitle: SetState.airplane ? (SetState.radio-online ? "Turning radio off…" : "Radio off") : (SetState.radio-online ? "Radio on" : "Waiting for radio");
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/lock.svg");
+            has-switch: true;
+            switch-on <=> SetState.airplane;
+            switch-toggled(v) => { SetState.act("radio.airplane", v ? "1" : "0"); }
+            divider: false;
+        }
+
+        Note { text: "Wi-Fi and Bluetooth can be turned back on while airplane mode stays on."; }
+    }
+}
+
+export component MobilePage inherits NeoList {
+    VerticalLayout {
+        alignment: start;
+        SectionHeader { text: "SIM"; }
+        ListRow {
+            title: "SIM card & operator";
+            subtitle: (SetState.operator == "" ? "No operator" : SetState.operator) + " · " + SetState.sim;
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/signal.svg");
+        }
+
+        SectionHeader { text: "Data"; }
+        ListRow {
+            title: "Mobile data";
+            subtitle: SetState.airplane ? "Airplane mode" : SetState.rat == "" ? "No service" : SetState.rat + (SetState.roaming ? " · roaming" : "");
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/data.svg");
+            has-switch: true;
+            switch-on <=> SetState.mobile-data;
+            switch-toggled(v) => { SetState.act("radio.data", v ? "1" : "0"); }
+            divider: false;
+        }
+
+        Note { text: "Network mode, roaming, access point names and data usage come with mobile data (C10)."; }
+    }
+}
+
+export component BluetoothPage inherits NeoList {
+    VerticalLayout {
+        alignment: start;
+        ListRow {
+            title: "Bluetooth";
+            subtitle: SetState.bluetooth ? "On" : "Off";
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/bluetooth.svg");
+            has-switch: true;
+            switch-on <=> SetState.bluetooth;
+            switch-toggled(v) => { SetState.act("radio.bt", v ? "1" : "0"); }
+            divider: false;
+        }
+
+        Note { text: "No driver yet: the switch is saved and takes effect once Bluetooth works (B3). Pairing and devices come then."; }
+    }
+}

@@ -32,9 +32,9 @@ fn gestures_take_the_shells_paths() {
     r.set_app_front(false);
 
     // a sub-view goes back to its root first
-    r.show("settings", "display");
+    r.show("music", "playing");
     r.gesture(Gesture::Back);
-    assert_eq!((r.screen().as_str(), r.view().as_str()), ("settings", ""));
+    assert_eq!((r.screen().as_str(), r.view().as_str()), ("music", ""));
 
     // Open apps from anywhere, and Back returns where it was opened from
     r.show("menu", "");
@@ -86,23 +86,15 @@ fn gestures_take_the_shells_paths() {
 
     // Gestures: no keys, a 16 dp band (a tap on it does nothing; the edges do the navigating)
     assert!(r.apply_setting("nav.mode", &Value::Int(1)));
-    common::snapshot(&mut r, &mut buf, "settings", "navigation", "pixel", w, h);
+    common::snapshot(&mut r, &mut buf, "music", "playing", "pixel", w, h);
     let d = common::dp(w, h);
     common::tap(&mut r, (w / 6) as i32, (h as f32 - 8.0 * d) as i32);
     common::settle();
     r.render(&mut buf, w as usize);
     assert_eq!(
         (r.screen().as_str(), r.view().as_str()),
-        ("settings", "navigation")
+        ("music", "playing")
     );
     assert!(r.apply_setting("nav.mode", &Value::Int(0)));
-    common::snapshot(
-        &mut r,
-        &mut buf,
-        "settings",
-        "navigation",
-        "buttons-pixel",
-        w,
-        h,
-    );
+    common::snapshot(&mut r, &mut buf, "music", "playing", "buttons-pixel", w, h);
 }
