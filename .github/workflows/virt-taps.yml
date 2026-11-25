@@ -138,7 +138,7 @@ jobs:
         run: |
           export SCREEN=539x1079 NAV=buttons
           . ../neoui/symbian/taps.sh
-          tap 485 973; tap 270 805; expect "settings: page "; wait_s 1
+          tap 485 973; tap 270 805; expect "neoui: app settings surface"; wait_s 2
           tap 270 672; expect "settings: page navigation"; tap 270 220; expect "neoui: settings saved"
           tap 270 1037; tap 485 913   # home, then the menu, in Buttons
           tap 449 603; expect "clock: surface"; wait_s 2   # the clock ticks once a second while shown (checked below)
@@ -176,7 +176,7 @@ jobs:
           tap 449 805; kb_hide term; tap 90 1037
           tap 449 1037
           for i in 1 2 3 4; do tap 227 160; expect "exited (type 0"; done
-          tap 270 1037; tap 485 913; tap 270 805; expect "settings: page "; wait_s 1
+          tap 270 1037; tap 485 913; tap 270 805; expect "neoui: app settings surface"; wait_s 2
           tap 270 672; expect "settings: page navigation"; tap 270 355; expect "neoui: settings saved"
           ui_run 300
 
@@ -338,7 +338,7 @@ jobs:
           cp out/serial.log out/serial-legacy.log
           export SCREEN=539x1079 NAV=gestures
           . ../neoui/symbian/taps.sh
-          tap 485 973; tap 270 805; expect "settings: page "; wait_s 1
+          tap 485 973; tap 270 805; expect "neoui: app settings surface"; wait_s 2
           tap 270 672; expect "settings: page navigation"; wait_s 1
           swipe 5 540 200 540; expect "neoui: gesture back"; expect "settings: back"
           wait_s 1; swipe 534 540 340 540; expect "neoui: screen menu"
