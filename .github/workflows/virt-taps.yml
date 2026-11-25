@@ -49,7 +49,7 @@ jobs:
           cargo clippy-arm --workspace -- -D warnings
           cargo arm --workspace
           mkdir -p ../../build/rust
-          cp target/armv8a-neosymbian-eabi/release/{libneoui_symbian,libneoclock,libneoterm,libneodevtools,libneokit}.a exes.txt ../../build/rust/
+          cp target/armv8a-neosymbian-eabi/release/{libneoui_symbian,libneoclock,libneoterm,libneodevtools,libneokit,libneoset}.a exes.txt ../../build/rust/
 
       # NeoSymbian/phone: NEOPHONE.EXE (Phone), NEOCONT.EXE (Contacts), NEOMSG.EXE (Messages). Phone and Messages are
       # resident (host::RESIDENT); the three open each other (ipc OPEN, protocol 1.9).
@@ -110,9 +110,9 @@ jobs:
       # - Apps menu tiles, 3 to a row: x 90, 270, 449; rows at y 199, 401, 603, 805. Clock is (449,603), Files
       #   (90,805), Settings (270,805), Terminal (449,805).
       # The steps:
-      # - Gestures is the default. Settings -> Home screen & navigation (270,588) -> Navigation (270,201) twice: Buttons.
-      #   Each tap waits for its own "tap from" line, which v2 prints after "setting nav.mode", so the step waits for
-      #   the store's later "settings saved" instead.
+      # - Gestures is the default. Settings (the NEOSET app, docs neoui-shell/settings.md) -> Home & navigation
+      #   (270,672) -> Buttons (270,220), one of three choices (Gestures 270,355; N9 270,490). The app logs
+      #   "settings: page <name>"; the store's later "settings saved" shows the write went through (by NEOSET's SID).
       # - Clock; a tap inside it (270,500); ←.
       # - Terminal: `dir` on the system keyboard (R6c, above the key row), `neotest` on hardware keys, the keyboard's
       #   hide key, ←.
@@ -131,14 +131,15 @@ jobs:
       # - FA4: Browse (90,958) -> C: -> ⋮ -> New file (400,229) -> ✓ (503,73) opens the editor with the keyboard up;
       #   "42" on the digit row; Save (431,73); ← hides the keyboard, ← to the viewer, ← to C:\, ← to the drives, ← leaves.
       # - R10: apps keep running, and ← returns to the menu, so each app is opened from the menu directly. Terminal is
-      #   reopened (resumed, not restarted). Open apps (▢) closes all three with the first card's × (227,160).
-      # - Last, Navigation once more: Gestures again, for the later steps.
+      #   reopened (resumed, not restarted). Open apps (▢) closes all four (Settings too) with the first card's × (227,160).
+      # - Last, Settings again: Gestures, for the later steps.
       - name: Boot on virt (539x1079); Clock; Terminal (ESHELL, dir by touch, neotest); Files; resume; Open apps closes all
         working-directory: build
         run: |
           export SCREEN=539x1079 NAV=buttons
           . ../neoui/symbian/taps.sh
-          tap 485 973; tap 270 805; tap 270 588; tap 270 201; tap 270 201; expect "neoui: settings saved"
+          tap 485 973; tap 270 805; expect "settings: page "; wait_s 1
+          tap 270 672; expect "settings: page navigation"; tap 270 220; expect "neoui: settings saved"
           tap 270 1037; tap 485 913   # home, then the menu, in Buttons
           tap 449 603; expect "clock: surface"; wait_s 2   # the clock ticks once a second while shown (checked below)
           tap 270 500; expect "clock: touch"
@@ -174,8 +175,9 @@ jobs:
           tap 90 1037; expect "files: list"; tap 90 1037; expect "files: drives"; tap 90 1037
           tap 449 805; kb_hide term; tap 90 1037
           tap 449 1037
-          for i in 1 2 3; do tap 227 160; expect "exited (type 0"; done
-          tap 270 1037; tap 485 913; tap 270 805; tap 270 588; tap 270 201; expect "neoui: settings saved"
+          for i in 1 2 3 4; do tap 227 160; expect "exited (type 0"; done
+          tap 270 1037; tap 485 913; tap 270 805; expect "settings: page "; wait_s 1
+          tap 270 672; expect "settings: page navigation"; tap 270 355; expect "neoui: settings saved"
           ui_run 300
 
       - name: Check the output
@@ -186,6 +188,10 @@ jobs:
           ! grep -aq '\[proc\] EWSRV.EXE\[' $s
           grep -a 'neoui: display 539x1079' $s
           grep -a 'neoui: launcher shown' $s
+          # Settings is an app (NEOSET): it starts, and its writes to shell settings are allowed by its secure ID
+          grep -a 'neoui: app settings started' $s
+          grep -a 'settings: set nav.mode = 0 (Ok' $s
+          ! grep -aq 'settings: set nav.mode = [0-9] (Err' $s
           grep -aE 'neoui: clock [0-9]{2}:[0-9]{2}' $s
           # R9: frame timing (one summary per second of activity) on the fast counter
           grep -aE 'neoui: fast counter [1-9][0-9]* Hz' $s
@@ -315,8 +321,8 @@ jobs:
 
       # Navigation v2's gestures (docs neoui-shell/navigation.md; edge zone 16 dp = 24 px, sides and the band commit at 72 dp =
       # 108 px, Home at 80 dp = 120 px). The Thumb map (Gestures, the default):
-      # - Settings (via Apps 485,973 and 270,805) -> Home screen & navigation (270,588).
-      # - The left edge goes Back (the sub-view), the right edge too (Settings' origin, the menu).
+      # - Settings (via Apps 485,973 and 270,805; the NEOSET app) -> Home & navigation (270,672).
+      # - The left edge goes Back (the app's page back to its root), the right edge too (the app leaves for the menu).
       # - Up from the bottom goes Home, and from home to the menu.
       # - Clock (449,603). Up and held still for Open apps.
       # - Clock again from the menu; along the band rightwards: the previous app.
@@ -324,16 +330,17 @@ jobs:
       # - Protocol 1.12 (Files FA8): the UI kit (Apps row 4, 449,985) -> ⋮ (500,73) -> Files (menu row 9, 400,805) ->
       #   Save a file (270,244) opens Files' Save as on C:\ (no C:\Data there); its Save (470,998) answers the kit
       #   with the new file by handle, and the kit writes into it.
-      # Then the N9 map (Navigation once more, 270,201): the right edge's drag is Open apps.
+      # Then the N9 map (Settings, still running at its root -> Home & navigation -> N9 gestures, 270,490): the right
+      # edge's drag is Open apps.
       - name: Boot again; gesture navigation (the Thumb map, then N9)
         working-directory: build
         run: |
           cp out/serial.log out/serial-legacy.log
           export SCREEN=539x1079 NAV=gestures
           . ../neoui/symbian/taps.sh
-          tap 485 973; tap 270 805   # (a shell screen logs its change before the tap line `tap` waits for)
-          tap 270 588; wait_s 1
-          swipe 5 540 200 540; expect "neoui: gesture back"
+          tap 485 973; tap 270 805; expect "settings: page "; wait_s 1
+          tap 270 672; expect "settings: page navigation"; wait_s 1
+          swipe 5 540 200 540; expect "neoui: gesture back"; expect "settings: back"
           wait_s 1; swipe 534 540 340 540; expect "neoui: screen menu"
           wait_s 1; swipe 270 1075 270 900; expect "neoui: screen home"
           wait_s 1; swipe 270 1075 270 900; expect "neoui: screen menu"
@@ -350,7 +357,8 @@ jobs:
           tap 270 244; expect "files: opened on page 2"; wait_s 2
           tap 470 998; expect "kit: saved"
           wait_s 1; swipe 270 1075 270 900; expect "neoui: screen home"
-          wait_s 1; tap 485 973; tap 270 805; tap 270 588; tap 270 201; wait_s 1
+          wait_s 1; tap 485 973; tap 270 805; wait_s 2
+          tap 270 672; expect "settings: page navigation"; tap 270 490; expect "neoui: settings saved"; wait_s 1
           swipe 534 540 340 540; expect "neoui: screen switcher"
           ui_run 180
           s=out/serial.log

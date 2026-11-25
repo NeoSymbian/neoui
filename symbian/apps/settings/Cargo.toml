@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: GPL-3.0-only
+# NEOSET.EXE, the Settings app (docs neoui-shell/settings.md "The Settings app"): the screens are settings-ui's; this
+# is the device side (the settings store, WIFID, MODEMD, NeoAudio, the shell's SETTINGS_INFO).
+# GPL-3.0 because it links Slint under GPL-3.0 (NeoSymbian decision 2026-11-06).
+[package]
+name = "neoset"
+description = "The Settings app: every system setting, Wi-Fi, mobile network, sounds, battery, date and time"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+publish = false
+
+[lib]
+crate-type = ["staticlib"]
+test = false
+
+[dependencies]
+e32.workspace = true
+slint.workspace = true
+neoapp.workspace = true
+neoui-proto.workspace = true
+settings-ui.workspace = true
+# NeoWifi (WIFID.EXE: scans, joins, leaves) and NeoModem (MODEMD.EXE: operator, SIM, technology), NeoAudio (the
+# sound test); NeoSymbian/neohw, Apache-2.0
+wifi.workspace = true
+modem-ipc.workspace = true
+neoaudio.workspace = true
