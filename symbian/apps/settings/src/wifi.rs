@@ -25,6 +25,9 @@ pub struct Wifi {
     listed_at: Option<u64>,
     asked_at: Option<u64>,
     link: Link,
+    /// The join sheet asked WIFID to join: from then on the sheet shows how the link goes (before that it shows
+    /// the password check's own message, not the current network's state).
+    joining: bool,
 }
 
 impl Wifi {
@@ -87,7 +90,9 @@ impl Wifi {
             fail::NO_DATA => "No data from the network: Wi-Fi rejoins after a restart".into(),
             _ => link.message(),
         };
-        s.set_wifi_message(message.into());
+        if self.joining {
+            s.set_wifi_message(message.into());
+        }
         self.link = link;
 
         // the list
@@ -155,7 +160,7 @@ impl Wifi {
     }
 
     /// Connect on the join sheet: the network by its BSSID ("aa:bb:..") and the typed password. Returns what the sheet
-    /// shows when the request can't go out.
+    /// shows now: the password check's message, or "Connecting…" (then the link's own state, from `poll`).
     pub fn connect(&mut self, bssid: &str, password: &str) -> Option<&'static str> {
         let net = self
             .last
@@ -178,7 +183,10 @@ impl Wifi {
                 let mut args = TIpcArgs::new();
                 args.desc8(0, &des);
                 match self.call(op::CONNECT, &args) {
-                    Ok(_) => None,
+                    Ok(_) => {
+                        self.joining = true;
+                        Some("Connecting…")
+                    }
                     Err(e) => {
                         e32::dprintln!("settings: wifi: connect -> {}", e);
                         Some("Wi-Fi is not available")
