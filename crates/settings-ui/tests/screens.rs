@@ -308,4 +308,16 @@ fn every_page() {
     page(&sh, 14, "Old apps");
     sheet(&sh, "pad-b");
     sh.shoot("pad-settings-b");
+
+    // every row that shows a value has one for search (settings_ui::live_value), from the sample state above
+    let s = sh.ui.global::<SetState>();
+    for r in neoui_proto::settings_app::rows::ROWS {
+        if !settings_ui::VALUELESS.contains(&r.id) {
+            assert!(
+                !settings_ui::live_value(&s, r.id).is_empty(),
+                "{} shows a value but search has none",
+                r.id
+            );
+        }
+    }
 }

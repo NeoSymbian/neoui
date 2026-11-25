@@ -186,7 +186,10 @@ fn run() -> Result<(), i32> {
                         ctx.open(View::None);
                     }
                     if name == "console" {
-                        ctx.model.borrow_mut().console.last = false;
+                        let mut m = ctx.model.borrow_mut();
+                        m.console.last = false;
+                        m.console.back = 0;
+                        m.console.tag = None;
                     }
                     ctx.open_page(&name);
                 }

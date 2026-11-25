@@ -51,7 +51,12 @@ fn page_rows() -> BTreeSet<(&'static str, String)> {
             }
         }
     }
-    // rows drawn from a model
+    // rows drawn from a model: the repeaters must be there, bound to the models NEOSET fills from `choices`
+    let pages = Path::new(env!("CARGO_MANIFEST_DIR")).join("ui/pages");
+    let device = std::fs::read_to_string(pages.join("device.slint")).unwrap();
+    assert!(device.contains("for name[i] in SetState.nav-modes: ChoiceRow"));
+    let personal = std::fs::read_to_string(pages.join("personal.slint")).unwrap();
+    assert!(personal.contains("for name[i] in SetState.keyboard-names: ListRow"));
     for (name, _) in NAV_MODES {
         out.insert((Page::Navigation.name(), name.to_string()));
     }

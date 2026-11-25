@@ -30,7 +30,7 @@ use neoui_proto::settings_app::choices::{KEYBOARDS, TIMEOUTS};
 use neoui_proto::settings_app::info::{Battery, Clock};
 use neoui_proto::settings_app::page::Page;
 use neoui_proto::settings_app::rows;
-use settings_ui::{KeyboardFocus, Kit, SearchHit, SetState, SettingsApp, Theme};
+use settings_ui::{KeyboardFocus, Kit, SearchHit, SetState, SettingsApp, Theme, live_value};
 use slint::{ComponentHandle, ModelRc, SharedString, Timer, TimerMode, VecModel};
 
 e32::main!(main);
@@ -59,52 +59,14 @@ struct Ctx {
     cities: RefCell<Vec<&'static str>>,
     /// "Reset remembered pads" asked its QUERY: the answer resets them
     asked_reset: Cell<bool>,
-    /// the root search's query (results are refreshed with it while searching)
+    /// the root search's query (results are refreshed with it while searching), and the hits shown (the model is
+    /// replaced only when they change: a new model drops a row's press, and with it the tap)
     query: RefCell<String>,
+    hits: RefCell<Vec<SearchHit>>,
+    /// the pages Back returns through (a page opened from another page, not from the root, returns there)
+    trail: RefCell<Vec<Page>>,
     /// the keyboard as last asked of the shell (KeyboardFocus open, seq, mode)
     kb: Cell<(bool, i32, i32)>,
-}
-
-/// A search result's value: what its row shows now (switches as On/Off); "" for rows without one.
-fn live_value(s: &SetState<'_>, id: &str) -> String {
-    let on = |b: bool| String::from(if b { "On" } else { "Off" });
-    match id {
-        "root.wifi" | "wifi.switch" | "conn.wifi" => {
-            let l = s.get_wifi_link();
-            if !s.get_wifi() {
-                "Off".into()
-            } else if l.connected {
-                l.name.into()
-            } else {
-                "Not connected".into()
-            }
-        }
-        "root.bt" | "bt.switch" | "conn.bt" => on(s.get_bluetooth()),
-        "conn.data" | "mobile.data" => on(s.get_mobile_data()),
-        "root.airplane" | "conn.airplane" => on(s.get_airplane()),
-        "root.mobile" => s.get_rat().into(),
-        "root.battery" => s.get_battery_text().into(),
-        "root.datetime" => s.get_zone().into(),
-        "display.dark" => on(s.get_dark()),
-        "display.timeout" => s.get_timeout_text().into(),
-        "sounds.silent" => on(s.get_silent()),
-        "sounds.vibrate" => on(s.get_vibrate()),
-        "sounds.ring" => alloc::format!("{}", s.get_ring_volume()),
-        "sounds.media" => alloc::format!("{}", s.get_media_volume()),
-        "time.auto" => on(s.get_time_auto()),
-        "time.auto_zone" => on(s.get_time_auto_zone()),
-        "time.zone" => s.get_zone().into(),
-        "time.24h" => on(s.get_clock_24h()),
-        "time.seconds" => on(s.get_status_seconds()),
-        "time.shade_date" => on(s.get_shade_date()),
-        "time.format" => s.get_date_text().into(),
-        "kb.same_height" => on(s.get_same_height()),
-        "dev.usb" => on(s.get_usb_debugging()),
-        "pads.vibrate" => on(s.get_pad_vibrate()),
-        "pads.lefty" => on(s.get_pad_lefty()),
-        "pads.console" => on(s.get_pad_console()),
-        _ => String::new(),
-    }
 }
 
 fn run() -> Result<(), i32> {
@@ -125,6 +87,8 @@ fn run() -> Result<(), i32> {
         asked_reset: Cell::new(false),
         kb: Cell::new((false, 0, 0)),
         query: RefCell::default(),
+        hits: RefCell::default(),
+        trail: RefCell::default(),
     });
     // watch first: a change between the first read and the watch would be missed
     if let Err(e) = app.watch_settings("") {
@@ -151,9 +115,13 @@ fn run() -> Result<(), i32> {
             AppEvent::Back => ctx.back(),
             AppEvent::Open { page } => {
                 let arg = app.arg().unwrap_or_default();
+                ctx.trail.borrow_mut().clear();
                 ctx.open(Page::opened(page, &arg));
             }
-            AppEvent::Page { page } => ctx.open(Page::from_id(page).unwrap_or(Page::Root)),
+            AppEvent::Page { page } => {
+                ctx.trail.borrow_mut().clear();
+                ctx.open(Page::from_id(page).unwrap_or(Page::Root));
+            }
             AppEvent::Settings { .. } => store::load(&app, &ui),
             // the shell's keyboard: its height (0 while a field keeps the focus: the user put it away)
             AppEvent::Keyboard { h } => {
@@ -252,9 +220,9 @@ impl Ctx {
             s.set_sheet(SharedString::new());
             // the sheet's field went with it: let its keyboard go too (else it comes back on resume)
             ui.global::<KeyboardFocus>().set_open(false);
-        } else if let Some(parent) = self.page.get().parent() {
+        } else if let Some(prev) = self.trail.borrow_mut().pop().or(self.page.get().parent()) {
             dprintln!("settings: back");
-            self.open(parent);
+            self.open(prev);
         }
     }
 
@@ -332,7 +300,19 @@ impl Ctx {
                 page: i32::from(r.opens.id()),
             })
             .collect();
-        s.set_results(ModelRc::new(VecModel::from(hits)));
+        if *self.hits.borrow() != hits {
+            s.set_results(ModelRc::new(VecModel::from(hits.clone())));
+            *self.hits.borrow_mut() = hits;
+        }
+    }
+
+    /// A page opened from this app's own pages: Back comes back here.
+    fn go(&self, page: Page) {
+        let here = self.page.get();
+        if here != page {
+            self.trail.borrow_mut().push(here);
+        }
+        self.open(page);
     }
 
     fn battery(&self, ui: &SettingsApp) {
@@ -369,7 +349,7 @@ impl Ctx {
         match action {
             "open" => {
                 if let Some(p) = value.parse().ok().and_then(Page::from_id) {
-                    self.open(p);
+                    self.go(p);
                 }
             }
             "back" => self.back(),
@@ -470,7 +450,10 @@ impl Ctx {
                 if let Some(r) = rows::ROWS.iter().find(|r| r.id == value) {
                     s.set_searching(false);
                     s.set_query(SharedString::new());
-                    self.open(r.opens);
+                    self.query.borrow_mut().clear();
+                    self.hits.borrow_mut().clear();
+                    s.set_results(ModelRc::new(VecModel::from(Vec::<SearchHit>::new())));
+                    self.go(r.opens);
                     if r.on != Page::Root {
                         s.set_found(r.id.into());
                     }
