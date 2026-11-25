@@ -28,7 +28,7 @@ use neoui_proto::settings::keys;
 use neoui_proto::settings_app::choices::{KEYBOARDS, TIMEOUTS};
 use neoui_proto::settings_app::info::{Battery, Clock};
 use neoui_proto::settings_app::page::Page;
-use settings_ui::{Kit, SetState, SettingsApp, Theme};
+use settings_ui::{KeyboardFocus, Kit, SetState, SettingsApp, Theme};
 use slint::{ComponentHandle, ModelRc, SharedString, Timer, TimerMode, VecModel};
 
 e32::main!(main);
@@ -57,6 +57,8 @@ struct Ctx {
     cities: RefCell<Vec<&'static str>>,
     /// "Reset remembered pads" asked its QUERY: the answer resets them
     asked_reset: Cell<bool>,
+    /// the keyboard as last asked of the shell (KeyboardFocus open, seq, mode)
+    kb: Cell<(bool, i32, i32)>,
 }
 
 fn run() -> Result<(), i32> {
@@ -75,12 +77,14 @@ fn run() -> Result<(), i32> {
         sound: sound::Sound::new(),
         cities: RefCell::default(),
         asked_reset: Cell::new(false),
+        kb: Cell::new((false, 0, 0)),
     });
-    store::fill_fixed(&ui);
-    store::load(&app, &ui);
+    // watch first: a change between the first read and the watch would be missed
     if let Err(e) = app.watch_settings("") {
         dprintln!("settings: watch failed {}", e);
     }
+    store::fill_fixed(&ui);
+    store::load(&app, &ui);
     let c = ctx.clone();
     ui.global::<SetState>()
         .on_act(move |a, v| c.act(a.as_str(), v.as_str()));
@@ -104,6 +108,12 @@ fn run() -> Result<(), i32> {
             }
             AppEvent::Page { page } => ctx.open(Page::from_id(page).unwrap_or(Page::Root)),
             AppEvent::Settings { .. } => store::load(&app, &ui),
+            // the shell's keyboard: its height (0 while a field keeps the focus: the user put it away)
+            AppEvent::Keyboard { h } => {
+                let kf = ui.global::<KeyboardFocus>();
+                kf.set_dismissed(h == 0 && kf.get_open());
+                kf.set_text_h(h as f32);
+            }
             AppEvent::Answer { i } if ctx.asked_reset.take() => {
                 if i == 0 {
                     let epoch = app.setting(keys::LEGACY_PAD_EPOCH).unwrap_or(0);
@@ -119,6 +129,7 @@ fn run() -> Result<(), i32> {
             }
             _ => {}
         }
+        ctx.keyboard();
         ctx.describe()?;
         Ok(true)
     })
@@ -145,6 +156,25 @@ impl Ctx {
             *self.shown.borrow_mut() = page;
         }
         Ok(())
+    }
+
+    /// A field took the focus (the Wi-Fi password, the city search) or lost it: ask the shell for its keyboard, or
+    /// hide it (the kit's KeyboardFocus, as Contacts and Files do).
+    fn keyboard(&self) {
+        let Some(ui) = self.ui() else { return };
+        let kf = ui.global::<KeyboardFocus>();
+        let want = (kf.get_open(), kf.get_seq(), kf.get_mode());
+        let had = self.kb.get();
+        if want.0 != had.0 || (want.0 && (want.1, want.2) != (had.1, had.2)) {
+            self.kb.set(want);
+            let mode = if want.0 {
+                want.2.max(1)
+            } else {
+                proto::KEYBOARD_HIDDEN
+            };
+            let h = self.app.keyboard(mode).unwrap_or(0);
+            kf.set_text_h(h as f32);
+        }
     }
 
     fn open(&self, page: Page) {
@@ -198,6 +228,9 @@ impl Ctx {
         }
         if matches!(page, Page::Root | Page::Battery) && every(5) {
             self.battery(&ui);
+        }
+        if page == Page::DateTime && every(5) {
+            store::dates(&self.app, &ui);
         }
         if page == Page::DateTime
             && every(5)
@@ -265,11 +298,9 @@ impl Ctx {
                     .wifi
                     .borrow_mut()
                     .connect(net.bssid.as_str(), s.get_password().as_str());
+                // the sheet stays: it shows how the join goes ("Connecting…", "Wrong password", "Connected")
                 if let Some(text) = failed {
                     s.set_wifi_message(text.into());
-                } else {
-                    s.set_sheet(SharedString::new());
-                    s.set_password(SharedString::new());
                 }
             }
             "wifi-disconnect" => self.wifi.borrow_mut().leave(false),

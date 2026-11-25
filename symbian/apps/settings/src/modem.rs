@@ -54,7 +54,13 @@ impl Modem {
             rat::LTE => "LTE",
             _ => "",
         };
-        s.set_rat(if registered { tech } else { "" }.into());
+        // registered on a technology the modem doesn't name: still in service
+        let shown = match (registered, tech) {
+            (false, _) => "",
+            (true, "") => "Registered",
+            (true, t) => t,
+        };
+        s.set_rat(shown.into());
         s.set_roaming(st.reg == reg::ROAMING);
         s.set_operator(String::from(st.operator.as_str()).into());
         let sim = match st.sim {

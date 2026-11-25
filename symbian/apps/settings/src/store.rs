@@ -73,6 +73,17 @@ fn local_now() -> LocalTime {
     }
 }
 
+/// Date format: today's date in the chosen format and in each of the four (again each time the page reads it, so a
+/// page left open over midnight catches up).
+pub fn dates(app: &App, ui: &SettingsApp) {
+    let s = ui.global::<SetState>();
+    let format = get(app, keys::TIME_DATE_FORMAT);
+    let today = local_now();
+    s.set_date_format(format);
+    s.set_date_text(date_text(&today, format).into());
+    s.set_date_formats(strings((0..4).map(|f| date_text(&today, f))));
+}
+
 /// Every setting a page shows.
 pub fn load(app: &App, ui: &SettingsApp) {
     let s = ui.global::<SetState>();
@@ -98,11 +109,7 @@ pub fn load(app: &App, ui: &SettingsApp) {
     s.set_clock_24h(get(app, keys::CLOCK_24H));
     s.set_status_seconds(get(app, keys::STATUS_SECONDS));
     s.set_shade_date(get(app, keys::SHADE_DATE));
-    let format = get(app, keys::TIME_DATE_FORMAT);
-    let today = local_now();
-    s.set_date_format(format);
-    s.set_date_text(date_text(&today, format).into());
-    s.set_date_formats(strings((0..4).map(|f| date_text(&today, f))));
+    dates(app, ui);
     s.set_usb_debugging(get(app, keys::DEVELOPER_USB_DEBUGGING));
     let on = keyboards(app);
     s.set_keyboard(pick(&on, get(app, keys::KEYBOARD_LAYOUT)));

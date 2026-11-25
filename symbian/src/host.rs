@@ -892,8 +892,10 @@ fn setting_get(settings: &Settings, m: &Message) -> Result<i32, i32> {
 
 /// `SETTINGS_INFO [kind, cursor, out]` → the snapshot's length.
 fn settings_info(info: &[Vec<u8>; 3], m: &Message) -> Result<i32, i32> {
-    let bytes = usize::try_from(m.int(0) - 1)
-        .ok()
+    let bytes = m
+        .int(0)
+        .checked_sub(1)
+        .and_then(|i| usize::try_from(i).ok())
         .and_then(|i| info.get(i))
         .ok_or(kerr::ARGUMENT)?;
     if bytes.len() > m.des_max_len(2)? {

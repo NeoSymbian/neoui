@@ -349,7 +349,9 @@ jobs:
           wait_s 1; swipe 270 1075 270 900; expect "neoui: screen home"
           wait_s 1; tap 485 973; tap 449 603; expect "clock: visible true"
           wait_s 1; swipe 100 1072 400 1072; expect "neoui: gesture prev"
-          wait_s 1; tap 449 603
+          # (the previous app is Settings, now an app itself): home, then Clock from the menu again
+          wait_s 1; swipe 270 1075 270 900; expect "neoui: screen home"
+          wait_s 1; tap 485 973; tap 449 603; expect "clock: visible true"
           wait_s 1; tap 497 73; wait_s 1; tap 400 157; expect "clock: view settings"
           wait_s 1; swipe 270 1075 270 900; expect "neoui: screen home"
           wait_s 1; tap 485 973; tap 449 985; expect "neoui: app kit started"
