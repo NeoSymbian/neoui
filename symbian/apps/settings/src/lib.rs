@@ -111,8 +111,15 @@ fn run() -> Result<(), i32> {
             // the shell's keyboard: its height (0 while a field keeps the focus: the user put it away)
             AppEvent::Keyboard { h } => {
                 let kf = ui.global::<KeyboardFocus>();
-                kf.set_dismissed(h == 0 && kf.get_open());
+                let dismissed = h == 0 && kf.get_open();
+                let was = kf.get_dismissed();
+                kf.set_dismissed(dismissed);
                 kf.set_text_h(h as f32);
+                // the user put it away: drop the request too, or a resume from Open apps would bring it back; a tap
+                // on the field asks again (KeyboardFocus.seq)
+                if dismissed && !was {
+                    let _ = app.keyboard(proto::KEYBOARD_HIDDEN);
+                }
             }
             AppEvent::Answer { i } if ctx.asked_reset.take() => {
                 if i == 0 {

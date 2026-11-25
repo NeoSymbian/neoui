@@ -77,6 +77,8 @@ export global SetState {
     in property <bool> wifi-scanning;
     in property <WifiLink> wifi-link;
     in property <string> wifi-message;
+    // the join sheet's network: 0 nothing going, 1 joining it, 2 connected to it (Connect waits while 1 or 2)
+    in property <int> wifi-join;
 
     // the modem (MODEMD): operator, SIM, technology ("LTE", "3G", "2G", "" = no service), radio on
     in property <string> operator;

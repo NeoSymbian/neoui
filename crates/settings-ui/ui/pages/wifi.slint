@@ -120,8 +120,10 @@ export component WifiJoinSheet inherits Sheet {
             autofocus: true;
             text <=> SetState.password;
             accepted => {
-                root.tried = true;
-                SetState.act("wifi-connect", "");
+                if SetState.wifi-join == 0 {
+                    root.tried = true;
+                    SetState.act("wifi-connect", "");
+                }
             }
         }
         if root.tried && SetState.wifi-message != "": Text {
@@ -141,7 +143,8 @@ export component WifiJoinSheet inherits Sheet {
             }
 
             Button {
-                text: "Connect";
+                text: SetState.wifi-join == 2 ? "Connected" : SetState.wifi-join == 1 ? "Connecting…" : "Connect";
+                enabled: SetState.wifi-join == 0;
                 clicked => {
                     root.tried = true;
                     SetState.act("wifi-connect", "");
@@ -149,7 +152,7 @@ export component WifiJoinSheet inherits Sheet {
             }
         }
 
-        Rectangle {
+        if root.kb > 0: Rectangle {
             height: root.kb;
         }
     }

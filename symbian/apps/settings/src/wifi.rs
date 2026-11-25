@@ -10,7 +10,7 @@ use e32::sys::{TPtr8, TPtrC8};
 use neoapp::App;
 use neoui_proto::ipc as proto;
 use neoui_proto::settings_app::info;
-use neoui_proto::wifi::{Link, LinkView, Scan, State};
+use neoui_proto::wifi::{Link, LinkState, LinkView, Scan, State};
 use settings_ui::{SetState, SettingsApp, WifiDetail, WifiLink, WifiNet};
 use slint::{ComponentHandle, ModelRc, VecModel};
 use wifi::ipc::{Connect, fail, op};
@@ -25,9 +25,9 @@ pub struct Wifi {
     listed_at: Option<u64>,
     asked_at: Option<u64>,
     link: Link,
-    /// The join sheet asked WIFID to join: from then on the sheet shows how the link goes (before that it shows
-    /// the password check's own message, not the current network's state).
-    joining: bool,
+    /// The network (BSSID text) the join sheet asked WIFID to join: while the sheet is open for that network it shows
+    /// how the link goes; for any other it keeps the password check's own message.
+    asked: Option<alloc::string::String>,
 }
 
 impl Wifi {
@@ -73,9 +73,9 @@ impl Wifi {
         let mut des = TPtr8::new(&mut b);
         let mut args = TIpcArgs::new();
         args.des8(0, &mut des);
-        let (link, failed) = match self.call(op::LINK, &args) {
-            Ok(f) => (Link::decode(&b[..des.len()]).unwrap_or_default(), f),
-            Err(_) => (Link::default(), 0),
+        let (link, failed, up) = match self.call(op::LINK, &args) {
+            Ok(f) => (Link::decode(&b[..des.len()]).unwrap_or_default(), f, true),
+            Err(_) => (Link::default(), 0, false),
         };
         let message = match failed {
             fail::SECURITY => {
@@ -88,11 +88,30 @@ impl Wifi {
             fail::HAL => "Wi-Fi is not available".into(),
             fail::HANDSHAKE => "Wrong password".into(),
             fail::NO_DATA => "No data from the network: Wi-Fi rejoins after a restart".into(),
+            _ if !up => "Wi-Fi is not available".into(),
             _ => link.message(),
         };
-        if self.joining {
+        // the sheet's network: is a join for it asked, going, or done (Connect waits meanwhile)
+        let current = s.get_wifi_current().bssid;
+        let ours = self.asked.as_deref() == Some(current.as_str());
+        if ours {
             s.set_wifi_message(message.into());
         }
+        let b = link.bssid;
+        let this = alloc::format!(
+            "{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
+            b[0],
+            b[1],
+            b[2],
+            b[3],
+            b[4],
+            b[5]
+        ) == current.as_str();
+        s.set_wifi_join(match link.state {
+            LinkState::Connected if this => 2,
+            LinkState::Joining | LinkState::Handshake if this || ours => 1,
+            _ => 0,
+        });
         self.link = link;
 
         // the list
@@ -184,7 +203,7 @@ impl Wifi {
                 args.desc8(0, &des);
                 match self.call(op::CONNECT, &args) {
                     Ok(_) => {
-                        self.joining = true;
+                        self.asked = Some(alloc::string::String::from(bssid));
                         Some("Connecting…")
                     }
                     Err(e) => {
