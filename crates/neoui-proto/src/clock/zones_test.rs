@@ -3,7 +3,7 @@
 
 use super::world::find;
 use super::zones::{CATALOGUE, TZDATA, YEARS_CHECKED};
-use super::zones_ref::TRANSITIONS;
+use super::zones_ref::{STARTS, TRANSITIONS};
 
 /// The names the 2025 table had (saved in `clock.cities` and `time.zone`): each must still resolve.
 const SAVED_NAMES: &[&str] = &[
@@ -111,6 +111,16 @@ fn rules_match_zic_2026_to_2030() {
         let city = find(name).unwrap_or_else(|| panic!("{name}"));
         assert_eq!(city.offset_at(t - 1), before, "{name} just before {t}");
         assert_eq!(city.offset_at(t), after, "{name} at {t}");
+    }
+}
+
+#[test]
+fn every_city_has_zics_offset_when_the_years_begin() {
+    // fixed-offset cities have no transitions: this is their only check against zic
+    assert_eq!(STARTS.len(), CATALOGUE.len());
+    for &(name, offset) in STARTS {
+        let city = find(name).unwrap_or_else(|| panic!("{name}"));
+        assert_eq!(city.offset_at(1_767_225_600), offset, "{name}");
     }
 }
 

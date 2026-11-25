@@ -101,12 +101,11 @@ impl Rule {
         }
     }
 
-    /// Summer time is in force at `utc`: the clock is ahead of the zone's other offset. Not [`Rule::is_dst`] for a
+    /// Summer time is in force at `utc`: the clock is ahead of the zone's winter offset. Not [`Rule::is_dst`] for a
     /// negative-DST rule (Dublin's `IST-1GMT0,...`: IANA calls winter the DST part).
     #[must_use]
     pub fn is_summer(&self, utc: i64) -> bool {
-        self.dst
-            .is_some_and(|(dst, ..)| self.is_dst(utc) == (dst > self.standard))
+        self.offset_at(utc) > self.winter()
     }
 
     /// The lower of the zone's two offsets (winter time), seconds east of UTC.
