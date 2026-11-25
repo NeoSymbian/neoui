@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: GPL-3.0-only
-# Build a QEMU script ($M) for the kernel's baseport/arm64/tools/ui-qemu.py MONITOR (QEMU virt, docs user-side-smp.md
+# Build a QEMU script ($M) for NeoSymbian/neoqemu's ui-qemu.py MONITOR (QEMU virt, docs user-side-smp.md
 # US6b), in screen pixels of SCREEN (WIDTHxHEIGHT, default 539x1079 = virt's screen; QEMU's absolute pointer spans
 # 0..0x7FFF per axis). Source it, call tap/drag/swipe/expect/wait_s, then run ui-qemu.py with MONITOR="$M". Each tap waits until neoui logs that it handled it
 # ("neoui: tap from Some((X, Y))"); `expect TEXT` waits for a later serial line, such as an app's reaction.
@@ -97,7 +97,7 @@ kb_type() {
 	tap $(kb_key ENTER)
 }
 # ui_run SECS: from a NeoSymbian/build checkout, boot its virt image (neo kernel qemu, KERNEL default the fetched
-# src/oss.FCL.sf.os.kernelhwsrv) and run $M through the kernel's ui-qemu.py in the toolchain image; leaves
+# src/oss.FCL.sf.os.kernelhwsrv) and run $M through NeoSymbian/neoqemu's ui-qemu.py in the toolchain image; leaves
 # out/serial.log and out/fb.png (the screen at the end), and fails as ui-qemu.py does
 ui_run() {
 	. ./images.sh
@@ -105,7 +105,7 @@ ui_run() {
 	rm -f out/fb.png "$k/out/ekern-qemu/fb.png"
 	r=0
 	docker run --rm --user "$(id -u):$(id -g)" -v "$k:/kernel" -e OUT=/kernel/out/ekern-qemu -e MONITOR="$M" \
-		"$BUILD_IMAGE" python3 -I /kernel/baseport/arm64/tools/ui-qemu.py "$1" || r=$?
+		"$BUILD_IMAGE" ui-qemu.py "$1" || r=$?
 	cp "$k/out/ekern-qemu/serial.log" out/serial.log
 	[ ! -f "$k/out/ekern-qemu/fb.png" ] || cp "$k/out/ekern-qemu/fb.png" out/fb.png
 	return $r

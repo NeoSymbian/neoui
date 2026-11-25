@@ -115,7 +115,7 @@ calls are in `neoapp::hal` and `neoapp::sys`.
 The UI adapts to whatever the device reports: the display size comes from the HAL, touches are raw screen pixels
 and the layout follows the design's `dp` unit. The UI CI (`.github/workflows/virt-taps.yml`) boots that
 user side on QEMU `virt` with our AArch64 kernel (a phone-shaped, odd-sized 539x1079 screen; taps, swipes and keys from
-`symbian/taps.sh` through the kernel's `tools/ui-qemu.py`, each step waiting for its line in the serial log). It publishes
+`symbian/taps.sh` through NeoSymbian/neoqemu's `ui-qemu.py`, each step waiting for its line in the serial log). It publishes
 screenshots and logs, never the ROM (see the licence
 note below).
 
