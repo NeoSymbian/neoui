@@ -27,11 +27,14 @@ use neoui_proto::ipc as proto;
 use neoui_proto::settings::Value;
 use neoui_proto::settings::keys;
 use neoui_proto::settings_app::choices::{KEYBOARDS, TIMEOUTS};
+use neoui_proto::settings_app::info::OldApps;
 use neoui_proto::settings_app::info::{Battery, Clock};
 use neoui_proto::settings_app::page::Page;
 use neoui_proto::settings_app::rows;
-use settings_ui::{KeyboardFocus, Kit, SearchHit, SetState, SettingsApp, Theme, live_value};
-use slint::{ComponentHandle, ModelRc, SharedString, Timer, TimerMode, VecModel};
+use settings_ui::{
+    AppRow, KeyboardFocus, Kit, SearchHit, SetState, SettingsApp, Theme, live_value,
+};
+use slint::{ComponentHandle, Model, ModelRc, SharedString, Timer, TimerMode, VecModel};
 
 e32::main!(main);
 
@@ -103,6 +106,16 @@ fn run() -> Result<(), i32> {
         dprintln!("settings: watch failed {}", e);
     }
     store::fill_fixed(&ui);
+    let rom: Vec<AppRow> = neoui_proto::apps::listed()
+        .map(|a| AppRow {
+            key: a.key.into(),
+            name: a.name.into(),
+            old: false,
+            settings: a.settings.is_some(),
+        })
+        .collect();
+    ui.global::<SetState>()
+        .set_apps(ModelRc::new(VecModel::from(rom)));
     store::load(&app, &ui);
     let c = ctx.clone();
     ui.global::<SetState>()
@@ -285,6 +298,9 @@ impl Ctx {
         if matches!(page, Page::Root | Page::Battery) && every(5) {
             self.battery(&ui);
         }
+        if page == Page::Apps && every(5) {
+            self.old_apps(&ui);
+        }
         if page == Page::DateTime && every(5) {
             store::dates(&self.app, &ui);
         }
@@ -330,6 +346,37 @@ impl Ctx {
         if *self.hits.borrow() != hits {
             s.set_results(ModelRc::new(VecModel::from(hits.clone())));
             *self.hits.borrow_mut() = hits;
+        }
+    }
+
+    /// The old apps the legacy bridge registered (INFO_APPS), into the Apps page; a 1.13 shell can't say.
+    fn old_apps(&self, ui: &SettingsApp) {
+        let s = ui.global::<SetState>();
+        let list = self
+            .app
+            .settings_info(proto::INFO_APPS)
+            .map(|b| OldApps::decode(&b));
+        s.set_old_ok(!matches!(list, Err(_) | Ok(None)));
+        let list = list.ok().flatten().unwrap_or_default();
+        let rows: Vec<AppRow> = list
+            .apps
+            .iter()
+            .map(|(id, caption)| AppRow {
+                key: alloc::format!("{id:08x}").into(),
+                name: caption.as_str().into(),
+                old: true,
+                settings: false,
+            })
+            .collect();
+        s.set_old_total(i32::from(list.total));
+        // replaced only when it changed (a new model drops a row's press)
+        let same = s.get_old_apps().row_count() == rows.len()
+            && rows
+                .iter()
+                .enumerate()
+                .all(|(i, r)| s.get_old_apps().row_data(i).as_ref() == Some(r));
+        if !same {
+            s.set_old_apps(ModelRc::new(VecModel::from(rows)));
         }
     }
 
@@ -518,13 +565,25 @@ impl Ctx {
             }
             // another app's own settings (protocol 1.9 OPEN: Back comes back here)
             "app" => {
-                let r = match value {
-                    "phone" => app.open("phone", 3, ""),
-                    "messages" => app.open("phone", 3, "messages"),
-                    "devtools" => app.open("devtools", 0, ""),
-                    _ => Ok(()),
-                };
-                dprintln!("settings: open {} ({:?})", value, r);
+                let r = neoui_proto::apps::find(value)
+                    .and_then(|a| a.settings)
+                    .map(|(key, page, arg)| app.open(key, page, arg));
+                dprintln!("settings: open {} settings ({:?})", value, r);
+            }
+            // an app itself (Apps page)
+            "app-open" => {
+                let r = app.open(value, 0, "");
+                dprintln!("settings: open app {} ({:?})", value, r);
+            }
+            // an old app, by its id: the shell has the legacy bridge open it (INFO_APPS, ACTION_OPEN_ENTRY)
+            "old-open" => {
+                let r = u32::from_str_radix(value, 16).map(|id| {
+                    app.settings_action_with(proto::ACTION_OPEN_ENTRY, &id.to_le_bytes())
+                });
+                dprintln!("settings: open old app {} ({:?})", value, r);
+                if !matches!(r, Ok(Ok(()))) {
+                    let _ = app.note("Couldn't open the app", "");
+                }
             }
             // a setting: its key and value
             key if key.contains('.') => {

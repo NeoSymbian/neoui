@@ -25,6 +25,17 @@ pub enum Caller<'a> {
 /// `NEOSET.EXE`'s UID3, which the kernel reports as the secure ID of its messages.
 pub const SETTINGS_SID: u32 = 0xE000_2007;
 
+/// Who an app's message comes from: the Settings app only when both its screen key and its secure ID say so (a
+/// process named "settings" isn't enough).
+#[must_use]
+pub fn caller(key: &str, sid: u32) -> Caller<'_> {
+    if key == "settings" && sid == SETTINGS_SID {
+        Caller::Settings
+    } else {
+        Caller::App(key)
+    }
+}
+
 /// App-owned keys the Settings app shows and may change (Date & time's 24-hour time is Clock's key).
 pub const SETTINGS_ALSO: &[&str] = &["clock.24h"];
 
@@ -65,6 +76,13 @@ impl fmt::Display for Caller<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn settings_needs_its_key_and_its_secure_id() {
+        assert_eq!(caller("settings", SETTINGS_SID), Caller::Settings);
+        assert_eq!(caller("settings", 0xE000_2001), Caller::App("settings"));
+        assert_eq!(caller("clock", SETTINGS_SID), Caller::App("clock"));
+    }
 
     #[test]
     fn the_shell_writes_everything() {

@@ -1,43 +1,120 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// Apps (set2-apps, a thin first cut: the apps with settings of their own), Old apps' key pads (pad-settings*:
+// Apps (set2-apps: every ROM and old app, SE1d), Old apps' key pads (pad-settings*:
 // every choice LEGACY reads, the B button too), Developer options (set2-developer) and About phone (set2-about).
-import { Theme, NeoList, SectionHeader, ListRow, Card } from "@neoui/kit.slint";
+import { Theme, NeoList, SectionHeader, ListRow, Card, Sheet, Button } from "@neoui/kit.slint";
 import { Note } from "../parts.slint";
 import { SetState } from "../state.slint";
 
+// Apps (set2-apps, SE1d): every ROM app and every old app, each opening a sheet (Open, its own settings). Data sizes
+// wait for Storage (SE3, D4).
 export component AppsPage inherits NeoList {
+    // an app's icon by its screen key, from the one-colour system set the rows tint (old apps share one)
+    pure function app-icon(key: string, old: bool) -> image {
+        if old { return @image-url("@neoui/icons/sys/keypad.svg"); }
+        if key == "clock" { return @image-url("@neoui/icons/sys/clock.svg"); }
+        if key == "terminal" { return @image-url("@neoui/icons/sys/keyboard.svg"); }
+        if key == "files" { return @image-url("@neoui/icons/sys/folder.svg"); }
+        if key == "devtools" { return @image-url("@neoui/icons/sys/usb.svg"); }
+        if key == "phone" { return @image-url("@neoui/icons/sys/call.svg"); }
+        if key == "contacts" { return @image-url("@neoui/icons/sys/contacts.svg"); }
+        if key == "messages" { return @image-url("@neoui/icons/sys/message.svg"); }
+        if key == "browser" { return @image-url("@neoui/icons/sys/world.svg"); }
+        return @image-url("@neoui/icons/sys/apps.svg");
+    }
+
     VerticalLayout {
         alignment: start;
-        SectionHeader { text: "Apps with their own settings"; }
-        ListRow {
-            title: "Phone & Contacts";
-            checked: SetState.found == "apps.phone";
-            subtitle: "Calls, call log, contacts";
+        SectionHeader { text: SetState.apps.length + " apps"; }
+        for a in SetState.apps: ListRow {
+            title: a.name;
+            checked: SetState.found == "apps." + a.key;
+            subtitle: a.settings ? "ROM · has its own settings" : "ROM";
             has-icon: true;
-            icon: @image-url("@neoui/icons/sys/call.svg");
+            icon: root.app-icon(a.key, false);
             chevron: true;
-            clicked => { SetState.act("app", "phone"); }
+            clicked => {
+                SetState.app-current = a;
+                SetState.sheet = "app";
+            }
         }
 
-        ListRow {
-            title: "Messages";
-            checked: SetState.found == "apps.messages";
-            subtitle: "Delivery reports, message centre, alert";
+        SectionHeader { text: "Old apps"; }
+        for a in SetState.old-apps: ListRow {
+            title: a.name;
+            subtitle: "S60 app";
             has-icon: true;
-            icon: @image-url("@neoui/icons/sys/message.svg");
+            icon: root.app-icon(a.key, true);
             chevron: true;
-            clicked => { SetState.act("app", "messages"); }
+            clicked => {
+                SetState.app-current = a;
+                SetState.sheet = "app";
+            }
         }
-
+        if SetState.old-total > SetState.old-apps.length: Note {
+            text: SetState.old-apps.length + " of " + SetState.old-total + " old apps: the rest didn't fit in the Old apps grid either.";
+        }
+        if SetState.old-ok && SetState.old-apps.length == 0: Note {
+            text: "Old apps are listed once Old apps has been opened since the phone started.";
+        }
+        // a button, not a row: search can't lead to it once old apps are listed
+        if SetState.old-ok && SetState.old-apps.length == 0: HorizontalLayout {
+            padding-left: Theme.margin;
+            padding-right: Theme.margin;
+            padding-bottom: 8 * Theme.dp;
+            Button {
+                text: "Open Old apps";
+                primary: false;
+                clicked => { SetState.act("app-open", "legacy"); }
+            }
+        }
+        if !SetState.old-ok: Note { text: "This UI server can't list old apps."; }
         ListRow {
-            title: "Old apps";
+            title: "Key pads for old apps";
             checked: SetState.found == "apps.oldapps";
-            subtitle: "Key pads for S60 apps";
+            subtitle: "Pads, buttons and vibration for S60 apps";
             has-icon: true;
             icon: @image-url("@neoui/icons/sys/keyboard.svg");
             chevron: true;
             divider: false;
             clicked => { SetState.act("open", "14"); }
+        }
+    }
+}
+
+// An app's sheet: Open, and its own settings when it has them.
+export component AppSheet inherits Sheet {
+    title: SetState.app-current.name;
+    VerticalLayout {
+        padding-left: 20 * Theme.dp;
+        padding-right: 20 * Theme.dp;
+        spacing: 14 * Theme.dp;
+        Text {
+            text: SetState.app-current.old ? "An S60 app, run by the Old apps bridge." : "In the phone's ROM.";
+            font-size: Theme.font-label;
+            color: Theme.text-secondary;
+            wrap: word-wrap;
+        }
+
+        Button {
+            text: "Open";
+            clicked => {
+                SetState.act(SetState.app-current.old ? "old-open" : "app-open", SetState.app-current.key);
+                root.close();
+            }
+        }
+
+        if SetState.app-current.settings: Button {
+            text: "App settings";
+            primary: false;
+            clicked => {
+                SetState.act("app", SetState.app-current.key);
+                root.close();
+            }
+        }
+        Button {
+            text: "Cancel";
+            primary: false;
+            clicked => { root.close(); }
         }
     }
 }
@@ -172,7 +249,7 @@ export component DeveloperPage inherits NeoList {
             icon: @image-url("@neoui/icons/sys/options.svg");
             chevron: true;
             divider: false;
-            clicked => { SetState.act("app", "devtools"); }
+            clicked => { SetState.act("app-open", "devtools"); }
         }
     }
 }

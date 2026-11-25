@@ -592,7 +592,9 @@ impl App {
     /// What only the shell knows, for the Settings app (`proto::SETTINGS_INFO`): kind `proto::INFO_BATTERY`,
     /// `INFO_NET` or `INFO_CLOCK`, encoded as `neoui_proto::settings_app::info` decodes it.
     pub fn settings_info(&self, kind: i32) -> Result<alloc::vec::Vec<u8>, i32> {
-        let mut buf = alloc::vec![0u8; neoui_proto::settings_app::info::INFO_MAX];
+        use neoui_proto::settings_app::info::{BATTERY_MAX, INFO_MAX};
+        let mut buf =
+            alloc::vec![0u8; if kind == proto::INFO_APPS { INFO_MAX } else { BATTERY_MAX }];
         let n = {
             let mut des = TPtr8::new(&mut buf);
             let mut args = TIpcArgs::new();
@@ -606,8 +608,14 @@ impl App {
 
     /// Ask the shell to act for the Settings app (`proto::SETTINGS_ACTION`, e.g. `proto::ACTION_SIGN_IN`).
     pub fn settings_action(&self, kind: i32) -> Result<(), i32> {
+        self.settings_action_with(kind, &[])
+    }
+
+    /// [`Self::settings_action`] with its request (`proto::ACTION_OPEN_ENTRY`: the old app's id, u32 LE).
+    pub fn settings_action_with(&self, kind: i32, request: &[u8]) -> Result<(), i32> {
+        let des = TPtrC8::new(request);
         let mut args = TIpcArgs::new();
-        args.int(0, kind);
+        args.int(0, kind).desc8(1, &des);
         self.server
             .send_receive(proto::SETTINGS_ACTION, &args)
             .map(drop)

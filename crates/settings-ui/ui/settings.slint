@@ -8,14 +8,14 @@ import "@neoui/fonts/NeoSans-SemiBold.ttf";
 import "@neoui/fonts/NeoSans-Bold.ttf";
 import "@neoui/fonts/DejaVuSans.ttf";
 import { Theme, Scroll, KeyboardFocus, Kit, Header, ChoiceSheet } from "@neoui/kit.slint";
-import { SetState, WifiNet, WifiLink, WifiDetail, WifiSaved, SearchHit } from "state.slint";
+import { SetState, WifiNet, WifiLink, WifiDetail, WifiSaved, AppRow, SearchHit } from "state.slint";
 import { RootPage, RootGridPage, SearchPage } from "pages/root.slint";
 import { LicencesPage } from "pages/licences.slint";
 import { WifiPage, WifiSavedPage, WifiJoinSheet, WifiDetailsSheet } from "pages/wifi.slint";
 import { ConnectivityPage, MobilePage, BluetoothPage } from "pages/connections.slint";
 import { DisplayPage, NavigationPage, SoundsPage, BatteryPage } from "pages/device.slint";
 import { DateTimePage, ZoneSheet, KeyboardPage, PrivacyPage } from "pages/personal.slint";
-import { AppsPage, OldAppsPage, DeveloperPage, AboutPage } from "pages/system.slint";
+import { AppsPage, AppSheet, OldAppsPage, DeveloperPage, AboutPage } from "pages/system.slint";
 
 export { Theme, Scroll, KeyboardFocus, Kit, SetState, WifiNet, WifiLink, WifiDetail, SearchHit }
 
@@ -88,6 +88,10 @@ export component SettingsApp inherits Window {
         kb: root.kb;
         open: true;
         dismissed => { SetState.sheet = ""; SetState.password = ""; KeyboardFocus.open = false; }
+    }
+    if SetState.sheet == "app": AppSheet {
+        open: true;
+        dismissed => { SetState.sheet = ""; }
     }
     if SetState.sheet == "wifi-details": WifiDetailsSheet {
         open: true;

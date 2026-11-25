@@ -24,34 +24,16 @@ use e32::process::Process;
 use e32::server::{Message, Service};
 use e32::sys::{TVersion, err};
 use neoui_proto::Rect;
+// the screen keys that are separate processes, their EXEs and command lines: shared with Settings' Apps page
+use neoui_proto::apps::{APPS, LEGACY};
 use neoui_proto::ipc::{self as proto, AppEvent};
 use neoui_proto::page::{NOTE_MAX, NOTIFICATION_MAX, PAGE_MAX, QUERY_MAX};
 use neoui_proto::recents::Recents;
 use neoui_proto::settings::value::ENCODED_MAX;
 use neoui_proto::settings::{Caller, KEY_MAX, Value, access, kerr};
+use neoui_proto::settings_app::info::OldApps;
 use neoui_proto::{InputEvent, TouchPhase};
 use neoui_render::{LauncherEntry, Nav, Note, Notification, Page, Query};
-
-/// Screen keys that are separate processes: their EXEs and command lines.
-// shortcut: a fixed table; a registry of installed apps comes with app installation.
-pub const APPS: &[(&str, &str, &str)] = &[
-    ("clock", "neoclock", ""),
-    ("terminal", "neoterm", ""),
-    ("files", "neofiles", ""),
-    ("devtools", "neodev", ""),
-    // the kit gallery and the template for new apps (symbian/apps/kit)
-    ("kit", "neokit", ""),
-    // S60 apps through the guest window server (NeoSymbian/legacy host/legacy.cpp)
-    ("legacy", "legacy", ""),
-    // Phone, Contacts and Messages (NeoSymbian/phone): three apps that open each other (ipc OPEN)
-    ("phone", "neophone", ""),
-    ("contacts", "neocont", ""),
-    ("messages", "neomsg", ""),
-    // the browser (NeoSymbian/browser, docs browser/ui.md): its own chrome over a page engine
-    ("browser", "neoweb", ""),
-    // Settings (NEOSET, docs neoui-shell/settings.md "The Settings app"): writes shell settings by its secure ID
-    ("settings", "neoset", ""),
-];
 
 /// Apps whose shell screen is a launcher grid until they request FRONT(1).
 // shortcut: a fixed table like APPS; apps declare launcher support when apps are installable.
@@ -231,6 +213,8 @@ pub struct Host {
     /// Kept by app key, not process: installed entries survive exit and restart.
     entries: Vec<(&'static str, Vec<LauncherEntry>)>,
     pub entries_changed: bool,
+    /// Entries refused for want of room (`ENTRIES_MAX`), by app key and id: Settings says "64 of N".
+    refused: Vec<(&'static str, u32)>,
     next_session: u32,
     /// The foreground app's damage not yet shown (surface coordinates).
     pub blits: Vec<Rect>,
@@ -286,6 +270,7 @@ impl Host {
             leave: false,
             entries: Vec::new(),
             entries_changed: false,
+            refused: Vec::new(),
             next_session: 1,
             blits: Vec::new(),
             refresh: false,
@@ -568,10 +553,7 @@ impl Host {
 
     /// The shell moved to `screen`: hide the app that was in front, and show (or start) the one for `screen`.
     pub fn set_screen(&mut self, screen: &str, now_ms: u64) {
-        let key = APPS
-            .iter()
-            .find(|(k, _, _)| *k == screen)
-            .map(|(k, _, _)| *k);
+        let key = APPS.iter().find(|a| a.key == screen).map(|a| a.key);
         if self.screen == key {
             return;
         }
@@ -641,8 +623,8 @@ impl Host {
     fn launch(&mut self, key: &'static str) {
         let (exe, args) = APPS
             .iter()
-            .find(|(k, _, _)| *k == key)
-            .map_or(("", ""), |(_, e, a)| (*e, *a));
+            .find(|a| a.key == key)
+            .map_or(("", ""), |a| (a.exe, a.args));
         match Process::spawn(exe, args) {
             Ok(process) => {
                 process.resume();
@@ -680,16 +662,31 @@ impl Host {
     }
 
     /// A cached tile can restart its owner; the normal event queue holds the UID until it connects.
-    pub fn open_entry(&mut self, key: &str, id: u32, now_ms: u64) {
-        let Some((key, _, _)) = APPS.iter().find(|(k, _, _)| *k == key) else {
-            return;
+    /// The legacy bridge's entries for Settings' Apps page (`INFO_APPS`), with how many it had to refuse.
+    fn old_apps(&self) -> OldApps {
+        let apps: Vec<(u32, String)> = self
+            .entries(LEGACY)
+            .iter()
+            .map(|e| (e.id, e.caption.clone()))
+            .collect();
+        let refused = self.refused.iter().filter(|(k, _)| *k == LEGACY).count();
+        OldApps {
+            total: u16::try_from(apps.len() + refused).unwrap_or(u16::MAX),
+            apps,
+        }
+    }
+
+    /// Start launcher app `key` if needed and tell it entry `id` was chosen; false if it isn't one, or didn't start.
+    pub fn open_entry(&mut self, key: &str, id: u32, now_ms: u64) -> bool {
+        let Some(key) = APPS.iter().find(|a| a.key == key).map(|a| a.key) else {
+            return false;
         };
         if !self.entries(key).iter().any(|entry| entry.id == id) {
-            return;
+            return false;
         }
         self.limit_running(key, now_ms);
         self.start(key);
-        self.post(key, AppEvent::Entry { id });
+        self.post(key, AppEvent::Entry { id })
     }
 
     /// Sends `e` to app `key` (queued until it asks for events); false when it is not running (or leaving).
@@ -806,8 +803,12 @@ fn read_text(m: &Message, param: usize, max: usize) -> Result<String, i32> {
 }
 
 /// Validate descriptors before changing the cache, including removals and replacements at capacity.
+/// The most refused launcher entries remembered per app (`INFO_APPS`' total counts no more).
+const REFUSED_MAX: usize = 1024;
+
 fn entry(
     entries: &mut Vec<(&'static str, Vec<LauncherEntry>)>,
+    refused: &mut Vec<(&'static str, u32)>,
     key: &'static str,
     m: &Message,
 ) -> Result<i32, i32> {
@@ -822,6 +823,9 @@ fn entry(
     let icon = m.read8_vec(2).map_err(|_| kerr::ARGUMENT)?;
     proto::decode_entry_icon(&icon).map_err(|_| kerr::ARGUMENT)?;
     let id = m.int(0) as u32;
+    if caption.is_empty() {
+        refused.retain(|r| *r != (key, id));
+    }
     let index = match entries.iter().position(|(k, _)| *k == key) {
         Some(index) => index,
         None if caption.is_empty() => return Ok(0),
@@ -839,8 +843,14 @@ fn entry(
         }
     } else if !caption.is_empty() {
         if entries.len() >= proto::ENTRIES_MAX {
+            // remembered so Settings can say how many there are (at most REFUSED_MAX per app: the total says "at least")
+            let mine = refused.iter().filter(|(k, _)| *k == key).count();
+            if !refused.contains(&(key, id)) && mine < REFUSED_MAX {
+                refused.push((key, id));
+            }
             return Err(kerr::OVERFLOW);
         }
+        refused.retain(|r| *r != (key, id));
         entries.push(LauncherEntry { id, caption, icon });
     }
     Ok(0)
@@ -898,6 +908,11 @@ fn settings_info(info: &[Vec<u8>; 3], m: &Message) -> Result<i32, i32> {
         .and_then(|i| usize::try_from(i).ok())
         .and_then(|i| info.get(i))
         .ok_or(kerr::ARGUMENT)?;
+    write_info(m, bytes)
+}
+
+/// A `SETTINGS_INFO` answer into the caller's `out` (slot 2): its length, `KErrOverflow` when it doesn't fit.
+fn write_info(m: &Message, bytes: &[u8]) -> Result<i32, i32> {
     if bytes.len() > m.des_max_len(2)? {
         return Err(kerr::OVERFLOW);
     }
@@ -1112,17 +1127,16 @@ impl Service for Host {
                 m.complete(r.unwrap_or_else(|e| e));
             }
             proto::SETTING_SET => {
-                // the Settings app is known by its secure ID: a process named "settings" isn't enough
-                let caller = if app.key == "settings" && m.client_sid() == access::SETTINGS_SID {
-                    Caller::Settings
-                } else {
-                    Caller::App(app.key)
-                };
+                let caller = access::caller(app.key, m.client_sid());
                 let r = setting_set(&mut self.settings, caller, &m);
                 m.complete(r.unwrap_or_else(|e| e));
             }
             proto::SETTING_WATCH => {
                 let r = setting_watch(&mut self.settings, *id, &m);
+                m.complete(r.unwrap_or_else(|e| e));
+            }
+            proto::SETTINGS_INFO if m.int(0) == proto::INFO_APPS => {
+                let r = write_info(&m, &self.old_apps().encode());
                 m.complete(r.unwrap_or_else(|e| e));
             }
             proto::SETTINGS_INFO => {
@@ -1137,12 +1151,34 @@ impl Service for Host {
                         0
                     }
                     proto::ACTION_SIGN_IN => err::KERR_NOT_READY,
+                    // open an old app: Settings only (by its secure ID), an id the legacy bridge registered
+                    proto::ACTION_OPEN_ENTRY => {
+                        if access::caller(app.key, m.client_sid()) != Caller::Settings {
+                            kerr::PERMISSION_DENIED
+                        } else {
+                            let mut b = [0u8; 4];
+                            match (m.des_len(1), m.read8(1, &mut b, 0)) {
+                                (Ok(4), Ok(4)) => {
+                                    let id = u32::from_le_bytes(b);
+                                    if !self.entries(LEGACY).iter().any(|e| e.id == id) {
+                                        err::KERR_NOT_FOUND
+                                    } else if self.open_entry(LEGACY, id, e32::time::millis()) {
+                                        dprintln!("neoui: settings opens old app {:08x}", id);
+                                        0
+                                    } else {
+                                        err::KERR_NOT_READY // the bridge didn't start
+                                    }
+                                }
+                                _ => kerr::ARGUMENT,
+                            }
+                        }
+                    }
                     _ => kerr::ARGUMENT,
                 };
                 m.complete(r);
             }
             proto::ENTRY => {
-                let r = entry(&mut self.entries, app.key, &m);
+                let r = entry(&mut self.entries, &mut self.refused, app.key, &m);
                 if r.is_ok() {
                     self.entries_changed = true;
                 }
@@ -1175,8 +1211,7 @@ impl Service for Host {
             proto::OPEN | proto::OPEN_FILE => {
                 let from = app.key;
                 let key = read_text(&m, 0, proto::KEY_MAX).ok();
-                let target =
-                    key.and_then(|k| APPS.iter().find(|(a, _, _)| *a == k).map(|(a, _, _)| *a));
+                let target = key.and_then(|k| APPS.iter().find(|a| a.key == k).map(|a| a.key));
                 let Some(target) = target else {
                     return m.complete(err::KERR_NOT_FOUND);
                 };

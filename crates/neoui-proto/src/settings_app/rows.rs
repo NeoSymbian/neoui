@@ -290,20 +290,22 @@ pub const ROWS: &[Row] = &[
         &["copy", "paste"],
     ),
     // Apps
-    row(
-        "apps.phone",
-        Apps,
-        Apps,
-        "Phone & Contacts",
-        &["calls", "contacts"],
-    ),
+    // the ROM apps (crate::apps, the ones Settings lists; tests/rows.rs keeps them in step)
+    row("apps.clock", Apps, Apps, "Clock", &["alarms", "timer"]),
+    row("apps.terminal", Apps, Apps, "Terminal", &["shell"]),
+    row("apps.files", Apps, Apps, "Files", &[]),
+    row("apps.devtools", Apps, Apps, "Dev tools", &["logs"]),
+    row("apps.kit", Apps, Apps, "UI kit", &["gallery"]),
+    row("apps.phone", Apps, Apps, "Phone", &["calls"]),
+    row("apps.contacts", Apps, Apps, "Contacts", &[]),
     row("apps.messages", Apps, Apps, "Messages", &["sms"]),
+    row("apps.browser", Apps, Apps, "Browser", &["web"]),
     row(
         "apps.oldapps",
         Apps,
         OldApps,
-        "Old apps",
-        &["s60", "key pads", "legacy"],
+        "Key pads for old apps",
+        &["s60", "old apps", "legacy"],
     ),
     // Old apps' key pads
     row("pads.vibrate", OldApps, OldApps, "Key vibration", &[]),
