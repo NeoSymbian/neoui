@@ -8,6 +8,8 @@ export struct WifiNet { name: string, detail: string, bars: int, secured: bool, 
 export struct WifiDetail { label: string, value: string }
 // a search result (set2-search): the row's title, where it is ("Date & time"), its live value, the page it opens
 export struct SearchHit { id: string, title: string, path: string, value: string, page: int }
+// a network WIFID remembers (Saved networks): its name, "Connected · Secured" / "Secured · not in range"
+export struct WifiSaved { name: string, detail: string }
 export struct WifiLink { shown: bool, connected: bool, name: string, subtitle: string, bars: int, band: string, details: [WifiDetail], sign-in: bool }
 
 export global SetState {
@@ -89,6 +91,9 @@ export global SetState {
     in property <string> wifi-message;
     // the join sheet's network: 0 nothing going, 1 joining it, 2 connected to it (Connect waits while 1 or 2)
     in property <int> wifi-join;
+    // the networks WIFID remembers, newest first; false: WIFID has no list (older than NeoWifi 1.1)
+    in property <[WifiSaved]> wifi-saved;
+    in property <bool> wifi-saved-ok;
 
     // the modem (MODEMD): operator, SIM, technology ("LTE", "3G", "2G", "" = no service), radio on
     in property <string> operator;
@@ -121,6 +126,7 @@ export global SetState {
     // - a setting's key and its new value: "radio.wifi" "1", "display.brightness" "160", "time.zone" "Yerevan" …;
     // - "open" + a page id; "back";
     // - "wifi-refresh", "wifi-connect" (wifi-current, password), "wifi-disconnect", "wifi-forget", "wifi-sign-in";
+    //   "wifi-saved-forget" + a saved network's row (the app asks to confirm first);
     // - "sound" + "test" | "record"; "keyboard" + an index to turn on or off ("+0"/"-0"); "keyboard-next";
     // - "city-query" + the search text; "pad-reset" (QUERY first); "clip-clear";
     // - "app" + "phone" | "messages" | "devtools" (another app's settings); "devtools" + a page ("console", "tools");

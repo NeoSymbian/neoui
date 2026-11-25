@@ -26,6 +26,7 @@ const COMPONENTS: &[(&str, Page)] = &[
     ("OldAppsPage", Page::OldApps),
     ("DeveloperPage", Page::Developer),
     ("AboutPage", Page::About),
+    ("WifiSavedPage", Page::WifiSaved),
 ];
 
 /// (page, title) of every row the pages draw.

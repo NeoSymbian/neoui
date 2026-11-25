@@ -45,6 +45,14 @@ fn main() -> i32 {
     }
 }
 
+/// A QUERY waiting for its answer.
+enum Asked {
+    /// "Reset remembered pads"
+    PadReset,
+    /// Saved networks' Forget, for this network (raw SSID)
+    Forget(Vec<u8>),
+}
+
 struct Ctx {
     app: Rc<App>,
     ui: slint::Weak<SettingsApp>,
@@ -57,8 +65,8 @@ struct Ctx {
     sound: sound::Sound,
     /// the city sheet's cities, as listed (a pick is an index into them)
     cities: RefCell<Vec<&'static str>>,
-    /// "Reset remembered pads" asked its QUERY: the answer resets them
-    asked_reset: Cell<bool>,
+    /// What the open QUERY asks (the shell keeps one per app, the latest replaces it): its answer does that
+    asked: RefCell<Option<Asked>>,
     /// the root search's query (results are refreshed with it while searching), and the hits shown (the model is
     /// replaced only when they change: a new model drops a row's press, and with it the tap)
     query: RefCell<String>,
@@ -84,7 +92,7 @@ fn run() -> Result<(), i32> {
         modem: RefCell::default(),
         sound: sound::Sound::new(),
         cities: RefCell::default(),
-        asked_reset: Cell::new(false),
+        asked: RefCell::default(),
         kb: Cell::new((false, 0, 0)),
         query: RefCell::default(),
         hits: RefCell::default(),
@@ -136,13 +144,20 @@ fn run() -> Result<(), i32> {
                     let _ = app.keyboard(proto::KEYBOARD_HIDDEN);
                 }
             }
-            AppEvent::Answer { i } if ctx.asked_reset.take() => {
-                if i == 0 {
+            AppEvent::Answer { i } => match ctx.asked.take() {
+                Some(Asked::PadReset) if i == 0 => {
                     let epoch = app.setting(keys::LEGACY_PAD_EPOCH).unwrap_or(0);
                     let r = app.set_setting(keys::LEGACY_PAD_EPOCH, epoch.saturating_add(1));
                     dprintln!("settings: pads reset ({:?})", r);
                 }
-            }
+                Some(Asked::Forget(ssid)) => {
+                    if i == 0 && ctx.wifi.borrow_mut().forget(&ssid).is_err() {
+                        let _ = app.note("Couldn't forget the network", "");
+                    }
+                    ctx.tick(true);
+                }
+                _ => {}
+            },
             AppEvent::Visible(v) => {
                 ctx.visible.set(v);
                 if v {
@@ -241,7 +256,19 @@ impl Ctx {
         let ms = e32::time::millis();
         let every = |k: u32| n.is_multiple_of(k);
         match page {
-            Page::Wifi => self.wifi.borrow_mut().poll(&self.app, &ui, ms, true, false),
+            Page::Wifi => {
+                self.wifi.borrow_mut().poll(&self.app, &ui, ms, true, false);
+                if every(5) {
+                    self.wifi.borrow_mut().saved(&ui);
+                }
+            }
+            Page::WifiSaved if every(2) => {
+                let mut w = self.wifi.borrow_mut();
+                if every(4) {
+                    w.poll(&self.app, &ui, ms, false, false); // Connected / in range
+                }
+                w.saved(&ui);
+            }
             Page::Root | Page::Connectivity if every(5) => self
                 .wifi
                 .borrow_mut()
@@ -371,6 +398,29 @@ impl Ctx {
             }
             "wifi-disconnect" => self.wifi.borrow_mut().leave(false),
             "wifi-forget" => self.wifi.borrow_mut().leave(true),
+            // Saved networks: confirm first (QUERY), the answer forgets it
+            "wifi-saved-forget" => {
+                let Some(ssid) = value
+                    .parse()
+                    .ok()
+                    .and_then(|i| self.wifi.borrow().saved_ssid(i))
+                else {
+                    return;
+                };
+                // the name as shown, at most 32 characters (3 bytes each lossy): within the QUERY's 160 bytes
+                let name: String = String::from_utf8_lossy(&ssid).chars().take(32).collect();
+                let q = Query {
+                    text: alloc::format!("Forget {name}? Joining it again will need its password."),
+                    buttons: alloc::vec![String::from("Forget"), String::from("Cancel")],
+                    destructive: true,
+                };
+                match app.query(&q) {
+                    Ok(()) => {
+                        self.asked.replace(Some(Asked::Forget(ssid)));
+                    }
+                    Err(e) => dprintln!("settings: forget query -> {}", e),
+                }
+            }
             "wifi-sign-in" => {
                 if let Err(e) = app.settings_action(proto::ACTION_SIGN_IN) {
                     dprintln!("settings: sign in -> {}", e);
@@ -423,7 +473,9 @@ impl Ctx {
                     buttons: alloc::vec![String::from("Reset"), String::from("Cancel")],
                     destructive: true,
                 };
-                self.asked_reset.set(app.query(&q).is_ok());
+                if app.query(&q).is_ok() {
+                    self.asked.replace(Some(Asked::PadReset));
+                }
             }
             "clip-clear" => {
                 let cleared = app.set_clipboard("");

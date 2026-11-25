@@ -4,7 +4,7 @@
 mod common;
 
 use common::{BUTTONS, Shot, model, strings};
-use settings_ui::{SearchHit, SetState, WifiDetail, WifiLink, WifiNet};
+use settings_ui::{SearchHit, SetState, WifiDetail, WifiLink, WifiNet, WifiSaved};
 use slint::{ComponentHandle, Model, SharedString};
 
 /// The sample state the boards show (set2-root-list's values).
@@ -148,6 +148,21 @@ fn fill(sh: &Shot) {
         ),
     ]));
     s.set_wifi_hidden(1);
+    s.set_wifi_saved_ok(true);
+    s.set_wifi_saved(model(vec![
+        WifiSaved {
+            name: "Home-5G".into(),
+            detail: "Connected · Secured".into(),
+        },
+        WifiSaved {
+            name: "Cafe Guest".into(),
+            detail: "Secured".into(),
+        },
+        WifiSaved {
+            name: "Ararat-Office".into(),
+            detail: "Secured · not in range".into(),
+        },
+    ]));
     s.set_wifi_status("3 networks".into());
     let rows = |v: &[(&str, &str)]| {
         model(
@@ -244,6 +259,7 @@ fn every_page() {
         (14, "Old apps", "pad-settings"),
         (15, "Privacy", "set2-privacy"),
         (16, "Licences", "set2-licences"),
+        (17, "Saved networks", "set2-wifi-saved"),
     ] {
         page(&sh, id, title);
         sh.shoot(name);
@@ -303,6 +319,13 @@ fn every_page() {
         acts(&[("nav.mode", "0")]),
         "after {first:?}"
     );
+
+    // Saved networks: a row asks to forget that network (the app confirms first)
+    page(&sh, 17, "Saved networks");
+    sh.draw();
+    sh.take_acts();
+    sh.tap(100.0, 231.0);
+    assert_eq!(sh.take_acts(), acts(&[("wifi-saved-forget", "1")]));
 
     // the pad sheets (pad-settings: the B button the board leaves out, D5)
     page(&sh, 14, "Old apps");
