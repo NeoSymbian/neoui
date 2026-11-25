@@ -28,6 +28,8 @@ jobs:
       # winit/softbuffer (neoui-host) load X11/Wayland at runtime; headers for safety.
       - run: sudo apt-get update && sudo apt-get install -y libxkbcommon-dev libwayland-dev
       - uses: Swatinem/rust-cache@v2
+      - name: World clock rules match the vendored tzdata
+        run: python3 -I tools/gen_zones.py --check
       - run: cargo fmt --check
       - run: cargo clippy --all-targets -- -D warnings
       - run: cargo test

@@ -6,13 +6,17 @@ Compiles tools/tzdata with the host's `zic -b fat` (explicit transitions through
 footer as its rule, and writes:
   crates/neoui-proto/src/clock/zones.rs      the release and the cities' rules (CATALOGUE, west to east)
   crates/neoui-proto/src/clock/zones_ref.rs  zic's own transitions 2026-2030 per city (tests only)
-Run by hand after changing tools/tzdata; nothing runs it at build time.
+Run by hand after changing tools/tzdata; nothing runs it at build time. `--check` (CI) fails if the checked-in files
+differ from what tools/tzdata gives.
 """
 
 import calendar
+import io
 import os
 import struct
+import shutil
 import subprocess
+import sys
 import tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -150,6 +154,8 @@ def tzif(path):
 
 
 def main():
+    if shutil.which("zic") is None:
+        sys.exit("zic not found (Debian/Ubuntu: libc-bin; macOS ships it); CI runs this check")
     with open(os.path.join(TZDATA, "version")) as f:
         version = f.read().strip()
     lo = calendar.timegm((YEARS[0], 1, 1, 0, 0, 0))
@@ -169,10 +175,24 @@ def main():
                 if lo <= t < hi:
                     refs.append((name, t, prev, off))
                 prev = off
-    with open(os.path.join(OUT, "zones.rs"), "w") as w:
-        write_zones(w, version, rules)
-    with open(os.path.join(OUT, "zones_ref.rs"), "w") as w:
-        write_refs(w, version, refs)
+    files = {}
+    for name, write, items in (("zones.rs", write_zones, rules), ("zones_ref.rs", write_refs, refs)):
+        w = io.StringIO()
+        write(w, version, items)
+        files[name] = w.getvalue()
+    if "--check" in sys.argv:
+        stale = []
+        for name, text in files.items():
+            with open(os.path.join(OUT, name), encoding="utf-8") as f:
+                if f.read() != text:
+                    stale.append(name)
+        if stale:
+            sys.exit(f"{', '.join(stale)}: not what tools/tzdata gives; run tools/gen_zones.py")
+        print(f"tzdata {version}: zones.rs and zones_ref.rs are up to date")
+        return
+    for name, text in files.items():
+        with open(os.path.join(OUT, name), "w", encoding="utf-8") as f:
+            f.write(text)
     print(f"tzdata {version}: {len(rules)} cities, {len(refs)} transitions {YEARS[0]}-{YEARS[1]}")
 
 
