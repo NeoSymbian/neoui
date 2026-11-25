@@ -1,19 +1,21 @@
 # SPDX-License-Identifier: GPL-3.0-only
-# Build a QEMU monitor script ($M) for NeoSymbian/build's boot.sh MONITOR, in screen pixels of SCREEN (WIDTHxHEIGHT,
-# default 768x640: QEMU's absolute pointer spans 0..0x7FFF per axis). Source it, call tap/drag/swipe/expect/wait_s, then
-# run boot.sh with MON_GAP=0.1 MONITOR="$M" (and the same SCREEN). Each tap waits until neoui logs that it handled it
+# Build a QEMU script ($M) for the kernel's baseport/arm64/tools/ui-qemu.py MONITOR (QEMU virt, docs user-side-smp.md
+# US6b), in screen pixels of SCREEN (WIDTHxHEIGHT, default 539x1079 = virt's screen; QEMU's absolute pointer spans
+# 0..0x7FFF per axis). Source it, call tap/drag/swipe/expect/wait_s, then run ui-qemu.py with MONITOR="$M". Each tap waits until neoui logs that it handled it
 # ("neoui: tap from Some((X, Y))"); `expect TEXT` waits for a later serial line, such as an app's reaction.
 M=""
-SW=${SCREEN:-768x640}; SH=${SW#*x}; SW=${SW%x*}
+SW=${SCREEN:-539x1079}; SH=${SW#*x}; SW=${SW%x*}
 # the navigation mode the taps assume (Navigation v2): the keyboard sits above Buttons' 56 dp key row or the 16 dp
 # gesture band; export NAV=gestures after switching
 NAV=${NAV:-buttons}
 kb_bottom_dp() { if [ "$NAV" = gestures ]; then echo 16; else echo 56; fi; }
 add() { M="${M:+$M;}$*"; }
-# +1/2 pixel, so the pointer driver's truncation lands on the pixel asked for
-at() { add "mouse_move $(((2 * $1 + 1) * 16384 / SW)) $(((2 * $2 + 1) * 16384 / SH))"; }
+# the tablet's absolute position (ui-qemu.py: QMP input-send-event), +1/2 pixel so the driver's truncation
+# (kernel virt_assp/virtio_input.cpp: v * size / 0x8000) lands on the pixel asked for
+at() { add "abs $(((2 * $1 + 1) * 16384 / SW)) $(((2 * $2 + 1) * 16384 / SH))"; }
 tap() { at "$1" "$2"; add "mouse_button 1"; add "mouse_button 0"; add "expect neoui: tap from Some(($1, $2))"; }
-# expect TEXT: wait until TEXT appears in the serial log after the previous expect's match (run-syborg EXPECT_MAX)
+# expect TEXT: wait until TEXT appears in the serial log after the current action (the taps or keys since the previous
+# expect) began, in any order with its other expects (ui-qemu.py EXPECT_MAX)
 expect() { add "expect $*"; }
 # swipe X1 Y1 X2 Y2: press at (X1, Y1), move to (X2, Y2) in 8 steps, release; an edge gesture (docs neoui-shell/navigation.md)
 # starts within 16 dp of the edge
@@ -93,4 +95,18 @@ kb_type() {
 		tap $(kb_key "$c")
 	done
 	tap $(kb_key ENTER)
+}
+# ui_run SECS: from a NeoSymbian/build checkout, boot its virt image (neo kernel qemu, KERNEL default the fetched
+# src/oss.FCL.sf.os.kernelhwsrv) and run $M through the kernel's ui-qemu.py in the toolchain image; leaves
+# out/serial.log and out/fb.png (the screen at the end), and fails as ui-qemu.py does
+ui_run() {
+	. ./images.sh
+	k=$(cd "${KERNEL:-src/oss.FCL.sf.os.kernelhwsrv}" && pwd)
+	rm -f out/fb.png "$k/out/ekern-qemu/fb.png"
+	r=0
+	docker run --rm --user "$(id -u):$(id -g)" -v "$k:/kernel" -e OUT=/kernel/out/ekern-qemu -e MONITOR="$M" \
+		"$BUILD_IMAGE" python3 -I /kernel/baseport/arm64/tools/ui-qemu.py "$1" || r=$?
+	cp "$k/out/ekern-qemu/serial.log" out/serial.log
+	[ ! -f "$k/out/ekern-qemu/fb.png" ] || cp "$k/out/ekern-qemu/fb.png" out/fb.png
+	return $r
 }

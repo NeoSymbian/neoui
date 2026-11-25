@@ -1,14 +1,18 @@
 # SPDX-License-Identifier: Apache-2.0
-name: syborg
+name: virt-taps
 
-# The launcher on the 2010 Symbian user side: build symbian/ (SYSSTART.EXE) for ARMv8 (US4), put it in the Syborg ROM
-# with NeoSymbian/build (estart then runs it instead of the window server) plus the Clock app, boot on QEMU,
-# drive it through the QEMU monitor (open Clock, tap it, go back) and check the serial log and the screen. Only the screenshot and logs are published,
-# never the ROM (it links Slint under GPL-3.0 with EPL-1.0 Symbian code).
-# Retired 2026-11-25 (US5, NeoSymbian/docs user-side-smp.md): the 2010 Syborg kernel can't run the ARMv8 user side, and
-# build no longer makes the Syborg ROM. This was .github/workflows/syborg.yml; it stays here as the spec of the UI
-# checks (scenarios, 539x1079 tap coordinates, serial and screen assertions) that US6b ports to QEMU virt.
+# The launcher on the 2010 Symbian user side, on QEMU virt with our AArch64 kernel (docs user-side-smp.md US6b; until
+# 2026-11-25 this ran on Syborg): build symbian/ (SYSSTART.EXE) for ARMv8, put it in the ROM with NeoSymbian/build
+# (estart then runs it instead of the window server) with the apps, boot it on virt (539x1079 ramfb screen, virtio
+# tablet and keyboard), drive it through QMP (the kernel's baseport/arm64/tools/ui-qemu.py, scripts from
+# symbian/taps.sh) and check the serial log and the screen. Only the screenshot and logs are published, never the ROM
+# (it links Slint under GPL-3.0 with EPL-1.0 Symbian code).
 on:
+  push:
+    branches: [main]     # a PR branch runs once, as its pull_request
+    paths-ignore: ['**/*.md', 'docs/**', 'snapshots/**']
+  pull_request:
+    paths-ignore: ['**/*.md', 'docs/**', 'snapshots/**']
   workflow_dispatch:
 
 # a newer push to the same PR cancels its older run; main keeps one result per commit
@@ -17,7 +21,7 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  syborg:
+  virt:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     steps:
@@ -69,15 +73,13 @@ jobs:
           grep -E '^NEOFILES\.EXE' exes.txt >> ../../build/rust/exes.txt
 
       # NEOTEST.EXE (e32-rs's on-device tests), so ESHELL in the Terminal app has a 2010-style text program to run
+      # NEOSRV.EXE too: neotest's fs_share starts it (a file handle passed between processes)
       - name: e32-rs neotest
         run: |
           git clone -q --depth 1 https://github.com/NeoSymbian/e32-rs.git
-          cd e32-rs && cargo arm -p neotest
-          cp target/armv8a-neosymbian-eabi/release/libneotest.a ../build/rust/
-          grep '^NEOTEST.EXE' symbian/exes.txt >> ../build/rust/exes.txt
-          # Syborg's moving memory model takes at most 80 KB of user stack; the phone's default (128 KB, build
-          # 9213007) is refused with KErrTooBig and SYSSTART never runs (every line, NEOPHONE's too: appended above)
-          sed -i '/^[A-Z].*\.a$/ s/$/ stack=0x14000/' ../build/rust/exes.txt
+          cd e32-rs && cargo arm -p neotest -p neosrv
+          cp target/armv8a-neosymbian-eabi/release/{libneotest,libneosrv}.a ../build/rust/
+          grep -E '^NEO(TEST|SRV)\.EXE' symbian/exes.txt >> ../build/rust/exes.txt
 
       - name: Fetch the Symbian sources
         working-directory: build
@@ -94,6 +96,10 @@ jobs:
       - name: Build the ROM (SYSSTART.EXE = the UI server, no window server; NEOCLOCK/NEOTERM/NEOFILES.EXE = apps)
         working-directory: build
         run: ./build.sh
+
+      - name: The AArch64 kernel for QEMU virt, with this user side
+        working-directory: build
+        run: KERNEL=src/oss.FCL.sf.os.kernelhwsrv ./neo kernel qemu
 
       # A phone-shaped screen with odd sizes (half of the Pixel's 1079x2159 touch range), so the UI must adapt to
       # whatever the device reports. The path is the design's contract, in screen pixels (1 dp = 1.497 px; Navigation
@@ -127,7 +133,7 @@ jobs:
       # - R10: apps keep running, and ← returns to the menu, so each app is opened from the menu directly. Terminal is
       #   reopened (resumed, not restarted). Open apps (▢) closes all three with the first card's × (227,160).
       # - Last, Navigation once more: Gestures again, for the later steps.
-      - name: Boot at 539x1079; Clock; Terminal (ESHELL, dir by touch, neotest); Files; resume; Open apps closes all
+      - name: Boot on virt (539x1079); Clock; Terminal (ESHELL, dir by touch, neotest); Files; resume; Open apps closes all
         working-directory: build
         run: |
           export SCREEN=539x1079 NAV=buttons
@@ -170,14 +176,14 @@ jobs:
           tap 449 1037
           for i in 1 2 3; do tap 227 160; expect "exited (type 0"; done
           tap 270 1037; tap 485 913; tap 270 805; tap 270 588; tap 270 201; expect "neoui: settings saved"
-          MON_GAP=0.1 MONITOR="$M" SECS=300 ./boot.sh
+          ui_run 300
 
       - name: Check the output
         working-directory: build
         run: |
           s=out/serial.log
-          grep -a '\[proc\] create SYSSTART.EXE' $s
-          ! grep -aq '\[proc\] create EWSRV.EXE' $s
+          grep -a '\[proc\] SYSSTART.EXE\[' $s   # the AArch64 kernel's "[proc] NAME[uid]0001 starts"
+          ! grep -aq '\[proc\] EWSRV.EXE\[' $s
           grep -a 'neoui: display 539x1079' $s
           grep -a 'neoui: launcher shown' $s
           grep -aE 'neoui: clock [0-9]{2}:[0-9]{2}' $s
@@ -243,23 +249,25 @@ jobs:
           for a in clock terminal files; do grep -a "neoui: app $a closed" $s; done
           ! grep -aq 'killed (did not quit)' $s
           ! grep -aq 'K::Fault\|Kern::Fault\|\[EKERN\] panic\|rust panic' $s
-          python3 - <<'PY'
-          d = open("out/fb.ppm", "rb").read()
-          assert d.startswith(b"P6\n539 1079\n255\n"), d[:20]
-          px = d[len(b"P6\n539 1079\n255\n"):]
+          # the screen QMP's screendump saw (ramfb): the right size, not blank
+          . ./images.sh
+          docker run --rm -v "$PWD/out:/o:ro" "$BUILD_IMAGE" python3 -I -c '
+          from PIL import Image
+          im = Image.open("/o/fb.png").convert("RGB")
+          assert im.size == (539, 1079), im.size
+          px = im.tobytes()
           colours = {px[i:i + 3] for i in range(0, len(px), 3 * 97)}
           assert len(colours) > 8, f"screen looks blank: {len(colours)} colours"
-          print(f"fb.ppm: 539x1079, {len(colours)} sampled colours")
-          PY
+          print(f"fb.png: 539x1079, {len(colours)} sampled colours")'
 
       # P2 (legacy apps), in Gestures (the main step left it so): Apps in the dock (485,973) -> "Old apps" in the menu
-      # (270,1007) starts LEGACY.EXE (NeoSymbian/build apps/legacy). It runs the stock 2010 window server as a guest
-      # in a shared buffer (graphics fork: scnew.cpp, WSTOP.CPP, EVENT.CPP) and the Symbian Foundation's MiniGUI
-      # grid.exe in it. The first tile of its grid is (90,202), under the shell's header; a tap in its window reaches
-      # it as a raw pointer event, and grid draws for 3 s and exits. The shell's header over the legacy bridge has ←
-      # (36,73), which closes it (FRONT 0); left-edge swipes go back to the menu and home.
-      # Then the phone apps: Phone in the dock (54,973) brings the resident NEOPHONE to the front; a left-edge swipe goes
-      # home. Apps (485,973) -> Contacts in the menu (449,199) starts NEOCONT; two swipes go home again. Messages in
+      # (270,1007) starts LEGACY.EXE (NeoSymbian/legacy host/). It runs the stock 2010 window server as a guest in a
+      # shared buffer (graphics fork: scnew.cpp, WSTOP.CPP, EVENT.CPP) and the AppArc apps in it. The first tile of its
+      # grid (90,202), under the shell's header, starts the first app (PerfMon in this ROM); a tap in its window reaches
+      # it as a raw pointer event (legacy: raw 10 x y). Old apps draw their own title bar, so Back is the left edge's
+      # swipe, which closes it (FRONT 0); two more go back to the menu and home.
+      # Then the phone apps: Phone in the dock (54,973) brings the resident NEOPHONE to the front (its dial pad); two
+      # left-edge swipes go home. Apps (485,973) -> Contacts in the menu (449,199) starts NEOCONT; two swipes go home again. Messages in
       # the dock (162,973) brings the resident NEOMSG; its footer's Contacts tab (270,1019: the middle third, 24 dp over
       # the band) opens Contacts from Messages (ipc OPEN).
       - name: Boot again; Old apps (the AppArc grid, its first app); Phone, Contacts and Messages (three apps)
@@ -272,18 +280,19 @@ jobs:
           tap 270 1007; expect "legacy: app "
           wait_s 3; tap 90 202; expect "legacy: start app"
           wait_s 5; tap 200 300; expect "legacy: raw"
-          tap 36 73; expect "neoui: app legacy front false"
+          swipe 5 540 200 540; expect "neoui: app legacy front false"   # Back (the left edge)
           wait_s 2; swipe 5 540 200 540; wait_s 2; swipe 5 540 200 540; wait_s 3   # the grid, then the menu, then home
           tap 54 973; expect "neoui: screen phone"
-          wait_s 1; swipe 5 540 200 540
+          # Phone opens on its dial pad (NEOPHONE v2): Back shows the call list, a second Back goes home
+          wait_s 1; swipe 5 540 200 540; wait_s 1; swipe 5 540 200 540; expect "neoui: screen home"
           wait_s 1; tap 485 973; tap 449 199; expect "neocont: connected"
           wait_s 1; swipe 5 540 200 540; wait_s 2; swipe 5 540 200 540; wait_s 2   # Contacts -> the menu -> home
           tap 162 973; expect "neoui: screen messages"
           wait_s 2; tap 270 1019; expect "neoui: messages opens contacts"
-          MON_GAP=0.1 MONITOR="$M" SECS=180 ./boot.sh
+          ui_run 180
           s=out/serial.log
           grep -a 'neoui: app legacy started' $s
-          grep -a '\[proc\] create EWSRV.EXE' $s
+          grep -a '\[proc\] EWSRV.EXE\[' $s
           grep -aE 'legacy: guest wserv 360x640 up, surface 539x[0-9]+' $s
           # protocol 1.6: the AppArc apps as Old apps tiles; the first one starts (FRONT 1), takes a touch, and Back closes
           # it (FRONT 0); LEGACY stays resident behind the grid
@@ -343,9 +352,10 @@ jobs:
           wait_s 1; swipe 270 1075 270 900; expect "neoui: screen home"
           wait_s 1; tap 485 973; tap 270 805; tap 270 588; tap 270 201; wait_s 1
           swipe 534 540 340 540; expect "neoui: screen switcher"
-          MON_GAP=0.1 MONITOR="$M" SECS=180 ./boot.sh
+          ui_run 180
           s=out/serial.log
-          for g in back home menu apps prev; do grep -a "neoui: gesture $g" $s; done
+          # the Thumb map has no "menu" gesture: Home on the home screen shows the menu (the script's expect checks it)
+          for g in back home apps prev; do grep -a "neoui: gesture $g" $s; done
           grep -a 'clock: view settings' $s
           grep -a 'clock: visible false' $s
           # protocol 1.12: Files' Save as answered the kit with a file it wrote through the handle
@@ -358,7 +368,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: syborg
+          name: virt-taps
           path: |
             build/out/fb.png
             build/out/serial.log
