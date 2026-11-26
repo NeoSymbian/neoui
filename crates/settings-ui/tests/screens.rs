@@ -259,14 +259,17 @@ fn fill(sh: &Shot) {
         WifiSaved {
             name: "Home-5G".into(),
             detail: "Connected · Secured".into(),
+            connected: true,
         },
         WifiSaved {
             name: "Cafe Guest".into(),
             detail: "Secured".into(),
+            connected: false,
         },
         WifiSaved {
             name: "Ararat-Office".into(),
             detail: "Secured · not in range".into(),
+            connected: false,
         },
     ]));
     s.set_wifi_status("3 networks".into());

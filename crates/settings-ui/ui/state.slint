@@ -12,7 +12,7 @@ export struct WifiDetail { label: string, value: string }
 // its value now, and the page it opens
 export struct SearchHit { id: string, title: string, pre: string, mark: string, post: string, gap-before: bool, gap-after: bool, path: string, value: string, page: int }
 // a network WIFID remembers (Saved networks): its name, "Connected · Secured" / "Secured · not in range"
-export struct WifiSaved { name: string, detail: string }
+export struct WifiSaved { name: string, detail: string, connected: bool }
 // an app on the Apps page: a ROM app by its screen key, or an old app (old: true) by its id in hex
 // a sound profile (neoui-proto sound_profile): its row's summary and what the profile page edits
 export struct ProfileRow { id: int, name: string, summary: string, ring: bool, volume: int, vibrate: bool, ringtone: int, message-tone: int }
