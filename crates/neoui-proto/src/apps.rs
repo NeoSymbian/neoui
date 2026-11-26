@@ -68,6 +68,14 @@ pub fn listed() -> impl Iterator<Item = &'static App> {
     APPS.iter().filter(|a| a.key != SETTINGS && a.key != LEGACY)
 }
 
+/// The apps that clear their own data on `ipc::AppEvent::ClearData` (Settings → Apps → an app → Clear data, 1.17).
+/// Phone's call history and Messages' SMS live in MODEMD, which Settings asks itself; the others get the row when they
+/// handle the event.
+#[must_use]
+pub fn clears_data(key: &str) -> bool {
+    key == "clock"
+}
+
 /// The app with screen key `key`.
 #[must_use]
 pub fn find(key: &str) -> Option<&'static App> {

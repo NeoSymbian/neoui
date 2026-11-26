@@ -27,9 +27,12 @@ pub enum Page {
     Profile = 18,
     BatteryUsage = 19,
     Storage = 20,
+    /// One app (SE4a): Open, its settings, Stop, Clear data; the app is NEOSET's current one.
+    AppDetail = 21,
+    Reset = 22,
 }
 
-pub const ALL: [Page; 21] = [
+pub const ALL: [Page; 23] = [
     Page::Root,
     Page::Wifi,
     Page::Mobile,
@@ -51,6 +54,8 @@ pub const ALL: [Page; 21] = [
     Page::Profile,
     Page::BatteryUsage,
     Page::Storage,
+    Page::AppDetail,
+    Page::Reset,
 ];
 
 impl Page {
@@ -89,6 +94,8 @@ impl Page {
             Page::Profile => "profile",
             Page::BatteryUsage => "batteryusage",
             Page::Storage => "storage",
+            Page::AppDetail => "app",
+            Page::Reset => "reset",
         }
     }
 
@@ -132,6 +139,8 @@ impl Page {
             Page::Profile => "Profile",
             Page::BatteryUsage => "Battery usage",
             Page::Storage => "Storage",
+            Page::AppDetail => "App",
+            Page::Reset => "Reset",
         }
     }
 
@@ -145,6 +154,8 @@ impl Page {
             Page::WifiSaved => Some(Page::Wifi),
             Page::Profile => Some(Page::Sounds),
             Page::BatteryUsage => Some(Page::Battery),
+            Page::AppDetail => Some(Page::Apps),
+            Page::Reset => Some(Page::About),
             _ => Some(Page::Root),
         }
     }
@@ -161,7 +172,9 @@ mod tests {
             assert_eq!(Page::from_id(p.id()), Some(*p));
             assert_eq!(Page::from_name(p.name()), Some(*p));
         }
-        assert_eq!(Page::from_id(21), None);
+        assert_eq!(Page::from_id(23), None);
+        assert_eq!(Page::AppDetail.parent(), Some(Page::Apps));
+        assert_eq!(Page::Reset.parent(), Some(Page::About));
         assert_eq!(Page::BatteryUsage.parent(), Some(Page::Battery));
     }
 

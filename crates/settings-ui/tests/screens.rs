@@ -299,6 +299,11 @@ fn fill(sh: &Shot) {
     });
 }
 
+/// The centres of a plain list's first three rows (dp, the header included): for taps.
+const ROW1: f32 = 84.0;
+const ROW2: f32 = 156.0;
+const ROW3: f32 = 228.0;
+
 fn page(sh: &Shot, id: i32, title: &str) {
     let s = sh.ui.global::<SetState>();
     s.set_page(id);
@@ -497,7 +502,7 @@ fn every_page() {
     page(&sh, 13, "Apps");
     sh.draw();
     sh.take_acts();
-    s.set_app_current(s.get_apps().row_data(5).unwrap()); // Phone: it has settings of its own
+    s.set_app_current(s.get_old_apps().row_data(0).unwrap()); // an old app keeps the sheet
     sheet(&sh, "app");
     sh.shoot("set2-app-sheet");
     sheet(&sh, "");
@@ -517,16 +522,42 @@ fn every_page() {
     s.set_old_apps(old);
     s.set_old_total(2);
     s.set_apps(rom);
-    // a row opens its sheet; Open asks for that app
+    // a ROM app's row opens its page (SE4a)
     sh.draw();
     sh.take_acts();
     sh.tap(100.0, 118.0);
-    assert_eq!(s.get_sheet().as_str(), "app");
-    assert_eq!(s.get_app_current().key.as_str(), "clock");
-    sh.shoot("set2-app-sheet-clock");
-    sh.tap(180.0, 588.0);
-    assert_eq!(sh.take_acts(), acts(&[("app-open", "clock")]));
-    sheet(&sh, "");
+    assert_eq!(sh.take_acts(), acts(&[("app-detail", "clock")]));
+    // the app's page: Open, Stop while it runs, Clear data; each asks the app (which confirms first)
+    s.set_app_current(s.get_apps().row_data(0).unwrap());
+    s.set_app_running(true);
+    s.set_app_stoppable(true);
+    s.set_app_clear("Alarms, timers, stopwatch, world clocks, its settings".into());
+    page(&sh, 21, "Clock");
+    sh.shoot("set2-app-detail");
+    for (y, act) in [(ROW1, "app-open"), (ROW2, "app-stop"), (ROW3, "app-clear")] {
+        sh.tap(100.0, y);
+        assert_eq!(sh.take_acts(), acts(&[(act, "clock")]), "{act}");
+    }
+    // not running: Stop does nothing; a resident (Phone) has no Stop, an app without an owner path no Clear data
+    s.set_app_running(false);
+    sh.draw();
+    sh.tap(100.0, ROW2);
+    assert!(sh.take_acts().is_empty());
+    s.set_app_current(s.get_apps().row_data(5).unwrap());
+    s.set_app_stoppable(false);
+    s.set_app_clear("The call history (contacts stay)".into());
+    page(&sh, 21, "Phone");
+    sh.shoot("set2-app-detail-phone");
+
+    // Reset (SE4a): each row asks the app, which confirms first
+    page(&sh, 22, "Reset");
+    sh.shoot("set2-reset");
+    sh.draw();
+    sh.take_acts();
+    sh.tap(100.0, ROW1);
+    assert_eq!(sh.take_acts(), acts(&[("reset", "network")]));
+    sh.tap(100.0, ROW2);
+    assert_eq!(sh.take_acts(), acts(&[("reset", "settings")]));
 
     // Saved networks: a row asks to forget that network (the app confirms first)
     page(&sh, 17, "Saved networks");

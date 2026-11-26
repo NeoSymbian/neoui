@@ -32,10 +32,7 @@ export component AppsPage inherits NeoList {
             has-icon: true;
             icon: root.app-icon(a.key, false);
             chevron: true;
-            clicked => {
-                SetState.app-current = a;
-                SetState.sheet = "app";
-            }
+            clicked => { SetState.act("app-detail", a.key); }
         }
 
         SectionHeader { text: "Old apps"; }
@@ -81,7 +78,61 @@ export component AppsPage inherits NeoList {
     }
 }
 
-// An app's sheet: Open, and its own settings when it has them.
+// One ROM app (SE4a, the per-app hub): Open, its own settings, Stop, Clear data. Notifications join in TP4.
+export component AppDetailPage inherits NeoList {
+    VerticalLayout {
+        alignment: start;
+        ListRow {
+            title: "Open";
+            subtitle: "In the phone's ROM";
+            chevron: true;
+            clicked => { SetState.act("app-open", SetState.app-current.key); }
+        }
+        if SetState.app-current.settings: ListRow {
+            title: "App settings";
+            chevron: true;
+            clicked => { SetState.act("app", SetState.app-current.key); }
+        }
+        if SetState.app-stoppable: ListRow {
+            title: "Stop";
+            subtitle: SetState.app-running ? "Running · closes it now; what isn't saved is lost" : "Not running";
+            clicked => {
+                if SetState.app-running { SetState.act("app-stop", SetState.app-current.key); }
+            }
+        }
+        if SetState.app-clear != "": ListRow {
+            title: "Clear data";
+            subtitle: SetState.app-clear;
+            divider: false;
+            clicked => { SetState.act("app-clear", SetState.app-current.key); }
+        }
+    }
+}
+
+// Reset (SE4a, set2-reset): each asks first, naming what goes and what stays; the phone restarts after.
+export component ResetPage inherits NeoList {
+    VerticalLayout {
+        alignment: start;
+        ListRow {
+            title: "Reset network settings";
+            checked: SetState.found == "reset.network";
+            subtitle: "Forgets every saved Wi-Fi network";
+            clicked => { SetState.act("reset", "network"); }
+        }
+        ListRow {
+            title: "Reset settings";
+            checked: SetState.found == "reset.settings";
+            subtitle: "Back to their defaults; sound profiles stay";
+            divider: false;
+            clicked => { SetState.act("reset", "settings"); }
+        }
+        Note {
+            text: "Contacts, messages, alarms, files and apps stay. Erasing the phone comes later.";
+        }
+    }
+}
+
+// An old app's sheet: Open (S60 apps run in the Old apps bridge, which owns them).
 export component AppSheet inherits Sheet {
     title: SetState.app-current.name;
     VerticalLayout {
@@ -335,8 +386,15 @@ export component AboutPage inherits NeoList {
             checked: SetState.found == "about.licences";
             subtitle: "Apache-2.0 · EPL · GPL-3.0 (Slint) · fonts";
             chevron: true;
-            divider: false;
             clicked => { SetState.act("open", "16"); }
+        }
+        ListRow {
+            title: "Reset";
+            checked: SetState.found == "about.reset";
+            subtitle: "Network settings, settings";
+            chevron: true;
+            divider: false;
+            clicked => { SetState.act("open", "22"); }
         }
     }
 }

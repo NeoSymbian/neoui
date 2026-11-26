@@ -34,6 +34,9 @@ pub const VALUELESS: &[&str] = &[
     "dev.save",
     "dev.tools",
     "about.licences",
+    "about.reset",
+    "reset.network",
+    "reset.settings",
 ];
 
 /// What a row (`neoui_proto::settings_app::rows` id) shows now, as search matches and lists it: a switch as On/Off, a

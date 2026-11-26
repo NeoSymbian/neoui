@@ -58,6 +58,11 @@ enum Asked {
     PadReset,
     /// Saved networks' Forget, for this network (raw SSID)
     Forget(Vec<u8>),
+    /// Apps → an app → Stop / Clear data, for this app's key (SE4a)
+    Stop(&'static str),
+    Clear(&'static str),
+    /// Reset → network settings or settings (`proto::RESET_*`)
+    Reset(u8),
 }
 
 struct Ctx {
@@ -180,6 +185,38 @@ fn run() -> Result<(), i32> {
                     }
                     ctx.tick(true);
                 }
+                Some(Asked::Stop(key)) if i == 0 => {
+                    let r = app.settings_action_with(proto::ACTION_STOP, key.as_bytes());
+                    dprintln!("settings: stop {} ({:?})", key, r);
+                    if r.is_err() {
+                        let _ = app.note("Couldn't stop the app", "");
+                    }
+                    ctx.tick(true);
+                }
+                Some(Asked::Clear(key)) if i == 0 => {
+                    let r = match key {
+                        "messages" => ctx.modem.borrow_mut().clear(true),
+                        "phone" => ctx.modem.borrow_mut().clear(false),
+                        _ => app.settings_action_with(proto::ACTION_CLEAR, key.as_bytes()),
+                    };
+                    dprintln!("settings: clear data of {} ({:?})", key, r);
+                    let _ = app.note(
+                        if r.is_ok() {
+                            "Data cleared"
+                        } else {
+                            "Couldn't clear the data"
+                        },
+                        "",
+                    );
+                    ctx.tick(true);
+                }
+                Some(Asked::Reset(what)) if i == 0 => {
+                    let r = app.settings_action_with(proto::ACTION_RESET, &[what]);
+                    dprintln!("settings: reset {} ({:?})", what, r);
+                    if r.is_err() {
+                        let _ = app.note("Couldn't reset; nothing changed", "");
+                    }
+                }
                 _ => {}
             },
             AppEvent::Visible(v) => {
@@ -268,6 +305,10 @@ impl Ctx {
             store::profiles(&self.app, &ui);
             s.set_title(s.get_profile_current().name);
         }
+        if page == Page::AppDetail {
+            s.set_title(s.get_app_current().name);
+            s.set_app_clear(clear_text(s.get_app_current().key.as_str()).into());
+        }
         self.tick(true);
     }
 
@@ -339,6 +380,9 @@ impl Ctx {
         }
         if page == Page::Apps && every(5) {
             self.old_apps(&ui);
+        }
+        if page == Page::AppDetail && every(2) {
+            self.running(&ui);
         }
         if page == Page::DateTime && every(5) {
             store::dates(&self.app, &ui);
@@ -437,6 +481,30 @@ impl Ctx {
         if !same {
             s.set_old_apps(ModelRc::new(VecModel::from(rows)));
         }
+    }
+
+    /// The app page's Stop row (SE4a): whether app-current runs now (`INFO_RUNNING`), and whether it can be stopped
+    /// (never a resident, never Settings; an older shell can't say, so no row).
+    fn running(&self, ui: &SettingsApp) {
+        let s = ui.global::<SetState>();
+        let key = s.get_app_current().key;
+        let list = self
+            .app
+            .settings_info(proto::INFO_RUNNING)
+            .ok()
+            .and_then(|b| neoui_proto::settings_app::info::decode_running(&b));
+        let me = list
+            .as_ref()
+            .and_then(|l| l.iter().find(|(k, _)| k.as_str() == key.as_str()));
+        s.set_app_running(me.is_some());
+        s.set_app_stoppable(
+            list.is_some()
+                && !me.is_some_and(|(_, resident)| *resident)
+                && !matches!(
+                    key.as_str(),
+                    "phone" | "messages" | neoui_proto::apps::SETTINGS
+                ),
+        );
     }
 
     /// A page opened from this app's own pages: Back comes back here.
@@ -714,6 +782,74 @@ impl Ctx {
             }
             // an app itself (Apps page)
             "storage-recount" => self.storage.recount(),
+            // a ROM app's page (SE4a)
+            "app-detail" => {
+                if let Some(a) = neoui_proto::apps::find(value) {
+                    s.set_app_current(AppRow {
+                        key: a.key.into(),
+                        name: a.name.into(),
+                        old: false,
+                        settings: a.settings.is_some(),
+                    });
+                    s.set_app_running(false);
+                    s.set_app_stoppable(false);
+                    self.go(Page::AppDetail);
+                }
+            }
+            "app-stop" => {
+                if let Some(a) = neoui_proto::apps::find(value) {
+                    let q = Query {
+                        text: alloc::format!("Stop {}?", a.name), // the row says what is lost
+                        buttons: alloc::vec![String::from("Stop"), String::from("Cancel")],
+                        destructive: true,
+                    };
+                    if app.query(&q).is_ok() {
+                        self.asked.replace(Some(Asked::Stop(a.key)));
+                    }
+                }
+            }
+            "app-clear" => {
+                if let Some(a) = neoui_proto::apps::find(value)
+                    && !clear_text(a.key).is_empty()
+                {
+                    let q = Query {
+                        text: alloc::format!(
+                            "Delete {}'s data? {}. This can't be undone.",
+                            a.name,
+                            clear_text(a.key)
+                        ),
+                        buttons: alloc::vec![String::from("Delete"), String::from("Cancel")],
+                        destructive: true,
+                    };
+                    if app.query(&q).is_ok() {
+                        self.asked.replace(Some(Asked::Clear(a.key)));
+                    }
+                }
+            }
+            "reset" => {
+                let (what, text) = match value {
+                    "network" => (
+                        proto::RESET_NETWORK,
+                        "Reset network settings? Every saved Wi-Fi network and its password is forgotten. \
+                         Contacts, messages, alarms, files and apps stay. The phone restarts.",
+                    ),
+                    "settings" => (
+                        proto::RESET_SETTINGS,
+                        "Reset settings? Display, navigation, keyboard, time, media sound, developer and old-app pad \
+                         settings go back to their defaults. Sound profiles, Wi-Fi networks, contacts, messages, \
+                         alarms, files and apps stay. The phone restarts.",
+                    ),
+                    _ => return,
+                };
+                let q = Query {
+                    text: text.into(),
+                    buttons: alloc::vec![String::from("Reset"), String::from("Cancel")],
+                    destructive: true,
+                };
+                if app.query(&q).is_ok() {
+                    self.asked.replace(Some(Asked::Reset(what)));
+                }
+            }
             "app-open" => {
                 let r = app.open(value, 0, "");
                 dprintln!("settings: open app {} ({:?})", value, r);
@@ -743,5 +879,17 @@ impl Ctx {
             self.keyboard();
             let _ = self.describe();
         }
+    }
+}
+
+/// What an app's Clear data deletes (SE4a), "" when it has no such row: the app clears its own
+/// (`apps::clears_data`), or MODEMD clears Phone's call history and Messages' texts, which it owns.
+fn clear_text(key: &str) -> &'static str {
+    match key {
+        "clock" => "Alarms, timers, stopwatch, world clocks, its settings",
+        "phone" => "The call history (contacts stay)",
+        "messages" => "Every message (blocked senders' messages stay until they expire)",
+        k if neoui_proto::apps::clears_data(k) => "Its data and its own settings",
+        _ => "",
     }
 }

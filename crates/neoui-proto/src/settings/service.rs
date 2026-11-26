@@ -9,7 +9,7 @@ use super::access::Caller;
 use super::file::{self, Loaded};
 use super::key::{Key, Setting, is_valid_prefix};
 use super::store::{Changed, Store};
-use super::{Error, Value};
+use super::{Error, Value, registry};
 use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -175,6 +175,23 @@ impl<B: Backend> Service<B> {
         Ok(changed)
     }
 
+    /// Settings → Reset settings: every [`registry::reset_by_default`] key back to its default, as the shell. Returns
+    /// how many changed (the save follows as for any write).
+    ///
+    /// # Errors
+    /// The store's, for the first key it refused (the keys before it are reset already).
+    pub fn reset_settings(&mut self, now_ms: u64) -> Result<usize, Error> {
+        let mut n = 0;
+        for spec in registry::reset_by_default() {
+            if self.set_raw(Caller::Shell, spec.name, spec.default.to_value(), now_ms)?
+                == Changed::Yes
+            {
+                n += 1;
+            }
+        }
+        Ok(n)
+    }
+
     /// Whether there are unsaved changes.
     #[must_use]
     pub fn is_dirty(&self) -> bool {
@@ -288,6 +305,64 @@ mod tests {
 
     fn fresh() -> Service<Mem> {
         Service::open(Mem::default()).0
+    }
+
+    #[test]
+    fn reset_settings_keeps_profiles_radios_and_apps_keys() {
+        use crate::settings::Bytes;
+        let mut s = fresh();
+        let _ = s.set(Caller::Shell, keys::DISPLAY_DARK, false, 0).unwrap();
+        let _ = s.set(Caller::Shell, keys::NAV_MODE, 2, 0).unwrap();
+        let _ = s.set(Caller::Shell, keys::RADIO_AIRPLANE, true, 0).unwrap();
+        let _ = s.set(Caller::Shell, keys::SOUND_SILENT, true, 0).unwrap();
+        let _ = s.set(Caller::Shell, keys::SOUND_PROFILE, 1, 0).unwrap();
+        let _ = s
+            .set(Caller::Shell, keys::CLOCK_ALARMS, Bytes(vec![1, 2, 3]), 0)
+            .unwrap();
+        let _ = s
+            .set(Caller::Shell, keys::CONTACTS_MIGRATED, true, 0)
+            .unwrap();
+        let _ = s
+            .set(Caller::Shell, keys::OPEN_ALWAYS, Bytes(vec![9]), 0)
+            .unwrap();
+        assert_eq!(s.reset_settings(5), Ok(3));
+        let def = |k: &str| registry::lookup(k).unwrap().default.to_value();
+        for k in ["display.dark", "nav.mode", "open.always"] {
+            assert_eq!(s.get_raw(k), Ok(def(k)), "{k}");
+        }
+        assert_eq!(s.get(keys::RADIO_AIRPLANE), Ok(true));
+        assert_eq!(s.get(keys::SOUND_SILENT), Ok(true));
+        assert_eq!(s.get(keys::SOUND_PROFILE), Ok(1));
+        assert_eq!(s.get(keys::CLOCK_ALARMS), Ok(Bytes(vec![1, 2, 3])));
+        assert_eq!(s.get(keys::CONTACTS_MIGRATED), Ok(true));
+        assert!(s.is_dirty());
+        // nothing left to reset
+        assert_eq!(s.reset_settings(6), Ok(0));
+    }
+
+    #[test]
+    fn every_key_is_reset_kept_or_an_apps() {
+        for spec in registry::REGISTRY {
+            let kept = registry::RESET_KEEPS.contains(&spec.name);
+            let apps = matches!(
+                spec.owner,
+                registry::Owner::App(_) | registry::Owner::Apps(_)
+            );
+            let reset = registry::reset_by_default().any(|r| r.name == spec.name);
+            assert_eq!(
+                u8::from(kept) + u8::from(apps) + u8::from(reset),
+                1,
+                "{}",
+                spec.name
+            );
+        }
+        for k in registry::RESET_KEEPS {
+            assert_eq!(
+                registry::lookup(k).map(|s| s.owner),
+                Some(registry::Owner::Shell),
+                "{k}"
+            );
+        }
     }
 
     #[test]

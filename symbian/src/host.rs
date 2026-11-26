@@ -25,13 +25,13 @@ use e32::server::{Message, Service};
 use e32::sys::{TVersion, err};
 use neoui_proto::Rect;
 // the screen keys that are separate processes, their EXEs and command lines: shared with Settings' Apps page
-use neoui_proto::apps::{APPS, LEGACY};
+use neoui_proto::apps::{self, APPS, LEGACY};
 use neoui_proto::ipc::{self as proto, AppEvent};
 use neoui_proto::page::{NOTE_MAX, NOTIFICATION_MAX, PAGE_MAX, QUERY_MAX};
 use neoui_proto::recents::Recents;
 use neoui_proto::settings::value::ENCODED_MAX;
 use neoui_proto::settings::{Caller, KEY_MAX, Value, access, kerr, keys};
-use neoui_proto::settings_app::info::OldApps;
+use neoui_proto::settings_app::info::{OldApps, encode_running};
 use neoui_proto::sound_profile;
 use neoui_proto::{InputEvent, TouchPhase};
 use neoui_render::{LauncherEntry, Nav, Note, Notification, Page, Query};
@@ -664,6 +664,82 @@ impl Host {
     }
 
     /// A cached tile can restart its owner; the normal event queue holds the UID until it connects.
+    /// `ACTION_STOP` (SE4a): close a running app as Open apps' × does; never a resident (it would respawn) or Settings.
+    fn stop_action(&mut self, m: &Message) -> i32 {
+        let Some(key) = action_app(m) else {
+            return kerr::ARGUMENT;
+        };
+        if RESIDENT.contains(&key) || key == apps::SETTINGS {
+            return kerr::PERMISSION_DENIED;
+        }
+        if self
+            .apps
+            .find(|a| a.key == key && a.quit_at.is_none())
+            .is_none()
+        {
+            return err::KERR_NOT_FOUND;
+        }
+        dprintln!("neoui: settings stops app {}", key);
+        self.close(key, e32::time::millis());
+        0
+    }
+
+    /// `ACTION_CLEAR` (SE4a): the app clears its own data on `ClearData`; it is started hidden first if it isn't
+    /// running (the event waits in its queue until it connects).
+    fn clear_action(&mut self, m: &Message) -> i32 {
+        let Some(key) = action_app(m) else {
+            return kerr::ARGUMENT;
+        };
+        if !apps::clears_data(key) {
+            return kerr::NOT_SUPPORTED;
+        }
+        if self
+            .apps
+            .find(|a| a.key == key && a.quit_at.is_none())
+            .is_none()
+        {
+            self.launch(key);
+        }
+        match self.apps.find_mut(|a| a.key == key && a.quit_at.is_none()) {
+            Some(app) => {
+                dprintln!("neoui: settings clears the data of app {}", key);
+                app.send(AppEvent::ClearData);
+                0
+            }
+            None => err::KERR_NOT_READY, // it didn't start
+        }
+    }
+
+    /// `ACTION_RESET` (SE4a): the job now, then the restart (the main loop saves the settings first). An error
+    /// answers at once and nothing restarts.
+    fn reset_action(&mut self, m: &Message) -> i32 {
+        let mut b = [0u8; 1];
+        let what = match (m.des_len(1), m.read8(1, &mut b, 0)) {
+            (Ok(1), Ok(1)) => b[0],
+            _ => return kerr::ARGUMENT,
+        };
+        match what {
+            proto::RESET_NETWORK => {
+                if let Err(e) = crate::wifi::reset() {
+                    dprintln!("neoui: reset network settings failed ({})", e);
+                    return e;
+                }
+                dprintln!("neoui: reset network settings: every Wi-Fi network forgotten");
+            }
+            proto::RESET_SETTINGS => match self.settings.reset_settings(e32::time::millis()) {
+                Ok(n) => dprintln!("neoui: reset settings: {} back to their defaults", n),
+                Err(e) => {
+                    dprintln!("neoui: reset settings failed ({:?})", e);
+                    return e.to_symbian();
+                }
+            },
+            _ => return kerr::ARGUMENT,
+        }
+        dprintln!("neoui: restarting after the reset");
+        self.power = Some(proto::POWER_RESTART);
+        0
+    }
+
     /// `SETTINGS_ACTION` `ACTION_PROFILE` (SE2a): a sound profile command from Settings, through the reducer.
     fn profile_action(&mut self, key: &str, m: &Message) -> i32 {
         if access::caller(key, m.client_sid()) != Caller::Settings {
@@ -949,6 +1025,12 @@ fn settings_info(info: &[Vec<u8>; 5], m: &Message) -> Result<i32, i32> {
 }
 
 /// A `SETTINGS_INFO` answer into the caller's `out` (slot 2): its length, `KErrOverflow` when it doesn't fit.
+/// An `ACTION_STOP`/`ACTION_CLEAR` request: a ROM app's key (argument 1).
+fn action_app(m: &Message) -> Option<&'static str> {
+    let key = read_text(m, 1, proto::KEY_MAX).ok()?;
+    apps::find(&key).map(|a| a.key)
+}
+
 fn write_info(m: &Message, bytes: &[u8]) -> Result<i32, i32> {
     if bytes.len() > m.des_max_len(2)? {
         return Err(kerr::OVERFLOW);
@@ -1176,6 +1258,16 @@ impl Service for Host {
                 let r = write_info(&m, &self.old_apps().encode());
                 m.complete(r.unwrap_or_else(|e| e));
             }
+            proto::SETTINGS_INFO if m.int(0) == proto::INFO_RUNNING => {
+                let running: Vec<(&str, bool)> = self
+                    .apps
+                    .newest_first()
+                    .filter(|a| a.quit_at.is_none())
+                    .map(|a| (a.key, RESIDENT.contains(&a.key)))
+                    .collect();
+                let r = write_info(&m, &encode_running(&running));
+                m.complete(r.unwrap_or_else(|e| e));
+            }
             proto::SETTINGS_INFO => {
                 let r = settings_info(&self.info, &m);
                 m.complete(r.unwrap_or_else(|e| e));
@@ -1215,6 +1307,15 @@ impl Service for Host {
                             }
                         }
                     }
+                    // Settings → Apps → an app (SE4a): Settings only, by its secure ID
+                    proto::ACTION_STOP | proto::ACTION_CLEAR | proto::ACTION_RESET
+                        if access::caller(app.key, m.client_sid()) != Caller::Settings =>
+                    {
+                        kerr::PERMISSION_DENIED
+                    }
+                    proto::ACTION_STOP => self.stop_action(&m),
+                    proto::ACTION_CLEAR => self.clear_action(&m),
+                    proto::ACTION_RESET => self.reset_action(&m),
                     _ => kerr::ARGUMENT,
                 };
                 m.complete(r);

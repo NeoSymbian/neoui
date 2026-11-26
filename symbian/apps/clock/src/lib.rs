@@ -119,6 +119,20 @@ fn run() -> Result<(), i32> {
                     ctx.show(&Now::read());
                 }
                 AppEvent::Alarm { id } => pages::ring(&ctx, id),
+                // Settings → Apps → Clock → Clear data (SE4a): every key of Clock's back to its default, then leave
+                AppEvent::ClearData => {
+                    let (mut n, mut refused) = (0, 0);
+                    for spec in neoui_proto::settings::registry::cleared_with("clock") {
+                        n += 1;
+                        if let Err(e) = ctx.app.set_setting_raw(spec.name, &spec.default.to_value())
+                        {
+                            dprintln!("clock: clearing {} refused ({})", spec.name, e);
+                            refused += 1;
+                        }
+                    }
+                    dprintln!("clock: data cleared ({} keys, {} refused)", n, refused);
+                    return Ok(());
+                }
                 // the kit's layers first (the ⋮ menu, the Face sheet)
                 AppEvent::Back if neoapp::kit_back!(ui) => {}
                 AppEvent::Back => {
