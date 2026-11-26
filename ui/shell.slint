@@ -178,7 +178,7 @@ export component Shell inherits Window {
     in property <string> rat;
     in property <bool> roaming;
     // the status bar's word about the network instead of the operator's name: "" while registered, else "No SIM",
-    // "SOS", "No service"… (tp-statusbar)
+    // "No service"… (tp-statusbar)
     in property <string> network-note;
     // the status bar's app glyphs (neoui_render::status_apps: 0 bell, 1 message, 2 missed call, 3 folder, 4 alarm)
     // and how many apps more
@@ -437,7 +437,7 @@ export component Shell inherits Window {
         glyphs: root.status-glyphs;
         more: root.status-more;
         airplane: SystemSettings.airplane;
-        ring-off: SystemSettings.silent;
+        ring-off: SystemSettings.silent || SystemSettings.ring-volume == 0;
         vibrate: SystemSettings.vibrate;
         alarm: Now.next-alarm != "";
         battery-saver: SystemSettings.battery-saver;
@@ -453,7 +453,7 @@ export component Shell inherits Window {
     // the bottom (rule 06 / D17): Buttons' key row (also for 3 s over a full-screen page after a tap), or the band
     if root.buttons && (!root.full || root.key-row-peek): KeyRow {
         y: root.height - Theme.key-row-h;
-        can-back: root.app-front ? root.app-back : root.screen != "home";
+        can-back: root.shade-open || (root.app-front ? root.app-back : root.screen != "home");
         keyboard: kb.visible;
         back => {
             root.nav-back();
@@ -498,7 +498,8 @@ export component Shell inherits Window {
 
     Shade {
         y: Theme.status-h;
-        height: root.height - Theme.status-h;
+        // above Buttons' key row (tp-shade-buttons), whose Back puts it away
+        height: root.height - Theme.status-h - (root.buttons && !root.full ? Theme.key-row-h : 0);
         open: shade-open;
         notes: root.notes;
         note-opened(i, a) => {
@@ -514,7 +515,8 @@ export component Shell inherits Window {
         open-view(a, v) => { root.open(a); root.view = v; }
         dismissed => { root.shade-open = false; }
         open-app(a) => { root.open(a); }
-        power-asked => { root.shade-open = false; root.power-asked(); }
+        // the shade stays until the UI server opens the Power menu (Renderer::set_power_menu closes it)
+        power-asked => { root.power-asked(); }
     }
 
     PowerMenu {
@@ -526,7 +528,8 @@ export component Shell inherits Window {
         chosen(a) => { root.power(a); }
     }
 
-    if modem-failed && !sim-pin-required && !sim-blocked: Button {
+    // not over the shade or the Power menu: it would cover their buttons
+    if modem-failed && !sim-pin-required && !sim-blocked && !shade-open && !power-open: Button {
         x: Theme.margin;
         y: Theme.status-h + 8 * Theme.dp;
         width: root.width - 2 * Theme.margin;

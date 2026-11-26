@@ -215,6 +215,8 @@ fn main() -> i32 {
         // smooth-ui S2c: a press on the home pages (where it went down), the server's page slide once it moves
         // sideways (with the page it started from), and a touch that comes while the slide settles (ignored)
         let mut home_press: Option<i32> = None;
+        // the press on the home pages became a pull downwards (top-panel TP1): Slint lost it, the shade may open
+        let mut home_pull = false;
         let mut swipe: Option<(Slide, i32)> = None;
         let mut swallow = false;
         let mut phone_modal = false;
@@ -442,6 +444,7 @@ fn main() -> i32 {
                                         && contains(&ui.home_strip(), x, y))
                                     .then_some(x);
                                     down_at = Some((x, y));
+                                    home_pull = false;
                                     // A touch belongs to the app from press to release if it starts in its body.
                                     to_app = app_on_screen
                                         && !power_menu
@@ -491,24 +494,41 @@ fn main() -> i32 {
                                     }
                                     continue;
                                 }
-                                // a swipe down on home opens the shade (top-panel TP1, `shell.swipehome`): mostly
-                                // downwards, so a sideways page swipe that sags a little stays a page swipe
+                                // a swipe down on home opens the shade (top-panel TP1, `shell.swipehome`): a press
+                                // that first moves steeply downwards is a pull, Slint loses it (no widget click, no
+                                // page turn) and the shade opens once it is long enough; anything else stays the
+                                // page swipe it always was. Home must still be what the finger is on: a call may
+                                // have come to the front since the press.
                                 let dy = y - down_at.map_or(y, |d| d.1);
+                                let on_home = ui.screen() == "home"
+                                    && host.front().is_none()
+                                    && !ui.overlay_open()
+                                    && !phone.modal();
                                 if let (TouchPhase::Move, Some(x0)) = (phase, home_press)
-                                    && dy >= pull
+                                    && !home_pull
+                                    && on_home
+                                    && dy >= slop
                                     && dy > 2 * (x - x0).abs()
                                     && host.settings.get(keys::SHELL_SWIPEHOME).unwrap_or(true)
                                 {
                                     ui.cancel_touch();
-                                    ui.open_shade();
-                                    home_press = None;
-                                    swallow = true; // the rest of this touch goes nowhere
-                                    dprintln!("neoui: shade from home");
+                                    home_pull = true;
+                                }
+                                if home_pull {
+                                    if phase == TouchPhase::Move && dy >= pull && on_home {
+                                        ui.open_shade();
+                                        home_pull = false;
+                                        home_press = None;
+                                        swallow = true; // the rest of this touch goes nowhere
+                                        dprintln!("neoui: shade from home");
+                                    } else if phase == TouchPhase::Up || !on_home {
+                                        home_pull = false;
+                                        home_press = None;
+                                    }
                                     continue;
                                 }
                                 if let (TouchPhase::Move, Some(x0)) = (phase, home_press)
                                     && (x - x0).abs() >= slop
-                                    && (x - x0).abs() >= dy.abs()
                                 {
                                     let (dir, page) = ((x - x0).signum(), ui.home_page());
                                     let to = page - dir;
@@ -757,11 +777,12 @@ fn main() -> i32 {
                 host.refresh = true; // the app's surface again, whole
             }
             overlay_shown = overlay;
-            if ui.take_power_asked() {
-                power_down_at = Some(0); // the shade's ⏻: as if Power had been held
-            }
-            if power_down_at.is_some_and(|t| ms.saturating_sub(t) >= POWER_HOLD_MS) {
-                power_down_at = None;
+            // the shade's ⏻ (TP1) opens it like a held Power key, without touching the key's own timer
+            let asked = ui.take_power_asked() && scr.is_on() && !power_menu;
+            if asked || power_down_at.is_some_and(|t| ms.saturating_sub(t) >= POWER_HOLD_MS) {
+                if !asked {
+                    power_down_at = None;
+                }
                 dprintln!("neoui: power menu");
                 let p = sound_profile::store::load(&host.settings);
                 // the active profile first: the menu shows only as many as fit

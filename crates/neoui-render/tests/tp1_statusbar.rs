@@ -9,7 +9,7 @@ use neoui_proto::settings::Value;
 
 /// TP1's status bar states that something backs (tp-statusbar), one under the other in `tp1-statusbar-pixel.png`:
 /// idle, apps waiting (3 glyphs and +1), ring off with vibration and an alarm on, silent, charging with the battery
-/// saver, airplane mode, No SIM, SOS, roaming. Each one draws differently from idle.
+/// saver, airplane mode, No SIM, No service, roaming. Each one draws differently from idle.
 #[test]
 fn tp1_states() {
     let (w, h) = (1080, 2160);
@@ -96,9 +96,9 @@ fn tp1_states() {
             r.set_network(0, "No service", "");
             r.set_network_state("No SIM", false);
         }),
-        ("sos", |r| {
+        ("no service", |r| {
             r.set_network(0, "No service", "");
-            r.set_network_state("SOS", false);
+            r.set_network_state("No service", false);
         }),
         ("roaming", |r| r.set_network_state("", true)),
     ];

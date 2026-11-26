@@ -10,9 +10,9 @@ export component Glyph inherits Image {
     colorize: Theme.text;
 }
 
-// The status bar (rule 01): the clock at the left, the network's name where v1 had the title (the operator, "No SIM",
-// "SOS only", "Airplane mode"...), then the radio technology and its bars (R when roaming), unread messages, Wi-Fi
-// and the battery. No title (D16): the app's header names the page.
+// The status bar (tp-statusbar, TP1): the clock and the waiting apps' glyphs at the left; at the right what's wrong
+// with the network ("No SIM", "No service"), the modes, the radio technology and its bars (R when roaming) or a plane,
+// Wi-Fi and the battery. No title (D16): the app's header names the page.
 export component StatusBar inherits Rectangle {
     in property <int> battery-percent: -1;
     in property <string> battery-text: "--%";
@@ -24,7 +24,7 @@ export component StatusBar inherits Rectangle {
     in property <bool> shade-open;
     in property <string> time: "10:24";
     // the modem (telephony C5): bars 0..4, -1 = no modem (the plain signal icon); the radio technology ("LTE",
-    // "3G", "2G") right before the bars; what's wrong instead of the operator's name ("No SIM", "SOS", "" when fine)
+    // "3G", "2G") right before the bars; what's wrong instead of the operator's name ("No SIM", "No service", "" when fine)
     in property <int> bars: -1;
     in property <string> note;
     in property <string> rat;

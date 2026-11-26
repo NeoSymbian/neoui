@@ -310,8 +310,11 @@ impl Phone {
         self.volume = None;
         // Registration and RAT survive a failed stop/recovery in MODEMD's cached protocol status. They describe
         // the previous radio session until the currently available modem confirms that it is online again.
-        let registered =
-            s.modem == modem::ONLINE && s.radio_online && matches!(s.reg, reg::HOME | reg::ROAMING);
+        // a SIM known to be gone isn't registered, whatever the cached registration still says
+        let registered = s.modem == modem::ONLINE
+            && s.radio_online
+            && s.sim != sim::ABSENT
+            && matches!(s.reg, reg::HOME | reg::ROAMING);
         let technology = if registered {
             match s.rat {
                 rat::LTE => "LTE",
@@ -342,8 +345,8 @@ impl Phone {
             modem::BOOTING => "",
             _ if s.airplane && !s.radio_online => "",
             _ if registered => "",
+            // no "SOS": emergency calls aren't placed yet, so the bar mustn't promise them
             _ if s.sim == sim::ABSENT => "No SIM",
-            _ if s.reg == reg::DENIED => "SOS",
             _ => "No service",
         };
         ui.set_network_state(note, registered && s.reg == reg::ROAMING);

@@ -750,6 +750,9 @@ impl Renderer {
     /// Show or hide the Power menu (the UI server opens it when Power is held).
     pub fn set_power_menu(&mut self, open: bool) {
         self.ui.set_power_open(open);
+        if open {
+            self.ui.set_shade_open(false); // from the shade's ⏻: one change, nothing under them in between
+        }
     }
 
     /// The sound profiles the Power menu offers (id, name) and the active one.
@@ -871,7 +874,7 @@ impl Renderer {
     }
 
     /// What the status bar says about the network instead of the operator's name (tp-statusbar): "" while
-    /// registered, else "No SIM", "SOS", "No service"…; `roaming` adds the R.
+    /// registered, else "No SIM", "No service", "Recovering…"; `roaming` adds the R.
     pub fn set_network_state(&mut self, note: &str, roaming: bool) {
         self.ui.set_network_note(note.into());
         self.ui.set_roaming(roaming);
