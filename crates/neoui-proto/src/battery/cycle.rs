@@ -368,6 +368,11 @@ fn dur(s: u64) -> String {
     duration(u32::try_from(s).unwrap_or(u32::MAX))
 }
 
+/// Screen-on time before the cycle has a usable display measurement.
+pub const SCREEN_NOT_YET: &str = "Not recorded yet";
+/// Screen-on time from a shell without INFO 9.
+pub const SCREEN_OLD_SHELL: &str = "Not recorded on this version";
+
 /// The texts for a cycle. `screen_recorded`: the shell records screen time (INFO 9; INFO 5's history doesn't).
 #[must_use]
 pub fn text(c: &BatteryCycle, screen_recorded: bool) -> CycleText {
@@ -379,9 +384,9 @@ pub fn text(c: &BatteryCycle, screen_recorded: bool) -> CycleText {
     let partial = c.gap_s >= 60 || (c.flags & bits::INCOMPLETE != 0 && c.gap_s == 0);
     let span = dur(u64::try_from(c.last_utc.saturating_sub(c.start_utc)).unwrap_or(0));
     let screen = if !screen_recorded {
-        "Not recorded on this version".into()
+        SCREEN_OLD_SHELL.into()
     } else if c.flags & bits::SCREEN_VALID == 0 {
-        "Not recorded yet".into()
+        SCREEN_NOT_YET.into()
     } else {
         let on = dur(c.screen_on_battery_s);
         let tail = if partial { " (partial)" } else { "" };

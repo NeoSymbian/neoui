@@ -128,6 +128,7 @@ fn refresh_sources(ctx: &Ctx, ui: &SettingsApp) {
     ctx.old_apps(ui);
     d2::refresh(ui, Page::Developer);
     d2::refresh(ui, Page::About);
+    crate::battery_cycle::refresh(&ctx.app, ui); // D5
 }
 
 /// The 1 s tick while the root searches: the count's progress, the owners every 10 s.

@@ -13,6 +13,7 @@
 extern crate alloc;
 
 mod appearance;
+mod battery_cycle;
 mod d2;
 mod modem;
 mod profile_audio;
@@ -384,8 +385,8 @@ impl Ctx {
         if page == Page::Profile && every(5) {
             profile_audio::refresh(&mut self.modem.borrow_mut(), &ui);
         }
-        if page == Page::BatteryUsage && every(5) {
-            self.battery_usage(&ui);
+        if matches!(page, Page::Battery | Page::BatteryUsage) && (now || every(5)) {
+            battery_cycle::refresh(&self.app, &ui);
         }
         if page == Page::Apps && every(5) {
             self.old_apps(&ui);
@@ -544,25 +545,6 @@ impl Ctx {
         s.set_battery_storage(storage.into());
         let bars = history.map(|h| h.bars).unwrap_or_default();
         s.set_battery_history(ModelRc::new(VecModel::from(bars)));
-    }
-
-    /// Battery usage (SE3a): the shell's `INFO_BATTERY_USAGE` as text; "No data yet" before the first reading or when
-    /// the shell can't say (an older shell, a damaged record).
-    fn battery_usage(&self, ui: &SettingsApp) {
-        let s = ui.global::<SetState>();
-        let usage = self
-            .app
-            .settings_info(proto::INFO_BATTERY_USAGE)
-            .ok()
-            .and_then(|b| neoui_proto::settings_app::info::decode_usage(&b))
-            .flatten();
-        s.set_usage_known(usage.is_some());
-        if let Some(t) = usage.map(|u| u.text()) {
-            s.set_usage_title(t.title.into());
-            s.set_usage_levels(t.levels.into());
-            s.set_usage_on_battery(t.on_battery.into());
-            s.set_usage_gaps(t.gaps.into());
-        }
     }
 
     /// What a page asked for (`SetState.act`; the list is in settings-ui's state.slint).

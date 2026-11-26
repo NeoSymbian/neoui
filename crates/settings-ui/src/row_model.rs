@@ -130,6 +130,8 @@ pub fn facts(s: &SetState<'_>, sample: Sample, epochs: Epochs) -> Facts {
         ("pads.b", pick(s.get_pad_b_names(), s.get_pad_b())),
         ("pads.lefty", on(s.get_pad_lefty())),
         ("pads.console", on(s.get_pad_console())),
+        // D5
+        ("battery.screen_on", text(s.get_screen_on())),
     ] {
         if let Some(v) = v {
             f.scalars.insert(key, v);

@@ -56,6 +56,7 @@
 use super::page::Page;
 use super::rows::{self, ProviderId, ROWS, Row, Search};
 use super::storage::{KINDS, Kind};
+use crate::battery::cycle;
 use crate::sound_profile::{self, Profile, tone};
 use alloc::collections::BTreeMap;
 use alloc::format;
@@ -540,6 +541,13 @@ impl Provider for Builtin {
             } else {
                 "Off"
             })),
+            // D5: the charge cycle's screen-on time as battery_cycle.rs shows it (`battery::cycle::text`)
+            "battery.screen_on" => match f.text(id).unwrap_or("") {
+                "" | cycle::SCREEN_NOT_YET => Reading::Unavailable(cycle::SCREEN_NOT_YET),
+                cycle::SCREEN_OLD_SHELL => Reading::Unavailable(cycle::SCREEN_OLD_SHELL),
+                t if t.ends_with(" (partial)") => Reading::Partial(String::from(t)),
+                t => Reading::Value(String::from(t)),
+            },
             _ => match f.scalars.get(id) {
                 Some(Scalar::On(b)) => on_off(*b),
                 Some(Scalar::Text(t) | Scalar::Choice(_, t)) => known(Some(t)),
@@ -1239,15 +1247,17 @@ mod tests {
     #[test]
     fn search_ranks_like_the_board() {
         let snap = project_all(&facts());
-        // set2-search: the Date & time rows, Screen timeout, then the root's Date & time, then the page's other rows
+        // set2-search: the Date & time rows, Screen timeout, then the root's Date & time, then the page's other rows.
+        // D5's Screen-on time (the board's last) is a whole-word match, so it comes before Screen timeout
         let t = titles(&snap, "time");
         assert_eq!(
-            t[..6],
+            t[..7],
             [
                 "Automatic time",
                 "Automatic time zone",
                 "Time zone",
                 "24-hour time",
+                "Screen-on time",
                 "Screen timeout",
                 "Date & time"
             ]

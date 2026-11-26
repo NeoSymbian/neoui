@@ -40,6 +40,7 @@ const COMPONENTS: &[(&str, Page)] = &[
     ("ProfilePage", Page::Profile),
     ("StoragePage", Page::Storage),
     ("ResetPage", Page::Reset),
+    ("BatteryUsagePage", Page::BatteryUsage),
 ];
 
 fn page_file(name: &str) -> String {
@@ -256,6 +257,10 @@ fn facts() -> Facts {
     f.scalars.insert("about.slot", Scalar::Text("a".into()));
     f.scalars
         .insert("storage.free", Scalar::Text("C: 5.9 GB free".into()));
+    f.scalars.insert(
+        "battery.screen_on",
+        Scalar::Text("2 h 14 min since charged".into()),
+    );
     f
 }
 
@@ -363,6 +368,20 @@ const MANIFEST: &[(&str, &str, &str, ProviderId, Page, Gate)] = &[
         Page::Storage,
         |f| {
             f.scalars.remove("storage.free");
+        },
+    ),
+    // D5: no cycle with a display measurement yet
+    (
+        "set2-search",
+        "Screen-on time",
+        "battery.screen_on",
+        ProviderId::Builtin,
+        Page::BatteryUsage,
+        |f| {
+            f.scalars.insert(
+                "battery.screen_on",
+                Scalar::Text(neoui_proto::battery::cycle::SCREEN_NOT_YET.into()),
+            );
         },
     ),
 ];

@@ -168,9 +168,14 @@ export global SetState {
     in-out property <bool> show-percent: true;
     in property <bool> usage-known;
     in property <string> usage-title;
-    in property <string> usage-levels;
     in property <string> usage-on-battery;
     in property <string> usage-gaps;
+    // D5: the charge cycle (INFO 9; INFO 5 on an older shell) fills the usage-* texts above, the levels at its ends
+    // ("100%", "72%"), its length ("9 h 40 min") and the screen-on time ("2 h 14 min since charged"; "" = not read)
+    in property <string> usage-from;
+    in property <string> usage-to;
+    in property <string> usage-span;
+    in property <string> screen-on;
     // SE3b: Storage. The drives at once; the scan's parts (Apps, Files, Other, Free: sizes and their bar), the kinds,
     // its state ("Counting… 120 folders", "Last counted 06:50") and the folders it couldn't read
     in property <[DriveRow]> drives;

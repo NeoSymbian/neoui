@@ -625,6 +625,14 @@ pub const ROWS: &[Row] = &[
         "Usage & diagnostics",
         &["log", "telemetry", "crash"],
     ),
+    // D5: the charge cycle's screen-on time (INFO 9)
+    row(
+        "battery.screen_on",
+        BatteryUsage,
+        BatteryUsage,
+        "Screen-on time",
+        &["screen time", "since charged", "display on", "full charge"],
+    ),
 ];
 
 /// The root list's rows, top to bottom (set2-root-list, root.slint's `RootPage`): row `i` shows

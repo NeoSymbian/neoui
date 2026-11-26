@@ -348,7 +348,7 @@ export component BatteryPage inherits NeoList {
         value-bright: true;
         title: "Battery usage";
         checked: SetState.found == "battery.usage";
-        subtitle: "Level and time on battery";
+        subtitle: SetState.screen-on != "" ? "Screen-on time: " + SetState.screen-on : "Level and time on battery";
         chevron: true;
         divider: false;
         clicked => { SetState.act("open", "19"); }
@@ -356,49 +356,84 @@ export component BatteryPage inherits NeoList {
     }
 }
 
-// Battery usage (set2-battery-usage, SE3a): only what the shell's history holds, the level and the charge state once
-// a minute. No per-app shares (D4): nothing accounts for them yet.
+// Battery usage (set2-battery-usage): the charge cycle (D5, the shell's INFO 9; SE3a's INFO 5 history on an older
+// shell) in the board's card, then its screen-on time. No per-app shares: they need D16's calibrated energy model.
 export component BatteryUsagePage inherits NeoList {
     VerticalLayout {
         alignment: start;
-        SectionHeader { text: SetState.usage-known ? SetState.usage-title : "Battery usage"; }
         VerticalLayout {
-            alignment: start;
-            spacing: 10 * Theme.dp;
-            padding-left: Theme.margin;
-            padding-right: Theme.margin;
-            padding-bottom: Theme.margin;
-            if !SetState.usage-known: Text {
-                text: "No data yet. The history starts with the first readings after the phone starts.";
-                font-size: Theme.font-body;
-                color: Theme.text-secondary;
-                wrap: word-wrap;
-            }
-            if SetState.usage-known: Text {
-                text: SetState.usage-levels;
-                font-size: Theme.font-title;
-                font-weight: 700;
-                color: Theme.text;
-                wrap: word-wrap;
-            }
-            if SetState.usage-known: Text {
-                text: SetState.usage-on-battery;
-                font-size: Theme.font-body;
-                color: Theme.text;
-            }
-            if SetState.usage-known && SetState.usage-gaps != "": Text {
-                text: SetState.usage-gaps;
-                font-size: Theme.font-label;
-                color: Theme.text-secondary;
-                wrap: word-wrap;
-            }
-            Text {
-                text: "Per-app use needs accounting that doesn't exist yet; screen time isn't recorded.";
-                font-size: Theme.font-status;
-                color: Theme.text-dim;
-                wrap: word-wrap;
+            padding-left: 12 * Theme.dp;
+            padding-right: 12 * Theme.dp;
+            padding-top: 12 * Theme.dp;
+            Rectangle {
+                border-radius: 14 * Theme.dp;
+                background: Theme.card;
+                border-width: 1px;
+                border-color: Theme.card-border;
+                VerticalLayout {
+                    padding-left: 14 * Theme.dp;
+                    padding-right: 14 * Theme.dp;
+                    padding-top: 12 * Theme.dp;
+                    padding-bottom: 12 * Theme.dp;
+                    spacing: 4 * Theme.dp;
+                    Text {
+                        text: SetState.usage-known ? SetState.usage-title : "Battery usage";
+                        font-size: Theme.font-status;
+                        color: Theme.text-dim;
+                        wrap: word-wrap;
+                    }
+                    if SetState.usage-known: HorizontalLayout {
+                        alignment: start;
+                        spacing: 4 * Theme.dp;
+                        for t in [SetState.usage-from, "→", SetState.usage-to]: Text {
+                            text: t;
+                            font-size: Theme.font-title;
+                            font-weight: 600;
+                            color: Theme.text;
+                            vertical-alignment: bottom;
+                        }
+                        Text {
+                            text: "· " + SetState.usage-span;
+                            font-size: 15 * Theme.dp;
+                            color: Theme.text-secondary;
+                            vertical-alignment: bottom;
+                        }
+                    }
+                    if SetState.usage-known: Text {
+                        text: SetState.usage-on-battery;
+                        font-size: Theme.font-status;
+                        color: Theme.text-dim;
+                    }
+                    if SetState.usage-known && SetState.usage-gaps != "": Text {
+                        text: SetState.usage-gaps;
+                        font-size: Theme.font-status;
+                        color: Theme.text-dim;
+                        wrap: word-wrap;
+                    }
+                    if !SetState.usage-known: Text {
+                        text: "No data yet. The record starts with the first readings after the phone starts.";
+                        font-size: Theme.font-status;
+                        color: Theme.text-dim;
+                        wrap: word-wrap;
+                    }
+                }
             }
         }
+
+        Rectangle { height: 8 * Theme.dp; }
+        ListRow {
+            title: "Screen-on time";
+            checked: SetState.found == "battery.screen_on";
+            subtitle: SetState.screen-on != "" ? SetState.screen-on : "Not recorded yet";
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/brightness.svg");
+            icon-tint: #ffffff;
+            tile: #e2a92a;
+            divider: false;
+        }
+
+        SectionHeader { text: "By app"; }
+        Note { text: "Not yet (D16): shares per app need a calibrated energy model."; }
     }
 }
 

@@ -98,6 +98,7 @@ fn fill(sh: &Shot) {
     s.set_battery_state("Discharging".into());
     s.set_battery_usb("Disconnected".into());
     s.set_battery_voltage("3.874 V".into());
+    s.set_screen_on("2 h 14 min since charged".into()); // D5
     s.set_battery_history(model(
         (0..1440)
             .map(|i| {
@@ -570,16 +571,71 @@ fn every_page() {
     s.set_storage_parts(parts);
     s.set_storage_unreadable("".into());
 
-    // Battery usage (SE3a): what the history holds, then before its first reading
-    s.set_usage_known(true);
-    s.set_usage_title("Since full charge".into());
-    s.set_usage_levels("From 100% to 72% over 9 h 40 min".into());
-    s.set_usage_on_battery("On battery 3 h 34 min".into());
-    s.set_usage_gaps("Off or not recorded for 6 h, not counted".into());
+    // Battery usage (D5): the charge cycle's texts (battery::cycle::text) since a full charge (the board's numbers),
+    // before one, with a gap, from an older shell (INFO 5, no screen time), and before the first reading
+    use neoui_proto::battery::cycle::{from_usage, text};
+    use neoui_proto::settings_app::wire::{BatteryCycle, cycle as bits};
+    let show = |t: &neoui_proto::battery::cycle::CycleText| {
+        s.set_usage_known(true);
+        s.set_usage_title(t.title.as_str().into());
+        s.set_usage_from(t.from.as_str().into());
+        s.set_usage_to(t.to.as_str().into());
+        s.set_usage_span(t.span.as_str().into());
+        s.set_usage_on_battery(t.on_battery.as_str().into());
+        s.set_usage_gaps(t.gaps.as_str().into());
+        s.set_screen_on(t.screen.as_str().into());
+    };
+    let cycle = BatteryCycle {
+        flags: bits::FULL_THEN_DISCHARGE | bits::SCREEN_VALID,
+        start_percent: Some(100),
+        end_percent: Some(72),
+        start_utc: 1_790_000_000,
+        last_utc: 1_790_000_000 + 9 * 3600 + 40 * 60,
+        on_battery_s: 9 * 3600 + 40 * 60,
+        screen_on_battery_s: 2 * 3600 + 14 * 60,
+        gap_s: 0,
+    };
     page(&sh, 19, "Battery usage");
-    sh.shoot("set2-battery-usage");
+    show(&text(
+        &BatteryCycle {
+            flags: bits::SCREEN_VALID,
+            start_percent: Some(85),
+            ..cycle
+        },
+        true,
+    ));
+    sh.shoot("set2-battery-usage-observed");
+    show(&text(
+        &BatteryCycle {
+            flags: cycle.flags | bits::INCOMPLETE,
+            on_battery_s: 3 * 3600 + 40 * 60,
+            gap_s: 6 * 3600,
+            ..cycle
+        },
+        true,
+    ));
+    sh.shoot("set2-battery-usage-partial");
+    show(&text(
+        &from_usage(&neoui_proto::battery::Usage {
+            since_full: true,
+            start_utc: cycle.start_utc,
+            end_utc: cycle.last_utc,
+            start_percent: Some(100),
+            end_percent: Some(72),
+            on_battery_s: 3 * 3600 + 40 * 60,
+            gap_s: 6 * 3600,
+        }),
+        false,
+    ));
+    sh.shoot("set2-battery-usage-old-shell");
     s.set_usage_known(false);
+    s.set_screen_on("".into());
     sh.shoot("set2-battery-usage-empty");
+    show(&text(&cycle, true));
+    assert_eq!(s.get_screen_on(), "2 h 14 min since charged");
+    sh.shoot("set2-battery-usage");
+    page(&sh, 8, "Battery");
+    sh.shoot("set2-battery");
 
     // the sheets
     page(&sh, 1, "Wi-Fi");
