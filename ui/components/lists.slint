@@ -213,6 +213,19 @@ export component ListRow inherits Rectangle {
                     size: 18 * Theme.dp;
                     colorize: white;
                 }
+                if root.has-badge: Rectangle {
+                    x: parent.width - self.width + 4 * Theme.dp;
+                    y: parent.height - self.height + 3 * Theme.dp;
+                    width: 13 * Theme.dp;
+                    height: self.width;
+                    border-radius: self.width / 2;
+                    background: Theme.bg;
+                    Glyph {
+                        source: root.badge;
+                        size: 11 * Theme.dp;
+                        colorize: root.icon-tint;
+                    }
+                }
             }
         }
         VerticalLayout {
