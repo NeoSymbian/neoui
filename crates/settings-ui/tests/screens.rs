@@ -206,6 +206,8 @@ fn fill(sh: &Shot) {
         ring: true,
         volume: 10,
         vibrate: false,
+        ringtone: neoui_proto::sound_profile::tone::TWO_BEEPS,
+        message_tone: neoui_proto::sound_profile::tone::NONE,
     });
     s.set_profiles(model(
         profiles
@@ -217,9 +219,14 @@ fn fill(sh: &Shot) {
                 ring: p.ring,
                 volume: i32::from(p.volume),
                 vibrate: p.vibrate,
+                ringtone: i32::from(p.ringtone),
+                message_tone: i32::from(p.message_tone),
             })
             .collect(),
     ));
+    use neoui_proto::sound_profile::tone;
+    s.set_ring_tones(strings(&tone::ALL.map(tone::ring_name)));
+    s.set_message_tones(strings(&tone::ALL.map(tone::message_name)));
     s.set_active_profile(0);
     s.set_active_profile_name("General".into());
     s.set_profile_current(s.get_profiles().row_data(0).unwrap());
@@ -472,6 +479,12 @@ fn every_page() {
         page(&sh, 18, s.get_profile_current().name.as_str());
         sh.shoot(name);
     }
+    // a ringtone's sheet (set2-ringtone): a tap asks for the tone (the app sets and previews it)
+    s.set_profile_current(s.get_profiles().row_data(0).unwrap());
+    page(&sh, 18, "General");
+    sheet(&sh, "ringtone");
+    sh.shoot("set2-ringtone");
+    sheet(&sh, "");
     page(&sh, 7, "Sounds");
     sh.draw();
     sh.take_acts();

@@ -190,6 +190,7 @@ fn run() -> Result<(), i32> {
                     }
                     ctx.tick(true);
                 } else {
+                    ctx.sound.stop(); // a tone's preview ends with the app hidden
                     ctx.storage.stop(); // hidden: no scan in the background
                 }
             }
@@ -254,6 +255,8 @@ impl Ctx {
         s.set_found(SharedString::new());
         ui.global::<KeyboardFocus>().set_open(false);
         dprintln!("settings: page {}", page.name());
+        // a tone's preview stops when the page changes (Back included)
+        self.sound.stop();
         // Storage's scan runs only on its page, shown (SE3b); a kept count isn't redone
         if page == Page::Storage && self.visible.get() {
             self.storage.ensure();
@@ -667,6 +670,22 @@ impl Ctx {
                         volume: (*volume).clamp(0, 10) as u8,
                         vibrate: *vibrate != 0,
                     });
+                }
+            }
+            // (SE2b) a tone from its sheet: the profile takes it, then it plays once (at the profile's volume)
+            "profile-tone" => {
+                let p = s.get_profile_current();
+                let (which, t) = value.split_once(',').unwrap_or(("", ""));
+                if let (Ok(id), Ok(t)) = (u8::try_from(p.id), t.parse::<u8>()) {
+                    let (mut ring, mut message) = (p.ringtone as u8, p.message_tone as u8);
+                    if which == "r" {
+                        ring = t;
+                    } else {
+                        message = t;
+                    }
+                    if self.profile(sound_profile::Command::SetTones { id, ring, message }) {
+                        self.sound.preview(t, p.volume.clamp(0, 10) as u8);
+                    }
                 }
             }
             "profile-add" => {

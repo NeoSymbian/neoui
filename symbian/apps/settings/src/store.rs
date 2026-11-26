@@ -25,6 +25,12 @@ fn strings(v: impl IntoIterator<Item = impl Into<SharedString>>) -> ModelRc<Shar
 
 /// The fixed choice names, once.
 pub fn fill_fixed(ui: &SettingsApp) {
+    {
+        use neoui_proto::sound_profile::tone;
+        let s = ui.global::<SetState>();
+        s.set_ring_tones(strings(tone::ALL.iter().map(|t| tone::ring_name(*t))));
+        s.set_message_tones(strings(tone::ALL.iter().map(|t| tone::message_name(*t))));
+    }
     let s = ui.global::<SetState>();
     s.set_timeouts(strings(TIMEOUTS.iter().map(|(_, t)| *t)));
     s.set_nav_modes(strings(choices::NAV_MODES.iter().map(|(n, _)| *n)));
@@ -99,10 +105,11 @@ pub fn read_profiles(app: &App) -> Profiles {
     let mut tries = 0;
     loop {
         let active = get(app, keys::SOUND_PROFILE);
-        let blob = match app.setting_raw("sound.profiles") {
+        let bytes = |k| match app.setting_raw(k) {
             Ok(Value::Bytes(b)) => b,
             _ => Vec::new(),
         };
+        let (blob, tones) = (bytes("sound.profiles"), bytes("sound.tones"));
         let mirrors = Mirrors {
             silent: get(app, keys::SOUND_SILENT),
             vibrate: get(app, keys::SOUND_VIBRATE),
@@ -110,7 +117,7 @@ pub fn read_profiles(app: &App) -> Profiles {
         };
         tries += 1;
         if get(app, keys::SOUND_PROFILE) == active || tries == 3 {
-            return sound_profile::read(active, &blob, mirrors);
+            return sound_profile::read(active, &blob, &tones, mirrors);
         }
     }
 }
@@ -129,6 +136,8 @@ pub fn profiles(app: &App, ui: &SettingsApp) {
             ring: x.ring,
             volume: i32::from(x.volume),
             vibrate: x.vibrate,
+            ringtone: i32::from(x.ringtone),
+            message_tone: i32::from(x.message_tone),
         })
         .collect();
     s.set_active_profile(i32::from(p.active));

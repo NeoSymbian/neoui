@@ -13,6 +13,14 @@ use e32::{dprintln, time};
 /// What a test does: 0 nothing yet, 1 playing, 2 recording, 3 playing back, 4 done, negative = failed with that error.
 type State = &'static Mutex<i32>;
 
+/// Bumped to stop what plays now (a new preview, leaving the page, the app hidden): a playback ends once the value it
+/// started with is gone.
+static PLAYING: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
+
+fn current() -> u32 {
+    PLAYING.load(core::sync::atomic::Ordering::SeqCst)
+}
+
 pub struct Sound {
     state: Option<State>,
     shown: core::cell::Cell<i32>,
@@ -47,6 +55,39 @@ impl Sound {
         }) {
             *state.lock() = e;
         }
+    }
+
+    /// (SE2b) Play one period of a ringtone or message tone at `volume`, the PCM AUDIOD rings with
+    /// (`neoaudio::tones`). An incoming call preempts it (AUDIOD's media yields to the ring); [`Self::stop`] ends it.
+    pub fn preview(&self, tone: u8, volume: u8) {
+        // a preview replaces the one that plays (not a test: those finish)
+        let Some(state) = self.state else {
+            return;
+        };
+        if matches!(*state.lock(), 2 | 3) {
+            return;
+        }
+        let mine = PLAYING.fetch_add(1, core::sync::atomic::Ordering::SeqCst) + 1;
+        *state.lock() = 1;
+        if let Err(e) = e32::thread::spawn(move || {
+            let pcm = neoaudio::tones::pcm(tone, volume);
+            let r = open(neoaudio::tones::RATE, 1, false).and_then(|s| play(&s, &pcm, mine));
+            dprintln!(
+                "settings: preview tone {} volume {} -> {:?}",
+                tone,
+                volume,
+                r
+            );
+            *state.lock() = r.map_or_else(|e| e, |()| 4);
+            0
+        }) {
+            *state.lock() = e;
+        }
+    }
+
+    /// Stop a preview (or test) that plays now.
+    pub fn stop(&self) {
+        PLAYING.fetch_add(1, core::sync::atomic::Ordering::SeqCst);
     }
 
     /// The test's progress, when it changed since the last call.
@@ -91,9 +132,13 @@ fn open(rate: u32, channels: u32, record: bool) -> Result<Session, i32> {
     Ok(s)
 }
 
-/// Write all of `pcm`, then wait for the queue to play out.
-fn play(s: &Session, pcm: &[u8]) -> Result<(), i32> {
+/// Write all of `pcm`, then wait for the queue to play out; stop early once [`PLAYING`] moves on from `mine`.
+fn play(s: &Session, pcm: &[u8], mine: u32) -> Result<(), i32> {
+    let stop = || current() != mine;
     for chunk in pcm.chunks(8_192) {
+        if stop() {
+            break;
+        }
         let des = TPtrC8::new(chunk);
         let mut a = TIpcArgs::new();
         a.desc8(0, &des);
@@ -106,6 +151,10 @@ fn play(s: &Session, pcm: &[u8]) -> Result<(), i32> {
         a.des8(0, &mut des);
         s.send_receive(neoaudio::op::INFO, &a)?;
         let info = neoaudio::Info::from_bytes(&b).unwrap_or_default();
+        if stop() {
+            let _ = s.send_receive(neoaudio::op::STOP, &TIpcArgs::new());
+            break;
+        }
         if info.queued == 0 {
             dprintln!(
                 "settings: sound test: {} frames, {} underruns, sink {}",
@@ -128,7 +177,7 @@ fn test_sound() -> i32 {
         for f in [523, 659, 784, 1047] {
             pcm.extend(neoaudio::tone(f, 220, 44_100, 2, 9_000));
         }
-        play(&s, &pcm)
+        play(&s, &pcm, current())
     });
     dprintln!("settings: sound test sound -> {:?}", r);
     r.map_or_else(|e| e, |_| 0)
@@ -202,7 +251,7 @@ fn record_test(state: State) -> i32 {
         );
         *state.lock() = 3;
         let s = open(48_000, 1, false)?;
-        play(&s, &pcm)
+        play(&s, &pcm, current())
     })();
     dprintln!("settings: sound test record -> {:?}", r);
     r.map_or_else(|e| e, |_| 0)
