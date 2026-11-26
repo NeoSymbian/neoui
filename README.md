@@ -80,11 +80,14 @@ neo rom && DTB=… neo kernel bonito && neo flash   # RAM-boots the image on the
 ```
 
 **Apps are separate processes (R6).** The UI server is also the `NeoUi` IPC server (protocol in
-`neoui-proto::ipc`). When the shell navigates to an app that exists as an EXE (so far `clock` → `NEOCLOCK.EXE`,
-`symbian/apps/clock`), the server starts it through the Symbian loader. The app connects, receives its drawing
-surface (a global chunk shared by handle, mapped at the same address in both processes), renders its own Slint UI
-into it and reports damage. The server shows the surface in the shell's body, between the live status bar and
-toolbar. Touches in the body go to the app; Back makes the server send `Quit`, and the app exits.
+`neoui-proto::ipc`). When the shell navigates to an app that exists as an EXE (`neoui_proto::apps`: `terminal` →
+`NEOTERM.EXE` in `symbian/apps/term`, `clock` → `NEOCLOCK.EXE` in NeoSymbian/datetime), the server starts it
+through the Symbian loader. The app connects, receives its drawing surface (a global chunk shared by handle, mapped
+at the same address in both processes), renders its own Slint UI into it and reports damage. The server shows
+the surface in the shell's body, between the live status bar and toolbar. Touches in the body go to the app; Back
+makes the server send `Quit`, and the app exits. A service (protocol 1.19: `DTSRV.EXE`, NeoSymbian/datetime, which
+rings alarms and reminders) has no screen: the server starts it at boot, keeps it running and shows its next alarm
+and event (`dtsrv.next`) on home.
 
 **Phone, Contacts and Messages are an app: `NEOPHONE.EXE` in [NeoSymbian/phone](https://github.com/NeoSymbian/phone)**
 (its contacts model is that repo's `crates/contacts`). The UI server starts it hidden at boot and keeps it running
