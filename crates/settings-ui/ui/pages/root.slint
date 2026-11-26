@@ -4,7 +4,7 @@
 // (SE3-SE6), so they are not drawn yet.
 import { Theme, NeoList, SectionHeader, ListRow } from "@neoui/kit.slint";
 import { SettingRow } from "../parts.slint";
-import { SetState } from "../state.slint";
+import { SetState, SearchHit } from "../state.slint";
 
 export component RootPage inherits NeoList {
     VerticalLayout {
@@ -42,9 +42,12 @@ export component RootPage inherits NeoList {
 
         SettingRow {
             title: "Airplane mode";
-            value: SetState.airplane ? "On" : "Off";
-            icon: @image-url("@neoui/icons/sys/lock.svg");
-            tint: #e2a92a;
+            icon: @image-url("@neoui/icons/sys/plane.svg");
+            tint: #f08c2e;
+            has-switch: true;
+            divider: false;
+            switch-on <=> SetState.airplane;
+            switch-toggled(v) => { SetState.act("radio.airplane", v ? "1" : "0"); }
             clicked => { SetState.act("open", "4"); }
         }
 
@@ -66,7 +69,7 @@ export component RootPage inherits NeoList {
         }
 
         SettingRow {
-            title: "Sounds";
+            title: "Sounds & profiles";
             value: SetState.active-profile-name;
             icon: @image-url("@neoui/icons/sys/volume.svg");
             tint: #e5484d;
@@ -153,6 +156,9 @@ component GridTile inherits Rectangle {
     height: 104 * Theme.dp;
     background: t.pressed ? Theme.pressed : transparent;
     border-radius: 12 * Theme.dp;
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-action-default => { SetState.act("open", root.page); }
     t := TouchArea {
         clicked => { SetState.act("open", root.page); }
     }
@@ -186,7 +192,8 @@ component GridTile inherits Rectangle {
 }
 
 // The root, Nokia grid variant (set2-root-grid, S01): the categories in 3 columns; the pages are the list's. Only
-// categories with a page today (Notifications, Storage and Security come with their stages).
+// categories with a page today, in the board's order (Notifications and Security come with TP4 and SE6); Mobile
+// network is under Connectivity, as the board groups it.
 export component RootGridPage inherits NeoList {
     VerticalLayout {
         alignment: start;
@@ -198,11 +205,11 @@ export component RootGridPage inherits NeoList {
              { l: "Sounds", i: @image-url("@neoui/icons/sys/volume.svg"), c: #e5484d, p: 7 }],
             [{ l: "Navigation", i: @image-url("@neoui/icons/sys/home.svg"), c: #3d8bfd, p: 6 },
              { l: "Battery", i: @image-url("@neoui/icons/sys/battery_saver.svg"), c: #14a37f, p: 8 },
-             { l: "Privacy", i: @image-url("@neoui/icons/sys/privacy.svg"), c: #5b6472, p: 15 }],
-            [{ l: "Time", i: @image-url("@neoui/icons/sys/stopwatch.svg"), c: #3d8bfd, p: 9 },
-             { l: "Language", i: @image-url("@neoui/icons/sys/language.svg"), c: #1fa9c4, p: 10 },
-             { l: "Apps", i: @image-url("@neoui/icons/sys/apps.svg"), c: #8656e8, p: 13 }],
-            [{ l: "Mobile", i: @image-url("@neoui/icons/sys/signal.svg"), c: #22b46a, p: 2 },
+             { l: "Storage", i: @image-url("@neoui/icons/sys/phone_storage.svg"), c: #8656e8, p: 20 }],
+            [{ l: "Privacy", i: @image-url("@neoui/icons/sys/privacy.svg"), c: #5b6472, p: 15 },
+             { l: "Time", i: @image-url("@neoui/icons/sys/stopwatch.svg"), c: #3d8bfd, p: 9 },
+             { l: "Language", i: @image-url("@neoui/icons/sys/language.svg"), c: #1fa9c4, p: 10 }],
+            [{ l: "Apps", i: @image-url("@neoui/icons/sys/apps.svg"), c: #8656e8, p: 13 },
              { l: "Developer", i: @image-url("@neoui/icons/sys/usb.svg"), c: #5b6472, p: 11 },
              { l: "About", i: @image-url("@neoui/icons/sys/info.svg"), c: #5b6472, p: 12 }],
         ]: HorizontalLayout {
@@ -217,17 +224,181 @@ export component RootGridPage inherits NeoList {
     }
 }
 
+// A search result's page, as a tile (set2-search): the colour and glyph of the root row that leads there.
+component PageTile inherits Rectangle {
+    in property <int> page;
+    width: Theme.row-tile;
+    height: self.width;
+    border-radius: 8 * Theme.dp;
+    background: page == 1 || page == 3 || page == 4 || page == 17 ? #2f80ed
+        : page == 2 ? #22b46a
+        : page == 5 ? #e2a92a
+        : page == 6 || page == 9 ? #3d8bfd
+        : page == 7 || page == 18 ? #e5484d
+        : page == 8 || page == 19 ? #14a37f
+        : page == 10 ? #1fa9c4
+        : page == 13 || page == 14 || page == 20 || page == 21 ? #8656e8
+        : #5b6472;
+    Image {
+        width: 20 * Theme.dp;
+        height: self.width;
+        colorize: white;
+        source: page == 1 || page == 4 || page == 17 ? @image-url("@neoui/icons/sys/wifi.svg")
+            : page == 2 ? @image-url("@neoui/icons/sys/signal.svg")
+            : page == 3 ? @image-url("@neoui/icons/sys/bluetooth.svg")
+            : page == 5 ? @image-url("@neoui/icons/sys/brightness.svg")
+            : page == 6 ? @image-url("@neoui/icons/sys/home.svg")
+            : page == 7 || page == 18 ? @image-url("@neoui/icons/sys/volume.svg")
+            : page == 8 || page == 19 ? @image-url("@neoui/icons/sys/battery_saver.svg")
+            : page == 9 ? @image-url("@neoui/icons/sys/stopwatch.svg")
+            : page == 10 ? @image-url("@neoui/icons/sys/language.svg")
+            : page == 11 ? @image-url("@neoui/icons/sys/usb.svg")
+            : page == 13 || page == 14 || page == 21 ? @image-url("@neoui/icons/sys/apps.svg")
+            : page == 15 ? @image-url("@neoui/icons/sys/privacy.svg")
+            : page == 20 ? @image-url("@neoui/icons/sys/phone_storage.svg")
+            : @image-url("@neoui/icons/sys/info.svg");
+    }
+}
+
+// One result (set2-search): the page's tile; "Page › " then the title with the match in the accent; the value under it.
+component ResultRow inherits Rectangle {
+    in property <SearchHit> hit;
+    callback clicked;
+    // the line's pieces measured, not drawn (whether the highlighted line fits)
+    m-path := Text { visible: false; text: hit.path; font-size: Theme.font-value; }
+    m-arrow := Text { visible: false; text: "›"; font-size: Theme.font-value; }
+    m-pre := Text { visible: false; text: hit.pre; font-size: Theme.font-body; font-weight: 500; }
+    m-mark := Text { visible: false; text: hit.mark; font-size: Theme.font-body; font-weight: 500; }
+    m-post := Text { visible: false; text: hit.post; font-size: Theme.font-body; font-weight: 500; }
+    height: Theme.list-row-double-h;
+    background: t.pressed ? Theme.pressed : transparent;
+    accessible-role: button;
+    accessible-label: hit.path + ", " + hit.title;
+    accessible-description: hit.value;
+    accessible-action-default => { root.clicked(); }
+    t := TouchArea {
+        clicked => { root.clicked(); }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.margin + 4 * Theme.dp;
+        padding-right: Theme.margin;
+        spacing: 12 * Theme.dp;
+        VerticalLayout {
+            alignment: center;
+            PageTile { page: hit.page; }
+        }
+
+        VerticalLayout {
+            alignment: center;
+            spacing: 3 * Theme.dp;
+            horizontal-stretch: 1;
+            // the title with its match highlighted, when the whole line fits the text column (the row less its
+            // padding, tile, chevron and spacing); a longer one shows path and title plainly, each eliding
+            property <length> space: Theme.font-body * 0.28;
+            property <length> column: 360 * Theme.dp - 2 * Theme.margin - 4 * Theme.dp - Theme.row-tile - 20 * Theme.dp - 24 * Theme.dp;
+            property <bool> fits: m-path.preferred-width + m-arrow.preferred-width + m-pre.preferred-width + m-mark.preferred-width + m-post.preferred-width + 4 * self.space <= self.column;
+            if fits: HorizontalLayout {
+                Text {
+                    text: hit.path;
+                    color: Theme.text-dim;
+                    font-size: Theme.font-value;
+                    vertical-alignment: bottom;
+                }
+                Rectangle { width: space; }
+                Text {
+                    text: "›";
+                    color: Theme.text-dim;
+                    font-size: Theme.font-value;
+                    vertical-alignment: bottom;
+                }
+                Rectangle { width: space; }
+                Text {
+                    text: hit.pre;
+                    color: Theme.text;
+                    font-size: Theme.font-body;
+                    font-weight: 500;
+                }
+                Rectangle { width: hit.gap-before ? space : 0; }
+                Text {
+                    text: hit.mark;
+                    color: Theme.accent;
+                    font-size: Theme.font-body;
+                    font-weight: 500;
+                }
+                Rectangle { width: hit.gap-after ? space : 0; }
+                Text {
+                    text: hit.post;
+                    color: Theme.text;
+                    font-size: Theme.font-body;
+                    font-weight: 500;
+                    horizontal-stretch: 1;
+                }
+            }
+            if !fits: HorizontalLayout {
+                spacing: space;
+                Text {
+                    text: hit.path;
+                    color: Theme.text-dim;
+                    font-size: Theme.font-value;
+                    vertical-alignment: bottom;
+                    overflow: elide;
+                    max-width: 100 * Theme.dp;
+                }
+                Text {
+                    text: "›";
+                    color: Theme.text-dim;
+                    font-size: Theme.font-value;
+                    vertical-alignment: bottom;
+                }
+                Text {
+                    text: hit.title;
+                    color: Theme.text;
+                    font-size: Theme.font-body;
+                    font-weight: 500;
+                    overflow: elide;
+                    horizontal-stretch: 1;
+                }
+            }
+
+            if hit.value != "": Text {
+                text: hit.value;
+                color: Theme.text-dim;
+                font-size: Theme.font-label;
+                overflow: elide;
+            }
+        }
+
+        VerticalLayout {
+            alignment: center;
+            Image {
+                width: 20 * Theme.dp;
+                height: self.width;
+                source: @image-url("@neoui/icons/sys/chevron_right.svg");
+                colorize: Theme.text-dim;
+            }
+        }
+    }
+
+    Rectangle {
+        x: Theme.margin + 4 * Theme.dp + Theme.row-tile + 12 * Theme.dp;
+        y: parent.height - self.height;
+        width: parent.width - self.x;
+        height: max(1px, Theme.dp / 2);
+        background: Theme.hairline;
+    }
+}
+
 // Search (set2-search): every row whose title, other names or page matches, with where it is and its value; a tap
 // opens its page.
 export component SearchPage inherits NeoList {
     VerticalLayout {
         alignment: start;
-        for hit in SetState.results: ListRow {
-            value-bright: true;
-            title: hit.title;
-            subtitle: hit.path;
-            value: hit.value;
-            chevron: true;
+        if SetState.results.length > 0: SectionHeader {
+            text: SetState.results.length == 1 ? "1 result" : SetState.results.length + " results";
+        }
+        for hit in SetState.results: ResultRow {
+            hit: hit;
             clicked => { SetState.act("found", hit.id); }
         }
         if SetState.results.length == 0: Text {

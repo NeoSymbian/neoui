@@ -135,7 +135,7 @@ impl Page {
             Page::Connectivity => "Connectivity",
             Page::Display => "Display",
             Page::Navigation => "Home & navigation",
-            Page::Sounds => "Sounds",
+            Page::Sounds => "Sounds & profiles",
             Page::Battery => "Battery",
             Page::DateTime => "Date & time",
             Page::Keyboard => "Language & keyboard",

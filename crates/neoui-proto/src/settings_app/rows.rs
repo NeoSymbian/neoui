@@ -73,7 +73,7 @@ pub const ROWS: &[Row] = &[
         "root.sounds",
         Root,
         Sounds,
-        "Sounds",
+        "Sounds & profiles",
         &["volume", "ringtone", "silent"],
     ),
     row(
