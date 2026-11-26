@@ -35,6 +35,7 @@ use e32::sys::{TPtr8, TPtrC8};
 use e32::time;
 use neoui_proto::ipc as proto;
 pub use neoui_proto::ipc::AppEvent;
+pub use neoui_proto::notification_policy;
 /// Which apps open which files, and the pages of Files other apps open (protocol 1.12).
 pub use neoui_proto::open;
 pub use neoui_proto::page::{Note, Notification, Page, Query};
@@ -718,6 +719,13 @@ impl App {
             id,
             ..Notification::default()
         })
+    }
+
+    /// (1.21, TP4) Declare one of this app's notification channels (`proto::CHANNEL`); its cards name it in
+    /// `Notification::channel`. Declare after every connect, before the first card on it; the same declaration
+    /// again changes nothing. A 1.20 shell answers `KErrNotSupported` (its cards still show, as channel 0).
+    pub fn channel(&self, c: &neoui_proto::notification_policy::Channel) -> Result<(), i32> {
+        self.send_bytes(proto::CHANNEL, &c.encode())
     }
 
     /// The badge counter `id` on the app's launcher icon (`proto::BADGE`; the counters are summed); 0 removes it.

@@ -38,6 +38,8 @@ use neoui_proto::{InputEvent, TouchPhase};
 use neoui_render::{LauncherEntry, Nav, Note, Notification, Page, Query};
 
 // 1.20's paged Settings kinds, owner work and thumbnails (a child module: it works on the apps here)
+#[path = "notifications.rs"]
+pub mod notifications;
 #[path = "settings_info.rs"]
 mod settings_info;
 
@@ -288,6 +290,8 @@ pub struct Host {
     /// The clipboard toast on show hasn't reached the screen yet: its time starts when it does
     /// ([`Self::note_displayed`]), and a toast that replaces it first sends it back to the queue.
     clip_unseen: bool,
+    /// (TP4) The apps' channels, the rate limit and the newest card's alert ([`notifications`]).
+    pub policies: notifications::Policies,
 }
 
 impl Host {
@@ -339,6 +343,7 @@ impl Host {
             shelf: settings_info::Shelf::boot(),
             clip_notices: ClipNotices::default(),
             clip_unseen: false,
+            policies: notifications::Policies::boot(),
         }
     }
 
@@ -397,6 +402,9 @@ impl Host {
     pub fn badges(&self) -> Vec<(&'static str, u32)> {
         let mut out: Vec<(&'static str, u32)> = Vec::new();
         for (key, _, n) in &self.badges {
+            if !self.badge_allowed(key) {
+                continue;
+            }
             match out.iter_mut().find(|(k, _)| k == key) {
                 Some((_, sum)) => *sum = sum.saturating_add(*n),
                 None => out.push((key, *n)),
@@ -1464,7 +1472,7 @@ impl Service for Host {
             },
             // cards and badges only from the app's own EXE (1.18, top-panel TP2a "Step 0"): the session binding
             // ("the newest app without a session") is checked against the caller's secure ID
-            proto::NOTIFY | proto::NOTIFY_CLEAR | proto::BADGE
+            proto::NOTIFY | proto::NOTIFY_CLEAR | proto::BADGE | proto::CHANNEL
                 if apps::sid(app.key).is_some_and(|sid| sid != m.client_sid()) =>
             {
                 dprintln!(
@@ -1477,13 +1485,30 @@ impl Service for Host {
             }
             proto::NOTIFY => {
                 let key = app.key;
+                let now = e32::time::millis();
                 let r = read_bytes(&m, 0, NOTIFICATION_MAX)
                     .and_then(|b| Notification::decode(&b).map_err(|_| kerr::ARGUMENT))
-                    .and_then(|n| notify(&mut self.notifications, key, n, unix_ms()));
+                    .and_then(|n| {
+                        // (TP4) the user's policy: an app or channel turned off refuses it; a removal always goes
+                        if !n.title.is_empty() {
+                            let old = self
+                                .notifications
+                                .iter()
+                                .find(|(k, o)| *k == key && o.id == n.id)
+                                .map(|(_, o)| o.clone());
+                            self.admit(key, &n, old.as_ref(), now)?;
+                        }
+                        notify(&mut self.notifications, key, n, unix_ms())
+                    });
                 if r.is_ok() {
                     self.notes_changed = true;
                 }
                 m.complete(r.unwrap_or_else(|e| e));
+            }
+            proto::CHANNEL => {
+                let key = app.key;
+                let r = self.channel(key, &m);
+                m.complete(r);
             }
             proto::NOTIFY_CLEAR => {
                 let key = app.key;

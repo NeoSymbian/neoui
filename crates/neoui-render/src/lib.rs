@@ -182,6 +182,51 @@ pub fn status_apps(keys: &[&str]) -> (Vec<i32>, i32) {
     (shown, i32::try_from(more).unwrap_or(i32::MAX))
 }
 
+/// Card `n` of app `key` as the shade draws it (one on its own; the shade's rows set their section and group), its
+/// time against `clock` (now unix ms, the UTC offset in s, 24-hour).
+fn shade_note(key: &str, n: &Notification, clock: (u64, i32, bool)) -> ShadeNote {
+    let (now, offset, h24) = clock;
+    // two lines: the earlier one dim over the newest
+    let (earlier, text) = n.text.rsplit_once('\n').unwrap_or(("", n.text.as_str()));
+    let strings = |v: &[String]| {
+        slint::ModelRc::from(Rc::new(slint::VecModel::from(
+            v.iter()
+                .map(|s| s.as_str().into())
+                .collect::<Vec<slint::SharedString>>(),
+        )))
+    };
+    ShadeNote {
+        app_key: key.into(),
+        app: neoui_proto::apps::find(key).map_or(key, |a| a.name).into(),
+        group: n.group.as_str().into(),
+        title: n.title.as_str().into(),
+        earlier: earlier.into(),
+        text: text.into(),
+        actions: strings(&n.actions),
+        kinds: slint::ModelRc::from(Rc::new(slint::VecModel::from(
+            n.action_kinds
+                .iter()
+                .map(|k| i32::from(*k))
+                .collect::<Vec<i32>>(),
+        ))),
+        initials: n.initials.as_str().into(),
+        tint: slint::Color::from_argb_encoded(0xff00_0000 | n.tint),
+        // an old record's own text; a 1.18 one's time as the shade writes it
+        time: if n.when == 0 || !n.time.is_empty() {
+            n.time.as_str().into()
+        } else {
+            neoui_proto::shade::when_text(n.when, now, offset, h24).into()
+        },
+        expanded: true,
+        progress: n.progress.map_or(-1.0, |p| f32::from(p) / 100.0),
+        section: "".into(),
+        count: 1,
+        open: false,
+        member: false,
+        ongoing: n.ongoing(),
+    }
+}
+
 #[cfg(test)]
 mod status_apps_tests {
     use super::status_apps;
@@ -247,6 +292,9 @@ pub struct Renderer {
     open_group: Rc<RefCell<Option<(String, String)>>>,
     notes_gone: Rc<RefCell<Vec<(String, u32)>>>,
     notes_cleared: Rc<Cell<bool>>,
+    /// (TP4) the cards under Silent (a Min channel) and the card on the heads-up banner (app key, id)
+    silent_cards: Vec<(String, u32)>,
+    banner: Rc<RefCell<Option<(String, u32)>>>,
     relayout: Rc<Cell<bool>>,
     closed: Rc<RefCell<Vec<alloc::string::String>>>,
     power: Rc<RefCell<Vec<i32>>>,
@@ -355,6 +403,14 @@ impl Renderer {
         let notes_cleared: Rc<Cell<bool>> = Rc::default();
         let sink = notes_cleared.clone();
         ui.on_notes_cleared(move || sink.set(true));
+        // the banner's card acts as the shade's does
+        let banner: Rc<RefCell<Option<(String, u32)>>> = Rc::default();
+        let (sink, shown) = (notes_opened.clone(), banner.clone());
+        ui.on_banner_opened(move |a| {
+            if let Some((key, id)) = shown.borrow_mut().take() {
+                sink.borrow_mut().push((key, id, a as u16));
+            }
+        });
         let open_group: Rc<RefCell<Option<(String, String)>>> = Rc::default();
         let relayout: Rc<Cell<bool>> = Rc::default();
         let (open, again, weak) = (open_group.clone(), relayout.clone(), ui.as_weak());
@@ -423,6 +479,8 @@ impl Renderer {
             open_group,
             notes_gone,
             notes_cleared,
+            silent_cards: Vec::new(),
+            banner,
             relayout,
             closed,
             power,
@@ -688,46 +746,23 @@ impl Renderer {
             .map(|(k, n)| (k.as_str(), n))
             .collect();
         let open = self.open_group.borrow().clone();
-        let rows =
-            neoui_proto::shade::layout(&list, open.as_ref().map(|(k, g)| (k.as_str(), g.as_str())));
-        let (now, offset, h24) = self.shade_clock;
+        let silent = |i: usize| {
+            let (k, n) = list[i];
+            self.silent_cards
+                .iter()
+                .any(|(sk, id)| sk == k && *id == n.id)
+        };
+        let rows = neoui_proto::shade::layout_with(
+            &list,
+            open.as_ref().map(|(k, g)| (k.as_str(), g.as_str())),
+            silent,
+        );
+        let clock = self.shade_clock;
         let model: Vec<ShadeNote> = rows
             .iter()
             .map(|r| {
                 let (key, n) = list[r.index];
-                // two lines: the earlier one dim over the newest
-                let (earlier, text) = n.text.rsplit_once('\n').unwrap_or(("", n.text.as_str()));
-                let strings = |v: &[String]| {
-                    slint::ModelRc::from(Rc::new(slint::VecModel::from(
-                        v.iter()
-                            .map(|s| s.as_str().into())
-                            .collect::<Vec<slint::SharedString>>(),
-                    )))
-                };
                 ShadeNote {
-                    app_key: key.into(),
-                    app: neoui_proto::apps::find(key).map_or(key, |a| a.name).into(),
-                    group: n.group.as_str().into(),
-                    title: n.title.as_str().into(),
-                    earlier: earlier.into(),
-                    text: text.into(),
-                    actions: strings(&n.actions),
-                    kinds: slint::ModelRc::from(Rc::new(slint::VecModel::from(
-                        n.action_kinds
-                            .iter()
-                            .map(|k| i32::from(*k))
-                            .collect::<Vec<i32>>(),
-                    ))),
-                    initials: n.initials.as_str().into(),
-                    tint: slint::Color::from_argb_encoded(0xff00_0000 | n.tint),
-                    // an old record's own text; a 1.18 one's time as the shade writes it
-                    time: if n.when == 0 || !n.time.is_empty() {
-                        n.time.as_str().into()
-                    } else {
-                        neoui_proto::shade::when_text(n.when, now, offset, h24).into()
-                    },
-                    expanded: true,
-                    progress: n.progress.map_or(-1.0, |p| f32::from(p) / 100.0),
                     section: if r.first { r.section.label() } else { "" }.into(),
                     count: i32::try_from(r.count).unwrap_or(i32::MAX),
                     open: open
@@ -735,10 +770,19 @@ impl Renderer {
                         .is_some_and(|(k, g)| k == key && *g == n.group)
                         && r.count > 1,
                     member: r.member,
-                    ongoing: n.ongoing(),
+                    ..shade_note(key, n, clock)
                 }
             })
             .collect();
+        // the banner's card as it is now (gone from the shade: the banner goes too)
+        let shown = self.banner.borrow().clone();
+        match shown.and_then(|(k, id)| list.iter().find(|(lk, n)| *lk == k && n.id == id)) {
+            Some((k, n)) => self.ui.set_banner(shade_note(k, n, clock)),
+            None => {
+                *self.banner.borrow_mut() = None;
+                self.ui.set_banner_shown(false);
+            }
+        }
         *self.shade_rows.borrow_mut() = rows
             .iter()
             .map(|r| (String::from(list[r.index].0), list[r.index].1.id))
@@ -747,6 +791,30 @@ impl Renderer {
             .set_cards(i32::try_from(list.len()).unwrap_or(i32::MAX));
         self.ui
             .set_notes(slint::ModelRc::from(Rc::new(slint::VecModel::from(model))));
+    }
+
+    /// (TP4) The cards of a Min channel, (app key, id): the shade folds them under Silent. Before [`Self::set_notes`].
+    pub fn set_silent_notes(&mut self, cards: &[(&str, u32)]) {
+        self.silent_cards = cards.iter().map(|(k, id)| ((*k).into(), *id)).collect();
+    }
+
+    /// (TP4) The heads-up banner shows card (app key, id) of the shade's cards, or nothing; a tap or an action on it
+    /// comes back with [`Self::take_notes_opened`], a swipe only hides it.
+    pub fn set_banner(&mut self, card: Option<(&str, u32)>) {
+        *self.banner.borrow_mut() = card.map(|(k, id)| (k.into(), id));
+        self.ui.set_banner_shown(card.is_some());
+        self.lay_out_notes();
+    }
+
+    /// The banner is on screen (the user didn't put it away).
+    #[must_use]
+    pub fn banner_shown(&self) -> bool {
+        self.ui.get_banner_shown()
+    }
+
+    /// (TP4) Do not disturb's moon in the status bar.
+    pub fn set_dnd(&mut self, on: bool) {
+        self.ui.set_dnd(on);
     }
 
     /// The cards swiped away since the last call: (app key, id).

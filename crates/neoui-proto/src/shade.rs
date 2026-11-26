@@ -4,19 +4,21 @@
 //! The shell keeps every app's cards newest first (`ipc::NOTIFY`); [`layout`] gives the rows the shade draws:
 //! **Live** (ongoing cards), **Conversations** (style Conversation), then **Alerts**, each newest first. Cards of one
 //! app with the same `group` stack under their newest, which shows how many there are; the open group shows the rest
-//! right under it.
+//! right under it. Cards of a Min channel (TP4) fold under **Silent**, last.
 
 use crate::page::{Notification, style};
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-/// The shade's sections, top to bottom (the Silent fold comes with TP4's importances).
+/// The shade's sections, top to bottom.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Section {
     Live = 0,
     Conversations = 1,
     Alerts = 2,
+    /// (TP4) A Min channel's cards, at the bottom.
+    Silent = 3,
 }
 
 impl Section {
@@ -27,6 +29,7 @@ impl Section {
             Section::Live => "LIVE",
             Section::Conversations => "CONVERSATIONS",
             Section::Alerts => "ALERTS",
+            Section::Silent => "SILENT",
         }
     }
 }
@@ -60,11 +63,33 @@ pub struct Row {
 /// The rows for the shell's `list` (app key, card; newest first). `open` names the group shown open (app key, group).
 #[must_use]
 pub fn layout(list: &[(&str, &Notification)], open: Option<(&str, &str)>) -> Vec<Row> {
+    layout_with(list, open, |_| false)
+}
+
+/// [`layout`], with the cards `silent(i)` (a Min channel, TP4) under Silent unless they are ongoing.
+#[must_use]
+pub fn layout_with(
+    list: &[(&str, &Notification)],
+    open: Option<(&str, &str)>,
+    silent: impl Fn(usize) -> bool,
+) -> Vec<Row> {
+    let at = |i: usize, n: &Notification| {
+        if !n.ongoing() && silent(i) {
+            Section::Silent
+        } else {
+            section(n)
+        }
+    };
     let mut rows = Vec::new();
-    for s in [Section::Live, Section::Conversations, Section::Alerts] {
+    for s in [
+        Section::Live,
+        Section::Conversations,
+        Section::Alerts,
+        Section::Silent,
+    ] {
         let mut first = true;
         for (i, (key, n)) in list.iter().enumerate() {
-            if section(n) != s {
+            if at(i, n) != s {
                 continue;
             }
             // a group is one stack whatever its cards' sections: it stands where its newest card goes
@@ -204,6 +229,17 @@ mod tests {
         let two: Vec<(&str, &Notification)> = vec![("messages", &ava), ("kit", &other)];
         assert_eq!(layout(&two, None).iter().map(|r| r.count).sum::<usize>(), 2);
         assert_eq!(layout(&two, None).len(), 2);
+        // a Min channel's card folds under Silent, last; an ongoing one stays Live
+        let rows = layout_with(&list, None, |i| i == 0 || i == 2);
+        let got: Vec<(usize, Section)> = rows.iter().map(|r| (r.index, r.section)).collect();
+        assert_eq!(
+            got,
+            vec![
+                (2, Section::Live),
+                (1, Section::Conversations),
+                (0, Section::Silent)
+            ]
+        );
     }
 
     #[test]

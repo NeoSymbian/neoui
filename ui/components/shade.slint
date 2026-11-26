@@ -96,7 +96,7 @@ component Toggle inherits Rectangle {
 
 // One card (nt-anatomy): the app's glyph and name with when, the group's count and ▾; the avatar, title and two lines;
 // the progress; up to 3 actions. A swipe sideways past a third of its width removes it (not an ongoing one).
-component Card inherits Rectangle {
+export component Card inherits Rectangle {
     in property <ShadeNote> note;
     callback opened(int);
     callback dismissed();

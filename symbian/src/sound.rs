@@ -156,3 +156,40 @@ impl Sound {
         true
     }
 }
+
+/// (TP4) A card's chime: the first second of `tone` (the profile's message tones, `neoaudio::tones`) at `volume`
+/// 0..=10, on a thread of its own (the UI keeps running). One at a time: a chime while one plays is dropped.
+pub fn chime(tone: u8, volume: u8) {
+    use core::sync::atomic::{AtomicBool, Ordering};
+    static PLAYING: AtomicBool = AtomicBool::new(false);
+    if tone == neoaudio::tones::NONE || volume == 0 || PLAYING.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    let r = e32::thread::spawn(move || {
+        let pcm = neoaudio::tones::pcm(tone, volume);
+        let r = session().and_then(|s| {
+            let mut a = TIpcArgs::new();
+            a.int(0, neoaudio::tones::RATE as i32).int(1, 1).int(2, 0);
+            s.send_receive(neoaudio::op::OPEN, &a)?;
+            // a second is the chime (the period's rest is the loop's silence)
+            for chunk in pcm[..pcm.len().min(96_000)].chunks(8_192) {
+                let des = e32::sys::TPtrC8::new(chunk);
+                let mut a = TIpcArgs::new();
+                a.desc8(0, &des);
+                s.send_receive(neoaudio::op::WRITE, &a)?;
+            }
+            // let the queue play out before the session (and its stream) closes
+            e32::time::sleep(1_200_000);
+            Ok(())
+        });
+        if let Err(e) = r {
+            dprintln!("neoui: chime failed ({})", e);
+        }
+        PLAYING.store(false, Ordering::SeqCst);
+        0
+    });
+    if let Err(e) = r {
+        dprintln!("neoui: chime thread failed ({})", e);
+        PLAYING.store(false, Ordering::SeqCst);
+    }
+}

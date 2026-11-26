@@ -153,6 +153,8 @@ GLYPHS = {
         ("p", "M10 20.6h4"),
         ("p", "M4 4l16 16"),
     ],
+    # Do not disturb (TP4): a crescent moon in the status bar and on Settings' rows
+    "dnd": [("p", "M20 14.2A8.2 8.2 0 1 1 9.8 4a6.6 6.6 0 0 0 10.2 10.2z")],
     # airplane mode in the status bar (tp-statusbar, TP1)
     "plane": [
         (

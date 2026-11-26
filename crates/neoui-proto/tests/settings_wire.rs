@@ -80,7 +80,7 @@ fn events_1_20_golden_and_old_28_unchanged() {
     ] {
         assert_eq!(e.needs_minor(), 20);
     }
-    assert_eq!(ipc::VERSION, (1, 20));
+    assert_eq!(ipc::VERSION, (1, 21));
 }
 
 // --- kinds 1–6: no wrapper ----------------------------------------------------------------------------------------
@@ -493,10 +493,10 @@ fn job_golden_and_strict() {
 #[test]
 fn features_golden_and_what_is_advertised() {
     let want = [
-        &[1u8, 20, 0, 0][..],
-        &[0x7E, 0x63, 0, 0, 0, 0, 0, 0], // INFO 1–6, 8, 9, 13, 14
+        &[1u8, 21, 0, 0][..],
+        &[0xFE, 0x63, 0, 0, 0, 0, 0, 0], // INFO 1–7 (7 since 1.21), 8, 9, 13, 14
         &[0xFE, 0, 0, 0, 0, 0, 0, 0],    // actions 1–7
-        &[0xFE, 0xE7, 0xFF, 0x7F, 0x01, 0x3F, 0, 0], // opcodes 1–10, 13–30, 32, 40–45
+        &[0xFE, 0xE7, 0xFF, 0x7F, 0x05, 0x3F, 0, 0], // opcodes 1–10, 13–30, 32, 34 (1.21), 40–45
     ]
     .concat();
     assert_eq!(Features::SHELL.encode(), want);
@@ -504,7 +504,6 @@ fn features_golden_and_what_is_advertised() {
     let f = Features::SHELL;
     // a kind without its producer isn't advertised, nor is anything reserved
     for kind in [
-        ipc::INFO_CHANNELS,
         ipc::INFO_VOLUME_STATE,
         ipc::INFO_UPDATE_STATUS,
         ipc::INFO_TILES,
@@ -521,17 +520,7 @@ fn features_golden_and_what_is_advertised() {
     for a in ipc::ACTION_INSTALL_WALLPAPER..=ipc::ACTION_LOCK_DIALOG {
         assert!(!f.has_action(a), "action {a}");
     }
-    for op in [
-        11,
-        12,
-        31,
-        ipc::CHANNEL,
-        ipc::REPLY_TEXT,
-        36,
-        ipc::TILE,
-        38,
-        39,
-    ] {
+    for op in [11, 12, 31, ipc::REPLY_TEXT, 36, ipc::TILE, 38, 39] {
         assert!(!f.has_opcode(op), "opcode {op}");
     }
     assert!(
@@ -539,6 +528,7 @@ fn features_golden_and_what_is_advertised() {
             && f.has_opcode(ipc::ENTRY_THUMB)
             && f.has_opcode(ipc::CONTROL_FEEDBACK)
     );
+    assert!(f.has_info(ipc::INFO_CHANNELS) && f.has_opcode(ipc::CHANNEL));
 }
 
 #[test]

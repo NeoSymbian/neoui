@@ -166,6 +166,8 @@ fn main() -> i32 {
     let mut query_shown: Option<neoui_render::Query> = None;
     // when Buttons' key row, shown over a full-screen page by a tap, goes again
     let mut peek_until = 0;
+    // (TP4) when the heads-up banner goes (ms; 0: none shown)
+    let mut banner_until: u64 = 0;
     // the screen and view last checked for an app page (host::page_for)
     let mut page_shown = (String::new(), String::new());
     let mut running_shown: Vec<&'static str> = Vec::new();
@@ -255,6 +257,7 @@ fn main() -> i32 {
                 host.note
                     .as_ref()
                     .map(|(_, _, until)| until.saturating_sub(time::millis()) * 1000),
+                (banner_until != 0).then(|| banner_until.saturating_sub(time::millis()) * 1000),
             ]
             .into_iter()
             .flatten()
@@ -766,12 +769,39 @@ fn main() -> i32 {
             }
             if core::mem::take(&mut host.notes_changed) {
                 ui.set_note(host.note.as_ref().map(|(_, n, _)| n));
+                // (TP4) a Min channel's cards fold under Silent; only Default and Urgent ones show their glyph
+                ui.set_silent_notes(&host.silent_cards());
                 let notes: Vec<(&str, &neoui_render::Notification)> =
                     host.notifications.iter().map(|(k, n)| (*k, n)).collect();
                 let h24 = host.settings.get(keys::CLOCK_24H).unwrap_or(true);
                 ui.set_notes(&notes, u64::try_from(unix).unwrap_or(0) * 1000, offset, h24);
-                let keys: Vec<&str> = host.notifications.iter().map(|(k, _)| *k).collect();
-                ui.set_status_apps(&keys);
+                ui.set_status_apps(&host.glyph_keys());
+                ui.set_dnd(host.dnd());
+            }
+            // (TP4) a new card's alert: the banner (never over a full-screen call or the keyboard's field), its chime
+            // and buzz; the banner goes after notify.bannert seconds
+            if let Some(p) = host.policies.pending.take() {
+                let covered = (phone.in_call() && ui.screen() == "phone") || ui.keyboard_h() > 0;
+                if p.banner && !covered && scr.is_on() {
+                    ui.set_banner(Some((p.key, p.id)));
+                    let secs = host
+                        .settings
+                        .get(keys::NOTIFY_BANNERT)
+                        .unwrap_or(5)
+                        .clamp(1, 30);
+                    banner_until = ms + secs as u64 * 1000;
+                }
+                if let Some(tone) = p.chime {
+                    let volume = host.settings.get(keys::SOUND_RING_VOLUME).unwrap_or(8);
+                    sound::chime(tone, volume.clamp(0, 10) as u8);
+                }
+                if p.buzz {
+                    let _ = haptic(200, 100);
+                }
+            }
+            if banner_until != 0 && (ms >= banner_until || !ui.banner_shown()) {
+                banner_until = 0;
+                ui.set_banner(None);
             }
             // by (app, id): whatever moved in the list since, the card the user touched (or nothing, if it went)
             for (key, id, action) in ui.take_notes_opened() {
@@ -873,6 +903,7 @@ fn main() -> i32 {
                 worker.set(usb_debugging(&host.settings));
             }
             host.deliver_settings();
+            host.policy_frame(ms);
             settings::log_save(host.settings.tick(ms));
             if let Some(source) =
                 netclock.frame(&host.settings, phone.nitz(), wifi.take_http_time(), ms)

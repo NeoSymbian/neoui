@@ -53,13 +53,18 @@
 //! does it as a registered owner ([`OWNER_REPORT`], [`AppEvent::OwnerWork`], [`AppEvent::ClearTicket`];
 //! [`crate::settings_app::jobs`]). Settings reads an old app's small icon with [`ENTRY_THUMB`]. These events go only
 //! to 1.20 clients ([`AppEvent::needs_minor`]).
+//! Since 1.21 (top-panel TP4) an app declares its notification channels ([`CHANNEL`],
+//! [`crate::notification_policy::Channel`]) and a card names one; the shell applies the user's policy (`n.<app>`,
+//! `notify.*`: [`crate::notification_policy::effective`]) to the badge, the shade, a banner and its sound, refuses a
+//! card of an app or channel turned off (`KErrPermissionDenied`), and Settings reads the channels and the policy
+//! ([`INFO_CHANNELS`], paged).
 
 use crate::{InputEvent, TouchPhase};
 
 /// The server's name (no leading `!`: that needs ProtServ).
 pub const SERVER: &str = "NeoUi";
 /// Protocol version (major, minor); a connect with another major is refused.
-pub const VERSION: (u8, u8) = (1, 20);
+pub const VERSION: (u8, u8) = (1, 21);
 
 /// `[Des8 out: GEOMETRY_LEN bytes = width, height, dp × 256 (u32 LE)]` → 0. `dp` is the shell's design unit in
 /// pixels (`min(screen w, h) / 360`), so apps size things like the shell does.
@@ -223,7 +228,8 @@ pub const INFO_BATTERY_USAGE: i32 = 5;
 /// 1.17 (SE4a): the running apps ([`crate::settings_app::info::encode_running`]): each app's key and whether it is
 /// resident (started at boot and restarted, so it can't be stopped).
 pub const INFO_RUNNING: i32 = 6;
-/// Reserved (TP4, 1.21): the notification channels per app.
+/// 1.21 (TP4), paged, Settings only: per policy owner an app record, then its channels
+/// ([`crate::notification_policy::Record`]; a General row for an app that declared none).
 pub const INFO_CHANNELS: i32 = 7;
 /// 1.20 (D4/D8), paged: one [`crate::settings_app::wire::AppDetail`] per listed app (`apps::listed`), from the
 /// catalogue, the EXE SYSSTART finds and the latest measurement (D4); capabilities wait for D8.
@@ -293,7 +299,11 @@ pub const ACTION_LOCK_DIALOG: i32 = 14;
 pub const RESET_ERASE_C: u8 = 2;
 /// 1.18 (TP2a): no arguments → 0: every card of the calling app goes, ongoing ones too (as an empty NOTIFY each).
 pub const NOTIFY_CLEAR: i32 = 32;
-/// Reserved (TP4, 1.21): `[Des8 declaration]` a notification channel of the caller's.
+/// 1.21 (TP4): `[Des8 declaration]` ([`crate::notification_policy::Channel`]) → 0: declare (or update) one of the
+/// caller's notification channels. The same declaration again changes nothing; a new one keeps the user's choices.
+/// Only from the app's own EXE and an app with a policy key ([`crate::notification_policy::OWNERS`]):
+/// `KErrPermissionDenied`; `KErrArgument` for a malformed one, `KErrOverflow` past
+/// [`crate::notification_policy::CHANNELS_MAX`]. Its cards name it in `Notification::channel`.
 pub const CHANNEL: i32 = 34;
 /// Reserved (TP4, 1.21): `[card_id, Des8 out]` the text of an inline reply.
 pub const REPLY_TEXT: i32 = 35;

@@ -24,6 +24,7 @@ import { QueryDialog, Button, TextField } from "components/controls.slint";
 import { Header } from "components/header.slint";
 import { Toast } from "components/feedback.slint";
 import { Shade, ShadeNote } from "components/shade.slint";
+import { NotificationBanner } from "components/notification-banner.slint";
 export { ShadeNote } from "components/shade.slint";
 export { Apps } from "screens/menu.slint";
 import { Keyboard } from "components/keyboard/keyboard.slint";
@@ -198,6 +199,12 @@ export component Shell inherits Window {
     // missed calls and unread messages (MODEMD, C9): Phone's and Messages' badges while they post none of their own
     in property <int> missed-calls;
     in property <int> unread-messages;
+    // (TP4) the heads-up banner: its card, shown (the UI server times it out), a tap on it or an action (as the
+    // shade's note-opened, by the banner's own card); Do not disturb's moon in the status bar
+    in property <ShadeNote> banner;
+    in-out property <bool> banner-shown;
+    callback banner-opened(int);
+    in property <bool> dnd;
     in property <bool> sim-pin-required;
     in property <bool> sim-blocked;
     in property <int> pin-attempts: -1;
@@ -445,6 +452,7 @@ export component Shell inherits Window {
         vibrate: SystemSettings.vibrate;
         alarm: Now.next-alarm != "";
         battery-saver: SystemSettings.battery-saver;
+        dnd: root.dnd;
         visible: !root.full;
         tapped => {
             root.shade-open = !root.shade-open;
@@ -487,6 +495,19 @@ export component Shell inherits Window {
         acted => {
             root.app-nav("note", 0);
         }
+    }
+
+    // (TP4) an Urgent card's banner under the status bar, over the app; never over the shade or the Power menu
+    if root.banner-shown && !root.shade-open && !root.power-open: NotificationBanner {
+        x: 8 * Theme.dp;
+        width: root.width - 16 * Theme.dp;
+        y: (root.full ? 0 : Theme.status-h) + 6 * Theme.dp;
+        note: root.banner;
+        opened(a) => {
+            root.banner-shown = false;
+            root.banner-opened(a);
+        }
+        closed => { root.banner-shown = false; }
     }
 
     // the key row stays usable under a dialog: its ← answers the last button (rule 15)

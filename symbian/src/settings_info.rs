@@ -320,7 +320,13 @@ impl Host {
             return kerr::PERMISSION_DENIED;
         }
         let kind = m.int(0);
-        let (Some(records), Ok(k)) = (self.shelf.records(kind), u8::try_from(kind)) else {
+        // TP4's channels are the host's (notifications.rs)
+        let records = if kind == proto::INFO_CHANNELS {
+            Some(self.channel_records())
+        } else {
+            self.shelf.records(kind)
+        };
+        let (Some(records), Ok(k)) = (records, u8::try_from(kind)) else {
             return kerr::NOT_SUPPORTED;
         };
         let (first, expected) = (m.int(1) as u32, m.int(3) as u32);
@@ -342,7 +348,7 @@ impl Host {
     }
 
     /// Kind `kind` changed: its revision moves on, and Settings hears it if it read the kind.
-    fn info_changed(&mut self, kind: i32) {
+    pub(super) fn info_changed(&mut self, kind: i32) {
         let k = kind as u8;
         let rev = self.shelf.revs.bump(k);
         if let Some((session, mask)) = self.shelf.watch

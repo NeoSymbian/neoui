@@ -34,6 +34,8 @@ pub enum Limit {
     },
     /// A `Str` or `Bytes` of at most this many bytes (tighter than the type-wide limit).
     MaxLen(usize),
+    /// (TP4) An `n.<app>` notification policy (`notification_policy::Policy`): one validator for SET, load and reset.
+    Policy,
 }
 
 /// A default value, in a form that can be written in a `const` table.
@@ -108,6 +110,11 @@ impl Spec {
             }
             (Limit::MaxLen(n), Value::Str(s)) if s.len() > n => Err(super::Error::TooLong),
             (Limit::MaxLen(n), Value::Bytes(b)) if b.len() > n => Err(super::Error::TooLong),
+            (Limit::Policy, Value::Bytes(b))
+                if crate::notification_policy::Policy::decode(b).is_none() =>
+            {
+                Err(super::Error::OutOfRange)
+            }
             _ => Ok(()),
         }
     }
@@ -301,8 +308,32 @@ registry! {
     STATUS_SECONDS: bool = "status.seconds", default DefaultValue::Bool(false), limit Limit::None, owner Owner::Shell;
     /// The shade shows the date beside the time.
     SHADE_DATE: bool = "shade.date", default DefaultValue::Bool(true), limit Limit::None, owner Owner::Shell;
-    // a swipe down on home opens the shade (top-panel.md TP1; its Settings row comes with TP4's Panel & notifications)
+    // a swipe down on home opens the shade (top-panel.md TP1; Settings → Panel & notifications, TP4)
     SHELL_SWIPEHOME: bool = "shell.swipehome", default DefaultValue::Bool(true), limit Limit::None, owner Owner::Shell;
+    /// (TP4) Do not disturb: no banners, sounds or vibrations from the shell; cards still reach the shade. Calls and
+    /// SMS tones are MODEMD's and still ring (NeoModem's alert policy is later).
+    NOTIFY_DND: bool = "notify.dnd", default DefaultValue::Bool(false), limit Limit::None, owner Owner::Shell;
+    /// (TP4) When Do not disturb ends: empty (or 0) until turned off, else 8 bytes, a LE i64 UTC second; the shell
+    /// turns `notify.dnd` off once it passes.
+    NOTIFY_DNDTO: Bytes = "notify.dndto", default DefaultValue::Bytes(&[]), limit Limit::MaxLen(8), owner Owner::Shell;
+    /// (TP4) Calls from favourites and repeated callers ring through Do not disturb (needs NeoModem's alert policy).
+    NOTIFY_DNDFAV: bool = "notify.dndfav", default DefaultValue::Bool(true), limit Limit::None, owner Owner::Shell;
+    /// (TP4) How long a banner stays, in seconds.
+    NOTIFY_BANNERT: i32 = "notify.bannert", default DefaultValue::Int(5),
+        limit Limit::Range { min: 1, max: 30 }, owner Owner::Shell;
+    /// (TP8) Cards on the lock screen: 0 show, 1 private, 2 off.
+    NOTIFY_LOCK: i32 = "notify.lock", default DefaultValue::Int(0),
+        limit Limit::Range { min: 0, max: 2 }, owner Owner::Shell;
+    /// (TP4) Each publisher's notification policy (`notification_policy::Policy`; empty = the defaults). Shell-owned:
+    /// the app can't change what the user chose; Settings writes them.
+    N_PHONE: Bytes = "n.phone", default DefaultValue::Bytes(&[]), limit Limit::Policy, owner Owner::Shell;
+    N_MESSAGES: Bytes = "n.messages", default DefaultValue::Bytes(&[]), limit Limit::Policy, owner Owner::Shell;
+    N_DTSRV: Bytes = "n.dtsrv", default DefaultValue::Bytes(&[]), limit Limit::Policy, owner Owner::Shell;
+    N_FILES: Bytes = "n.files", default DefaultValue::Bytes(&[]), limit Limit::Policy, owner Owner::Shell;
+    N_BROWSER: Bytes = "n.browser", default DefaultValue::Bytes(&[]), limit Limit::Policy, owner Owner::Shell;
+    N_DEVTOOLS: Bytes = "n.devtools", default DefaultValue::Bytes(&[]), limit Limit::Policy, owner Owner::Shell;
+    N_TERMINAL: Bytes = "n.terminal", default DefaultValue::Bytes(&[]), limit Limit::Policy, owner Owner::Shell;
+    N_KIT: Bytes = "n.kit", default DefaultValue::Bytes(&[]), limit Limit::Policy, owner Owner::Shell;
     /// 24-hour clock (else 12-hour).
     CLOCK_24H: bool = "clock.24h", default DefaultValue::Bool(true), limit Limit::None, owner Owner::App("clock");
     /// USB debugging (Developer options): fshell's USB serial port and the shell on it (`phone.py sh`), like

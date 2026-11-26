@@ -641,6 +641,7 @@ impl Features {
             ipc::INFO_APPS,
             ipc::INFO_BATTERY_USAGE,
             ipc::INFO_RUNNING,
+            ipc::INFO_CHANNELS,
             ipc::INFO_APP_DETAIL,
             ipc::INFO_BATTERY_CYCLE,
             ipc::INFO_JOBS,
@@ -655,10 +656,11 @@ impl Features {
             ipc::ACTION_CLEAR,
             ipc::ACTION_MEASURE_APP,
         ]),
-        // every built opcode: 1–10, 13–30, 32, 40–45 (11/12 are retired, 31 and 33–39 reserved)
+        // every built opcode: 1–10, 13–30, 32, 34, 40–45 (11/12 are retired, 31, 33 and 35–39 reserved)
         opcodes: (((1u64 << 31) - 1) & !1 & !(1 << 11) & !(1 << 12))
             | bits(&[
                 ipc::NOTIFY_CLEAR,
+                ipc::CHANNEL,
                 ipc::SETTINGS_INFO,
                 ipc::SETTINGS_ACTION,
                 ipc::OWNER_REPORT,
