@@ -167,6 +167,28 @@ pub struct Ticker<'a> {
 }
 
 /// The read side of an app's `Scroll` global for [`App::draw_scrolled`]: px moved and the list's place.
+/// A rectangle of the app's surface that any thread of the app may write ([`App::raw_target`]): the surface chunk is
+/// mapped for the whole process.
+pub struct RawTarget {
+    px: *mut u32,
+    len: usize,
+    /// The row pitch, in pixels.
+    pub stride: usize,
+    /// The rectangle, clipped to the surface: what [`App::damage`] shows.
+    pub rect: Rect,
+}
+
+// SAFETY: the pointer is into a process-wide chunk that outlives the session; one owner writes it at a time (`&mut`).
+unsafe impl Send for RawTarget {}
+
+impl RawTarget {
+    /// The surface from the rectangle's top-left corner: `rect.h` rows of `rect.w` pixels, `stride` apart (XRGB8888).
+    pub fn pixels(&mut self) -> &mut [u32] {
+        // SAFETY: `px..px + len` lies inside the surface chunk (App::raw_target); `&mut self` keeps it unaliased.
+        unsafe { core::slice::from_raw_parts_mut(self.px, self.len) }
+    }
+}
+
 type Scrolled = dyn Fn() -> ((i32, i32), Rect);
 
 /// A connected app: its session with `NeoUi`, its surface and the Slint window that draws into it.
@@ -401,28 +423,49 @@ impl App {
     /// two overwrite each other: keep its items over that rectangle unchanged (or hidden) while frames come.
     /// Like [`App::draw`], it returns once the server has shown the frame.
     pub fn raw(&self, r: Rect, draw: impl FnOnce(&mut [u32], usize)) -> Result<(), i32> {
-        let Some(base) = self.surface() else {
+        let Some(mut t) = self.raw_target(r) else {
             return Ok(());
         };
+        let (stride, rect) = (t.stride, t.rect);
+        draw(t.pixels(), stride);
+        self.damage(rect)
+    }
+
+    /// [`App::raw`] in two halves, so another thread of the app can write the pixels (FA12: the video converter) while
+    /// this one keeps the session: the surface inside `r` (clipped to it), `None` while the app was never visible or
+    /// `r` misses the surface. The same rule holds: Slint draws nothing over the rectangle while the target is in use.
+    /// Nothing shows until [`App::damage`] for [`RawTarget::rect`].
+    pub fn raw_target(&self, r: Rect) -> Option<RawTarget> {
+        let base = self.surface()?;
         let (w, h) = (self.width as i32, self.height.get() as i32);
         let x0 = r.x.clamp(0, w);
         let y0 = r.y.clamp(0, h);
         let x1 = (r.x + r.w as i32).clamp(x0, w);
         let y1 = (r.y + r.h as i32).clamp(y0, h);
         if x1 == x0 || y1 == y0 {
-            return Ok(());
+            return None;
         }
         let stride = self.width;
         let start = y0 as usize * stride + x0 as usize;
         let end = (y1 as usize - 1) * stride + x1 as usize;
-        // SAFETY: the server made the chunk `width * screen height * 4` bytes, committed, and never frees it while the
-        // session lives; `start..end` lies inside it (clipped above); only this thread writes it and the server reads
-        // it only after DAMAGE; Xrgb8888 is a transparent u32.
-        let px =
-            unsafe { core::slice::from_raw_parts_mut(base.add(start).cast::<u32>(), end - start) };
-        draw(px, stride);
+        Some(RawTarget {
+            // SAFETY: the server made the chunk `width * screen height * 4` bytes, committed, and never frees it while
+            // the session lives; `start..end` lies inside it (clipped above).
+            px: unsafe { base.add(start).cast::<u32>() },
+            len: end - start,
+            stride,
+            rect: Rect::new(x0, y0, (x1 - x0) as u32, (y1 - y0) as u32),
+        })
+    }
+
+    /// Shows a rectangle of the surface the app wrote itself ([`App::raw_target`]); returns once the server has
+    /// copied it, so the pixels may be written again from then on.
+    pub fn damage(&self, r: Rect) -> Result<(), i32> {
         let mut args = TIpcArgs::new();
-        args.int(0, x0).int(1, y0).int(2, x1 - x0).int(3, y1 - y0);
+        args.int(0, r.x)
+            .int(1, r.y)
+            .int(2, r.w as i32)
+            .int(3, r.h as i32);
         self.server.send_receive(proto::DAMAGE, &args).map(|_| ())
     }
 
