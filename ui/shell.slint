@@ -236,6 +236,15 @@ export component Shell inherits Window {
 
     // Back from the key row or an edge gesture (rule 10): close the shade or the dialog, then put the keyboard away,
     // then the page's own Back (the app's layers and pages), else back to where the app was opened from
+    // the UI server took the touch over (Renderer::cancel_touch, the home pull): home's long press doesn't fire
+    public function stop-home-hold() {
+        home.stop-hold();
+    }
+    // a finger went down: home's long press may fire again
+    public function touch-down() {
+        home.hold-off = false;
+    }
+
     public function nav-back() {
         if (root.shade-open) {
             root.back();

@@ -980,7 +980,10 @@ impl Renderer {
                 let position = LogicalPosition::new(x as f32, y as f32);
                 let button = PointerEventButton::Left;
                 match phase {
-                    TouchPhase::Down => WindowEvent::PointerPressed { position, button },
+                    TouchPhase::Down => {
+                        self.ui.invoke_touch_down();
+                        WindowEvent::PointerPressed { position, button }
+                    }
                     TouchPhase::Move => WindowEvent::PointerMoved { position },
                     TouchPhase::Up => {
                         self.window
@@ -1019,6 +1022,13 @@ impl Renderer {
     /// over, e.g. its own home page slide).
     pub fn cancel_touch(&mut self) {
         self.window.dispatch_event(WindowEvent::PointerExited);
+        self.stop_home_hold();
+    }
+
+    /// The touch in progress won't be a long press on home (Edit home · Wallpaper): the UI server takes it, or will
+    /// (the pull down to the shade).
+    pub fn stop_home_hold(&mut self) {
+        self.ui.invoke_stop_home_hold();
     }
 
     /// Frames that scrolled a list by shifting its pixels since the last call (smooth-ui S2d).

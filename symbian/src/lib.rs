@@ -513,6 +513,7 @@ fn main() -> i32 {
                                     && host.settings.get(keys::SHELL_SWIPEHOME).unwrap_or(true)
                                 {
                                     home_pull = true;
+                                    ui.stop_home_hold(); // nor is it a long press any more
                                 }
                                 if home_pull {
                                     if phase == TouchPhase::Move && dy >= pull && on_home {
