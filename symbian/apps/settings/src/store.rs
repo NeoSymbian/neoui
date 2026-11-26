@@ -146,6 +146,12 @@ pub fn profiles(app: &App, ui: &SettingsApp) {
             .map_or("General", |x| x.name.as_str())
             .into(),
     );
+    s.set_active_profile_summary(
+        p.get(p.active)
+            .map(|x| x.summary())
+            .unwrap_or_default()
+            .into(),
+    );
     let current = s.get_profile_current().id;
     let pick = rows
         .iter()

@@ -3,7 +3,7 @@
 // Sounds & profiles (set2-sounds, set2-profile: profiles SE2a; media, the test sound and record-and-play-back) and Battery
 // (set2-battery: the HAL's reading and the shell's 24-hour history).
 import { Theme, NeoList, SectionHeader, ListRow, Slider, Button, Sheet, TextField } from "@neoui/kit.slint";
-import { ChoiceRow, Note, Pair } from "../parts.slint";
+import { ChoiceRow, Note, Pair, ModeCard, ActiveCard } from "../parts.slint";
 import { SetState, ProfileRow } from "../state.slint";
 
 export component DisplayPage inherits NeoList {
@@ -16,11 +16,34 @@ export component DisplayPage inherits NeoList {
         alignment: start;
         SectionHeader { text: "Brightness"; }
         HorizontalLayout {
-            padding-left: Theme.margin + 8 * Theme.dp;
-            padding-right: Theme.margin + 8 * Theme.dp;
+            padding-left: Theme.margin + 4 * Theme.dp;
+            padding-right: Theme.margin + 4 * Theme.dp;
+            spacing: 12 * Theme.dp;
             height: 56 * Theme.dp;
-            Slider {
-                value <=> SetState.brightness;
+            VerticalLayout {
+                alignment: center;
+                Image {
+                    width: 18 * Theme.dp;
+                    height: self.width;
+                    source: @image-url("@neoui/icons/sys/brightness.svg");
+                    colorize: Theme.text-secondary;
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                Slider {
+                    label: "Brightness";
+                    value <=> SetState.brightness;
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                Image {
+                    width: 22 * Theme.dp;
+                    height: self.width;
+                    source: @image-url("@neoui/icons/sys/brightness.svg");
+                    colorize: Theme.text-secondary;
+                }
             }
         }
 
@@ -55,12 +78,21 @@ export component NavigationPage inherits NeoList {
     VerticalLayout {
         alignment: start;
         SectionHeader { text: "Navigation"; }
-        for name[i] in SetState.nav-modes: ChoiceRow {
-            title: name;
-            subtitle: SetState.nav-hints[i];
-            on: i == SetState.nav-mode;
-            found: SetState.found == "nav." + i;
-            clicked => { SetState.act("nav.mode", i); }
+        VerticalLayout {
+            padding-left: Theme.margin;
+            padding-right: Theme.margin;
+            padding-bottom: 4 * Theme.dp;
+            spacing: 8 * Theme.dp;
+            // Gestures (1) is the default (D12)
+            for name[i] in SetState.nav-modes: ModeCard {
+                mode: i;
+                title: name;
+                subtitle: SetState.nav-hints[i];
+                on: i == SetState.nav-mode;
+                is-default: i == 1;
+                found: SetState.found == "nav." + i;
+                clicked => { SetState.act("nav.mode", i); }
+            }
         }
         Note { text: "The top edge opens the shade in every mode. Switching may resize open apps once."; }
     }
@@ -69,27 +101,50 @@ export component NavigationPage inherits NeoList {
 export component SoundsPage inherits NeoList {
     VerticalLayout {
         alignment: start;
-        // the profiles (set2-sounds, S05): a row's sheet activates it or opens its page
+        // the active profile (set2-sounds' card): ✎ opens its page
+        SectionHeader { text: "Active"; }
+        HorizontalLayout {
+            padding-left: Theme.margin;
+            padding-right: Theme.margin;
+            padding-top: 4 * Theme.dp;
+            padding-bottom: 6 * Theme.dp;
+            ActiveCard {
+                name: SetState.active-profile-name;
+                summary: SetState.active-profile-summary;
+                edit => {
+                    SetState.act("profile-open", SetState.active-profile);
+                }
+            }
+        }
+
+        // the profiles (S05): a row's sheet activates it or opens its page; the active one has ✓
         SectionHeader { text: "Profiles"; }
         for p in SetState.profiles: ListRow {
             value-bright: true;
             title: p.name;
             checked: SetState.found == "sounds.p" + p.id;
             subtitle: p.summary;
-            value: p.id == SetState.active-profile ? "Active" : "";
-            chevron: true;
+            has-icon: true;
+            icon: p.id == 1 ? @image-url("@neoui/icons/sys/silent.svg")
+                : p.id == 2 ? @image-url("@neoui/icons/sys/bell.svg")
+                : p.id == 3 ? @image-url("@neoui/icons/sys/speaker.svg")
+                : p.id == 4 ? @image-url("@neoui/icons/sys/plane.svg")
+                : @image-url("@neoui/icons/sys/volume.svg");
+            icon-tint: p.id == SetState.active-profile ? Theme.accent : Theme.text-secondary;
+            trailing-check: p.id == SetState.active-profile;
+            check-label: "Active";
             clicked => {
                 SetState.profile-current = p;
                 SetState.sheet = "profile";
             }
         }
         ListRow {
-            value-bright: true;
             title: "Add profile";
+            title-accent: true;
             checked: SetState.found == "sounds.add";
-            subtitle: "A copy of General you can change";
             has-icon: true;
             icon: @image-url("@neoui/icons/sys/add.svg");
+            icon-tint: Theme.accent;
             divider: false;
             clicked => {
                 SetState.new-name = "";
@@ -342,6 +397,9 @@ export component ProfilePage inherits NeoList {
         if !offline: SectionHeader { text: "Calls"; }
         if !offline && p.ring: ListRow {
             value-bright: true;
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/tone.svg");
+            icon-tint: Theme.text-secondary;
             title: "Ringtone";
             checked: SetState.found == "profile.tone";
             value: SetState.ring-tones.length > p.ringtone ? SetState.ring-tones[p.ringtone] : "";
@@ -362,11 +420,53 @@ export component ProfilePage inherits NeoList {
         }
         if !offline && p.ring: ListRow {
             value-bright: true;
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/volume.svg");
+            icon-tint: Theme.text-secondary;
             title: "Ring volume";
             checked: SetState.found == "profile.volume";
             value: p.volume;
             subtitle: "0 to 10";
             divider: false;
+        }
+        // the volume as a slider too (set2-profile): a step of it sets the ring volume
+        if !offline && p.ring: HorizontalLayout {
+            padding-left: Theme.margin + 4 * Theme.dp;
+            padding-right: Theme.margin + 4 * Theme.dp;
+            spacing: 12 * Theme.dp;
+            height: 44 * Theme.dp;
+            VerticalLayout {
+                alignment: center;
+                Image {
+                    width: 20 * Theme.dp;
+                    height: self.width;
+                    source: @image-url("@neoui/icons/sys/silent.svg");
+                    colorize: Theme.text-dim;
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                Slider {
+                    controlled: true;
+                    step: 0.1;
+                    label: "Ring volume";
+                    value: p.volume / 10;
+                    moved(v) => {
+                        if round(v * 10) != p.volume {
+                            SetState.act("profile-set", "1," + round(v * 10) + "," + (p.vibrate ? "1" : "0"));
+                        }
+                    }
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                Image {
+                    width: 20 * Theme.dp;
+                    height: self.width;
+                    source: @image-url("@neoui/icons/sys/volume.svg");
+                    colorize: Theme.text-dim;
+                }
+            }
         }
         if !offline && p.ring: Pair {
             Button {
@@ -383,6 +483,9 @@ export component ProfilePage inherits NeoList {
         }
         if !offline: ListRow {
             value-bright: true;
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/vibrate.svg");
+            icon-tint: Theme.text-secondary;
             title: "Vibrate";
             checked: SetState.found == "profile.vibrate";
             has-switch: true;
@@ -392,6 +495,9 @@ export component ProfilePage inherits NeoList {
         if !offline: SectionHeader { text: "Messages"; }
         if !offline: ListRow {
             value-bright: true;
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/message.svg");
+            icon-tint: Theme.text-secondary;
             title: "Message tone";
             checked: SetState.found == "profile.message";
             value: SetState.message-tones.length > p.message-tone ? SetState.message-tones[p.message-tone] : "";

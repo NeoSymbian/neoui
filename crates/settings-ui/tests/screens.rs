@@ -229,6 +229,7 @@ fn fill(sh: &Shot) {
     s.set_message_tones(strings(&tone::ALL.map(tone::message_name)));
     s.set_active_profile(0);
     s.set_active_profile_name("General".into());
+    s.set_active_profile_summary(s.get_profiles().row_data(0).unwrap().summary);
     s.set_profile_current(s.get_profiles().row_data(0).unwrap());
     s.set_apps(model(
         neoui_proto::apps::listed()
@@ -511,10 +512,13 @@ fn every_page() {
     page(&sh, 7, "Sounds & profiles");
     sh.draw();
     sh.take_acts();
-    sh.tap(100.0, 260.0); // Meeting's row (rows of 64 dp from 72 dp, the third)
+    sh.tap(100.0, 413.0); // Meeting's row (the third, under the active profile's card)
     assert_eq!(s.get_sheet().as_str(), "profile");
     assert_eq!(s.get_profile_current().id, 2);
     sheet(&sh, "");
+    sh.take_acts();
+    sh.tap(320.0, 140.0); // the card's ✎: the active profile's page
+    assert_eq!(sh.take_acts(), acts(&[("profile-open", "0")]));
 
     // Apps: a row opens its sheet; Open and App settings ask for the app (SE1d)
     page(&sh, 13, "Apps");
