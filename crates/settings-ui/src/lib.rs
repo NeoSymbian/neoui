@@ -88,15 +88,12 @@ pub fn live_value(s: &SetState<'_>, id: &str) -> String {
                 return String::new();
             };
             match row {
-                "profile.tone" => String::from(if r.ring { "Built-in ringtone" } else { "None" }),
+                "profile.tone" if r.ring => pick(s.get_ring_tones(), r.ringtone),
+                "profile.tone" => "None".into(),
                 "profile.ring" => on(r.ring),
                 "profile.volume" => format!("{}", r.volume),
                 "profile.vibrate" => on(r.vibrate),
-                _ => String::from(if r.ring {
-                    "Two buzzes + chime"
-                } else {
-                    "Two buzzes"
-                }),
+                _ => pick(s.get_message_tones(), r.message_tone),
             }
         }
         "sounds.media" => format!("{}", s.get_media_volume()),

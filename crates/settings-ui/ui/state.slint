@@ -12,7 +12,7 @@ export struct SearchHit { id: string, title: string, path: string, value: string
 export struct WifiSaved { name: string, detail: string }
 // an app on the Apps page: a ROM app by its screen key, or an old app (old: true) by its id in hex
 // a sound profile (neoui-proto sound_profile): its row's summary and what the profile page edits
-export struct ProfileRow { id: int, name: string, summary: string, ring: bool, volume: int, vibrate: bool }
+export struct ProfileRow { id: int, name: string, summary: string, ring: bool, volume: int, vibrate: bool, ringtone: int, message-tone: int }
 export struct AppRow { key: string, name: string, old: bool, settings: bool }
 export struct WifiLink { shown: bool, connected: bool, name: string, subtitle: string, bars: int, band: string, details: [WifiDetail], sign-in: bool }
 
@@ -114,6 +114,9 @@ export global SetState {
     in property <string> active-profile-name: "General";
     in-out property <ProfileRow> profile-current;
     in-out property <string> new-name;
+    // (SE2b) the tones' names, by id (sound_profile::tone)
+    in property <[string]> ring-tones;
+    in property <[string]> message-tones;
 
     // the modem (MODEMD): operator, SIM, technology ("LTE", "3G", "2G", "" = no service), radio on
     in property <string> operator;
@@ -148,6 +151,7 @@ export global SetState {
     // - "wifi-refresh", "wifi-connect" (wifi-current, password), "wifi-disconnect", "wifi-forget", "wifi-sign-in";
     //   "wifi-saved-forget" + a saved network's row (the app asks to confirm first);
     // - "profile-choose" + an id; "profile-set" + "ring,volume,vibrate" (0/1, 0..10, 0/1) for profile-current;
+    //   "profile-tone" + "r,<id>" (ringtone) or "m,<id>" (message tone) for profile-current, previewed;
     //   "profile-add" / "profile-rename" (new-name); "profile-delete" (the app asks to confirm first);
     // - "app-open" + a ROM app's key; "old-open" + an old app's id (hex); "app" + an app's key (its own settings);
     // - "sound" + "test" | "record"; "keyboard" + an index to turn on or off ("+0"/"-0"); "keyboard-next";

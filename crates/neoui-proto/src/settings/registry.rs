@@ -169,6 +169,12 @@ registry! {
     /// C7 built-in ringtone volume, matching NeoModem's 0..=10 steps.
     SOUND_RING_VOLUME: i32 = "sound.ring_volume", default DefaultValue::Int(8),
         limit Limit::Range { min: 0, max: 10 }, owner Owner::Shell;
+    /// (SE2b) The active profile's ringtone and message tone (`sound_profile::tone`: 0 built-in, 1 beep, 2 two beeps,
+    /// 3 none): live values the shell sends MODEMD, written by the profiles' reducer.
+    SOUND_RINGTONE: i32 = "sound.ringtone", default DefaultValue::Int(0),
+        limit Limit::Range { min: 0, max: 3 }, owner Owner::Shell;
+    SOUND_MESSAGE_TONE: i32 = "sound.message_tone", default DefaultValue::Int(0),
+        limit Limit::Range { min: 0, max: 3 }, owner Owner::Shell;
     /// The active sound profile (`sound_profile`: 0 General, 1 Silent, 2 Meeting, 3 Outdoor, 4 Offline, 5.. added).
     /// Written only by the shell's reducer; `sound.silent/vibrate/ring_volume` are its live values.
     SOUND_PROFILE: i32 = "sound.profile", default DefaultValue::Int(0),

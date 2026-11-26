@@ -228,8 +228,8 @@ export component BatteryPage inherits NeoList {
     }
 }
 
-// A profile (set2-profile): its ring, volume and vibration (Offline sounds like General); added ones can be renamed
-// and deleted. The ringtone and the message tone are today's built-ins until SE2b.
+// A profile (set2-profile): its ring, ringtone, volume, vibration and message tone (Offline sounds like General);
+// added ones can be renamed and deleted. A tone picked in its sheet plays once (set2-ringtone, SE2b).
 export component ProfilePage inherits NeoList {
     property <ProfileRow> p: SetState.profile-current;
     property <bool> offline: p.id == 4;
@@ -245,11 +245,14 @@ export component ProfilePage inherits NeoList {
         }
         if offline: Note { text: "Offline turns the mobile network, Wi-Fi and Bluetooth off, and sounds like General. Leaving it turns them back on."; }
         if !offline: SectionHeader { text: "Calls"; }
-        if !offline: ListRow {
+        if !offline && p.ring: ListRow {
             title: "Ringtone";
             checked: SetState.found == "profile.tone";
-            value: p.ring ? "Built-in ringtone" : "None";
+            value: SetState.ring-tones.length > p.ringtone ? SetState.ring-tones[p.ringtone] : "";
+            chevron: true;
+            clicked => { SetState.sheet = "ringtone"; }
         }
+        if !offline && p.ring && p.ringtone == 3: Note { text: "Calls vibrate only, so Vibrate stays on."; }
         // Silent never rings (muting chooses it)
         if !offline && p.id != 1: ListRow {
             title: "Ring";
@@ -290,8 +293,11 @@ export component ProfilePage inherits NeoList {
         if !offline: ListRow {
             title: "Message tone";
             checked: SetState.found == "profile.message";
-            value: p.ring ? "Two buzzes + chime" : "Two buzzes";
+            value: SetState.message-tones.length > p.message-tone ? SetState.message-tones[p.message-tone] : "";
+            subtitle: "With two buzzes";
+            chevron: true;
             divider: false;
+            clicked => { SetState.sheet = "message-tone"; }
         }
         if added: HorizontalLayout {
             padding: Theme.margin;

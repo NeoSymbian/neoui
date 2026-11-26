@@ -116,7 +116,7 @@ pub struct Phone {
     update: Option<Status>,
     disconnected: bool,
     volume: Option<u8>,
-    preferences: Option<(u32, bool, modem_ipc::Ring)>,
+    preferences: Option<(u32, bool, modem_ipc::Ring, (u8, u8))>,
     preferences_retry_at: u64,
     /// a call started ringing since `take_ring` (the screen wakes for it)
     rang: bool,
@@ -211,7 +211,15 @@ impl Phone {
             silent: settings.get(keys::SOUND_SILENT).unwrap_or(false),
             vibrate: settings.get(keys::SOUND_VIBRATE).unwrap_or(true),
         };
-        let desired = (status.generation, airplane, ring);
+        // (SE2b) the profile's tones, sent with modem_ipc::tone::PRESENT so MODEMD takes them
+        let tones = (
+            settings.get(keys::SOUND_RINGTONE).unwrap_or(0).clamp(0, 3) as u8,
+            settings
+                .get(keys::SOUND_MESSAGE_TONE)
+                .unwrap_or(0)
+                .clamp(0, 3) as u8,
+        );
+        let desired = (status.generation, airplane, ring, tones);
         if self.preferences == Some(desired) {
             return;
         }
@@ -222,16 +230,18 @@ impl Phone {
             args.int(0, i32::from(ring.volume));
             args.int(1, i32::from(ring.silent));
             args.int(2, i32::from(ring.vibrate));
+            args.int(3, modem_ipc::tone::pack(tones.0, tones.1));
             session
                 .send_receive(op::RING_SETTINGS, &args)
                 .unwrap_or_else(|e| e)
         });
         let radio_result = self.request("airplane", if airplane { "1" } else { "0" });
         dprintln!(
-            "neoui: modem ring volume {} silent {} vibrate {}, airplane {} ({}, {})",
+            "neoui: modem ring volume {} silent {} vibrate {} tones {:#04x}, airplane {} ({}, {})",
             ring.volume,
             ring.silent,
             ring.vibrate,
+            tones.0 | tones.1 << 4,
             airplane,
             ring_result,
             radio_result

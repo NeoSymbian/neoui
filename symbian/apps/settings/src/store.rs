@@ -25,6 +25,12 @@ fn strings(v: impl IntoIterator<Item = impl Into<SharedString>>) -> ModelRc<Shar
 
 /// The fixed choice names, once.
 pub fn fill_fixed(ui: &SettingsApp) {
+    {
+        use neoui_proto::sound_profile::tone;
+        let s = ui.global::<SetState>();
+        s.set_ring_tones(strings(tone::ALL.iter().map(|t| tone::ring_name(*t))));
+        s.set_message_tones(strings(tone::ALL.iter().map(|t| tone::message_name(*t))));
+    }
     let s = ui.global::<SetState>();
     s.set_timeouts(strings(TIMEOUTS.iter().map(|(_, t)| *t)));
     s.set_nav_modes(strings(choices::NAV_MODES.iter().map(|(n, _)| *n)));
@@ -126,6 +132,8 @@ pub fn profiles(app: &App, ui: &SettingsApp) {
             ring: x.ring,
             volume: i32::from(x.volume),
             vibrate: x.vibrate,
+            ringtone: i32::from(x.ringtone),
+            message_tone: i32::from(x.message_tone),
         })
         .collect();
     s.set_active_profile(i32::from(p.active));

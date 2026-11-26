@@ -30,7 +30,8 @@ pub const MAX_PROFILES: usize = 16;
 pub const NAME_MAX: usize = 24;
 /// The longest `sound.profiles` blob.
 pub const BLOB_MAX: usize = 1024;
-const VERSION: u8 = 1;
+/// The blob's version: 2 adds the tones (SE2b); a version 1 blob reads with the built-in tones.
+const VERSION: u8 = 2;
 
 /// One profile: what an incoming call does.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -42,6 +43,41 @@ pub struct Profile {
     /// 0..=10
     pub volume: u8,
     pub vibrate: bool,
+    /// (SE2b) the call's ringtone and a message's tone ([`tone`])
+    pub ringtone: u8,
+    pub message_tone: u8,
+}
+
+/// (SE2b) The tones, NeoAudio's `tones` and modem-ipc's `tone` ids (the shell passes them through unchanged).
+pub mod tone {
+    pub const BUILT_IN: u8 = 0;
+    pub const BEEP: u8 = 1;
+    pub const TWO_BEEPS: u8 = 2;
+    /// no sound: a call vibrates, a message buzzes
+    pub const NONE: u8 = 3;
+    pub const ALL: [u8; 4] = [BUILT_IN, BEEP, TWO_BEEPS, NONE];
+
+    /// A ringtone's name.
+    #[must_use]
+    pub fn ring_name(t: u8) -> &'static str {
+        match t {
+            BUILT_IN => "Built-in ringtone",
+            BEEP => "Beep",
+            TWO_BEEPS => "Two beeps",
+            _ => "None (vibrate only)",
+        }
+    }
+
+    /// A message tone's name.
+    #[must_use]
+    pub fn message_name(t: u8) -> &'static str {
+        match t {
+            BUILT_IN => "Built-in chime",
+            BEEP => "Beep",
+            TWO_BEEPS => "Two beeps",
+            _ => "None (buzz only)",
+        }
+    }
 }
 
 /// The settings MODEMD reads: the active profile's live values.
@@ -91,6 +127,12 @@ pub enum Command {
         volume: u8,
         vibrate: bool,
     },
+    /// (SE2b) A profile's ringtone and message tone (not Offline's: it uses General's).
+    SetTones {
+        id: u8,
+        ring: u8,
+        message: u8,
+    },
     Add(String),
     Rename(u8, String),
     Delete(u8),
@@ -127,6 +169,8 @@ fn builtin(id: u8, name: &str, ring: bool, volume: u8, vibrate: bool) -> Profile
         ring,
         volume,
         vibrate,
+        ringtone: tone::BUILT_IN,
+        message_tone: tone::BUILT_IN,
     }
 }
 
@@ -192,6 +236,40 @@ impl Profiles {
         }
     }
 
+    /// (SE2b) The tones MODEMD plays: the sound profile's (Offline's is General's).
+    #[must_use]
+    pub fn tones(&self) -> (u8, u8) {
+        let id = if self.active == OFFLINE {
+            GENERAL
+        } else {
+            self.active
+        };
+        self.get(id)
+            .or_else(|| self.get(GENERAL))
+            .map_or((tone::BUILT_IN, tone::BUILT_IN), |p| {
+                (p.ringtone, p.message_tone)
+            })
+    }
+
+    /// (SE2b) Fold in a write to `sound.ringtone` / `sound.message_tone` by anyone but the reducer: into the sound
+    /// profile. True when it changed something.
+    pub fn reconcile_tones(&mut self, now: (u8, u8)) -> bool {
+        if now == self.tones() || now.0 > tone::NONE || now.1 > tone::NONE {
+            return false;
+        }
+        let id = if self.active == OFFLINE {
+            GENERAL
+        } else {
+            self.active
+        };
+        let Some(p) = self.get_mut(id) else {
+            return false;
+        };
+        (p.ringtone, p.message_tone) = now;
+        p.keep_a_signal();
+        true
+    }
+
     /// Run a command. `radios` is how the radios are now (Offline remembers them). Returns the radios to set, when
     /// entering or leaving Offline.
     ///
@@ -222,7 +300,21 @@ impl Profiles {
                 p.ring = ring && id != SILENT;
                 p.volume = volume;
                 p.vibrate = vibrate;
+                p.keep_a_signal();
                 self.repair();
+                Ok(None)
+            }
+            Command::SetTones { id, ring, message } => {
+                if ring > tone::NONE || message > tone::NONE {
+                    return Err(Refused::Argument);
+                }
+                if id == OFFLINE {
+                    return Err(Refused::NotFound);
+                }
+                let p = self.get_mut(id).ok_or(Refused::NotFound)?;
+                p.ringtone = ring;
+                p.message_tone = message;
+                p.keep_a_signal();
                 Ok(None)
             }
             Command::Add(name) => {
@@ -328,6 +420,7 @@ impl Profiles {
             }
             if let Some(p) = self.get_mut(sound) {
                 p.vibrate = now.vibrate;
+                p.keep_a_signal();
             }
         }
         if self.active == OFFLINE && !airplane {
@@ -360,7 +453,9 @@ impl Profiles {
         for p in &self.list {
             let name = if p.id < FIRST_ADDED {
                 let d = &defaults[usize::from(p.id)];
-                if (d.ring, d.volume, d.vibrate) == (p.ring, p.volume, p.vibrate) {
+                if (d.ring, d.volume, d.vibrate, d.ringtone, d.message_tone)
+                    == (p.ring, p.volume, p.vibrate, p.ringtone, p.message_tone)
+                {
                     continue; // as it comes: not stored, so a new default reaches it
                 }
                 ""
@@ -381,6 +476,7 @@ impl Profiles {
                 p.id,
                 u8::from(p.ring) | u8::from(p.vibrate) << 1,
                 p.volume,
+                p.ringtone | p.message_tone << 4,
                 name.len() as u8,
             ]);
             b.extend_from_slice(name.as_bytes());
@@ -394,12 +490,25 @@ impl Profiles {
     pub fn decode(active: u8, b: &[u8]) -> Option<Self> {
         let (&[version, last_audible, before_offline, radios, n], mut rest) =
             b.split_first_chunk::<5>()?;
-        if version != VERSION || b.len() > BLOB_MAX || usize::from(n) > MAX_PROFILES {
+        if !(1..=VERSION).contains(&version) || b.len() > BLOB_MAX || usize::from(n) > MAX_PROFILES
+        {
             return None;
         }
         let mut list = builtins();
         for _ in 0..n {
-            let (&[id, flags, volume, len], r) = rest.split_first_chunk::<4>()?;
+            // version 2 adds the tones byte (ringtone, message tone << 4); version 1 means the built-in ones
+            let (id, flags, volume, tones, r) = if version >= 2 {
+                let (&[id, flags, volume, tones], r) = rest.split_first_chunk::<4>()?;
+                (id, flags, volume, tones, r)
+            } else {
+                let (&[id, flags, volume], r) = rest.split_first_chunk::<3>()?;
+                (id, flags, volume, 0, r)
+            };
+            let (ringtone, message_tone) = (tones & 0xf, tones >> 4);
+            if ringtone > tone::NONE || message_tone > tone::NONE {
+                return None;
+            }
+            let (&len, r) = r.split_first()?;
             let len = usize::from(len);
             let name = core::str::from_utf8(r.get(..len)?).ok()?;
             rest = &r[len..];
@@ -410,6 +519,7 @@ impl Profiles {
             if id < FIRST_ADDED {
                 let p = &mut list[usize::from(id)];
                 (p.ring, p.volume, p.vibrate) = (ring, volume, vibrate);
+                (p.ringtone, p.message_tone) = (ringtone, message_tone);
             } else {
                 if name.trim().is_empty() || list.iter().any(|p| p.id == id) {
                     return None;
@@ -420,6 +530,8 @@ impl Profiles {
                     ring,
                     volume,
                     vibrate,
+                    ringtone,
+                    message_tone,
                 });
             }
         }
@@ -450,6 +562,14 @@ pub fn read(active: i32, blob: &[u8], mirrors: Mirrors) -> Profiles {
 }
 
 impl Profile {
+    /// A ringing profile whose ringtone is None vibrates: a call must make some signal (whether a fully silent ring
+    /// is ever allowed is the owner's call, settings.md SE2 plan).
+    fn keep_a_signal(&mut self) {
+        if self.ring && self.ringtone == tone::NONE {
+            self.vibrate = true;
+        }
+    }
+
     /// What a profile does, as its row says: "Built-in ringtone · volume 7 · vibrate", "No ringing · vibrate",
     /// "Airplane mode: radios off".
     #[must_use]
@@ -462,8 +582,14 @@ impl Profile {
         } else {
             "no vibration"
         };
-        if self.ring {
-            alloc::format!("Built-in ringtone · volume {} · {vibrate}", self.volume)
+        if self.ring && self.ringtone == tone::NONE {
+            alloc::format!("No ringtone · {vibrate}")
+        } else if self.ring {
+            alloc::format!(
+                "{} · volume {} · {vibrate}",
+                tone::ring_name(self.ringtone),
+                self.volume
+            )
         } else {
             alloc::format!("No ringing · {vibrate}")
         }
@@ -498,6 +624,7 @@ impl Command {
             Command::Add(name) => (2, 0, 0, 0, name.as_str()),
             Command::Rename(id, name) => (3, *id, 0, 0, name.as_str()),
             Command::Delete(id) => (4, *id, 0, 0, ""),
+            Command::SetTones { id, ring, message } => (5, *id, *ring, *message, ""),
         };
         let mut b = alloc::vec![op, id, flags, volume];
         b.extend_from_slice(name.as_bytes());
@@ -523,6 +650,11 @@ impl Command {
             2 => Command::Add(name),
             3 => Command::Rename(id, name),
             4 if plain => Command::Delete(id),
+            5 if plain => Command::SetTones {
+                id,
+                ring: flags,
+                message: volume,
+            },
             _ => return None,
         })
     }
@@ -587,6 +719,21 @@ pub mod store {
             .map(drop)?;
         s.set(Caller::Shell, keys::SOUND_VIBRATE, m.vibrate, now_ms)
             .map(drop)?;
+        let (ringtone, message_tone) = p.tones();
+        s.set(
+            Caller::Shell,
+            keys::SOUND_RINGTONE,
+            i32::from(ringtone),
+            now_ms,
+        )
+        .map(drop)?;
+        s.set(
+            Caller::Shell,
+            keys::SOUND_MESSAGE_TONE,
+            i32::from(message_tone),
+            now_ms,
+        )
+        .map(drop)?;
         s.set(
             Caller::Shell,
             keys::SOUND_RING_VOLUME,
@@ -630,10 +777,15 @@ pub mod store {
         // `sound.profile` agrees with it
         let active = s.get(keys::SOUND_PROFILE).unwrap_or(0).clamp(0, 254) as u8;
         let fresh = stored.is_empty() || Profiles::decode(active, &stored).is_none();
+        let tones = (
+            s.get(keys::SOUND_RINGTONE).unwrap_or(0).clamp(0, 255) as u8,
+            s.get(keys::SOUND_MESSAGE_TONE).unwrap_or(0).clamp(0, 255) as u8,
+        );
+        let tones_changed = p.reconcile_tones(tones);
         match p.reconcile(mirrors(s), radios(s).airplane) {
             Some(set) => commit(s, &p, set, now_ms).is_ok(),
             // the upgrade's first write: the profiles go into the store as they were found
-            None if fresh => commit(s, &p, None, now_ms).is_ok(),
+            None if fresh || tones_changed => commit(s, &p, None, now_ms).is_ok(),
             None => false,
         }
     }
@@ -883,17 +1035,101 @@ mod tests {
                 volume: 8
             })
             .encode(),
-            vec![1, 0, 0, 0, 0]
+            vec![2, 0, 0, 0, 0]
         );
         // damaged
         assert_eq!(Profiles::decode(0, &b[..b.len() - 1]), None);
-        assert_eq!(Profiles::decode(0, &[2, 0, 0, 0, 0]), None);
+        assert_eq!(Profiles::decode(0, &[3, 0, 0, 0, 0]), None);
         assert_eq!(Profiles::decode(0, &[1, 0, 0, 0, 1, 2, 1, 11, 0]), None);
         assert_eq!(Profiles::decode(0, &[1, 0, 0, 0, 1, 5, 1, 1, 0]), None); // an added one without a name
         // a missing active profile falls back to General
         assert_eq!(
             Profiles::decode(42, &[1, 0, 0, 0, 0]).unwrap().active,
             GENERAL
+        );
+    }
+
+    #[test]
+    fn tones_per_profile_keep_a_signal_and_old_blobs_read() {
+        let mut p = today(false);
+        p.apply(
+            Command::SetTones {
+                id: MEETING,
+                ring: tone::BEEP,
+                message: tone::NONE,
+            },
+            ON,
+        )
+        .unwrap();
+        p.apply(Command::Choose(MEETING), ON).unwrap();
+        assert_eq!(p.tones(), (tone::BEEP, tone::NONE));
+        // Offline plays General's tones
+        p.apply(Command::Choose(OFFLINE), ON).unwrap();
+        assert_eq!(p.tones(), (tone::BUILT_IN, tone::BUILT_IN));
+        // ringtone None with vibrate off: the call would make no signal, so vibrate stays on
+        let mut p = today(false);
+        p.apply(
+            Command::Set {
+                id: GENERAL,
+                ring: true,
+                volume: 5,
+                vibrate: false,
+            },
+            ON,
+        )
+        .unwrap();
+        p.apply(
+            Command::SetTones {
+                id: GENERAL,
+                ring: tone::NONE,
+                message: tone::BUILT_IN,
+            },
+            ON,
+        )
+        .unwrap();
+        assert!(p.get(GENERAL).unwrap().vibrate);
+        p.apply(
+            Command::Set {
+                id: GENERAL,
+                ring: true,
+                volume: 5,
+                vibrate: false,
+            },
+            ON,
+        )
+        .unwrap();
+        assert!(p.get(GENERAL).unwrap().vibrate);
+        let mut m = p.mirrors();
+        m.vibrate = false;
+        p.reconcile(m, false);
+        assert!(p.get(GENERAL).unwrap().vibrate);
+        // unknown tones are refused
+        assert_eq!(
+            p.apply(
+                Command::SetTones {
+                    id: GENERAL,
+                    ring: 4,
+                    message: 0
+                },
+                ON
+            ),
+            Err(Refused::Argument)
+        );
+        // the tones round-trip, and a version 1 blob (no tones byte) reads with the built-in tones
+        assert_eq!(Profiles::decode(p.active, &p.encode()), Some(p.clone()));
+        let v1 = [1, 0, 0, 0, 1, 2, 1, 4, 0];
+        let d = Profiles::decode(0, &v1).unwrap();
+        assert_eq!(d.get(MEETING).unwrap().volume, 4);
+        assert_eq!(
+            (
+                d.get(MEETING).unwrap().ringtone,
+                d.get(MEETING).unwrap().message_tone
+            ),
+            (tone::BUILT_IN, tone::BUILT_IN)
+        );
+        assert_eq!(
+            Profiles::decode(0, &[2, 0, 0, 0, 1, 2, 1, 4, 0x04, 0]),
+            None
         );
     }
 
@@ -910,6 +1146,11 @@ mod tests {
             Command::Add("Gym".into()),
             Command::Rename(6, "Car".into()),
             Command::Delete(7),
+            Command::SetTones {
+                id: 2,
+                ring: 1,
+                message: 3,
+            },
         ] {
             assert_eq!(Command::decode(&c.encode()), Some(c));
         }

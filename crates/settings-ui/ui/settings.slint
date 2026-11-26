@@ -90,6 +90,22 @@ export component SettingsApp inherits Window {
         open: true;
         dismissed => { SetState.sheet = ""; SetState.password = ""; KeyboardFocus.open = false; }
     }
+    if SetState.sheet == "ringtone": ChoiceSheet {
+        open: true;
+        title: "Ringtone";
+        choices: SetState.ring-tones;
+        current: SetState.profile-current.ringtone;
+        chosen(i) => { SetState.act("profile-tone", "r," + i); }
+        dismissed => { SetState.sheet = ""; }
+    }
+    if SetState.sheet == "message-tone": ChoiceSheet {
+        open: true;
+        title: "Message tone";
+        choices: SetState.message-tones;
+        current: SetState.profile-current.message-tone;
+        chosen(i) => { SetState.act("profile-tone", "m," + i); }
+        dismissed => { SetState.sheet = ""; }
+    }
     if SetState.sheet == "profile": ProfileSheet {
         open: true;
         dismissed => { SetState.sheet = ""; }
