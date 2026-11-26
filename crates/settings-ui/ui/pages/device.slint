@@ -253,6 +253,7 @@ export component ProfilePage inherits NeoList {
             clicked => { SetState.sheet = "ringtone"; }
         }
         if !offline && p.ring && p.ringtone == 3: Note { text: "Calls vibrate only, so Vibrate stays on."; }
+        if !offline: Note { text: "A tone you pick plays once, at the media volume; calls ring at the ring volume."; }
         // Silent never rings (muting chooses it)
         if !offline && p.id != 1: ListRow {
             title: "Ring";
@@ -294,7 +295,6 @@ export component ProfilePage inherits NeoList {
             title: "Message tone";
             checked: SetState.found == "profile.message";
             value: SetState.message-tones.length > p.message-tone ? SetState.message-tones[p.message-tone] : "";
-            subtitle: "With two buzzes";
             chevron: true;
             divider: false;
             clicked => { SetState.sheet = "message-tone"; }

@@ -95,7 +95,10 @@ export component SettingsApp inherits Window {
         title: "Ringtone";
         choices: SetState.ring-tones;
         current: SetState.profile-current.ringtone;
-        chosen(i) => { SetState.act("profile-tone", "r," + i); }
+        chosen(i) => {
+            SetState.sheet = "";
+            SetState.act("profile-tone", "r," + i);
+        }
         dismissed => { SetState.sheet = ""; }
     }
     if SetState.sheet == "message-tone": ChoiceSheet {
@@ -103,7 +106,10 @@ export component SettingsApp inherits Window {
         title: "Message tone";
         choices: SetState.message-tones;
         current: SetState.profile-current.message-tone;
-        chosen(i) => { SetState.act("profile-tone", "m," + i); }
+        chosen(i) => {
+            SetState.sheet = "";
+            SetState.act("profile-tone", "m," + i);
+        }
         dismissed => { SetState.sheet = ""; }
     }
     if SetState.sheet == "profile": ProfileSheet {

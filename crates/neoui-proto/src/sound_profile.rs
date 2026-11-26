@@ -30,8 +30,9 @@ pub const MAX_PROFILES: usize = 16;
 pub const NAME_MAX: usize = 24;
 /// The longest `sound.profiles` blob.
 pub const BLOB_MAX: usize = 1024;
-/// The blob's version: 2 adds the tones (SE2b); a version 1 blob reads with the built-in tones.
-const VERSION: u8 = 2;
+const VERSION: u8 = 1;
+/// The longest `sound.tones` record: an id and a tones byte per profile.
+pub const TONES_MAX: usize = 2 * MAX_PROFILES;
 
 /// One profile: what an incoming call does.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -453,9 +454,7 @@ impl Profiles {
         for p in &self.list {
             let name = if p.id < FIRST_ADDED {
                 let d = &defaults[usize::from(p.id)];
-                if (d.ring, d.volume, d.vibrate, d.ringtone, d.message_tone)
-                    == (p.ring, p.volume, p.vibrate, p.ringtone, p.message_tone)
-                {
+                if (d.ring, d.volume, d.vibrate) == (p.ring, p.volume, p.vibrate) {
                     continue; // as it comes: not stored, so a new default reaches it
                 }
                 ""
@@ -476,12 +475,39 @@ impl Profiles {
                 p.id,
                 u8::from(p.ring) | u8::from(p.vibrate) << 1,
                 p.volume,
-                p.ringtone | p.message_tone << 4,
                 name.len() as u8,
             ]);
             b.extend_from_slice(name.as_bytes());
         }
         b
+    }
+
+    /// (SE2b) `sound.tones`: `[id][ringtone | message tone << 4]` for each profile whose tones aren't the built-in
+    /// ones. A key of its own, so a shell from before SE2b (which drops unknown keys) keeps every profile.
+    #[must_use]
+    pub fn encode_tones(&self) -> Vec<u8> {
+        let mut b = Vec::new();
+        for p in &self.list {
+            if (p.ringtone, p.message_tone) != (tone::BUILT_IN, tone::BUILT_IN) {
+                b.extend_from_slice(&[p.id, p.ringtone | p.message_tone << 4]);
+            }
+        }
+        b
+    }
+
+    /// The tones in `sound.tones` onto the profiles; a damaged record (or one for a profile that isn't there) is
+    /// skipped, the rest kept.
+    pub fn apply_tones(&mut self, b: &[u8]) {
+        for r in b.as_chunks::<2>().0 {
+            let (ring, message) = (r[1] & 0xf, r[1] >> 4);
+            if ring > tone::NONE || message > tone::NONE {
+                continue;
+            }
+            if let Some(p) = self.get_mut(r[0]) {
+                (p.ringtone, p.message_tone) = (ring, message);
+                p.keep_a_signal();
+            }
+        }
     }
 
     /// The profiles from `sound.profile` and `sound.profiles`; `None` if the blob is damaged (the caller upgrades
@@ -490,25 +516,12 @@ impl Profiles {
     pub fn decode(active: u8, b: &[u8]) -> Option<Self> {
         let (&[version, last_audible, before_offline, radios, n], mut rest) =
             b.split_first_chunk::<5>()?;
-        if !(1..=VERSION).contains(&version) || b.len() > BLOB_MAX || usize::from(n) > MAX_PROFILES
-        {
+        if version != VERSION || b.len() > BLOB_MAX || usize::from(n) > MAX_PROFILES {
             return None;
         }
         let mut list = builtins();
         for _ in 0..n {
-            // version 2 adds the tones byte (ringtone, message tone << 4); version 1 means the built-in ones
-            let (id, flags, volume, tones, r) = if version >= 2 {
-                let (&[id, flags, volume, tones], r) = rest.split_first_chunk::<4>()?;
-                (id, flags, volume, tones, r)
-            } else {
-                let (&[id, flags, volume], r) = rest.split_first_chunk::<3>()?;
-                (id, flags, volume, 0, r)
-            };
-            let (ringtone, message_tone) = (tones & 0xf, tones >> 4);
-            if ringtone > tone::NONE || message_tone > tone::NONE {
-                return None;
-            }
-            let (&len, r) = r.split_first()?;
+            let (&[id, flags, volume, len], r) = rest.split_first_chunk::<4>()?;
             let len = usize::from(len);
             let name = core::str::from_utf8(r.get(..len)?).ok()?;
             rest = &r[len..];
@@ -519,7 +532,6 @@ impl Profiles {
             if id < FIRST_ADDED {
                 let p = &mut list[usize::from(id)];
                 (p.ring, p.volume, p.vibrate) = (ring, volume, vibrate);
-                (p.ringtone, p.message_tone) = (ringtone, message_tone);
             } else {
                 if name.trim().is_empty() || list.iter().any(|p| p.id == id) {
                     return None;
@@ -530,8 +542,8 @@ impl Profiles {
                     ring,
                     volume,
                     vibrate,
-                    ringtone,
-                    message_tone,
+                    ringtone: tone::BUILT_IN,
+                    message_tone: tone::BUILT_IN,
                 });
             }
         }
@@ -553,12 +565,15 @@ impl Profiles {
 /// The profiles from the store's three inputs (`sound.profile`, `sound.profiles`, today's mirrors): the blob, or the
 /// upgrade when there is none yet or it is damaged. The shell and the Settings app read them the same way.
 #[must_use]
-pub fn read(active: i32, blob: &[u8], mirrors: Mirrors) -> Profiles {
+pub fn read(active: i32, blob: &[u8], tones: &[u8], mirrors: Mirrors) -> Profiles {
     let active = active.clamp(0, 254) as u8;
-    if blob.is_empty() {
-        return Profiles::upgrade(mirrors);
-    }
-    Profiles::decode(active, blob).unwrap_or_else(|| Profiles::upgrade(mirrors))
+    let mut p = if blob.is_empty() {
+        Profiles::upgrade(mirrors)
+    } else {
+        Profiles::decode(active, blob).unwrap_or_else(|| Profiles::upgrade(mirrors))
+    };
+    p.apply_tones(tones);
+    p
 }
 
 impl Profile {
@@ -686,7 +701,13 @@ pub mod store {
     #[must_use]
     pub fn load<B: Backend>(s: &Service<B>) -> Profiles {
         let blob = s.get(keys::SOUND_PROFILES).map(|b| b.0).unwrap_or_default();
-        super::read(s.get(keys::SOUND_PROFILE).unwrap_or(0), &blob, mirrors(s))
+        let tones = s.get(keys::SOUND_TONES).map(|b| b.0).unwrap_or_default();
+        super::read(
+            s.get(keys::SOUND_PROFILE).unwrap_or(0),
+            &blob,
+            &tones,
+            mirrors(s),
+        )
     }
 
     /// Write the profiles, their mirrors and (Offline) the radios, all before any watcher or MODEMD hears of it: the
@@ -701,6 +722,13 @@ pub mod store {
         now_ms: u64,
     ) -> Result<(), Error> {
         let m = p.mirrors();
+        s.set(
+            Caller::Shell,
+            keys::SOUND_TONES,
+            Bytes(p.encode_tones()),
+            now_ms,
+        )
+        .map(drop)?;
         s.set(
             Caller::Shell,
             keys::SOUND_PROFILES,
@@ -1035,7 +1063,7 @@ mod tests {
                 volume: 8
             })
             .encode(),
-            vec![2, 0, 0, 0, 0]
+            vec![1, 0, 0, 0, 0]
         );
         // damaged
         assert_eq!(Profiles::decode(0, &b[..b.len() - 1]), None);
@@ -1115,8 +1143,16 @@ mod tests {
             ),
             Err(Refused::Argument)
         );
-        // the tones round-trip, and a version 1 blob (no tones byte) reads with the built-in tones
-        assert_eq!(Profiles::decode(p.active, &p.encode()), Some(p.clone()));
+        // the tones go in sound.tones, beside a blob a shell from before them still reads; a blob alone reads with
+        // the built-in tones
+        let mut d = Profiles::decode(p.active, &p.encode()).unwrap();
+        d.apply_tones(&p.encode_tones());
+        assert_eq!(d, p);
+        assert!(p.encode_tones().len() <= TONES_MAX);
+        // a damaged tones record is skipped, the rest kept
+        let mut d = Profiles::decode(p.active, &p.encode()).unwrap();
+        d.apply_tones(&[GENERAL, 0x04, 99, 0x11, MEETING]);
+        assert_eq!(d.get(GENERAL).unwrap().ringtone, tone::BUILT_IN);
         let v1 = [1, 0, 0, 0, 1, 2, 1, 4, 0];
         let d = Profiles::decode(0, &v1).unwrap();
         assert_eq!(d.get(MEETING).unwrap().volume, 4);

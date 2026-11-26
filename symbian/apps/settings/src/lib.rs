@@ -181,6 +181,9 @@ fn run() -> Result<(), i32> {
             },
             AppEvent::Visible(v) => {
                 ctx.visible.set(v);
+                if !v {
+                    ctx.sound.stop(); // a tone's preview ends with the app hidden
+                }
                 if v {
                     ctx.tick(true);
                 }

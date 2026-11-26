@@ -175,6 +175,10 @@ registry! {
         limit Limit::Range { min: 0, max: 3 }, owner Owner::Shell;
     SOUND_MESSAGE_TONE: i32 = "sound.message_tone", default DefaultValue::Int(0),
         limit Limit::Range { min: 0, max: 3 }, owner Owner::Shell;
+    /// (SE2b) The profiles' tones (`sound_profile::Profiles::encode_tones`): a key of its own beside
+    /// `sound.profiles`, so a shell from before SE2b keeps the profiles. Written only by the shell's reducer.
+    SOUND_TONES: Bytes = "sound.tones", default DefaultValue::Bytes(&[]),
+        limit Limit::MaxLen(32), owner Owner::Shell;
     /// The active sound profile (`sound_profile`: 0 General, 1 Silent, 2 Meeting, 3 Outdoor, 4 Offline, 5.. added).
     /// Written only by the shell's reducer; `sound.silent/vibrate/ring_volume` are its live values.
     SOUND_PROFILE: i32 = "sound.profile", default DefaultValue::Int(0),

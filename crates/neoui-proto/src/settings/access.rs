@@ -38,7 +38,7 @@ pub fn caller(key: &str, sid: u32) -> Caller<'_> {
 
 /// Shell keys only the shell writes, even for the Settings app: the sound profiles go through the shell's reducer
 /// (`ipc::ACTION_PROFILE`) so the profile, its blob and its live values change together.
-pub const SHELL_ONLY: &[&str] = &["sound.profile", "sound.profiles"];
+pub const SHELL_ONLY: &[&str] = &["sound.profile", "sound.profiles", "sound.tones"];
 
 /// App-owned keys the Settings app shows and may change (Date & time's 24-hour time is Clock's key).
 pub const SETTINGS_ALSO: &[&str] = &["clock.24h"];
