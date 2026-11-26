@@ -246,7 +246,8 @@ pub const INFO_ENERGY_SHARES: i32 = 15;
 /// [`SETTINGS_ACTION`] kinds.
 pub const ACTION_SIGN_IN: i32 = 1;
 pub const ACTION_OPEN_ENTRY: i32 = 2;
-/// 1.15 (SE2a): a sound profile command ([`crate::sound_profile::Command`]: choose, set, add, rename, delete), Settings
+/// 1.15 (SE2a): a sound profile command ([`crate::sound_profile::Command`]: choose, set, add, rename, delete; tones
+/// (tag 5, SE2b); keypad tones and vibrate on touch (tag 6, D6: `[6, id, keypad 1 | touch 2, 0]`)), Settings
 /// only (`KErrPermissionDenied`); `KErrNotFound` for a profile that isn't there (or can't be changed that way),
 /// `KErrOverflow` when there is no room for another, `KErrArgument` for a malformed request.
 pub const ACTION_PROFILE: i32 = 3;
@@ -308,6 +309,16 @@ pub const OWNER_REPORT: i32 = 42;
 /// most 32 × 32 ([`crate::settings_app::wire::thumb`]; 0 bytes: the generic icon). `KErrNotFound` for an entry the
 /// bridge doesn't have, `KErrNotReady` when `expected_rev` isn't 0 and isn't INFO 8's revision now.
 pub const ENTRY_THUMB: i32 = 43;
+/// 1.20 (D6): `[kind, key]` → 0: a control of the app in front accepted a
+/// touch (the kit's controls say so through `neoapp::kit_feedback!`). The shell answers at most once per press it
+/// delivered (finger 0 going down): a short pulse with `sound.touch_vibrate` on, and for [`FEEDBACK_DIAL_KEY`] (key =
+/// the ASCII digit, `*` or `#`) the key's tone with `sound.keypad_tones` on, out of a call, in an audible profile.
+/// `KErrNotReady` when the caller isn't in front or has no press left to answer, `KErrArgument` for an unknown kind,
+/// `KErrNotSupported` from a client older than 1.20 (and from an older shell).
+pub const CONTROL_FEEDBACK: i32 = 44;
+/// [`CONTROL_FEEDBACK`] kinds: a control (button, row, switch…), a dial pad key.
+pub const FEEDBACK_CONTROL: i32 = 0;
+pub const FEEDBACK_DIAL_KEY: i32 = 1;
 /// [`AppEvent::NotifyGone`]'s `why`: the user swiped the card away.
 pub const GONE_SWIPED: u8 = 0;
 /// [`AppEvent::NotifyGone`]'s `why`: the user cleared the shade (Clear all).

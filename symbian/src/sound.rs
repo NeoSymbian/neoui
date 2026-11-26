@@ -7,6 +7,75 @@ use e32::ipc::{Session, TIpcArgs, TVersion};
 use neoui_proto::settings::registry::keys;
 use neoui_proto::settings::{Caller, Value};
 
+/// (D6) A dial key's tone is playing: one at a time, a key pressed meanwhile is silent.
+static TONE_BUSY: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+
+/// (D6) Answer an accepted control as the active profile says (`effects::FeedbackPolicy`): a pulse with vibrate on
+/// touch, a dial key's DTMF pair with keypad tones (out of a call, in a profile that rings at a volume above 0).
+pub fn feedback(settings: &Settings, in_call: bool, kind: i32, key: u8) {
+    let policy = neoui_proto::effects::FeedbackPolicy {
+        touch: settings.get(keys::SOUND_TOUCH_VIBRATE).unwrap_or(false),
+        keypad: settings.get(keys::SOUND_KEYPAD_TONES).unwrap_or(false),
+        audible: !settings.get(keys::SOUND_SILENT).unwrap_or(false)
+            && settings.get(keys::SOUND_RING_VOLUME).unwrap_or(8) > 0,
+        in_call,
+    };
+    let answer = policy.answer(kind, key);
+    if let Some((ms, amp)) = answer.pulse {
+        let r = crate::haptic(ms, amp);
+        if r != 0 {
+            dprintln!("neoui: touch pulse -> {}", r);
+        }
+    }
+    if let Some((low, high)) = answer.tone
+        && !TONE_BUSY.swap(true, core::sync::atomic::Ordering::AcqRel)
+    {
+        // a thread of its own: NeoAudio's writes wait for the queue, the UI doesn't
+        let r = e32::thread::spawn(move || {
+            let r = play_dtmf(low, high);
+            if r.is_err() {
+                dprintln!("neoui: key tone {}+{} Hz -> {:?}", low, high, r);
+            }
+            TONE_BUSY.store(false, core::sync::atomic::Ordering::Release);
+            0
+        });
+        if r.is_err() {
+            TONE_BUSY.store(false, core::sync::atomic::Ordering::Release);
+        }
+    }
+}
+
+/// 120 ms of a DTMF pair, 48 kHz mono, on a media stream of its own (closed when the session goes).
+fn play_dtmf(low: u32, high: u32) -> Result<(), i32> {
+    let rate = neoaudio::RATE;
+    let (a, b) = (
+        neoaudio::tone(low, 120, rate, 1, 5_000),
+        neoaudio::tone(high, 120, rate, 1, 5_000),
+    );
+    let pcm: alloc::vec::Vec<u8> = a
+        .as_chunks::<2>()
+        .0
+        .iter()
+        .zip(b.as_chunks::<2>().0)
+        .flat_map(|(x, y)| {
+            (i16::from_le_bytes(*x).saturating_add(i16::from_le_bytes(*y))).to_le_bytes()
+        })
+        .collect();
+    let s = session()?;
+    let mut args = TIpcArgs::new();
+    args.int(0, rate as i32).int(1, 1).int(2, 0);
+    s.send_receive(neoaudio::op::OPEN, &args)?;
+    for chunk in pcm.chunks(8_192) {
+        let des = e32::sys::TPtrC8::new(chunk);
+        let mut args = TIpcArgs::new();
+        args.desc8(0, &des);
+        s.send_receive(neoaudio::op::WRITE, &args)?;
+    }
+    // let the queue play out before the session (and its stream) goes
+    e32::time::sleep(200_000);
+    Ok(())
+}
+
 pub struct Sound {
     /// the (volume, route, mic) NeoAudio has
     applied: Option<(i32, i32, i32)>,

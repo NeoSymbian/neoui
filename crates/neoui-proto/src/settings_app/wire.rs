@@ -631,7 +631,7 @@ impl Features {
             ipc::ACTION_CLEAR,
             ipc::ACTION_MEASURE_APP,
         ]),
-        // every built opcode: 1–10, 13–30, 32, 40–43 (11/12 are retired, 31 and 33–39 reserved)
+        // every built opcode: 1–10, 13–30, 32, 40–44 (11/12 are retired, 31 and 33–39 reserved)
         opcodes: (((1u64 << 31) - 1) & !1 & !(1 << 11) & !(1 << 12))
             | bits(&[
                 ipc::NOTIFY_CLEAR,
@@ -639,6 +639,7 @@ impl Features {
                 ipc::SETTINGS_ACTION,
                 ipc::OWNER_REPORT,
                 ipc::ENTRY_THUMB,
+                ipc::CONTROL_FEEDBACK,
             ]),
     };
 

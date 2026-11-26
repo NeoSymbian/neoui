@@ -213,11 +213,11 @@ impl Phone {
         };
         // (SE2b) the profile's tones, sent with modem_ipc::tone::PRESENT so MODEMD takes them
         let tones = (
-            settings.get(keys::SOUND_RINGTONE).unwrap_or(0).clamp(0, 3) as u8,
+            settings.get(keys::SOUND_RINGTONE).unwrap_or(0).clamp(0, 15) as u8,
             settings
                 .get(keys::SOUND_MESSAGE_TONE)
                 .unwrap_or(0)
-                .clamp(0, 3) as u8,
+                .clamp(0, 15) as u8,
         );
         let desired = (status.generation, airplane, ring, tones);
         if self.preferences == Some(desired) {
@@ -225,16 +225,29 @@ impl Phone {
         }
         // the ring first: entering or leaving Offline (a sound profile) changes both, and MODEMD must never have the
         // radio back with the old profile's ring (SE2a)
-        let ring_result = self.session.as_ref().map_or(-18, |session| {
-            let mut args = TIpcArgs::new();
-            args.int(0, i32::from(ring.volume));
-            args.int(1, i32::from(ring.silent));
-            args.int(2, i32::from(ring.vibrate));
-            args.int(3, modem_ipc::tone::pack(tones.0, tones.1));
-            session
-                .send_receive(op::RING_SETTINGS, &args)
-                .unwrap_or_else(|e| e)
-        });
+        let send = |tones: (u8, u8)| {
+            self.session.as_ref().map_or(-18, |session| {
+                let mut args = TIpcArgs::new();
+                args.int(0, i32::from(ring.volume));
+                args.int(1, i32::from(ring.silent));
+                args.int(2, i32::from(ring.vibrate));
+                args.int(3, modem_ipc::tone::pack(tones.0, tones.1));
+                session
+                    .send_receive(op::RING_SETTINGS, &args)
+                    .unwrap_or_else(|e| e)
+            })
+        };
+        let mut ring_result = send(tones);
+        // (D6) a 2.7 MODEMD refuses the user's own sounds (ids 4..=15): the built-in tone in their place until it
+        // restarts (a new generation sends the real ones again)
+        let built_in = |t: u8| if t > 3 { 0 } else { t };
+        if ring_result == -6 && (built_in(tones.0), built_in(tones.1)) != tones {
+            ring_result = send((built_in(tones.0), built_in(tones.1)));
+            dprintln!(
+                "neoui: MODEMD refused your sounds: the built-in tone ({})",
+                ring_result
+            );
+        }
         let radio_result = self.request("airplane", if airplane { "1" } else { "0" });
         dprintln!(
             "neoui: modem ring volume {} silent {} vibrate {} tones {:#04x}, airplane {} ({}, {})",

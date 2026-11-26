@@ -2,6 +2,7 @@
 // The frame every screen shares (Navigation v2): the status bar, and the bottom: the key row (Buttons) or the gesture
 // band (Gestures, N9). The app's header and footer are the kit's (header.slint, footer.slint).
 import { Theme } from "../theme.slint";
+import { Kit } from "layers.slint";
 
 export component Glyph inherits Image {
     in property <length> size: Theme.row-icon;
@@ -281,6 +282,7 @@ component Key inherits Rectangle {
 
     touch := TouchArea {
         clicked => {
+            Kit.accept();
             root.clicked();
         }
     }

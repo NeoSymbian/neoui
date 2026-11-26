@@ -608,6 +608,15 @@ impl Renderer {
         self.presses.replace(0)
     }
 
+    /// (D6) Whether one of the shell's own kit controls (a shade tile, a button, a row) acted since the last call: one
+    /// pulse with vibrate on touch. The system keyboard isn't one (`keyboard.vibrate` is its own).
+    pub fn take_accepted(&mut self) -> bool {
+        let kit = self.ui.global::<Kit>();
+        let (now, sent) = (kit.get_accepted(), kit.get_accepted_sent());
+        kit.set_accepted_sent(now);
+        now != sent
+    }
+
     /// An app process is in front (the shell hides its own mock of the screen; the strip shows the app's page).
     pub fn set_app_front(&mut self, front: bool) {
         self.ui.set_app_front(front);

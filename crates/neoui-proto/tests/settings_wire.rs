@@ -496,7 +496,7 @@ fn features_golden_and_what_is_advertised() {
         &[1u8, 20, 0, 0][..],
         &[0x7E, 0x60, 0, 0, 0, 0, 0, 0], // INFO 1–6, 13, 14
         &[0xFE, 0, 0, 0, 0, 0, 0, 0],    // actions 1–7
-        &[0xFE, 0xE7, 0xFF, 0x7F, 0x01, 0x0F, 0, 0], // opcodes 1–10, 13–30, 32, 40–43
+        &[0xFE, 0xE7, 0xFF, 0x7F, 0x01, 0x1F, 0, 0], // opcodes 1–10, 13–30, 32, 40–44
     ]
     .concat();
     assert_eq!(Features::SHELL.encode(), want);
@@ -531,7 +531,11 @@ fn features_golden_and_what_is_advertised() {
     ] {
         assert!(!f.has_opcode(op), "opcode {op}");
     }
-    assert!(f.has_opcode(ipc::OWNER_REPORT) && f.has_opcode(ipc::ENTRY_THUMB));
+    assert!(
+        f.has_opcode(ipc::OWNER_REPORT)
+            && f.has_opcode(ipc::ENTRY_THUMB)
+            && f.has_opcode(ipc::CONTROL_FEEDBACK)
+    );
 }
 
 #[test]

@@ -211,6 +211,7 @@ fn run() -> Result<(), i32> {
                 }
                 _ => {}
             }
+            neoapp::kit_feedback!(ui, ctx.app); // D6: the kit's controls pulse as the profile says
             ctx.draw()?;
         }
     })

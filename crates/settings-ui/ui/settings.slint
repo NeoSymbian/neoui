@@ -14,7 +14,7 @@ import { RootPage, RootGridPage, SearchPage } from "pages/root.slint";
 import { LicencesPage } from "pages/licences.slint";
 import { WifiPage, WifiSavedPage, WifiJoinSheet, WifiDetailsSheet } from "pages/wifi.slint";
 import { ConnectivityPage, MobilePage, BluetoothPage } from "pages/connections.slint";
-import { DisplayPage, NavigationPage, SoundsPage, BatteryPage, BatteryUsagePage, ProfilePage, ProfileSheet, ProfileNameSheet, RingtonePage } from "pages/device.slint";
+import { DisplayPage, NavigationPage, SoundsPage, BatteryPage, BatteryUsagePage, ProfilePage, ProfileSheet, ProfileNameSheet, RingtonePage, YourToneSheet } from "pages/device.slint";
 import { DateTimePage, TimeZonePage, KeyboardPage, PrivacyPage } from "pages/personal.slint";
 import { AppsPage, AppSheet, AppDetailPage, ResetPage, OldAppsPage, DeveloperPage, AboutPage } from "pages/system.slint";
 import { WallpaperPage, FontSizePage } from "pages/appearance.slint";
@@ -125,6 +125,12 @@ export component SettingsApp inherits Window {
     if SetState.sheet == "profile-add" || SetState.sheet == "profile-rename": ProfileNameSheet {
         kb: root.kb;
         rename: SetState.sheet == "profile-rename";
+        open: true;
+        dismissed => { SetState.sheet = ""; KeyboardFocus.open = false; }
+    }
+    // D6: one of the user's sounds (Ringtone's long press)
+    if SetState.sheet == "your-tone": YourToneSheet {
+        kb: root.kb;
         open: true;
         dismissed => { SetState.sheet = ""; KeyboardFocus.open = false; }
     }

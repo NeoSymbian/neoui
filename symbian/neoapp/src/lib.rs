@@ -786,6 +786,26 @@ impl App {
             .map(drop)
     }
 
+    /// (D6) A control accepted a touch (`proto::CONTROL_FEEDBACK`): the shell pulses as the profile says (`key`:
+    /// 0). The kit's controls
+    /// report through [`kit_feedback!`]; an app's own touch control can call this from its click.
+    pub fn control_feedback(&self, key: u8) -> Result<(), i32> {
+        self.feedback(proto::FEEDBACK_CONTROL, key)
+    }
+
+    /// (D6) [`Self::control_feedback`] for a dial pad key (`key`: its ASCII digit, `*` or `#`).
+    pub fn dial_key_feedback(&self, key: u8) -> Result<(), i32> {
+        self.feedback(proto::FEEDBACK_DIAL_KEY, key)
+    }
+
+    fn feedback(&self, kind: i32, key: u8) -> Result<(), i32> {
+        let mut args = TIpcArgs::new();
+        args.int(0, kind).int(1, i32::from(key));
+        self.server
+            .send_receive(proto::CONTROL_FEEDBACK, &args)
+            .map(drop)
+    }
+
     /// The argument of the `OPEN` that sent the last `AppEvent::Open` (empty: none); reading takes it.
     pub fn arg(&self) -> Result<alloc::string::String, i32> {
         let mut buf = alloc::vec![0u8; proto::ARG_MAX];
@@ -960,6 +980,26 @@ impl App {
             }
         }
     }
+}
+
+/// (D6) Tell the shell about the kit's controls that acted since the last call (`Kit.accepted`, `Kit.dialled`), one
+/// `CONTROL_FEEDBACK` each kind: the shell answers one press once. Call it after each event, in the app's crate where
+/// its generated `Kit` global is: `neoapp::kit_feedback!(ui, app);`. Errors (an older shell) are dropped.
+#[macro_export]
+macro_rules! kit_feedback {
+    ($ui:expr, $app:expr) => {{
+        let ui = &$ui;
+        let kit = ui.global::<Kit>();
+        if kit.get_dialled() != kit.get_dialled_sent() {
+            kit.set_dialled_sent(kit.get_dialled());
+            kit.set_accepted_sent(kit.get_accepted());
+            let key = kit.get_dial_key().as_bytes().first().copied().unwrap_or(0);
+            let _ = $app.dial_key_feedback(key);
+        } else if kit.get_accepted() != kit.get_accepted_sent() {
+            kit.set_accepted_sent(kit.get_accepted());
+            let _ = $app.control_feedback(0);
+        }
+    }};
 }
 
 /// Back through the kit's layers first (Navigation v2 rule 10): with a menu, sheet, search or selection open, the top

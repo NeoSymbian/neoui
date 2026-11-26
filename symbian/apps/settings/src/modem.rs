@@ -49,6 +49,21 @@ impl Modem {
         }
     }
 
+    /// (D6) Messages' alert setting (`SMS_SETTINGS` get: modem-ipc `sms::ALERT_*`); `None` when MODEMD can't say.
+    pub fn sms_alert(&mut self) -> Option<u8> {
+        self.connect();
+        let mut b = [0u8; modem_ipc::SmsSettings::SIZE];
+        let mut des = TPtr8::new(&mut b);
+        let mut args = TIpcArgs::new();
+        args.int(0, 0).des8(1, &mut des);
+        let r = self.session.as_ref()?.send_receive(op::SMS_SETTINGS, &args);
+        if r.is_err() {
+            self.session = None;
+            return None;
+        }
+        modem_ipc::SmsSettings::from_bytes(&b).map(|s| s.alert)
+    }
+
     fn status(&mut self) -> Option<Status> {
         self.connect();
         let mut b = [0u8; Status::SIZE];

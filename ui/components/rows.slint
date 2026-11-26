@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Row extras (kit-lists, kit-controls): swipe actions on a row, the A-Z fast scroll, a labelled form field, chips.
 import { Theme } from "../theme.slint";
+import { Kit } from "layers.slint";
 import { Glyph } from "frame.slint";
 import { TextField } from "controls.slint";
 import { Act } from "header.slint";
@@ -48,6 +49,7 @@ export component RowActions inherits Rectangle {
             TouchArea {
                 clicked => {
                     root.revealed = false;
+                    Kit.accept();
                     root.action(i);
                 }
             }
@@ -200,6 +202,7 @@ export component Chip inherits Rectangle {
     touch := TouchArea {
         clicked => {
             root.on = !root.on;
+            Kit.accept();
             root.toggled(root.on);
         }
     }

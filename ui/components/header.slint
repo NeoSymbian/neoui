@@ -46,6 +46,7 @@ export component HeaderButton inherits Rectangle {
     t := TouchArea {
         enabled: !root.disabled;
         clicked => {
+            Kit.accept();
             root.clicked();
         }
     }

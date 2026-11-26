@@ -29,6 +29,75 @@ pub fn key_pulse(vibrate: bool) -> Option<(u32, u32)> {
     vibrate.then_some(KEY_PULSE)
 }
 
+/// (D6) What an accepted control gives ([`crate::ipc::CONTROL_FEEDBACK`]): a pulse with vibrate on touch, and for a
+/// dial key out of a call its DTMF pair with keypad tones in an audible profile (not Silent, ring volume above 0).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Feedback {
+    pub pulse: Option<(u32, u32)>,
+    /// the key's two frequencies (Hz)
+    pub tone: Option<(u32, u32)>,
+}
+
+/// The active profile's feedback as the shell holds it (`sound.touch_vibrate`, `sound.keypad_tones`, whether it
+/// rings) and whether a call is up.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct FeedbackPolicy {
+    pub touch: bool,
+    pub keypad: bool,
+    pub audible: bool,
+    pub in_call: bool,
+}
+
+impl FeedbackPolicy {
+    /// The answer to one accepted control: `kind` and `key` as [`crate::ipc::CONTROL_FEEDBACK`] carries them.
+    #[must_use]
+    pub fn answer(&self, kind: i32, key: u8) -> Feedback {
+        let tone =
+            (kind == crate::ipc::FEEDBACK_DIAL_KEY && self.keypad && self.audible && !self.in_call)
+                .then(|| dtmf(key))
+                .flatten();
+        Feedback {
+            pulse: self.touch.then_some(KEY_PULSE),
+            tone,
+        }
+    }
+}
+
+/// A dial key's DTMF pair (ITU-T Q.23): the row's and the column's frequency.
+#[must_use]
+pub fn dtmf(key: u8) -> Option<(u32, u32)> {
+    const KEYS: &[u8; 12] = b"123456789*0#";
+    let i = KEYS.iter().position(|k| *k == key)?;
+    Some(([697, 770, 852, 941][i / 3], [1209, 1336, 1477][i % 3]))
+}
+
+/// One answer per press: the shell counts the presses it delivered to the app in front, and a
+/// [`crate::ipc::CONTROL_FEEDBACK`] takes one (a second for the same press, or one with no press, is refused).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct PressGate {
+    delivered: u32,
+    answered: u32,
+}
+
+impl PressGate {
+    /// Finger 0 went down in the app in front.
+    pub fn pressed(&mut self) {
+        self.delivered = self.delivered.wrapping_add(1);
+    }
+
+    /// Another app came to the front (or the screen went off): presses before it get no answer.
+    pub fn forget(&mut self) {
+        self.answered = self.delivered;
+    }
+
+    /// An accepted control: true when its press hasn't been answered yet.
+    pub fn take(&mut self) -> bool {
+        let fresh = self.answered != self.delivered;
+        self.answered = self.delivered;
+        fresh
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -67,6 +136,58 @@ mod tests {
         assert_eq!(panel_level(-5, MAX, true), 0);
         // no panel (QEMU): nothing to cap
         assert_eq!(panel_level(255, 0, true), 0);
+    }
+
+    #[test]
+    fn one_answer_per_press_and_the_dial_tone_only_where_it_may_sound() {
+        let mut g = PressGate::default();
+        assert!(!g.take()); // no press: nothing
+        g.pressed();
+        assert!(g.take());
+        assert!(!g.take()); // the same press twice: once
+        g.pressed();
+        g.forget();
+        assert!(!g.take());
+        let on = FeedbackPolicy {
+            touch: true,
+            keypad: true,
+            audible: true,
+            in_call: false,
+        };
+        use crate::ipc::{FEEDBACK_CONTROL, FEEDBACK_DIAL_KEY};
+        assert_eq!(
+            on.answer(FEEDBACK_DIAL_KEY, b'5'),
+            Feedback {
+                pulse: Some(KEY_PULSE),
+                tone: Some((770, 1336))
+            }
+        );
+        assert_eq!(on.answer(FEEDBACK_CONTROL, b'5').tone, None);
+        assert_eq!(dtmf(b'#'), Some((941, 1477)));
+        assert_eq!(dtmf(b'1'), Some((697, 1209)));
+        assert_eq!(dtmf(b'x'), None);
+        // in a call (DTMF is the call's), Silent or volume 0, or keypad tones off: no tone
+        for p in [
+            FeedbackPolicy {
+                in_call: true,
+                ..on
+            },
+            FeedbackPolicy {
+                audible: false,
+                ..on
+            },
+            FeedbackPolicy {
+                keypad: false,
+                ..on
+            },
+        ] {
+            assert_eq!(p.answer(FEEDBACK_DIAL_KEY, b'5').tone, None);
+            assert_eq!(p.answer(FEEDBACK_DIAL_KEY, b'5').pulse, Some(KEY_PULSE));
+        }
+        assert_eq!(
+            FeedbackPolicy::default().answer(FEEDBACK_CONTROL, 0),
+            Feedback::default()
+        );
     }
 
     #[test]

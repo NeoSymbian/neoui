@@ -303,6 +303,17 @@ pub const ROWS: &[Row] = &[
         "Message tone",
         &["text tone", "notification sound"],
     ),
+    // D6: the profile's touch feedback
+    field(
+        "profile.keypad",
+        "Keypad tones",
+        &["dial tones", "key sounds", "dtmf"],
+    ),
+    field(
+        "profile.touch",
+        "Vibrate on touch",
+        &["haptic feedback", "touch vibration"],
+    ),
     row(
         "sounds.media",
         Sounds,

@@ -76,6 +76,7 @@ export component Menu {
                     t := TouchArea {
                         clicked => {
                             // the pick first: closing tears down this item, and nothing after close() runs
+                            Kit.accept();
                             root.picked(i);
                             popup.close();
                         }

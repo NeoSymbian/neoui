@@ -187,6 +187,8 @@ fn run() -> Result<(), i32> {
             }
             _ => {}
         }
+        // the kit's controls: a pulse / a key's tone, as the profile says (D6)
+        neoapp::kit_feedback!(ui, app);
         describe(&app, &ui, &mut shown)?;
         Ok(true)
     })

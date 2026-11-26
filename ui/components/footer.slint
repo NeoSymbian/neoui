@@ -3,6 +3,7 @@
 // The header names the current tab. A footer app is one app with several top pages; TabPages moves between them with
 // a sideways swipe (K03). The keyboard covers the footer; selection mode hides it.
 import { Theme } from "../theme.slint";
+import { Kit } from "layers.slint";
 import { Glyph } from "frame.slint";
 
 // badge: 0 = none, -1 = a dot (something new), n > 0 = a count (99+)
@@ -67,6 +68,7 @@ export component Footer inherits Rectangle {
                 enabled: !t.disabled;
                 clicked => {
                     root.current = i;
+                    Kit.accept();
                     root.picked(i);
                 }
             }

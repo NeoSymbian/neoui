@@ -2,6 +2,7 @@
 // The notification shade: tap or pull the status bar. Its first stop (tp-shade, TP1): the time and date with ⚙ and
 // ⏻, the quick tiles, brightness, then the notifications.
 import { Theme } from "../theme.slint";
+import { Kit } from "layers.slint";
 import { Glyph } from "frame.slint";
 import { ListRow } from "lists.slint";
 import { Slider } from "controls.slint";
@@ -213,6 +214,7 @@ component Card inherits Rectangle {
                     clicked => {
                         if abs(self.mouse-x - self.pressed-x) < 10 * Theme.dp
                             && abs(self.mouse-y - self.pressed-y) < 10 * Theme.dp {
+                            Kit.accept();
                             root.toggled();
                         }
                     }
@@ -304,7 +306,7 @@ component HeaderButton inherits Rectangle {
         colorize: Theme.text;
     }
     ta := TouchArea {
-        clicked => { root.clicked(); }
+        clicked => { Kit.accept(); root.clicked(); }
     }
 }
 

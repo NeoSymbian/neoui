@@ -940,6 +940,17 @@ fn main() -> i32 {
             if pulse.is_none() {
                 pulse_logged = false;
             }
+            // D6: a control that accepted a touch (the app in front's, CONTROL_FEEDBACK, or the shell's own)
+            if let Some((kind, key)) = host.feedback.take() {
+                sound::feedback(&host.settings, phone.in_call(), kind, key);
+            } else if ui.take_accepted() {
+                sound::feedback(
+                    &host.settings,
+                    phone.in_call(),
+                    neoui_proto::ipc::FEEDBACK_CONTROL,
+                    0,
+                );
+            }
             if !scr.is_on() {
                 touches.clear(); // a sleeping touchscreen sends no lifts; the rings go at the next frame
                 host.release_frames(); // apps go on (their frames aren't shown)

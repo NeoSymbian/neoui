@@ -228,17 +228,7 @@ fn fill(sh: &Shot) {
     ]));
     s.set_wifi_hidden(1);
     s.set_wifi_saved_ok(true);
-    let mut profiles = neoui_proto::sound_profile::builtins();
-    profiles[0].volume = 7;
-    profiles.push(neoui_proto::sound_profile::Profile {
-        id: 5,
-        name: "Gym".into(),
-        ring: true,
-        volume: 10,
-        vibrate: false,
-        ringtone: neoui_proto::sound_profile::tone::TWO_BEEPS,
-        message_tone: neoui_proto::sound_profile::tone::NONE,
-    });
+    let profiles = profiles();
     s.set_profiles(model(
         profiles
             .iter()
@@ -251,6 +241,9 @@ fn fill(sh: &Shot) {
                 vibrate: p.vibrate,
                 ringtone: i32::from(p.ringtone),
                 message_tone: i32::from(p.message_tone),
+                keypad: p.keypad,
+                touch: p.touch,
+                tone_name: neoui_proto::sound_profile::tone::ring_name(p.ringtone).into(),
             })
             .collect(),
     ));
@@ -261,6 +254,9 @@ fn fill(sh: &Shot) {
     s.set_active_profile_name("General".into());
     s.set_active_profile_summary(s.get_profiles().row_data(0).unwrap().summary);
     s.set_profile_current(s.get_profiles().row_data(0).unwrap());
+    // D6: Messages' "tone and vibrate", as MODEMD keeps it
+    s.set_sms_alert(0);
+    s.set_message_summary(profiles[0].message_summary(Some(0)).into());
     s.set_apps(model(
         neoui_proto::apps::listed()
             .map(|a| AppRow {
@@ -376,6 +372,25 @@ fn searched(
     s.set_query(query.into());
     s.set_searching(true);
     hits
+}
+
+/// The profiles the pages show: the built-ins (General at volume 7) and an added Gym.
+fn profiles() -> Vec<neoui_proto::sound_profile::Profile> {
+    let mut profiles = neoui_proto::sound_profile::builtins();
+    profiles[0].volume = 7;
+    profiles.push(neoui_proto::sound_profile::Profile {
+        id: 5,
+        name: "Gym".into(),
+        ring: true,
+        volume: 10,
+        vibrate: false,
+        ringtone: neoui_proto::sound_profile::tone::TWO_BEEPS,
+        message_tone: neoui_proto::sound_profile::tone::NONE,
+        keypad: false,
+        touch: true,
+    });
+    profiles[0].keypad = true; // a fresh General (the board)
+    profiles
 }
 
 fn page(sh: &Shot, id: i32, title: &str) {
@@ -640,16 +655,55 @@ fn every_page() {
     sheet(&sh, "profile-add");
     sh.shoot("set2-profile-add");
     sheet(&sh, "");
+    let profiles = profiles();
     for (i, name) in [(4, "set2-profile-offline"), (5, "set2-profile-added")] {
         s.set_profile_current(s.get_profiles().row_data(i).unwrap());
+        s.set_message_summary(profiles[i].message_summary(Some(0)).into());
         page(&sh, 18, s.get_profile_current().name.as_str());
         sh.shoot(name);
     }
+    s.set_message_summary(profiles[0].message_summary(Some(0)).into());
     // a ringtone's sheet (set2-ringtone): a tap asks for the tone (the app sets and previews it)
     s.set_profile_current(s.get_profiles().row_data(0).unwrap());
     page(&sh, 18, "General");
     page(&sh, 23, "Ringtone");
+    // D6: the built-in ringtone's preview, a second in (one period is 2 s, so never the board's 0:03)
+    s.set_preview_tone(0);
+    s.set_preview_text(neoui_proto::sound_profile::preview::label(false, 1_000).into());
     sh.shoot("set2-ringtone");
+    // its ⏸ pauses it (the app asks AUDIOD); paused, the line freezes and ▶ plays on
+    sh.draw();
+    sh.take_acts();
+    sh.tap(320.0, 82.0 + 32.0);
+    assert_eq!(sh.take_acts(), acts(&[("tone-pause", "")]));
+    s.set_preview_paused(true);
+    s.set_preview_text(neoui_proto::sound_profile::preview::label(true, 1_000).into());
+    sh.shoot("set2-ringtone-paused");
+    s.set_preview_tone(-1);
+    s.set_preview_paused(false);
+    // D6 (SE2c-1): two sounds of the user's, one chosen, and a refused import; a long press opens its sheet
+    s.set_your_tones(model(vec![
+        settings_ui::YourTone {
+            id: 4,
+            name: "Morning bell".into(),
+        },
+        settings_ui::YourTone {
+            id: 9,
+            name: "Gong".into(),
+        },
+    ]));
+    let mut general = s.get_profile_current();
+    general.ringtone = 4;
+    s.set_profile_current(general);
+    s.set_import_note("Use a 16-bit PCM WAV".into()); // neoaudio::wav::WavError::Format
+    sh.shoot("set2-ringtone-yours");
+    s.set_your_current(s.get_your_tones().row_data(0).unwrap());
+    sheet(&sh, "your-tone");
+    sh.shoot("set2-ringtone-sheet");
+    sheet(&sh, "");
+    s.set_your_tones(model(vec![]));
+    s.set_import_note("".into());
+    s.set_profile_current(s.get_profiles().row_data(0).unwrap());
     // a row chooses the tone, its ▶ only plays it
     sh.draw();
     sh.take_acts();

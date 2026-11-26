@@ -642,6 +642,8 @@ impl Provider for ProfileFields {
             "profile.ring" => on_off(p.ring),
             "profile.volume" => Reading::Value(format!("{}", p.volume)),
             "profile.vibrate" => on_off(p.vibrate),
+            "profile.keypad" => on_off(p.keypad),
+            "profile.touch" => on_off(p.touch),
             _ => Reading::Value(String::from(tone::message_name(p.message_tone))),
         }
     }

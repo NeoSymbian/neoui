@@ -280,6 +280,22 @@ const MANIFEST: &[(&str, &str, &str, ProviderId, Page, Gate)] = &[
         |f| f.profiles.iter_mut().for_each(|p| p.ring = false),
     ),
     (
+        "set2-profile",
+        "Keypad tones",
+        "profile.keypad",
+        ProviderId::ProfileFields,
+        Page::Profile,
+        |f| f.profiles.retain(|p| p.id == 4), // only Offline: no such row
+    ),
+    (
+        "set2-profile",
+        "Vibrate on touch",
+        "profile.touch",
+        ProviderId::ProfileFields,
+        Page::Profile,
+        |f| f.profiles.retain(|p| p.id == 4),
+    ),
+    (
         "set2-storage",
         "C: Phone",
         "storage.drive",

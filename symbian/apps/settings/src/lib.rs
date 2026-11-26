@@ -15,10 +15,12 @@ extern crate alloc;
 mod appearance;
 mod d2;
 mod modem;
+mod profile_audio;
 mod row_model;
 mod sound;
 mod storage;
 mod store;
+mod tone_import;
 mod wifi;
 
 use alloc::rc::Rc;
@@ -220,6 +222,7 @@ fn run() -> Result<(), i32> {
             AppEvent::Visible(v) => {
                 ctx.visible.set(v);
                 if v {
+                    tone_import::resumed(&ctx.app, &ui); // D6: a WAV picked in Files
                     row_model::resume(&ctx);
                     if ctx.page.get() == Page::Storage {
                         ctx.storage.ensure();
@@ -232,6 +235,7 @@ fn run() -> Result<(), i32> {
             }
             _ => {}
         }
+        neoapp::kit_feedback!(ui, app); // D6: the kit's controls pulse as the profile says
         ctx.keyboard();
         row_model::publish(&ctx);
         ctx.describe()?;
@@ -377,6 +381,9 @@ impl Ctx {
         if page == Page::Storage {
             self.storage.show(&ui);
         }
+        if page == Page::Profile && every(5) {
+            profile_audio::refresh(&mut self.modem.borrow_mut(), &ui);
+        }
         if page == Page::BatteryUsage && every(5) {
             self.battery_usage(&ui);
         }
@@ -393,6 +400,7 @@ impl Ctx {
             self.clock(&ui);
         }
         row_model::tick(self, &ui, n);
+        profile_audio::show_preview(&self.sound, &ui);
         if let Some(text) = self.sound.changed() {
             ui.global::<SetState>().set_sound_feedback(text.into());
         }
@@ -723,6 +731,9 @@ impl Ctx {
                     let _ = self.profile(sound_profile::Command::Choose(id));
                 }
             }
+            "profile-feedback" => {
+                let _ = profile_audio::feedback_command(&ui, value).map(|c| self.profile(c));
+            }
             "profile-set" => {
                 let p = s.get_profile_current();
                 let v: Vec<i32> = value.split(',').filter_map(|x| x.parse().ok()).collect();
@@ -757,7 +768,13 @@ impl Ctx {
                     let p = s.get_profile_current();
                     self.sound.preview(t, p.volume.clamp(0, 10) as u8);
                 }
+                profile_audio::show_preview(&self.sound, &ui);
             }
+            // D6: the playing tone's ⏸ / ▶ (set2-ringtone)
+            "tone-add" => tone_import::add(app, &ui),
+            "tone-delete" => tone_import::delete(app, &ui),
+            "tone-rename" => tone_import::rename(app, &ui, value),
+            "tone-pause" => profile_audio::toggle_pause(&self.sound, &ui),
             "profile-add" => {
                 let _ = self.profile(sound_profile::Command::Add(String::from(value.trim())));
             }

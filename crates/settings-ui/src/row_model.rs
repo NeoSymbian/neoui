@@ -146,6 +146,8 @@ pub fn facts(s: &SetState<'_>, sample: Sample, epochs: Epochs) -> Facts {
             vibrate: p.vibrate,
             ringtone: p.ringtone as u8,
             message_tone: p.message_tone as u8,
+            keypad: p.keypad,
+            touch: p.touch,
         })
         .collect();
     f.active_profile = s.get_active_profile() as u8;

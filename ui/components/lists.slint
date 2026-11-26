@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // List building blocks: avatar, row, section header, switch (kit-lists).
 import { Theme } from "../theme.slint";
+import { Kit } from "layers.slint";
 import { Glyph } from "frame.slint";
 
 export component Avatar inherits Rectangle {
@@ -49,6 +50,7 @@ export component Switch inherits Rectangle {
     TouchArea {
         clicked => {
             root.on = !root.on;
+            Kit.accept();
             root.toggled(root.on);
         }
     }
@@ -142,6 +144,7 @@ export component ListRow inherits Rectangle {
         }
         clicked => {
             if !root.long-fired {
+                Kit.accept();
                 root.clicked();
             }
         }
@@ -282,6 +285,7 @@ export component ListRow inherits Rectangle {
                 }
                 pill-touch := TouchArea {
                     clicked => {
+                        Kit.accept();
                         root.pill-clicked();
                     }
                 }

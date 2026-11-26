@@ -16,7 +16,9 @@ export struct ZoneRow { name: string, offset: string, current: bool }
 export struct WifiSaved { name: string, detail: string, connected: bool }
 // an app on the Apps page: a ROM app by its screen key, or an old app (old: true) by its id in hex
 // a sound profile (neoui-proto sound_profile): its row's summary and what the profile page edits
-export struct ProfileRow { id: int, name: string, summary: string, ring: bool, volume: int, vibrate: bool, ringtone: int, message-tone: int }
+export struct ProfileRow { id: int, name: string, summary: string, ring: bool, volume: int, vibrate: bool, ringtone: int, message-tone: int, keypad: bool, touch: bool, tone-name: string }
+// D6: a sound of the user's (sound_profile::YourTone): its tone id (4..=15) and name
+export struct YourTone { id: int, name: string }
 // a drive on the Storage page (SE3b): its letter ("E"; its identity, D1), "E: Mass memory", "12.4 of 41.8 GB", what it
 // holds, how full (0..1, -1 unknown)
 export struct DriveRow { letter: string, title: string, used: string, note: string, fill: float }
@@ -203,6 +205,21 @@ export global SetState {
     // D8: the clipboard toast (privacy.clip_notice)
     in-out property <bool> clip-notice: true;
 
+    // D6: Messages' alert setting as MODEMD keeps it (modem-ipc sms::ALERT_*, -1 = MODEMD couldn't say) and what a new
+    // message does with the profile page's profile (sound_profile::Profile::message_summary)
+    in property <int> sms-alert: -1;
+    in property <string> message-summary;
+    // the tone a preview plays (-1: none), whether it is paused, "Playing · 0:01" (NeoAudio INFO's frames)
+    in property <int> preview-tone: -1;
+    in property <bool> preview-paused;
+    in property <string> preview-text;
+    // Your sounds (SE2c-1): the user's, whether all twelve ids are taken, the one its sheet is about, and the last
+    // import's or delete's outcome ("Added Morning bell.", "Use a 16-bit PCM WAV")
+    in property <[YourTone]> your-tones;
+    in property <bool> your-tones-full;
+    in-out property <YourTone> your-current;
+    in property <string> import-note;
+
     // the open sheet: "" none, "timeout", "date-format", "zone", "pad-strength", "pad-default", "pad-dirs", "pad-a",
     // "pad-b", "wifi-join", "wifi-details"; the network the join sheet is for, and what is typed in it
     in-out property <string> sheet;
@@ -217,6 +234,9 @@ export global SetState {
     //   "wifi-saved-forget" + a saved network's row (the app asks to confirm first);
     // - "profile-choose" + an id; "profile-set" + "ring,volume,vibrate" (0/1, 0..10, 0/1) for profile-current;
     //   "profile-tone" + "r,<id>" (ringtone) or "m,<id>" (message tone) for profile-current, previewed;
+    //   "profile-feedback" + "keypad,touch" (0/1, D6) for profile-current;
+    //   "tone-preview" + a tone id (plays it), "tone-pause" (the playing one pauses or plays on, D6);
+    //   "tone-add" (Files' picker for a WAV), "tone-rename" + a name, "tone-delete" (your-current, D6);
     //   "profile-add" / "profile-rename" (new-name); "profile-delete" (the app asks to confirm first);
     // - "app-open" + a ROM app's key; "old-open" + an old app's id (hex); "app" + an app's key (its own settings);
     //   "app-detail" + a ROM app's key (its page); "app-stop", "app-clear" for app-current (the app asks first);

@@ -11,6 +11,24 @@ export global Kit {
     // the back-seq a layer already answered, so one Back closes one layer
     in-out property <int> answered;
 
+    // D6: the controls a touch worked (each kit control bumps it as it acts: a button, row, switch, tab, menu item),
+    // the dial pad keys typed and the last one; `neoapp::kit_feedback!` tells the shell (CONTROL_FEEDBACK), which
+    // pulses with vibrate on touch and plays a key's tone with keypad tones. The -sent ones: what it told already.
+    in-out property <int> accepted;
+    in-out property <int> accepted-sent;
+    in-out property <int> dialled;
+    in-out property <int> dialled-sent;
+    in-out property <string> dial-key;
+
+    public function accept() {
+        self.accepted += 1;
+    }
+
+    public function dial(key: string) {
+        self.dial-key = key;
+        self.dialled += 1;
+    }
+
     // a layer opened: its level (1 = the lowest)
     public function push() -> int {
         self.layers += 1;

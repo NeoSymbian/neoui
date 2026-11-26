@@ -113,6 +113,8 @@ pub fn read_profiles(app: &App) -> Profiles {
             _ => Vec::new(),
         };
         let (blob, tones) = (bytes("sound.profiles"), bytes("sound.tones"));
+        let feedback = bytes("sound.feedback");
+        let yours = bytes("sound.your_tones");
         let mirrors = Mirrors {
             silent: get(app, keys::SOUND_SILENT),
             vibrate: get(app, keys::SOUND_VIBRATE),
@@ -120,7 +122,7 @@ pub fn read_profiles(app: &App) -> Profiles {
         };
         tries += 1;
         if get(app, keys::SOUND_PROFILE) == active || tries == 3 {
-            return sound_profile::read(active, &blob, &tones, mirrors);
+            return sound_profile::read(active, &blob, &tones, &feedback, &yours, mirrors);
         }
     }
 }
@@ -135,12 +137,15 @@ pub fn profiles(app: &App, ui: &SettingsApp) {
         .map(|x| ProfileRow {
             id: i32::from(x.id),
             name: x.name.as_str().into(),
-            summary: x.summary().into(),
+            summary: p.summary(x).into(),
+            tone_name: p.ring_name(x.ringtone).into(),
             ring: x.ring,
             volume: i32::from(x.volume),
             vibrate: x.vibrate,
             ringtone: i32::from(x.ringtone),
             message_tone: i32::from(x.message_tone),
+            keypad: x.keypad,
+            touch: x.touch,
         })
         .collect();
     s.set_active_profile(i32::from(p.active));
@@ -151,7 +156,7 @@ pub fn profiles(app: &App, ui: &SettingsApp) {
     );
     s.set_active_profile_summary(
         p.get(p.active)
-            .map(|x| x.summary())
+            .map(|x| p.summary(x))
             .unwrap_or_default()
             .into(),
     );
@@ -165,6 +170,8 @@ pub fn profiles(app: &App, ui: &SettingsApp) {
         s.set_profile_current(r);
     }
     s.set_profiles(ModelRc::new(VecModel::from(rows)));
+    crate::profile_audio::summary(ui);
+    crate::tone_import::show(ui, &p);
 }
 
 /// Every setting a page shows.

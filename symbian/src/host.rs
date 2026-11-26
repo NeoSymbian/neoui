@@ -231,6 +231,11 @@ pub struct Host {
     pub requested_from: Option<&'static str>,
     /// A service's `OPEN` with `OPEN_WAKE` (1.19): the main loop turns the screen on.
     pub wake: bool,
+    /// (D6) Finger 0's presses delivered to an app, and which app got the last one: a `CONTROL_FEEDBACK` answers one.
+    presses: neoui_proto::effects::PressGate,
+    press_app: Option<&'static str>,
+    /// (D6) An accepted control the main loop answers (`[kind, key]` as `CONTROL_FEEDBACK` carries them).
+    pub feedback: Option<(i32, u8)>,
     /// What the Settings app reads with `SETTINGS_INFO` (kinds `INFO_BATTERY`, `INFO_NET`, `INFO_CLOCK` at 0..=2,
     /// `INFO_BATTERY_USAGE` at 4; `INFO_APPS` is answered from the bridge's entries),
     /// kept fresh by the main loop ([`Self::set_info`]).
@@ -299,6 +304,9 @@ impl Host {
             requested_screen: None,
             requested_from: None,
             wake: false,
+            presses: neoui_proto::effects::PressGate::default(),
+            press_app: None,
+            feedback: None,
             info: Default::default(),
             portal: None,
             leave: false,
@@ -1012,6 +1020,15 @@ impl Host {
 
     pub fn send(&mut self, e: AppEvent) {
         let Some(key) = self.front else { return };
+        if let AppEvent::Input(InputEvent::Touch {
+            id: 0,
+            phase: TouchPhase::Down,
+            ..
+        }) = e
+        {
+            self.presses.pressed();
+            self.press_app = Some(key);
+        }
         if let Some(app) = self.apps.find_mut(|a| a.key == key && a.quit_at.is_none()) {
             app.send(e);
         }
@@ -1504,6 +1521,21 @@ impl Service for Host {
             proto::SETTINGS_INFO if m.int(0) > proto::INFO_RUNNING => {
                 let key = app.key;
                 let r = self.paged_info(key, *id, &m);
+                m.complete(r);
+            }
+            // D6: an accepted control of the app in front, for the last press it got
+            proto::CONTROL_FEEDBACK => {
+                let (key, kind, code) = (app.key, m.int(0), m.int(1));
+                let r = if app.minor < 20 {
+                    err::KERR_NOT_SUPPORTED
+                } else if !matches!(kind, proto::FEEDBACK_CONTROL | proto::FEEDBACK_DIAL_KEY) {
+                    kerr::ARGUMENT
+                } else if front == Some(key) && self.press_app == Some(key) && self.presses.take() {
+                    self.feedback = Some((kind, u8::try_from(code).unwrap_or(0)));
+                    0
+                } else {
+                    err::KERR_NOT_READY
+                };
                 m.complete(r);
             }
             proto::SETTINGS_INFO => {

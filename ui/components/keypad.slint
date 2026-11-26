@@ -3,6 +3,7 @@
 // letters, voicemail on 1 and + on 0. A tap types the key; holding one 500 ms sends `held` instead (speed dial 2-9,
 // voicemail on 1, + on 0). `pressed`/`released` follow the finger for call tones (DTMF).
 import { Theme } from "../theme.slint";
+import { Kit } from "layers.slint";
 import { Glyph } from "frame.slint";
 
 component Key inherits Rectangle {
@@ -69,6 +70,7 @@ component Key inherits Rectangle {
         }
         clicked => {
             if !root.fired {
+                Kit.dial(root.key);
                 root.typed(root.key);
             }
         }
