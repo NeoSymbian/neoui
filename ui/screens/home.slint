@@ -137,6 +137,13 @@ component MusicCard inherits Card {
 }
 
 export component HomeScreen inherits Rectangle {
+    // the press in progress is no long press (the UI server took it over); until the next finger goes down
+    // (`hold-off` false again), as the swipe handler may hand the press to `hold` after this
+    in-out property <bool> hold-off;
+    public function stop-hold() {
+        hold.fired = true;
+        root.hold-off = true;
+    }
     callback open-app(string);
     // an app on one of its pages (app key, view: host::PAGES)
     callback open-view(string, string);
@@ -184,6 +191,8 @@ export component HomeScreen inherits Rectangle {
             height: root.strip-h;
 
             // a long press on the pages' empty part: Edit home · Wallpaper (D20; home has no ⋮ in any mode)
+            // a press the UI server takes over (its page slide, the pull down to the shade: `stop-hold`) is no long
+            // press: Slint keeps it `pressed` (no release comes), and the swipe handler above keeps its moves
             hold := TouchArea {
                 property <bool> fired;
                 changed pressed => {
@@ -194,7 +203,7 @@ export component HomeScreen inherits Rectangle {
             }
             Timer {
                 interval: 500ms;
-                running: hold.pressed && !hold.fired;
+                running: hold.pressed && !hold.fired && !root.hold-off;
                 triggered => {
                     hold.fired = true;
                     home-menu.show();

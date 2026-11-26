@@ -156,6 +156,7 @@ pub(crate) static BINDINGS: &[Binding] = &[
         get_battery_show_percent,
         set_battery_show_percent
     ),
+    bool_binding!(keys::BATTERY_SAVER, get_battery_saver, set_battery_saver),
     bool_binding!(keys::SHADE_DATE, get_shade_date, set_shade_date),
     Binding {
         key: key_name::<i32>(keys::TIME_DATE_FORMAT),

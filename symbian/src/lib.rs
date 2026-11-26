@@ -215,10 +215,13 @@ fn main() -> i32 {
         // smooth-ui S2c: a press on the home pages (where it went down), the server's page slide once it moves
         // sideways (with the page it started from), and a touch that comes while the slide settles (ignored)
         let mut home_press: Option<i32> = None;
+        // the press on the home pages became a pull downwards (top-panel TP1): Slint lost it, the shade may open
+        let mut home_pull = false;
         let mut swipe: Option<(Slide, i32)> = None;
         let mut swallow = false;
         let mut phone_modal = false;
         let (slop, turn) = ((8 * dp256 / 256) as i32, (60 * dp256 / 256) as i32);
+        let pull = (48 * dp256 / 256) as i32; // a swipe down on home this long opens the shade
         // gesture navigation (docs neoui-shell/navigation.md G1): the edge recognizer, the touches it holds back (the press and the
         // latest move), the hint it asks for (edge, progress, the finger across the edge) and where it was drawn
         let mut gest = Recognizer::new(w as u32, h as u32, dp256);
@@ -441,6 +444,7 @@ fn main() -> i32 {
                                         && contains(&ui.home_strip(), x, y))
                                     .then_some(x);
                                     down_at = Some((x, y));
+                                    home_pull = false;
                                     // A touch belongs to the app from press to release if it starts in its body.
                                     to_app = app_on_screen
                                         && !power_menu
@@ -490,7 +494,50 @@ fn main() -> i32 {
                                     }
                                     continue;
                                 }
+                                // a swipe down on home opens the shade (top-panel TP1, `shell.swipehome`): a press
+                                // that first moves steeply downwards is a pull. It never turns into a page slide, and
+                                // Slint loses it when the shade opens or the finger lifts short of it (no widget
+                                // click); until then Slint follows it as before (cancelling earlier left Slint's
+                                // next press dead). Anything else stays the page swipe it always was. Home must still
+                                // be what the finger is on: a call may have come to the front since the press.
+                                let dy = y - down_at.map_or(y, |d| d.1);
+                                let on_home = ui.screen() == "home"
+                                    && host.front().is_none()
+                                    && !ui.overlay_open()
+                                    && !phone.modal();
                                 if let (TouchPhase::Move, Some(x0)) = (phase, home_press)
+                                    && !home_pull
+                                    && on_home
+                                    && dy >= slop
+                                    && dy > 2 * (x - x0).abs()
+                                    && host.settings.get(keys::SHELL_SWIPEHOME).unwrap_or(true)
+                                {
+                                    home_pull = true;
+                                    ui.stop_home_hold(); // nor is it a long press any more
+                                }
+                                if home_pull {
+                                    if phase == TouchPhase::Move && dy >= pull && on_home {
+                                        ui.cancel_touch();
+                                        ui.open_shade();
+                                        home_pull = false;
+                                        home_press = None;
+                                        swallow = true; // the rest of this touch goes nowhere
+                                        dprintln!("neoui: shade from home");
+                                        continue;
+                                    }
+                                    if phase == TouchPhase::Up {
+                                        ui.cancel_touch(); // short of the shade: no click on what it went down on
+                                        home_pull = false;
+                                        home_press = None;
+                                        continue;
+                                    }
+                                    if !on_home {
+                                        home_pull = false;
+                                        home_press = None;
+                                    }
+                                }
+                                if let (TouchPhase::Move, Some(x0)) = (phase, home_press)
+                                    && !home_pull
                                     && (x - x0).abs() >= slop
                                 {
                                     let (dir, page) = ((x - x0).signum(), ui.home_page());
@@ -713,6 +760,8 @@ fn main() -> i32 {
                     host.notifications.iter().map(|(_, n)| n).collect();
                 ui.set_notes(&notes);
                 ui.set_app_unread(host.notifications.iter().any(|(k, _)| *k == "messages"));
+                let keys: Vec<&str> = host.notifications.iter().map(|(k, _)| *k).collect();
+                ui.set_status_apps(&keys);
             }
             for (i, action) in ui.take_notes_opened() {
                 host.open_notification(i, action, ms);
@@ -738,8 +787,12 @@ fn main() -> i32 {
                 host.refresh = true; // the app's surface again, whole
             }
             overlay_shown = overlay;
-            if power_down_at.is_some_and(|t| ms.saturating_sub(t) >= POWER_HOLD_MS) {
-                power_down_at = None;
+            // the shade's ⏻ (TP1) opens it like a held Power key, without touching the key's own timer
+            let asked = ui.take_power_asked() && scr.is_on() && !power_menu;
+            if asked || power_down_at.is_some_and(|t| ms.saturating_sub(t) >= POWER_HOLD_MS) {
+                if !asked {
+                    power_down_at = None;
+                }
                 dprintln!("neoui: power menu");
                 let p = sound_profile::store::load(&host.settings);
                 // the active profile first: the menu shows only as many as fit

@@ -199,7 +199,12 @@ jobs:
           tap 270 157; expect "settings: page sounds"; wait_s 1
           tap 270 645; wait_s 1; tap 270 829; expect "neoui: sound profile 4: airplane true, wifi false, bt false"
           wait_s 1; tap 270 214; wait_s 1; tap 270 829; expect "neoui: sound profile 0: airplane false, wifi true, bt false"
-          ui_run 400
+          # TP1: home, a swipe down on its pages opens the shade (shell.swipehome), and the shade's ⚙ (36 dp, left of
+          # ⏻ in its header: 425,82) brings Settings back
+          wait_s 1; swipe 270 1075 270 900; expect "neoui: screen home"; wait_s 1
+          swipe 270 300 270 600; expect "neoui: shade from home"; wait_s 1
+          tap 425 82; expect "neoui: app settings resumed"
+          ui_run 430
 
       - name: Check the output
         working-directory: build
@@ -221,6 +226,9 @@ jobs:
           # SE2a: Offline turned the radios off, General gave them back
           grep -a 'neoui: sound profile 4: airplane true, wifi false, bt false' $s
           grep -a 'neoui: sound profile 0: airplane false, wifi true, bt false' $s
+          # TP1: the shade from home, then Settings from its ⚙
+          grep -a 'neoui: shade from home' $s
+          grep -a 'neoui: app settings resumed' $s
           ! grep -aq 'settings: set nav.mode = [0-9] (Err' $s
           grep -aE 'neoui: clock [0-9]{2}:[0-9]{2}' $s
           # R9: frame timing (one summary per second of activity) on the fast counter

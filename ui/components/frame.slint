@@ -10,9 +10,9 @@ export component Glyph inherits Image {
     colorize: Theme.text;
 }
 
-// The status bar (rule 01): the clock at the left, the network's name where v1 had the title (the operator, "No SIM",
-// "SOS only", "Airplane mode"...), then the radio technology and its bars (R when roaming), unread messages, Wi-Fi
-// and the battery. No title (D16): the app's header names the page.
+// The status bar (tp-statusbar, TP1): the clock and the waiting apps' glyphs at the left; at the right what's wrong
+// with the network ("No SIM", "No service"), the modes, the radio technology and its bars (R when roaming) or a plane,
+// Wi-Fi and the battery. No title (D16): the app's header names the page.
 export component StatusBar inherits Rectangle {
     in property <int> battery-percent: -1;
     in property <string> battery-text: "--%";
@@ -23,16 +23,26 @@ export component StatusBar inherits Rectangle {
     in property <bool> battery-show-percent: true;
     in property <bool> shade-open;
     in property <string> time: "10:24";
-    // the modem (telephony C5): bars 0..4, -1 = no modem (the plain signal icon); the network's name; the radio
-    // technology ("LTE", "3G", "2G") right before the bars
+    // the modem (telephony C5): bars 0..4, -1 = no modem (the plain signal icon); the radio technology ("LTE",
+    // "3G", "2G") right before the bars; what's wrong instead of the operator's name ("No SIM", "No service", "" when fine)
     in property <int> bars: -1;
-    in property <string> operator;
+    in property <string> note;
     in property <string> rat;
     in property <bool> roaming;
+    // airplane mode: a plane instead of the network (Wi-Fi may stay on)
+    in property <bool> airplane;
     // Wi-Fi bars 0..4 while connected, -1 = not connected (no icon); its band ("2.4", "5") as a small label
     in property <int> wifi-bars: -1;
     in property <string> wifi-band;
-    in property <bool> unread;
+    // the apps waiting in the shade (tp-statusbar, TP1): glyph ids from neoui_render::status_apps, then "+n"
+    in property <[int]> glyphs;
+    in property <int> more;
+    // the modes: the ringer off (vibrate, or silent with vibration off too), an alarm on
+    in property <bool> ring-off;
+    in property <bool> vibrate;
+    in property <bool> alarm;
+    // Settings -> Battery -> Battery saver: the fill turns amber
+    in property <bool> battery-saver;
     callback tapped;
     // a swipe down on the bar (the shade opens)
     callback pulled;
@@ -49,8 +59,28 @@ export component StatusBar inherits Rectangle {
             font-weight: 600;
             vertical-alignment: center;
         }
+        for g in glyphs: VerticalLayout {
+            alignment: center;
+            Glyph {
+                source: g == 1 ? @image-url("../icons/sys/message.svg")
+                    : g == 2 ? @image-url("../icons/sys/missed_call.svg")
+                    : g == 3 ? @image-url("../icons/sys/folder.svg")
+                    : g == 4 ? @image-url("../icons/sys/alarm.svg")
+                    : @image-url("../icons/sys/bell.svg");
+                size: 14 * Theme.dp;
+                colorize: Theme.text-secondary;
+            }
+        }
+        if more > 0: Text {
+            text: "+\{more}";
+            color: Theme.text-secondary;
+            font-size: Theme.font-status * 0.85;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+        // what's wrong with the network, where the operator's name used to be: it takes the spare room
         Text {
-            text: operator;
+            text: airplane ? "" : note;
             color: Theme.text-secondary;
             font-size: Theme.font-status;
             font-weight: 600;
@@ -60,8 +90,32 @@ export component StatusBar inherits Rectangle {
             min-width: 0px;
             overflow: elide;
         }
-        // the radio technology and its bars as one cluster: fixed widths, so the title takes all the spare room
-        if bars >= 0: HorizontalLayout {
+        if ring-off: VerticalLayout {
+            alignment: center;
+            Glyph {
+                source: vibrate ? @image-url("../icons/sys/vibrate.svg") : @image-url("../icons/sys/silent.svg");
+                size: Theme.status-icon;
+                colorize: Theme.text;
+            }
+        }
+        if alarm: VerticalLayout {
+            alignment: center;
+            Glyph {
+                source: @image-url("../icons/sys/alarm.svg");
+                size: Theme.status-icon;
+                colorize: Theme.text;
+            }
+        }
+        if airplane: VerticalLayout {
+            alignment: center;
+            Glyph {
+                source: @image-url("../icons/sys/plane.svg");
+                size: Theme.status-icon;
+                colorize: Theme.text;
+            }
+        }
+        // the radio technology and its bars as one cluster: fixed widths, so the note takes all the spare room
+        if !airplane && bars >= 0: HorizontalLayout {
             spacing: 3 * Theme.dp;
             horizontal-stretch: 0;
             if rat != "": Text {
@@ -97,20 +151,11 @@ export component StatusBar inherits Rectangle {
                 }
             }
         }
-        if bars < 0: VerticalLayout {
+        if !airplane && bars < 0: VerticalLayout {
             alignment: center;
             Glyph {
                 source: @image-url("../icons/sys/signal.svg");
                 size: Theme.status-icon;
-            }
-        }
-        // unread messages (C9): an envelope until they are read
-        if unread: VerticalLayout {
-            alignment: center;
-            Glyph {
-                source: @image-url("../icons/sys/message.svg");
-                size: Theme.status-icon;
-                colorize: Theme.text;
             }
         }
         if wifi-bars >= 0: VerticalLayout {
@@ -153,7 +198,7 @@ export component StatusBar inherits Rectangle {
                         width: min(100, battery-percent) / 100 * parent.width;
                         height: parent.height;
                         background: battery-percent <= Theme.battery-low ? Theme.danger
-                            : battery-percent <= Theme.battery-mid ? Theme.warn : Theme.ok;
+                            : battery-saver || battery-percent <= Theme.battery-mid ? Theme.warn : Theme.ok;
                     }
                     // plugged in: a bolt, bright while charging, dim while the charger idles
                     if (battery-charging || battery-connected) && !battery-full: Glyph {

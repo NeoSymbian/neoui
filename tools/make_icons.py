@@ -153,6 +153,13 @@ GLYPHS = {
         ("p", "M10 20.6h4"),
         ("p", "M4 4l16 16"),
     ],
+    # airplane mode in the status bar (tp-statusbar, TP1)
+    "plane": [
+        (
+            "p",
+            "M21 15.6v-2.1l-7.6-4.6V4.2a1.4 1.4 0 0 0-2.8 0v4.7L3 13.5v2.1l7.6-2.4v4.7l-2.1 1.5v1.6l3.5-1 3.5 1v-1.6l-2.1-1.5v-4.7z",
+        )
+    ],
     "message": [
         (
             "p",
@@ -288,6 +295,12 @@ GLYPHS = {
 SYS_ONLY = {
     "clock": [("c", (12, 12, 8.2)), ("p", "M12 7.4V12l3.2 2")],
     "contacts": [("p", "M6.2 3.6h11.6a2.2 2.2 0 0 1 2.2 2.2v12.4a2.2 2.2 0 0 1-2.2 2.2H6.2A2.2 2.2 0 0 1 4 18.2V5.8a2.2 2.2 0 0 1 2.2-2.2z"), ("c", (12, 10.2, 2.8)), ("p", "M7.6 17.2a4.6 4.6 0 0 1 8.8 0")],
+    # the shade's header buttons (tp-shade, TP1): ⚙ Settings and ⏻ the Power menu
+    "gear": [
+        ("p", "M12 8.8a3.2 3.2 0 1 0 0 6.4a3.2 3.2 0 1 0 0-6.4z"),
+        ("p", "M12 3v2.4M12 18.6V21M3 12h2.4M18.6 12H21M5.6 5.6l1.7 1.7M16.7 16.7l1.7 1.7M5.6 18.4l1.7-1.7M16.7 7.3l1.7-1.7"),
+    ],
+    "power": [("p", "M12 3.5v8"), ("p", "M7.1 6.4a7.4 7.4 0 1 0 9.8 0")],
 }
 
 GLYPHS["menu"] = GLYPHS["apps"]  # the "all apps" tile in the home dock

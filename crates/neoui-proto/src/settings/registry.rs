@@ -269,6 +269,8 @@ registry! {
     STATUS_SECONDS: bool = "status.seconds", default DefaultValue::Bool(false), limit Limit::None, owner Owner::Shell;
     /// The shade shows the date beside the time.
     SHADE_DATE: bool = "shade.date", default DefaultValue::Bool(true), limit Limit::None, owner Owner::Shell;
+    // a swipe down on home opens the shade (top-panel.md TP1; its Settings row comes with TP4's Panel & notifications)
+    SHELL_SWIPEHOME: bool = "shell.swipehome", default DefaultValue::Bool(true), limit Limit::None, owner Owner::Shell;
     /// 24-hour clock (else 12-hour).
     CLOCK_24H: bool = "clock.24h", default DefaultValue::Bool(true), limit Limit::None, owner Owner::App("clock");
     /// USB debugging (Developer options): fshell's USB serial port and the shell on it (`phone.py sh`), like
