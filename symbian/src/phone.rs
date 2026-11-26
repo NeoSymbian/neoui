@@ -227,6 +227,15 @@ impl Phone {
                 .unwrap_or_else(|e| e)
         });
         let radio_result = self.request("airplane", if airplane { "1" } else { "0" });
+        dprintln!(
+            "neoui: modem ring volume {} silent {} vibrate {}, airplane {} ({}, {})",
+            ring.volume,
+            ring.silent,
+            ring.vibrate,
+            airplane,
+            ring_result,
+            radio_result
+        );
         if radio_result == 0 && ring_result == 0 {
             self.preferences = Some(desired);
         } else {
