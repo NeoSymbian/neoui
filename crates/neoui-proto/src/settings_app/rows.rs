@@ -333,6 +333,13 @@ pub const ROWS: &[Row] = &[
         "Same height for all languages",
         &[],
     ),
+    row(
+        "kb.vibrate",
+        Keyboard,
+        Keyboard,
+        "Keypress vibration",
+        &["haptic", "vibrate", "keyboard"],
+    ),
     // Privacy
     row(
         "privacy.clip",
@@ -380,6 +387,28 @@ pub const ROWS: &[Row] = &[
         "Open games in the console",
         &["landscape"],
     ),
+    // Battery (SE3a)
+    row(
+        "battery.saver",
+        Battery,
+        Battery,
+        "Battery saver",
+        &["dim", "power saving", "brightness"],
+    ),
+    row(
+        "battery.percent",
+        Battery,
+        Battery,
+        "Show percentage",
+        &["status bar", "percent"],
+    ),
+    row(
+        "battery.usage",
+        Battery,
+        BatteryUsage,
+        "Battery usage",
+        &["since full charge", "power"],
+    ),
     // Developer options
     row(
         "dev.usb",
@@ -396,6 +425,13 @@ pub const ROWS: &[Row] = &[
         &["console", "logs"],
     ),
     row("dev.save", Developer, Developer, "Save logs", &["logs"]),
+    row(
+        "dev.touches",
+        Developer,
+        Developer,
+        "Show touches",
+        &["pointer", "finger", "tap"],
+    ),
     row(
         "dev.tools",
         Developer,

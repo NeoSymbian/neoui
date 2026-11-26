@@ -126,6 +126,52 @@ pub fn back_bubble_pixel(
     })
 }
 
+/// Show touches (Settings SE3a): the pixel at (`x`, `y`) of a `d` px square around a finger, over `under` (what the
+/// screen shows there): a white ring an eighth of `d` wide over a lightly whitened disc, or `None` outside the circle.
+/// The UI server draws it straight to the screen, like the Back bubble.
+#[must_use]
+pub fn touch_ring_pixel(x: i32, y: i32, d: i32, under: u32) -> Option<u32> {
+    let (dx, dy) = (2 * x + 1 - d, 2 * y + 1 - d); // twice the offset from the centre
+    let r2 = dx * dx + dy * dy;
+    if r2 > d * d {
+        return None;
+    }
+    let inner = d - d / 4; // doubled: the ring is d/8 wide
+    // white over `under` at `a`/256 per channel
+    let mix = |a: u32| {
+        let ch = |shift: u32| {
+            let c = (under >> shift) & 0xFF;
+            (c * (256 - a) + 0xFF * a) / 256
+        };
+        0xFF00_0000 | ch(16) << 16 | ch(8) << 8 | ch(0)
+    };
+    Some(if r2 >= inner * inner {
+        mix(208)
+    } else {
+        mix(64)
+    })
+}
+
+#[cfg(test)]
+mod touch_ring_tests {
+    use super::touch_ring_pixel;
+
+    #[test]
+    fn a_ring_over_a_lighter_disc() {
+        let d = 48;
+        // the corner is outside, the edge is the ring, the centre is the disc
+        assert_eq!(touch_ring_pixel(0, 0, d, 0), None);
+        let edge = touch_ring_pixel(0, d / 2, d, 0).unwrap();
+        let centre = touch_ring_pixel(d / 2, d / 2, d, 0).unwrap();
+        assert!(edge & 0xFF > centre & 0xFF && centre & 0xFF > 0);
+        // white stays white, opaque
+        assert_eq!(
+            touch_ring_pixel(d / 2, d / 2, d, 0xFFFF_FFFF),
+            Some(0xFFFF_FFFF)
+        );
+    }
+}
+
 /// Owns the Slint platform and the launcher UI.
 ///
 /// Slint's platform is a process-wide singleton (and with
@@ -135,6 +181,9 @@ pub struct Renderer {
     window: Rc<MinimalSoftwareWindow>,
     ui: Shell,
     typed: Rc<RefCell<Vec<u32>>>,
+    /// Presses of the system keyboard's keys since the last [`Renderer::take_key_presses`] (one per key, whatever it
+    /// types and wherever it goes: Keypress vibration, SE3a).
+    presses: Rc<core::cell::Cell<u32>>,
     nav: Rc<RefCell<Vec<Nav>>>,
     entries: Rc<RefCell<Vec<u32>>>,
     notes_opened: Rc<RefCell<Vec<(usize, u16)>>>,
@@ -202,7 +251,12 @@ impl Renderer {
         ui.show()?;
         let typed: Rc<RefCell<Vec<u32>>> = Rc::default();
         let sink = typed.clone();
-        ui.on_typed(move |s| sink.borrow_mut().extend(s.chars().map(u32::from)));
+        let presses: Rc<core::cell::Cell<u32>> = Rc::default();
+        let pressed = presses.clone();
+        ui.on_typed(move |s| {
+            pressed.set(pressed.get().saturating_add(1));
+            sink.borrow_mut().extend(s.chars().map(u32::from));
+        });
         let nav: Rc<RefCell<Vec<Nav>>> = Rc::default();
         let sink = nav.clone();
         ui.on_app_nav(move |kind, i| {
@@ -249,6 +303,7 @@ impl Renderer {
             window,
             ui,
             typed,
+            presses,
             nav,
             entries,
             notes_opened,
@@ -418,6 +473,11 @@ impl Renderer {
     /// what it types into a shell field goes there instead.
     pub fn take_typed(&mut self) -> Vec<u32> {
         core::mem::take(&mut *self.typed.borrow_mut())
+    }
+
+    /// How many keys of the system keyboard were pressed since the last call (for its vibration).
+    pub fn take_key_presses(&mut self) -> u32 {
+        self.presses.replace(0)
     }
 
     /// An app process is in front (the shell hides its own mock of the screen; the strip shows the app's page).

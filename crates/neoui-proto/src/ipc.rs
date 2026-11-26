@@ -37,14 +37,14 @@
 //! shell to act ([`SETTINGS_ACTION`]); its writes to shell-owned settings are allowed by its secure ID.
 //! Since 1.14 (SE1d) it also lists the old apps the legacy bridge registered ([`INFO_APPS`]) and opens one
 //! ([`ACTION_OPEN_ENTRY`]). Since 1.15 (SE2a) it changes the sound profiles through the shell's reducer
-//! ([`ACTION_PROFILE`]).
+//! ([`ACTION_PROFILE`]). Since 1.16 (SE3a) it reads Battery usage ([`INFO_BATTERY_USAGE`]).
 
 use crate::{InputEvent, TouchPhase};
 
 /// The server's name (no leading `!`: that needs ProtServ).
 pub const SERVER: &str = "NeoUi";
 /// Protocol version (major, minor); a connect with another major is refused.
-pub const VERSION: (u8, u8) = (1, 15);
+pub const VERSION: (u8, u8) = (1, 16);
 
 /// `[Des8 out: GEOMETRY_LEN bytes = width, height, dp × 256 (u32 LE)]` → 0. `dp` is the shell's design unit in
 /// pixels (`min(screen w, h) / 360`), so apps size things like the shell does.
@@ -171,7 +171,8 @@ pub const RESULT_FILE: i32 = 29;
 /// `[]` → the clipboard's kind ([`CLIP_TEXT`] when empty or set by a 1.11 app).
 pub const CLIP_KIND: i32 = 30;
 /// `[kind, cursor: unused (0), Des8 out]` → the snapshot's length: something only the shell knows, encoded by
-/// [`crate::settings_app::info`] ([`INFO_BATTERY`], [`INFO_NET`], [`INFO_CLOCK`], [`INFO_APPS`]). `KErrOverflow` when `out` is
+/// [`crate::settings_app::info`] ([`INFO_BATTERY`], [`INFO_NET`], [`INFO_CLOCK`], [`INFO_APPS`],
+/// [`INFO_BATTERY_USAGE`]). `KErrOverflow` when `out` is
 /// too short, `KErrArgument` for an unknown kind. Opcodes 31–39 are reserved (docs neoui-shell/protocol.md).
 pub const SETTINGS_INFO: i32 = 40;
 /// `[kind, Des8 request]` → 0: ask the shell to act. [`ACTION_SIGN_IN`]: open the browser on the current Wi-Fi
@@ -187,6 +188,8 @@ pub const INFO_NET: i32 = 2;
 pub const INFO_CLOCK: i32 = 3;
 /// 1.14: the old apps the legacy bridge registered with [`ENTRY`] ([`crate::settings_app::info::OldApps`]).
 pub const INFO_APPS: i32 = 4;
+/// 1.16 (SE3a): Battery usage from the shell's history ([`crate::settings_app::info::encode_usage`]).
+pub const INFO_BATTERY_USAGE: i32 = 5;
 /// [`SETTINGS_ACTION`] kinds.
 pub const ACTION_SIGN_IN: i32 = 1;
 pub const ACTION_OPEN_ENTRY: i32 = 2;

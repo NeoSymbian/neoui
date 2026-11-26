@@ -249,6 +249,245 @@ fn checksum(b: &[u8]) -> u32 {
     }
     !crc
 }
+/// Battery usage (Settings SE3a, `set2-battery-usage`) from what the history really holds: the level and the charge
+/// state once a minute. No per-app shares (D4) and no screen-on time (nothing records it).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Usage {
+    /// The window starts at the last full charge the phone then ran on battery from; else at the history's first
+    /// reading.
+    pub since_full: bool,
+    pub start_utc: i64,
+    pub end_utc: i64,
+    /// The level at each end of the window, if read.
+    pub start_percent: Option<u8>,
+    pub end_percent: Option<u8>,
+    /// Seconds spent discharging between readings in the window.
+    pub on_battery_s: u32,
+    /// Seconds without readings in the window (the phone off, a broken history): not counted.
+    pub gap_s: u32,
+}
+
+impl Snapshot {
+    /// Full: the charger's state when it was read (Discharging at 100 % isn't full), else the level.
+    fn is_full(&self) -> bool {
+        if self.valid & 32 != 0 {
+            self.charge == 4
+        } else {
+            self.percent() == Some(100)
+        }
+    }
+    /// A reading worth counting: the level or the charge state (a failed HAL read records neither).
+    fn read(&self) -> bool {
+        self.valid & (2 | 32) != 0
+    }
+    /// Running on the battery (the charge state says Discharging; the history doesn't keep USB presence).
+    fn discharging(&self) -> bool {
+        self.valid & 32 != 0 && self.charge == 1
+    }
+}
+
+impl History {
+    /// Battery usage over the history, or `None` before its first reading ("No data yet").
+    #[must_use]
+    pub fn usage(&self) -> Option<Usage> {
+        // the last full charge the phone then ran down from (still full or charging on the cable: no window yet)
+        let unplugged = self
+            .points
+            .iter()
+            .rposition(|p| p.observation.discharging());
+        let full = unplugged.and_then(|d| {
+            self.points
+                .range(..d)
+                .rposition(|p| p.observation.is_full())
+        });
+        let start = full.or_else(|| self.points.iter().position(|p| p.observation.read()))?;
+        let window = self.points.range(start..);
+        let first = window.clone().next()?;
+        let last = self.points.back()?;
+        let level = |p: &Point| p.observation.percent().map(|n| n.min(100) as u8);
+        let mut u = Usage {
+            since_full: full.is_some(),
+            start_utc: first.utc,
+            end_utc: last.utc,
+            start_percent: level(first),
+            end_percent: window.clone().rev().find_map(level),
+            ..Usage::default()
+        };
+        let mut previous = first;
+        for p in window.skip(1) {
+            let dt = u32::try_from(p.utc.saturating_sub(previous.utc)).unwrap_or(u32::MAX);
+            // a break in the history, or a minute without a reading on either side: not observed
+            if p.gap || !p.observation.read() || !previous.observation.read() {
+                u.gap_s = u.gap_s.saturating_add(dt);
+            } else if previous.observation.discharging() {
+                u.on_battery_s = u.on_battery_s.saturating_add(dt);
+            }
+            previous = p;
+        }
+        Some(u)
+    }
+}
+
+/// What Battery usage shows.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct UsageText {
+    /// "Since full charge" or "Last 24 hours".
+    pub title: String,
+    /// "From 100% to 72% over 9 h 40 min" (the font has no arrow).
+    pub levels: String,
+    /// "On battery 8 h 10 min".
+    pub on_battery: String,
+    /// "Off or not recorded for 6 h, not counted"; empty without gaps.
+    pub gaps: String,
+}
+
+impl Usage {
+    #[must_use]
+    pub fn text(&self) -> UsageText {
+        let pct = |p: Option<u8>| p.map_or_else(|| "--%".into(), |n| format!("{n}%"));
+        let span =
+            u32::try_from(self.end_utc.saturating_sub(self.start_utc).max(0)).unwrap_or(u32::MAX);
+        UsageText {
+            title: if self.since_full {
+                "Since full charge"
+            } else {
+                "Last 24 hours (no full charge seen)"
+            }
+            .into(),
+            levels: format!(
+                "From {} to {} over {}",
+                pct(self.start_percent),
+                pct(self.end_percent),
+                duration(span)
+            ),
+            on_battery: format!("On battery {}", duration(self.on_battery_s)),
+            gaps: if self.gap_s == 0 {
+                String::new()
+            } else {
+                format!(
+                    "Off or not recorded for {}, not counted",
+                    duration(self.gap_s)
+                )
+            },
+        }
+    }
+}
+
+/// "9 h 40 min", "40 min", "0 min".
+fn duration(s: u32) -> String {
+    let (h, m) = (s / 3600, s % 3600 / 60);
+    match (h, m) {
+        (0, m) => format!("{m} min"),
+        (h, 0) => format!("{h} h"),
+        (h, m) => format!("{h} h {m} min"),
+    }
+}
+
+#[cfg(test)]
+mod usage_tests {
+    use super::*;
+    fn at(percent: u32, charge: u32) -> Snapshot {
+        Snapshot {
+            valid: 2 | 32,
+            percent,
+            charge,
+            ..Snapshot::default()
+        }
+    }
+
+    #[test]
+    fn no_data_yet() {
+        assert_eq!(History::default().usage(), None);
+    }
+
+    #[test]
+    fn since_the_last_full_charge_with_a_gap() {
+        let mut h = History::default();
+        h.observe(0, at(80, 2)); // charging
+        h.observe(60, at(100, 4)); // full
+        h.observe(120, at(99, 1));
+        h.observe(180, at(98, 1));
+        h.begin_segment(); // the phone was off
+        h.observe(180 + 6 * 3600, at(90, 1));
+        h.observe(180 + 6 * 3600 + 60, at(89, 1));
+        let u = h.usage().unwrap();
+        assert!(u.since_full);
+        assert_eq!((u.start_utc, u.end_utc), (60, 180 + 6 * 3600 + 60));
+        assert_eq!((u.start_percent, u.end_percent), (Some(100), Some(89)));
+        // 60 → 120 starts full (not discharging), 120 → 180 and the last minute count; the 6 h gap doesn't
+        assert_eq!(u.on_battery_s, 120);
+        assert_eq!(u.gap_s, 6 * 3600);
+        let t = u.text();
+        assert_eq!(t.title, "Since full charge");
+        assert_eq!(t.levels, "From 100% to 89% over 6 h 3 min");
+        assert_eq!(t.on_battery, "On battery 2 min");
+        assert_eq!(t.gaps, "Off or not recorded for 6 h, not counted");
+    }
+
+    #[test]
+    fn without_a_full_charge_the_whole_history() {
+        let mut h = History::default();
+        h.observe(0, at(60, 1));
+        h.observe(60, at(59, 3)); // plugged in, not charging: not on battery after this
+        h.observe(120, at(59, 3));
+        h.observe(180, Snapshot::default()); // a failed read: not observed
+        let u = h.usage().unwrap();
+        assert!(!u.since_full);
+        assert_eq!((u.start_percent, u.end_percent), (Some(60), Some(59)));
+        assert_eq!((u.on_battery_s, u.gap_s), (60, 60));
+        let t = u.text();
+        assert_eq!(t.title, "Last 24 hours (no full charge seen)");
+        assert_eq!(t.levels, "From 60% to 59% over 3 min");
+        assert_eq!(t.gaps, "Off or not recorded for 1 min, not counted");
+    }
+
+    #[test]
+    fn full_on_the_cable_now_keeps_the_last_run_down() {
+        let mut h = History::default();
+        h.observe(0, at(100, 4)); // full
+        h.observe(60, at(99, 1)); // unplugged
+        h.observe(120, at(98, 1));
+        h.observe(180, at(98, 2)); // plugged in again
+        h.observe(240, at(100, 4)); // full on the cable now
+        let u = h.usage().unwrap();
+        assert!(u.since_full);
+        assert_eq!((u.start_utc, u.end_utc), (0, 240));
+        assert_eq!(u.on_battery_s, 120);
+        // never unplugged since the history began: the whole history, not a window from now
+        let mut h = History::default();
+        h.observe(0, at(90, 2));
+        h.observe(60, at(100, 4));
+        let u = h.usage().unwrap();
+        assert!(!u.since_full);
+        assert_eq!((u.start_utc, u.on_battery_s), (0, 0));
+    }
+
+    #[test]
+    fn discharging_at_100_isnt_full_and_failed_reads_are_no_data() {
+        let mut h = History::default();
+        h.observe(0, at(100, 4)); // full
+        for m in 1..=3 {
+            h.observe(m * 60, at(100, 1)); // unplugged, still 100 %
+        }
+        h.observe(240, at(99, 1));
+        let u = h.usage().unwrap();
+        assert_eq!(u.start_utc, 0);
+        assert_eq!(u.on_battery_s, 180); // minutes 1 to 4
+        // only failed reads: nothing to show
+        let mut h = History::default();
+        h.observe(0, Snapshot::default());
+        h.observe(60, Snapshot::default());
+        assert_eq!(h.usage(), None);
+        // a damaged record's reversed window shows no time, not a huge one
+        let u = Usage {
+            start_utc: 60,
+            end_utc: 0,
+            ..Usage::default()
+        };
+        assert_eq!(u.text().levels, "From --% to --% over 0 min");
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -13,7 +13,7 @@ import { RootPage, RootGridPage, SearchPage } from "pages/root.slint";
 import { LicencesPage } from "pages/licences.slint";
 import { WifiPage, WifiSavedPage, WifiJoinSheet, WifiDetailsSheet } from "pages/wifi.slint";
 import { ConnectivityPage, MobilePage, BluetoothPage } from "pages/connections.slint";
-import { DisplayPage, NavigationPage, SoundsPage, BatteryPage, ProfilePage, ProfileSheet, ProfileNameSheet } from "pages/device.slint";
+import { DisplayPage, NavigationPage, SoundsPage, BatteryPage, BatteryUsagePage, ProfilePage, ProfileSheet, ProfileNameSheet } from "pages/device.slint";
 import { DateTimePage, ZoneSheet, KeyboardPage, PrivacyPage } from "pages/personal.slint";
 import { AppsPage, AppSheet, OldAppsPage, DeveloperPage, AboutPage } from "pages/system.slint";
 
@@ -82,6 +82,7 @@ export component SettingsApp inherits Window {
         if SetState.page == 16: LicencesPage { }
         if SetState.page == 17: WifiSavedPage { }
         if SetState.page == 18: ProfilePage { }
+        if SetState.page == 19: BatteryUsagePage { }
     }
 
     // the sheets: full size, last, so they cover the header and the page

@@ -25,9 +25,10 @@ pub enum Page {
     Licences = 16,
     WifiSaved = 17,
     Profile = 18,
+    BatteryUsage = 19,
 }
 
-pub const ALL: [Page; 19] = [
+pub const ALL: [Page; 20] = [
     Page::Root,
     Page::Wifi,
     Page::Mobile,
@@ -47,6 +48,7 @@ pub const ALL: [Page; 19] = [
     Page::Licences,
     Page::WifiSaved,
     Page::Profile,
+    Page::BatteryUsage,
 ];
 
 impl Page {
@@ -83,6 +85,7 @@ impl Page {
             Page::Licences => "licences",
             Page::WifiSaved => "wifisaved",
             Page::Profile => "profile",
+            Page::BatteryUsage => "batteryusage",
         }
     }
 
@@ -124,6 +127,7 @@ impl Page {
             Page::Licences => "Licences",
             Page::WifiSaved => "Saved networks",
             Page::Profile => "Profile",
+            Page::BatteryUsage => "Battery usage",
         }
     }
 
@@ -136,6 +140,7 @@ impl Page {
             Page::Licences => Some(Page::About),
             Page::WifiSaved => Some(Page::Wifi),
             Page::Profile => Some(Page::Sounds),
+            Page::BatteryUsage => Some(Page::Battery),
             _ => Some(Page::Root),
         }
     }
@@ -152,7 +157,8 @@ mod tests {
             assert_eq!(Page::from_id(p.id()), Some(*p));
             assert_eq!(Page::from_name(p.name()), Some(*p));
         }
-        assert_eq!(Page::from_id(19), None);
+        assert_eq!(Page::from_id(20), None);
+        assert_eq!(Page::BatteryUsage.parent(), Some(Page::Battery));
     }
 
     #[test]

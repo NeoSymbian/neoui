@@ -152,6 +152,17 @@ export component KeyboardPage inherits NeoList {
             has-switch: true;
             switch-on <=> SetState.same-height;
             switch-toggled(v) => { SetState.act("keyboard.same_height", v ? "1" : "0"); }
+        }
+
+        ListRow {
+            title: "Keypress vibration";
+            checked: SetState.found == "kb.vibrate";
+            subtitle: "A short pulse on each key";
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/vibrate.svg");
+            has-switch: true;
+            switch-on <=> SetState.key-vibrate;
+            switch-toggled(v) => { SetState.act("keyboard.vibrate", v ? "1" : "0"); }
             divider: false;
         }
     }

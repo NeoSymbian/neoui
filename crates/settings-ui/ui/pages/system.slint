@@ -240,6 +240,17 @@ export component DeveloperPage inherits NeoList {
             clicked => { SetState.act("devtools", "tools"); }
         }
 
+        SectionHeader { text: "Input"; }
+        ListRow {
+            title: "Show touches";
+            checked: SetState.found == "dev.touches";
+            subtitle: "A dot under each finger";
+            has-switch: true;
+            switch-on <=> SetState.show-touches;
+            switch-toggled(v) => { SetState.act("developer.show_touches", v ? "1" : "0"); }
+            divider: false;
+        }
+
         SectionHeader { text: "Tools"; }
         ListRow {
             title: "Open Dev tools";
