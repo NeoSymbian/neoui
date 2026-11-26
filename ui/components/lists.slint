@@ -106,6 +106,8 @@ export component ListRow inherits Rectangle {
     in property <bool> title-accent;
     // the chosen one of a list (the active sound profile): a ✓ in the accent at the end
     in property <bool> trailing-check;
+    // what the ✓ means, for a screen reader ("Active")
+    in property <string> check-label: "Selected";
     // the trailing value in the brighter secondary colour (Settings' values)
     in property <bool> value-bright;
     // the icon on a coloured rounded tile (Settings' drive and page rows); transparent = a bare glyph
@@ -300,6 +302,8 @@ export component ListRow inherits Rectangle {
                 source: @image-url("../icons/sys/check.svg");
                 size: 22 * Theme.dp;
                 colorize: Theme.accent;
+                accessible-role: text;
+                accessible-label: root.check-label;
             }
         }
         if has-switch: VerticalLayout {

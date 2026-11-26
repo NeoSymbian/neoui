@@ -289,6 +289,7 @@ export component ModeCard inherits Rectangle {
     border-width: max(1px, Theme.dp / 2);
     border-color: on ? Theme.accent : Theme.card-border;
     accessible-role: radio-button;
+    accessible-checkable: true;
     accessible-checked: on;
     accessible-label: title;
     accessible-description: subtitle;
@@ -391,7 +392,7 @@ export component ActiveCard inherits Rectangle {
                 Image {
                     width: 24 * Theme.dp;
                     height: self.width;
-                    source: @image-url("@neoui/icons/sys/options.svg");
+                    source: @image-url("@neoui/icons/sys/profile.svg");
                     colorize: white;
                 }
             }

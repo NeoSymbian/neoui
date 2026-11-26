@@ -29,8 +29,12 @@ export component DisplayPage inherits NeoList {
                     colorize: Theme.text-secondary;
                 }
             }
-            Slider {
-                value <=> SetState.brightness;
+            VerticalLayout {
+                alignment: center;
+                Slider {
+                    label: "Brightness";
+                    value <=> SetState.brightness;
+                }
             }
             VerticalLayout {
                 alignment: center;
@@ -128,6 +132,7 @@ export component SoundsPage inherits NeoList {
                 : @image-url("@neoui/icons/sys/volume.svg");
             icon-tint: p.id == SetState.active-profile ? Theme.accent : Theme.text-secondary;
             trailing-check: p.id == SetState.active-profile;
+            check-label: "Active";
             clicked => {
                 SetState.profile-current = p;
                 SetState.sheet = "profile";
@@ -439,11 +444,17 @@ export component ProfilePage inherits NeoList {
                     colorize: Theme.text-dim;
                 }
             }
-            Slider {
-                value: p.volume / 10;
-                changed value => {
-                    if round(self.value * 10) != p.volume {
-                        SetState.act("profile-set", "1," + round(self.value * 10) + "," + (p.vibrate ? "1" : "0"));
+            VerticalLayout {
+                alignment: center;
+                Slider {
+                    controlled: true;
+                    step: 0.1;
+                    label: "Ring volume";
+                    value: p.volume / 10;
+                    moved(v) => {
+                        if round(v * 10) != p.volume {
+                            SetState.act("profile-set", "1," + round(v * 10) + "," + (p.vibrate ? "1" : "0"));
+                        }
                     }
                 }
             }
