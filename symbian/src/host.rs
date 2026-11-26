@@ -281,6 +281,9 @@ pub struct Host {
     shelf: settings_info::Shelf,
     /// (D8) The "Files read the clipboard" toasts (`privacy.clip_notice`): readers cooling down and waiting.
     clip_notices: ClipNotices,
+    /// The clipboard toast on show hasn't reached the screen yet: its time starts when it does
+    /// ([`Self::note_displayed`]), and a toast that replaces it first sends it back to the queue.
+    clip_unseen: bool,
 }
 
 impl Host {
@@ -329,6 +332,7 @@ impl Host {
             clip_kind: proto::CLIP_TEXT,
             shelf: settings_info::Shelf::boot(),
             clip_notices: ClipNotices::default(),
+            clip_unseen: false,
         }
     }
 
@@ -372,10 +376,11 @@ impl Host {
 
     /// The toast's time is up: take it away. Call once per frame.
     pub fn expire_note(&mut self, now_ms: u64) {
+        let unseen = self.clip_unseen;
         if self
             .note
             .as_ref()
-            .is_some_and(|(_, _, until)| now_ms >= *until)
+            .is_some_and(|(k, _, until)| now_ms >= *until && !(unseen && *k == CLIP_NOTE))
         {
             self.note = None;
             self.notes_changed = true;
@@ -396,7 +401,17 @@ impl Host {
                 action: String::new(),
             };
             self.note = Some((CLIP_NOTE, note, now_ms + proto::NOTE_MS));
+            self.clip_unseen = true;
             self.notes_changed = true;
+        }
+    }
+
+    /// A frame with the toast reached the screen, over the app (the main loop): the clipboard toast's time starts.
+    pub fn note_displayed(&mut self, now_ms: u64) {
+        if core::mem::take(&mut self.clip_unseen)
+            && let Some((CLIP_NOTE, _, until)) = self.note.as_mut()
+        {
+            *until = now_ms + proto::NOTE_MS;
         }
     }
 
@@ -1401,6 +1416,13 @@ impl Service for Host {
                             self.note = None;
                         }
                     } else {
+                        // a clipboard toast not yet seen waits for this one, first in line (D8)
+                        if self.clip_unseen
+                            && let Some((CLIP_NOTE, clip, _)) = self.note.take()
+                        {
+                            self.clip_notices.requeue(clip.text);
+                        }
+                        self.clip_unseen = false;
                         let until = e32::time::millis() + proto::NOTE_MS;
                         self.note = Some((app.key, n, until));
                     }

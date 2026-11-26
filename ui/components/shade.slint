@@ -233,23 +233,24 @@ component Card inherits Rectangle {
             }
             VerticalLayout {
                 spacing: 2 * Theme.dp;
+                // the title and text follow display.font_size (D7)
                 Text {
                     text: note.title;
                     color: Theme.text;
-                    font-size: 15 * Theme.dp;
+                    font-size: 15 * Theme.dp * Theme.font-scale;
                     font-weight: 600;
                     overflow: elide;
                 }
                 if note.earlier != "": Text {
                     text: note.earlier;
                     color: Theme.text-dim;
-                    font-size: 13.5 * Theme.dp;
+                    font-size: 13.5 * Theme.dp * Theme.font-scale;
                     overflow: elide;
                 }
                 if note.text != "": Text {
                     text: note.text;
                     color: Theme.text-secondary;
-                    font-size: 13.5 * Theme.dp;
+                    font-size: 13.5 * Theme.dp * Theme.font-scale;
                     overflow: elide;
                 }
             }

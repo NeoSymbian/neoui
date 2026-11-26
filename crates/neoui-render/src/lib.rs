@@ -524,6 +524,20 @@ impl Renderer {
         )
     }
 
+    /// The toast (`NOTE`) while one shows, in physical pixels: it lies over the app's body, so the UI server copies it
+    /// from the frame again after composing the app's surface.
+    pub fn toast_rect(&self) -> Option<Rect> {
+        (!self.ui.get_note_text().is_empty()).then(|| {
+            Rect::new(
+                self.ui.get_toast_x() as i32,
+                self.ui.get_toast_y() as i32,
+                // a pixel more each way: its edges may fall between pixels (it sits 12 dp clear of the screen's sides)
+                self.ui.get_toast_w() as u32 + 1,
+                self.ui.get_toast_h() as u32 + 1,
+            )
+        })
+    }
+
     /// The home screen's pages band, where its swipe works (physical pixels; smooth-ui S2c).
     pub fn home_strip(&self) -> Rect {
         Rect::new(

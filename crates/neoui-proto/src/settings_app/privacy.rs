@@ -17,8 +17,8 @@ pub const READERS: usize = 8;
 pub struct ClipNotices {
     /// Readers that had a toast: their SID and when their cooldown ends.
     recent: Vec<(u32, u64)>,
-    /// Readers waiting for the toast slot, oldest first.
-    pending: Vec<u32>,
+    /// Toasts waiting for the toast slot, oldest first.
+    pending: Vec<String>,
 }
 
 impl ClipNotices {
@@ -35,13 +35,21 @@ impl ClipNotices {
         if self.pending.len() == READERS {
             self.pending.remove(0);
         }
-        self.pending.push(sid);
+        self.pending.push(reader_text(sid));
         true
     }
 
     /// The next toast's text, once the toast slot is free.
     pub fn take_next(&mut self) -> Option<String> {
-        (!self.pending.is_empty()).then(|| reader_text(self.pending.remove(0)))
+        (!self.pending.is_empty()).then(|| self.pending.remove(0))
+    }
+
+    /// A toast taken but never seen (another toast replaced it before a frame showed it): first in line again.
+    pub fn requeue(&mut self, text: String) {
+        if self.pending.len() == READERS {
+            self.pending.pop();
+        }
+        self.pending.insert(0, text);
     }
 
     /// The notice was turned off: waiting toasts go.
@@ -50,9 +58,16 @@ impl ClipNotices {
     }
 }
 
-/// "Files read the clipboard" for a ROM app's SID; any other process is "An app".
+/// Secure IDs more than one EXE has: no one app can be named. LEGACY.EXE (NeoSymbian/legacy `host/legacy.mmp`, the
+/// old apps' bridge) shares 0xE0002006 with NEOKIT.EXE.
+const SHARED_SIDS: &[u32] = &[0xE000_2006];
+
+/// "Files read the clipboard" for a ROM app's SID; any other process, or a shared SID, is "An app".
 #[must_use]
 pub fn reader_text(sid: u32) -> String {
+    if SHARED_SIDS.contains(&sid) {
+        return "An app read the clipboard".into();
+    }
     match crate::apps::APPS
         .iter()
         .find(|a| crate::apps::sid(a.key) == Some(sid))
@@ -80,11 +95,18 @@ mod tests {
         assert_eq!(n.take_next().as_deref(), Some("Files read the clipboard"));
         assert_eq!(n.take_next().as_deref(), Some("Browser read the clipboard"));
         assert_eq!(n.take_next(), None);
+        // replaced before it showed: it comes back first
+        assert!(n.read(FILES, 9000));
+        n.requeue("Browser read the clipboard".into());
+        assert_eq!(n.take_next().as_deref(), Some("Browser read the clipboard"));
+        assert_eq!(n.take_next().as_deref(), Some("Files read the clipboard"));
     }
 
     #[test]
     fn unknown_readers_and_bounds() {
         assert_eq!(reader_text(0x1234_5678), "An app read the clipboard");
+        // the kit gallery and the old apps' bridge share a SID
+        assert_eq!(reader_text(0xE000_2006), "An app read the clipboard");
         let mut n = ClipNotices::default();
         for sid in 0..20 {
             assert!(n.read(sid, 0));

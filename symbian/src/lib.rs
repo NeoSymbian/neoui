@@ -1028,6 +1028,16 @@ fn main() -> i32 {
                     } else {
                         compose(&mut host, &damage, &display)
                     };
+                    // the toast lies over the app's body: put it back over what was composed; it's on screen now
+                    if !covered && let Some(r) = ui.toast_rect() {
+                        if app_px > 0 {
+                            let (x, y) = (r.x.max(0) as usize, r.y.max(0) as usize);
+                            let rw = (r.w as usize).min(w.saturating_sub(x));
+                            let rh = (r.h as usize).min(h.saturating_sub(y));
+                            display.blit(&frame, w, x, y, rw, rh);
+                        }
+                        host.note_displayed(time::millis());
+                    }
                     // Show touches: put back what the rings covered before the hint (which may lie under them) is
                     // drawn, then the rings over everything; their cost counts in the perf line's app time
                     if !host

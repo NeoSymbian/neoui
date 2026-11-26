@@ -80,6 +80,15 @@ pub const WALLPAPERS: [(&str, &str); 8] = [
     ("dusk", "Dusk"),
 ];
 
+/// The wallpaper a stored name draws: itself, or Night (the default) for an unknown one, as the shell draws it.
+#[must_use]
+pub fn wallpaper_key(stored: &str) -> &'static str {
+    WALLPAPERS
+        .iter()
+        .find(|(k, _)| *k == stored)
+        .map_or(WALLPAPERS[0].0, |(k, _)| k)
+}
+
 /// The shown name of a stored wallpaper; an unknown one is drawn as Night (the default).
 #[must_use]
 pub fn wallpaper_name(stored: &str) -> &'static str {
@@ -104,6 +113,8 @@ mod tests {
         assert_eq!(wallpaper_name("dusk"), "Dusk");
         assert_eq!(wallpaper_name(""), "Night");
         assert_eq!(wallpaper_name("picture-a"), "Night");
+        assert_eq!(wallpaper_key("picture-a"), "night");
+        assert_eq!(wallpaper_key("plum"), "plum");
         let spec = crate::settings::registry::lookup("display.wallpaper").unwrap();
         for (k, _) in WALLPAPERS {
             assert_eq!(spec.check(&crate::settings::Value::Str(k.into())), Ok(()));

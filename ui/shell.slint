@@ -102,6 +102,11 @@ export component Shell inherits Window {
     property <length> bottom-h: buttons ? Theme.key-row-h : Theme.band-h;
     // out: the Symbian UI server places app processes' surfaces in this body rectangle (NeoSymbian R6)
     out property <length> body-y: Theme.status-h;
+    // where the toast is (screen pixels) while one shows
+    out property <length> toast-x: toast.x;
+    out property <length> toast-y: toast.y;
+    out property <length> toast-w: toast.width;
+    out property <length> toast-h: toast.height;
     // the home screen's pages, for the UI server's swipe (smooth-ui S2c): which one shows, and the band they fill
     in-out property <int> home-page <=> home.page;
     out property <length> home-strip-h: home.strip-h;
@@ -473,8 +478,10 @@ export component Shell inherits Window {
         y: root.height - Theme.band-h;
     }
 
-    // the app's toast (ipc NOTE), 12 dp above the bottom or the keyboard
-    if root.note-text != "": Toast {
+    // the app's toast (ipc NOTE), 12 dp above the bottom or the keyboard; the UI server copies it back over the app's
+    // surface (`toast-*`), which it composes over this frame
+    toast := Toast {
+        visible: root.note-text != "";
         x: 12 * Theme.dp;
         width: root.width - 24 * Theme.dp;
         y: (kb.visible ? kb.y : root.height - (root.full ? 0 : root.bottom-h)) - self.height - 12 * Theme.dp;
