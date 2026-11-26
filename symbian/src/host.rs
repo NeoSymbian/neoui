@@ -494,6 +494,12 @@ impl Host {
             .find(|a| a.key == key && a.quit_at.is_none() && a.surface.is_some())
     }
 
+    /// Whether the front app asks for the screen to stay on (a video playing).
+    pub fn front_awake(&self) -> bool {
+        self.front()
+            .is_some_and(|a| a.declared.as_ref().is_some_and(|p| p.awake))
+    }
+
     /// Whether the front app shows a full-screen page (no status bar, no strip).
     pub fn front_full(&self) -> bool {
         self.front()

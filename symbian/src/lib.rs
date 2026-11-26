@@ -873,7 +873,8 @@ fn main() -> i32 {
             } else {
                 0
             };
-            if let Some(c) = woke.or_else(|| scr.tick(ms, timeout, phone.in_call() || power_menu)) {
+            let hold = phone.in_call() || power_menu || host.front_awake();
+            if let Some(c) = woke.or_else(|| scr.tick(ms, timeout, hold)) {
                 set_screen(c, &mut host.refresh);
                 if c == screen::Change::Off && (core::mem::take(&mut to_app) | fingers.take()) {
                     host.send(AppEvent::InputReset);

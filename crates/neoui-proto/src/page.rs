@@ -66,6 +66,8 @@ pub struct Page {
     pub can_back: bool,
     /// Hide the status bar and the key row or band (a call, the camera, a video).
     pub full: bool,
+    /// Keep the screen on while this page shows (a video playing: nobody touches the phone).
+    pub awake: bool,
 }
 
 /// A shell dialog. The answer comes back as [`crate::ipc::AppEvent::Answer`] with the button's index; Back answers
@@ -123,6 +125,7 @@ const CAN_BACK: u8 = 1;
 const FULL: u8 = 4;
 const PRIMARY: u8 = 8;
 const DOTS: u8 = 16;
+const AWAKE: u8 = 32;
 const DESTRUCTIVE: u8 = 1;
 
 fn put(out: &mut Vec<u8>, s: &str, max: usize) -> Result<(), PageError> {
@@ -161,7 +164,9 @@ fn dots_ok((n, at): (u8, u8)) -> bool {
 
 impl Page {
     pub fn encode(&self) -> Result<Vec<u8>, PageError> {
-        let flags = (self.can_back as u8 * CAN_BACK) | (self.full as u8 * FULL);
+        let flags = (self.can_back as u8 * CAN_BACK)
+            | (self.full as u8 * FULL)
+            | (self.awake as u8 * AWAKE);
         let mut out = alloc::vec![flags, 0, 0, 0, 0];
         put(&mut out, &self.title, TITLE_MAX)?;
         Ok(out)
@@ -178,7 +183,7 @@ impl Page {
         let dots = (r.byte()?, r.byte()?);
         let n = usize::from(r.byte()?);
         // 1.7's TOOL_* icons were 0..=6
-        if flags >> 5 != 0 || icon > 6 || n > OPTIONS_MAX {
+        if flags >> 6 != 0 || icon > 6 || n > OPTIONS_MAX {
             return Err(PageError);
         }
         if flags & DOTS != 0 && !dots_ok(dots) {
@@ -198,6 +203,7 @@ impl Page {
             title,
             can_back: flags & CAN_BACK != 0,
             full: flags & FULL != 0,
+            awake: flags & AWAKE != 0,
         })
     }
 }
@@ -375,6 +381,7 @@ mod tests {
                 title: "x".repeat(TITLE_MAX),
                 can_back: true,
                 full: true,
+                awake: true,
             },
         ];
         for p in pages {
@@ -392,6 +399,7 @@ mod tests {
                 title: s("Contacts"),
                 can_back: true,
                 full: false,
+                awake: false,
             })
         );
         // the 1.8 bytes are a 1.7 page with no actions: an old shell reads a new app the same way
@@ -399,6 +407,7 @@ mod tests {
             title: s("Files"),
             can_back: true,
             full: true,
+            awake: false,
         };
         assert_eq!(p.encode().unwrap()[..5], [1 | 4, 0, 0, 0, 0]);
     }

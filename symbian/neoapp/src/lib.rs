@@ -41,8 +41,8 @@ use neoui_proto::settings::value::ENCODED_MAX;
 use neoui_proto::settings::{Key as SettingKey, Setting, Value, kerr};
 use neoui_proto::{InputEvent, Rect, ScrollPlan, Scrolling, TouchPhase};
 use slint::platform::software_renderer::{
-    LineBufferProvider, MinimalSoftwareWindow, PremultipliedRgbaColor, RepaintBufferType,
-    TargetPixel,
+    LineBufferProvider, MinimalSoftwareWindow, PremultipliedRgbaColor, RenderingRotation,
+    RepaintBufferType, TargetPixel,
 };
 use slint::platform::{Key, Platform, PointerEventButton, WindowAdapter, WindowEvent};
 use slint::{LogicalPosition, PhysicalSize, PlatformError, SharedString};
@@ -167,6 +167,28 @@ pub struct Ticker<'a> {
 }
 
 /// The read side of an app's `Scroll` global for [`App::draw_scrolled`]: px moved and the list's place.
+/// A rectangle of the app's surface that any thread of the app may write ([`App::raw_target`]): the surface chunk is
+/// mapped for the whole process.
+pub struct RawTarget {
+    px: *mut u32,
+    len: usize,
+    /// The row pitch, in pixels.
+    pub stride: usize,
+    /// The rectangle, clipped to the surface: what [`App::damage`] shows.
+    pub rect: Rect,
+}
+
+// SAFETY: the pointer is into a process-wide chunk that outlives the session; one owner writes it at a time (`&mut`).
+unsafe impl Send for RawTarget {}
+
+impl RawTarget {
+    /// The surface from the rectangle's top-left corner: `rect.h` rows of `rect.w` pixels, `stride` apart (XRGB8888).
+    pub fn pixels(&mut self) -> &mut [u32] {
+        // SAFETY: `px..px + len` lies inside the surface chunk (App::raw_target); `&mut self` keeps it unaliased.
+        unsafe { core::slice::from_raw_parts_mut(self.px, self.len) }
+    }
+}
+
 type Scrolled = dyn Fn() -> ((i32, i32), Rect);
 
 /// A connected app: its session with `NeoUi`, its surface and the Slint window that draws into it.
@@ -188,6 +210,10 @@ pub struct App {
     scrolled: RefCell<Option<Box<Scrolled>>>,
     /// The keyboard's edit bar sent Control: the next key is a chord.
     ctrl: Cell<bool>,
+    /// Landscape (FA12's video): Slint draws the window turned a quarter clockwise into the surface.
+    rotation: Cell<RenderingRotation>,
+    /// The next frame draws the whole surface (the rotation changed).
+    full: Cell<bool>,
 }
 
 impl App {
@@ -231,6 +257,8 @@ impl App {
             scrolling: RefCell::default(),
             scrolled: RefCell::default(),
             ctrl: Cell::new(false),
+            rotation: Cell::new(RenderingRotation::NoRotation),
+            full: Cell::new(false),
         })
     }
 
@@ -344,10 +372,120 @@ impl App {
     fn resize(&self, h: usize) {
         if h != self.height.get() {
             self.height.set(h);
-            self.window
-                .set_size(PhysicalSize::new(self.width as u32, h as u32));
-            self.window.request_redraw();
+            self.size_window();
         }
+    }
+
+    /// The window's size: the surface's, or its turn while landscape.
+    fn size_window(&self) {
+        let (w, h) = (self.width as u32, self.height.get() as u32);
+        let size = if self.landscape() {
+            PhysicalSize::new(h, w)
+        } else {
+            PhysicalSize::new(w, h)
+        };
+        self.window.set_size(size);
+        self.window.request_redraw();
+    }
+
+    fn landscape(&self) -> bool {
+        self.rotation.get() != RenderingRotation::NoRotation
+    }
+
+    /// Landscape on or off (FA12's video): the whole UI is drawn turned a quarter clockwise, its window as wide as
+    /// the surface is high; touches are turned back. Use with a full-screen [`Page`] so the shell's bars are gone.
+    pub fn set_landscape(&self, on: bool) {
+        let r = if on {
+            RenderingRotation::Rotate90
+        } else {
+            RenderingRotation::NoRotation
+        };
+        if r != self.rotation.get() {
+            self.rotation.set(r);
+            self.full.set(true);
+            self.size_window();
+        }
+    }
+
+    /// A rectangle of the (possibly turned) window on the surface.
+    pub fn to_surface(&self, r: Rect) -> Rect {
+        if !self.landscape() {
+            return r;
+        }
+        // Rotate90: window (x, y) is surface (H - 1 - y, x), H the window's height (the surface's width)
+        let h = self.width as i32;
+        Rect::new(h - r.y - r.h as i32, r.x, r.h, r.w)
+    }
+
+    /// Pixels the app writes itself into the surface (a video frame), shown with one DAMAGE: `draw` gets the
+    /// surface from `r`'s top-left corner and the row pitch, and writes `r.w` x `r.h` pixels (XRGB8888, `0x00RRGGBB`).
+    /// `r` is in surface pixels ([`App::to_surface`] when landscape). Slint must draw nothing there meanwhile, or the
+    /// two overwrite each other: keep its items over that rectangle unchanged (or hidden) while frames come.
+    /// Like [`App::draw`], it returns once the server has shown the frame.
+    pub fn raw(&self, r: Rect, draw: impl FnOnce(&mut [u32], usize)) -> Result<(), i32> {
+        let Some(mut t) = self.raw_target(r) else {
+            return Ok(());
+        };
+        let (stride, rect) = (t.stride, t.rect);
+        draw(t.pixels(), stride);
+        self.damage(rect)
+    }
+
+    /// [`App::raw`] in two halves, so another thread of the app can write the pixels (FA12: the video converter) while
+    /// this one keeps the session: the surface inside `r` (clipped to it), `None` while the app was never visible or
+    /// `r` misses the surface. The same rule holds: Slint draws nothing over the rectangle while the target is in use.
+    /// Nothing shows until [`App::damage`] for [`RawTarget::rect`].
+    pub fn raw_target(&self, r: Rect) -> Option<RawTarget> {
+        let base = self.surface()?;
+        let (w, h) = (self.width as i32, self.height.get() as i32);
+        let x0 = r.x.clamp(0, w);
+        let y0 = r.y.clamp(0, h);
+        let x1 = (r.x + r.w as i32).clamp(x0, w);
+        let y1 = (r.y + r.h as i32).clamp(y0, h);
+        if x1 == x0 || y1 == y0 {
+            return None;
+        }
+        let stride = self.width;
+        let start = y0 as usize * stride + x0 as usize;
+        let end = (y1 as usize - 1) * stride + x1 as usize;
+        Some(RawTarget {
+            // SAFETY: the server made the chunk `width * screen height * 4` bytes, committed, and never frees it while
+            // the session lives; `start..end` lies inside it (clipped above).
+            px: unsafe { base.add(start).cast::<u32>() },
+            len: end - start,
+            stride,
+            rect: Rect::new(x0, y0, (x1 - x0) as u32, (y1 - y0) as u32),
+        })
+    }
+
+    /// Shows a rectangle of the surface the app wrote itself ([`App::raw_target`]); returns once the server has
+    /// copied it, so the pixels may be written again from then on.
+    pub fn damage(&self, r: Rect) -> Result<(), i32> {
+        let mut args = TIpcArgs::new();
+        args.int(0, r.x)
+            .int(1, r.y)
+            .int(2, r.w as i32)
+            .int(3, r.h as i32);
+        self.server.send_receive(proto::DAMAGE, &args).map(|_| ())
+    }
+
+    /// The surface's first pixel (`width * screen height` of them): asked of the server on the first frame shown;
+    /// `None` while the app was never visible.
+    fn surface(&self) -> Option<*mut Xrgb8888> {
+        if self.surface.borrow().is_none() {
+            if !self.visible.get() {
+                return None;
+            }
+            let h = self
+                .server
+                .send_receive(proto::SURFACE, &TIpcArgs::new())
+                .ok()?;
+            *self.surface.borrow_mut() = Some(Chunk::from_handle(h));
+        }
+        self.surface
+            .borrow()
+            .as_ref()
+            .map(|c| c.base().cast::<Xrgb8888>())
     }
 
     /// The window's height in pixels: the body, or the screen while a full-screen page shows.
@@ -365,31 +503,33 @@ impl App {
     pub fn draw_scrolled(&self, scrolled: impl FnOnce() -> ((i32, i32), Rect)) -> Result<(), i32> {
         slint::platform::update_timers_and_animations();
         let (moved, list) = scrolled();
-        if self.surface.borrow().is_none() {
-            if !self.visible.get() {
-                return Ok(()); // nothing to show yet: what changed stays dirty until the app is shown
-            }
-            let h = self.server.send_receive(proto::SURFACE, &TIpcArgs::new())?;
-            *self.surface.borrow_mut() = Some(Chunk::from_handle(h));
-        }
-        let base = self
-            .surface
-            .borrow()
-            .as_ref()
-            .map_or(core::ptr::null_mut(), |c| c.base().cast::<Xrgb8888>());
+        // nothing to show yet: what changed stays dirty until the app is shown
+        let Some(base) = self.surface() else {
+            return Ok(());
+        };
         // SAFETY: the server made the chunk `width * screen height * 4` bytes, committed, and never frees it while
         // the session lives; only this thread writes it and the server only reads it; the slice lives for this call.
         let px = unsafe { core::slice::from_raw_parts_mut(base, self.width * self.height.get()) };
         let screen = Rect::new(0, 0, self.width as u32, self.height.get() as u32);
-        let plan = self
+        // turned, list scrolls aren't shifted rows of the surface: drawn as usual
+        let (moved, list) = if self.landscape() {
+            ((0, 0), Rect::default())
+        } else {
+            (moved, list)
+        };
+        let mut plan = self
             .scrolling
             .borrow_mut()
             .plan(px, self.width, screen, moved, list);
+        if self.full.replace(false) {
+            plan = ScrollPlan::Full;
+        }
         if plan == ScrollPlan::Full {
             self.window.request_redraw();
         }
         let mut result = Ok(());
         self.window.draw_if_needed(|r| {
+            r.set_rendering_rotation(self.rotation.get());
             let region = match plan {
                 ScrollPlan::Shift { list, draw } => r.render_by_line(ScrollLines {
                     px,
@@ -776,6 +916,12 @@ impl App {
     /// A touch from the server (surface coordinates) as Slint pointer events; keys are the app's business.
     pub fn dispatch_touch(&self, input: InputEvent) {
         if let InputEvent::Touch { x, y, phase, .. } = input {
+            // landscape: surface (x, y) is window (y, W - 1 - x), W the surface's width
+            let (x, y) = if self.landscape() {
+                (y, self.width as i32 - 1 - x)
+            } else {
+                (x, y)
+            };
             let position = LogicalPosition::new(x as f32, y as f32);
             let button = PointerEventButton::Left;
             let event = match phase {
