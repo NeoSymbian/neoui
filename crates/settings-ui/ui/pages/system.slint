@@ -369,6 +369,17 @@ export component DeveloperPage inherits NeoList {
             clicked => { SetState.act("devtools", "tools"); }
         }
 
+        // D2: Dev tools can change it too; the app reads it back on open and resume
+        if SetState.console-ok: ListRow {
+            value-bright: true;
+            title: "Console overlay";
+            checked: SetState.found == "dev.console";
+            subtitle: "The kernel console over the screen";
+            has-switch: true;
+            switch-on <=> SetState.console-shown;
+            switch-toggled(v) => { SetState.act("console", v ? "1" : "0"); }
+        }
+
         SectionHeader { text: "Input"; }
         ListRow {
             value-bright: true;
@@ -393,6 +404,29 @@ export component DeveloperPage inherits NeoList {
             divider: false;
             clicked => { SetState.act("app-open", "devtools"); }
         }
+    }
+}
+
+// one of About's 36 dp key/value rows
+component AboutRow inherits HorizontalLayout {
+    in property <string> key;
+    in property <string> value;
+    height: 36 * Theme.dp;
+    padding-left: 4 * Theme.dp;
+    padding-right: 4 * Theme.dp;
+    Text {
+        text: root.key;
+        color: Theme.text-dim;
+        font-size: Theme.font-body;
+        vertical-alignment: center;
+        horizontal-stretch: 1;
+    }
+
+    Text {
+        text: root.value;
+        color: Theme.text;
+        font-size: Theme.font-body;
+        vertical-alignment: center;
     }
 }
 
@@ -433,24 +467,14 @@ export component AboutPage inherits NeoList {
 
             // set2-about: 36 dp key/value rows, the build lines close together
             VerticalLayout {
-                for kv in [["Model", "Pixel 3a XL (bonito)"], ["Kernel", "EKA2, AArch64 ILP32"], ["User side", "Symbian^3 (2010), ARMv8-A"], ["UI", "neoui (Rust + Slint)"]]: HorizontalLayout {
-                    height: 36 * Theme.dp;
-                    padding-left: 4 * Theme.dp;
-                    padding-right: 4 * Theme.dp;
-                    Text {
-                        text: kv[0];
-                        color: Theme.text-dim;
-                        font-size: Theme.font-body;
-                        vertical-alignment: center;
-                        horizontal-stretch: 1;
-                    }
-
-                    Text {
-                        text: kv[1];
-                        color: Theme.text;
-                        font-size: Theme.font-body;
-                        vertical-alignment: center;
-                    }
+                for kv in [["Model", "Pixel 3a XL (bonito)"], ["Kernel", "EKA2, AArch64 ILP32"], ["User side", "Symbian^3 (2010), ARMv8-A"], ["UI", "neoui (Rust + Slint)"]]: AboutRow {
+                    key: kv[0];
+                    value: kv[1];
+                }
+                // D2: the booted A/B slot, only when the kernel read it
+                if SetState.slot != "": AboutRow {
+                    key: "Active slot";
+                    value: SetState.slot;
                 }
             }
 

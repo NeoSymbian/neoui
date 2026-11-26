@@ -555,12 +555,19 @@ mod tests {
         assert_eq!(get("Security").unwrap(), "WPA2-Personal (AES-CCMP)");
         assert_eq!(get("Access point").unwrap(), "01:02:03:04:05:06");
         assert_eq!(get("Received").unwrap(), "100 frames (40 ARP/IP)");
+        // D2: the phone's own MAC (lower-case, zero-padded) and the association ID, from the same record
+        assert_eq!(get("Phone MAC").unwrap(), "02:4e:00:00:00:01");
+        assert_eq!(get("Association ID").unwrap(), "7");
         assert_eq!(get("Band").unwrap(), "5 GHz · channel 44");
         // joining: shown, not connected, no bars; an unknown network is named by its BSSID
         let v = LinkView::new(&Link::decode(&link(1, 0, 0, &[])).unwrap(), None);
         assert!(v.shown && !v.connected);
         assert_eq!((v.bars, v.name.as_str()), (-1, "01:02:03:04:05:06"));
         assert_eq!(v.subtitle, "Connecting…");
+        // the association's own rows wait for the association; the addresses are known before
+        let has = |k: &str| v.details.iter().any(|(a, _)| a == k);
+        assert!(has("Access point") && has("Phone MAC"));
+        assert!(!has("Association ID") && !has("Received"));
         assert!(!LinkView::new(&Link::default(), None).shown);
     }
 

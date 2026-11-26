@@ -455,6 +455,14 @@ pub const ROWS: &[Row] = &[
         &["console", "logs"],
     ),
     row("dev.save", Developer, Developer, "Save logs", &["logs"]),
+    // D2
+    row(
+        "dev.console",
+        Developer,
+        Developer,
+        "Console overlay",
+        &["kernel console", "overlay", "screen log"],
+    ),
     row(
         "dev.touches",
         Developer,

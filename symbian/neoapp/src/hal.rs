@@ -120,6 +120,12 @@ pub fn slot_info() -> Result<String, i32> {
     read_text(func::SLOT_INFO)
 }
 
+/// The booted A/B slot ('a' or 'b') from [`slot_info`]; `None` without slots, on a GPT read error or a HAL error.
+#[must_use]
+pub fn current_slot() -> Option<char> {
+    neoui_proto::settings_app::slot::current(&slot_info().ok()?)
+}
+
 /// "kernel <commit>[+dirty] <UTC time> <board>".
 ///
 /// # Errors

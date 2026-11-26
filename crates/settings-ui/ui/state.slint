@@ -175,6 +175,12 @@ export global SetState {
     in property <[string]> build;
     in property <string> sound-feedback;
 
+    // D2: the kernel console drawn over the screen (HAL 0x4e03, as read back; hidden when the kernel can't say), and
+    // the booted A/B slot ("a", "b"; "" = no reading, no row)
+    in property <bool> console-ok;
+    in-out property <bool> console-shown;
+    in property <string> slot;
+
     // the open sheet: "" none, "timeout", "date-format", "zone", "pad-strength", "pad-default", "pad-dirs", "pad-a",
     // "pad-b", "wifi-join", "wifi-details"; the network the join sheet is for, and what is typed in it
     in-out property <string> sheet;
@@ -196,6 +202,7 @@ export global SetState {
     // - "sound" + "test" | "record"; "keyboard" + an index to turn on or off ("+0"/"-0"); "keyboard-next";
     // - "city-query" + the search text; "pad-reset" (QUERY first); "clip-clear";
     // - "app" + "phone" | "messages" | "devtools" (another app's settings); "devtools" + a page ("console", "tools");
+    // - "console" + "1" | "0" (the kernel console over the screen, D2);
     // - "search" + the query; "root-grid" + "1" | "0".
     callback act(string, string);
 }

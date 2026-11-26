@@ -11,6 +11,7 @@
 
 extern crate alloc;
 
+mod d2;
 mod modem;
 mod sound;
 mod storage;
@@ -343,6 +344,9 @@ impl Ctx {
         let page = self.page.get();
         let ms = e32::time::millis();
         let every = |k: u32| n.is_multiple_of(k);
+        if now {
+            d2::refresh(&ui, page);
+        }
         match page {
             Page::Wifi => {
                 self.wifi.borrow_mut().poll(&self.app, &ui, ms, true, false);
@@ -840,6 +844,7 @@ impl Ctx {
             }
             // an app itself (Apps page)
             "storage-recount" => self.storage.recount(),
+            "console" => d2::set_console(&ui, value == "1"),
             // a ROM app's page (SE4a)
             "app-detail" => {
                 if let Some(a) = neoui_proto::apps::find(value) {

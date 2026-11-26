@@ -308,11 +308,21 @@ fn fill(sh: &Shot) {
             ("Signal", "Excellent (-46 dBm)"),
             ("Band", "5 GHz · channel 44"),
             ("Security", "WPA2-Personal (AES-CCMP)"),
+            // D2: WIFID's link record
+            ("Access point", "02:00:00:00:00:01"),
+            ("Phone MAC", "02:4e:c1:47:28:a4"),
+            ("Association ID", "1"),
+            ("Received", "120 frames (96 ARP/IP)"),
             ("IP address", "192.168.3.57/24"),
+            ("Gateway", "192.168.3.1"),
+            ("DNS", "192.168.3.1"),
             ("Internet", "Connected"),
         ]),
         sign_in: false,
     });
+    // D2: the kernel console (off) and the booted slot
+    s.set_console_ok(true);
+    s.set_slot("a".into());
 }
 
 /// The app row with this key (the catalogue's order changes as apps come and go).
@@ -627,8 +637,18 @@ fn every_page() {
     page(&sh, 11, "Developer options");
     sh.draw();
     sh.take_acts();
-    sh.tap(321.0, 402.0);
+    sh.tap(321.0, 474.0);
     assert_eq!(sh.take_acts(), acts(&[("developer.show_touches", "1")]));
+    // D2: the console switch asks the app (which writes the HAL and reads it back)
+    sh.tap(321.0, 368.0);
+    assert_eq!(sh.take_acts(), acts(&[("console", "1")]));
+    // a kernel that can't say: no row, Show touches back in its place
+    s.set_console_ok(false);
+    s.set_console_shown(false);
+    sh.draw();
+    sh.tap(321.0, 402.0);
+    assert_eq!(sh.take_acts(), acts(&[("developer.show_touches", "0")]));
+    s.set_console_ok(true);
     page(&sh, 10, "Language & keyboard");
     sh.draw();
     sh.take_acts();

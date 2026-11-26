@@ -191,6 +191,7 @@ pub fn live_value(s: &SetState<'_>, id: &str) -> String {
         }),
         "dev.usb" => on(s.get_usb_debugging()),
         "dev.touches" => on(s.get_show_touches()),
+        "dev.console" => on(s.get_console_shown()),
         "kb.vibrate" => on(s.get_key_vibrate()),
         "battery.saver" => on(s.get_battery_saver()),
         "battery.percent" => on(s.get_show_percent()),
