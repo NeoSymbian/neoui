@@ -7,6 +7,7 @@ pub mod choices;
 pub mod info;
 pub mod jobs;
 pub mod page;
+pub mod privacy;
 pub mod rows;
 pub mod slot;
 pub mod storage;

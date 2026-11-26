@@ -17,8 +17,10 @@ import { ConnectivityPage, MobilePage, BluetoothPage } from "pages/connections.s
 import { DisplayPage, NavigationPage, SoundsPage, BatteryPage, BatteryUsagePage, ProfilePage, ProfileSheet, ProfileNameSheet, RingtonePage } from "pages/device.slint";
 import { DateTimePage, TimeZonePage, KeyboardPage, PrivacyPage } from "pages/personal.slint";
 import { AppsPage, AppSheet, AppDetailPage, ResetPage, OldAppsPage, DeveloperPage, AboutPage } from "pages/system.slint";
+import { WallpaperPage, FontSizePage } from "pages/appearance.slint";
+import { Wallpapers } from "@neoui/components/wallpaper.slint";
 
-export { Theme, Scroll, KeyboardFocus, Kit, SetState, WifiNet, WifiLink, WifiDetail, SearchHit, DriveRow, PartRow }
+export { Theme, Scroll, KeyboardFocus, Kit, SetState, WifiNet, WifiLink, WifiDetail, SearchHit, DriveRow, PartRow, Wallpapers }
 
 export component SettingsApp inherits Window {
     default-font-family: "NeoSans";
@@ -93,6 +95,8 @@ export component SettingsApp inherits Window {
         if SetState.page == 24: TimeZonePage {
             kb: root.kb;
         }
+        if SetState.page == 25: WallpaperPage { }
+        if SetState.page == 26: FontSizePage { }
     }
 
     // the sheets: full size, last, so they cover the header and the page

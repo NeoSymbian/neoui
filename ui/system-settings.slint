@@ -8,6 +8,8 @@
 // row in the binding table. The defaults below only matter before the server's first update (and in host tests);
 // they mirror the registry's.
 
+import { Theme } from "theme.slint";
+
 export global SystemSettings {
     in-out property <bool> wifi: true;
     in-out property <bool> bluetooth: false;
@@ -58,6 +60,10 @@ export global SystemSettings {
     in-out property <bool> legacy-pad-lefty: false;
     in-out property <bool> legacy-pad-console: false;
     in-out property <int> legacy-pad-epoch: 0;
+    // (D7) home's wallpaper, a colour's name (display.wallpaper; components/wallpaper.slint), and the text size
+    // (display.font_size 0..3): the shell's own text follows it through Theme.font-size
+    in-out property <string> wallpaper: "night";
+    in-out property <int> font-size: 1;
 
     // A setting changed in the UI (its registry key); the server reads the property and stores it.
     callback edited(string);
@@ -99,4 +105,9 @@ export global SystemSettings {
     changed legacy-pad-lefty => { edited("legacy.pad.lefty"); }
     changed legacy-pad-console => { edited("legacy.pad.console"); }
     changed legacy-pad-epoch => { edited("legacy.pad.epoch"); }
+    changed wallpaper => { edited("display.wallpaper"); }
+    changed font-size => {
+        Theme.font-size = font-size;
+        edited("display.font_size");
+    }
 }

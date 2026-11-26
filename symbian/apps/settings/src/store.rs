@@ -45,6 +45,9 @@ pub fn fill_fixed(ui: &SettingsApp) {
     s.set_pad_a_names(strings(choices::PAD_A));
     s.set_pad_b_names(strings(choices::PAD_B));
     s.set_build(strings(neoapp::build::lines()));
+    // D7: Font size's choices
+    s.set_font_sizes(strings(choices::FONT_SIZES.iter().map(|(n, _)| *n)));
+    s.set_font_scales(strings(choices::FONT_SIZES.iter().map(|(_, p)| *p)));
 }
 
 /// The shell's value, else the registry's default (a shell older than the key refuses it).
@@ -209,6 +212,8 @@ pub fn load(app: &App, ui: &SettingsApp) {
     s.set_pad_b(get(app, keys::LEGACY_PAD_B));
     s.set_pad_lefty(get(app, keys::LEGACY_PAD_LEFTY));
     s.set_pad_console(get(app, keys::LEGACY_PAD_CONSOLE));
+    crate::appearance::load(app, ui);
+    s.set_clip_notice(get(app, keys::PRIVACY_CLIP_NOTICE));
 }
 
 /// A page's write: `value` as the pages send it ("1"/"0", a number, text), typed by the key's registry row. A refused

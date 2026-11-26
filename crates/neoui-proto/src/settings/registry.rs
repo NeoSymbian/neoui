@@ -244,6 +244,17 @@ registry! {
     /// Seconds without a touch before the screen turns off; 0 = never.
     DISPLAY_TIMEOUT: i32 = "display.timeout", default DefaultValue::Int(60),
         limit Limit::Range { min: 0, max: 600 }, owner Owner::Shell;
+    /// (D7) Home's wallpaper: a colour of `settings_app::choices::WALLPAPERS` by its name ("night", "black", …);
+    /// the shell draws an unknown name as Night.
+    DISPLAY_WALLPAPER: alloc::string::String = "display.wallpaper", default DefaultValue::Str("night"),
+        limit Limit::MaxLen(16), owner Owner::Shell;
+    /// (D7) The text size: 0 Small 87.5 %, 1 Medium, 2 Large 112.5 %, 3 Largest 125 % (`choices::FONT_SIZES`); the
+    /// kit's text tokens scale with it (ui/theme.slint), the status bar, clock digits and key faces don't.
+    DISPLAY_FONT_SIZE: i32 = "display.font_size", default DefaultValue::Int(1),
+        limit Limit::Range { min: 0, max: 3 }, owner Owner::Shell;
+    /// (D8) A toast names the app each time one reads the clipboard (`ipc::CLIP_GET`, nonempty).
+    PRIVACY_CLIP_NOTICE: bool = "privacy.clip_notice", default DefaultValue::Bool(true), limit Limit::None,
+        owner Owner::Shell;
     /// Settings -> Battery (SE3a): the status bar's battery shows its percent (off: the level's fill only).
     BATTERY_SHOW_PERCENT: bool = "battery.show_percent", default DefaultValue::Bool(true), limit Limit::None,
         owner Owner::Shell;

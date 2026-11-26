@@ -38,6 +38,7 @@ pub const VALUELESS: &[&str] = &[
     "about.reset",
     "reset.network",
     "reset.settings",
+    "privacy.diagnostics",
 ];
 
 /// A search result's title split around the first case-insensitive match of the query, for the highlight
@@ -203,6 +204,11 @@ pub fn live_value(s: &SetState<'_>, id: &str) -> String {
         "pads.b" => pick(s.get_pad_b_names(), s.get_pad_b()),
         "pads.lefty" => on(s.get_pad_lefty()),
         "pads.console" => on(s.get_pad_console()),
+        // D7, D8
+        "display.font_size" => pick(s.get_font_sizes(), s.get_font_size()),
+        "display.wallpaper" => s.get_wallpaper_name().into(),
+        "kb.display_language" => "English".into(),
+        "privacy.clip_notice" => on(s.get_clip_notice()),
         _ => String::new(),
     }
 }

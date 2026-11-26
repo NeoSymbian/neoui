@@ -59,6 +59,18 @@ export component DisplayPage inherits NeoList {
             switch-toggled(v) => { SetState.act("display.dark", v ? "1" : "0"); }
         }
 
+        // D7: the text size's page
+        ListRow {
+            value-bright: true;
+            title: "Font size";
+            checked: SetState.found == "display.font_size";
+            value: SetState.font-sizes.length > SetState.font-size ? SetState.font-sizes[SetState.font-size] : "";
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/text_size.svg");
+            chevron: true;
+            clicked => { SetState.act("open", "26"); }
+        }
+
         ListRow {
 
             value-bright: true;
@@ -68,8 +80,20 @@ export component DisplayPage inherits NeoList {
             has-icon: true;
             icon: @image-url("@neoui/icons/sys/stopwatch.svg");
             chevron: true;
-            divider: false;
             clicked => { SetState.sheet = "timeout"; }
+        }
+
+        // D7: home's wallpaper (the colours' page)
+        ListRow {
+            value-bright: true;
+            title: "Wallpaper";
+            checked: SetState.found == "display.wallpaper";
+            value: SetState.wallpaper-name;
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/image.svg");
+            chevron: true;
+            divider: false;
+            clicked => { SetState.act("open", "25"); }
         }
     }
 }

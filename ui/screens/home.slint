@@ -10,6 +10,7 @@ import { Avatar } from "../components/lists.slint";
 import { Glyph } from "../components/frame.slint";
 import { Badge } from "../components/footer.slint";
 import { Menu } from "../components/menu.slint";
+import { Wallpapers } from "../components/wallpaper.slint";
 import { Apps } from "menu.slint";
 
 component DockIcon inherits Rectangle {
@@ -173,7 +174,8 @@ export component HomeScreen inherits Rectangle {
     property <length> dock-h: landscape ? 64 * Theme.dp : Theme.dock-h;
     // the pages' band (the UI server slides it itself, smooth-ui S2c)
     out property <length> strip-h: self.height - dock-h - 24 * Theme.dp;
-    background: @linear-gradient(180deg, #0c1424 0%, #05070b 55%, #000000 100%);
+    // display.wallpaper (D7): a colour from Settings → Display → Wallpaper
+    background: Wallpapers.fill(SystemSettings.wallpaper);
     clip: true;
 
     // Pages, side by side. A sideways swipe moves between them; taps still reach the widgets and cards on the
@@ -452,7 +454,7 @@ export component HomeScreen inherits Rectangle {
         }
     }
 
-    // shortcut: no home editor or wallpaper picker yet; the two open their Settings pages
+    // shortcut: no home editor yet, so Edit home opens Home & navigation; Wallpaper opens Settings' picker (D7)
     home-menu := Menu {
         x: 0;
         y: 0;
@@ -461,7 +463,7 @@ export component HomeScreen inherits Rectangle {
         at-y: min(root.height - 2 * Theme.header-h - 16 * Theme.dp - root.dock-h, hold.pressed-y);
         items: ["Edit home", "Wallpaper"];
         picked(i) => {
-            root.open-view("settings", i == 0 ? "navigation" : "display");
+            root.open-view("settings", i == 0 ? "navigation" : "wallpaper");
         }
     }
 }

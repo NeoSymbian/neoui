@@ -11,6 +11,7 @@
 
 extern crate alloc;
 
+mod appearance;
 mod d2;
 mod modem;
 mod sound;

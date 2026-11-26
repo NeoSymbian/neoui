@@ -507,6 +507,43 @@ pub const ROWS: &[Row] = &[
         "Reset settings",
         &["defaults", "factory"],
     ),
+    // D7: Display's text size and wallpaper (their pages), Language & keyboard's display language
+    row(
+        "display.font_size",
+        Display,
+        FontSize,
+        "Font size",
+        &["text size", "bigger text", "smaller text", "zoom"],
+    ),
+    row(
+        "display.wallpaper",
+        Display,
+        Wallpaper,
+        "Wallpaper",
+        &["background", "home screen", "colour", "color"],
+    ),
+    row(
+        "kb.display_language",
+        Keyboard,
+        Keyboard,
+        "Display language",
+        &["language", "translation", "menus"],
+    ),
+    // D8: the clipboard toast, the local diagnostics (Dev tools' log)
+    row(
+        "privacy.clip_notice",
+        Privacy,
+        Privacy,
+        "Show when an app reads it",
+        &["clipboard", "paste", "toast"],
+    ),
+    row(
+        "privacy.diagnostics",
+        Privacy,
+        Privacy,
+        "Usage & diagnostics",
+        &["log", "telemetry", "crash"],
+    ),
 ];
 
 /// The rows matching `query` (case-insensitive, anywhere in the title, an alias, the page's title or the row's live

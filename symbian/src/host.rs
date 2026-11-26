@@ -32,6 +32,7 @@ use neoui_proto::recents::Recents;
 use neoui_proto::settings::value::ENCODED_MAX;
 use neoui_proto::settings::{Caller, KEY_MAX, Value, access, kerr, keys};
 use neoui_proto::settings_app::info::{OldApps, encode_running};
+use neoui_proto::settings_app::privacy::ClipNotices;
 use neoui_proto::sound_profile;
 use neoui_proto::{InputEvent, TouchPhase};
 use neoui_render::{LauncherEntry, Nav, Note, Notification, Page, Query};
@@ -57,6 +58,8 @@ pub const PAGES: &[(&str, &str, u16)] = &[
     ("settings", "wifi", 1),
     ("settings", "display", 5),
     ("settings", "navigation", 6),
+    // D7: home's long-press Wallpaper opens the picker itself
+    ("settings", "wallpaper", 25),
 ];
 
 /// Apps started (hidden) at boot, in this order, and never closed for room: DTSRV (a service, 1.19) rings alarms
@@ -69,6 +72,8 @@ const PORTAL_PAGE: u16 = 5;
 /// The id of the shell's "Sign in to Wi-Fi network" entry (posted as the browser's; the browser numbers its own
 /// download entries from 1)
 const PORTAL_ENTRY: u32 = 0xE000_0001;
+/// The clipboard toast's key in `Host::note`: the shell's own, so no app's NOTE or action touches it (D8).
+const CLIP_NOTE: &str = "clipboard";
 /// A resident app that ended is started again after this long.
 const RESIDENT_RETRY_MS: u64 = 10_000;
 
@@ -269,6 +274,8 @@ pub struct Host {
     clip_kind: i32,
     /// 1.20: revisions, Settings' subscriptions, owner work and thumbnails ([`settings_info`]).
     shelf: settings_info::Shelf,
+    /// (D8) The "Files read the clipboard" toasts (`privacy.clip_notice`): readers cooling down and waiting.
+    clip_notices: ClipNotices,
 }
 
 impl Host {
@@ -313,6 +320,7 @@ impl Host {
             clipboard: String::new(),
             clip_kind: proto::CLIP_TEXT,
             shelf: settings_info::Shelf::boot(),
+            clip_notices: ClipNotices::default(),
         }
     }
 
@@ -362,6 +370,24 @@ impl Host {
             .is_some_and(|(_, _, until)| now_ms >= *until)
         {
             self.note = None;
+            self.notes_changed = true;
+        }
+        self.clip_notice(now_ms);
+    }
+
+    /// (D8) The next waiting clipboard toast, once no toast shows (it never covers another app's toast and its
+    /// action); with the notice turned off, the waiting ones go.
+    fn clip_notice(&mut self, now_ms: u64) {
+        if !self.settings.get(keys::PRIVACY_CLIP_NOTICE).unwrap_or(true) {
+            self.clip_notices.clear();
+        } else if self.note.is_none()
+            && let Some(text) = self.clip_notices.take_next()
+        {
+            let note = Note {
+                text,
+                action: String::new(),
+            };
+            self.note = Some((CLIP_NOTE, note, now_ms + proto::NOTE_MS));
             self.notes_changed = true;
         }
     }
@@ -1426,6 +1452,15 @@ impl Service for Host {
             }),
             proto::CLIP_GET => {
                 let r = clip_get(&self.clipboard, &m);
+                // (D8) a read that gave the app something: the toast names it by its process's secure ID
+                if r.is_ok_and(|n| n > 0)
+                    && self.settings.get(keys::PRIVACY_CLIP_NOTICE).unwrap_or(true)
+                {
+                    let now = e32::time::millis();
+                    if self.clip_notices.read(m.client_sid(), now) {
+                        self.clip_notice(now);
+                    }
+                }
                 m.complete(r.unwrap_or_else(|e| e));
             }
             proto::POWER => {

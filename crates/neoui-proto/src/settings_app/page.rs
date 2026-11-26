@@ -34,9 +34,13 @@ pub enum Page {
     Ringtone = 23,
     /// The city whose time the phone keeps (set2-timezone), when the time zone isn't automatic.
     TimeZone = 24,
+    /// (D7) Home's wallpaper (set2-wallpaper): the colours.
+    Wallpaper = 25,
+    /// (D7) The text size (set2-fontsize): a preview and the four sizes.
+    FontSize = 26,
 }
 
-pub const ALL: [Page; 25] = [
+pub const ALL: [Page; 27] = [
     Page::Root,
     Page::Wifi,
     Page::Mobile,
@@ -62,6 +66,8 @@ pub const ALL: [Page; 25] = [
     Page::Reset,
     Page::Ringtone,
     Page::TimeZone,
+    Page::Wallpaper,
+    Page::FontSize,
 ];
 
 impl Page {
@@ -104,6 +110,8 @@ impl Page {
             Page::Reset => "reset",
             Page::Ringtone => "ringtone",
             Page::TimeZone => "timezone",
+            Page::Wallpaper => "wallpaper",
+            Page::FontSize => "fontsize",
         }
     }
 
@@ -164,6 +172,8 @@ impl Page {
             Page::Reset => "Reset",
             Page::Ringtone => "Ringtone",
             Page::TimeZone => "Time zone",
+            Page::Wallpaper => "Wallpaper",
+            Page::FontSize => "Font size",
         }
     }
 
@@ -181,6 +191,7 @@ impl Page {
             Page::Reset => Some(Page::About),
             Page::Ringtone => Some(Page::Profile),
             Page::TimeZone => Some(Page::DateTime),
+            Page::Wallpaper | Page::FontSize => Some(Page::Display),
             _ => Some(Page::Root),
         }
     }
@@ -197,7 +208,9 @@ mod tests {
             assert_eq!(Page::from_id(p.id()), Some(*p));
             assert_eq!(Page::from_name(p.name()), Some(*p));
         }
-        assert_eq!(Page::from_id(25), None);
+        assert_eq!(Page::from_id(27), None);
+        assert_eq!(Page::opened(0, "wallpaper"), Page::Wallpaper);
+        assert_eq!(Page::FontSize.parent(), Some(Page::Display));
         assert_eq!(Page::Ringtone.parent(), Some(Page::Profile));
         assert_eq!(Page::TimeZone.parent(), Some(Page::DateTime));
         assert_eq!(Page::opened(23, "").from_outside(), Page::Sounds);

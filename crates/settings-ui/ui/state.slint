@@ -183,6 +183,17 @@ export global SetState {
     in-out property <bool> console-shown;
     in property <string> slot;
 
+    // D7: home's wallpaper (display.wallpaper, a colour's name: @neoui components/wallpaper.slint) and the text size
+    // (display.font_size 0..3) with the sizes' names and scales (choices::FONT_SIZES)
+    in property <string> wallpaper: "night";
+    in property <string> wallpaper-name: "Night";
+    in property <int> font-size: 1;
+    in property <[string]> font-sizes;
+    in property <[string]> font-scales;
+
+    // D8: the clipboard toast (privacy.clip_notice)
+    in-out property <bool> clip-notice: true;
+
     // the open sheet: "" none, "timeout", "date-format", "zone", "pad-strength", "pad-default", "pad-dirs", "pad-a",
     // "pad-b", "wifi-join", "wifi-details"; the network the join sheet is for, and what is typed in it
     in-out property <string> sheet;

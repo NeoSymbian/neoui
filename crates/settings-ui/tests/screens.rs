@@ -334,6 +334,13 @@ fn fill(sh: &Shot) {
     // D2: the kernel console (off) and the booted slot
     s.set_console_ok(true);
     s.set_slot("a".into());
+    // D7: Medium text, the Night wallpaper; D8: the clipboard toast on
+    s.set_font_sizes(strings(&["Small", "Medium", "Large", "Largest"]));
+    s.set_font_scales(strings(&["87.5 %", "100 %", "112.5 %", "125 %"]));
+    s.set_font_size(1);
+    s.set_wallpaper("night".into());
+    s.set_wallpaper_name("Night".into());
+    s.set_clip_notice(true);
 }
 
 /// The app row with this key (the catalogue's order changes as apps come and go).
@@ -665,6 +672,43 @@ fn every_page() {
     sh.take_acts();
     sh.tap(321.0, 496.0);
     assert_eq!(sh.take_acts(), acts(&[("keyboard.vibrate", "1")]));
+
+    // D7: Wallpaper and Font size (the board shows Large chosen, the page itself drawn at Medium)
+    page(&sh, 25, "Wallpaper");
+    sh.shoot("set2-wallpaper");
+    sh.take_acts();
+    sh.tap(150.0, 160.0); // Black, the second swatch
+    assert_eq!(sh.take_acts(), acts(&[("display.wallpaper", "black")]));
+    s.set_font_size(2);
+    page(&sh, 26, "Font size");
+    sh.shoot("set2-fontsize");
+    sh.take_acts();
+    sh.tap(100.0, 506.0); // Largest, the last of the sizes
+    assert_eq!(sh.take_acts(), acts(&[("display.font_size", "3")]));
+    // the whole app at Largest: rows keep their height, the text grows
+    sh.ui.global::<settings_ui::Theme>().set_font_size(3);
+    s.set_font_size(3);
+    page(&sh, 5, "Display");
+    sh.shoot("set2-display-largest");
+    sh.ui.global::<settings_ui::Theme>().set_font_size(1);
+    s.set_font_size(1);
+    // the Display rows open their pages
+    sh.draw();
+    sh.take_acts();
+    sh.tap(100.0, 238.0);
+    sh.tap(100.0, 350.0);
+    assert_eq!(sh.take_acts(), acts(&[("open", "26"), ("open", "25")]));
+    // D8: the clipboard toast's switch, and the local log in Dev tools
+    page(&sh, 15, "Privacy");
+    sh.draw();
+    sh.take_acts();
+    sh.tap(321.0, 186.0);
+    sh.tap(100.0, 292.0);
+    assert_eq!(
+        sh.take_acts(),
+        acts(&[("privacy.clip_notice", "0"), ("devtools", "console")])
+    );
+    s.set_clip_notice(true);
 
     // the pad sheets (pad-settings: the B button the board leaves out, D5)
     page(&sh, 14, "Old apps");

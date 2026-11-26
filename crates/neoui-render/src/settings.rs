@@ -210,6 +210,19 @@ pub(crate) static BINDINGS: &[Binding] = &[
             _ => false,
         },
     },
+    // D7: home's wallpaper (a colour's name) and the text size
+    Binding {
+        key: key_name::<alloc::string::String>(keys::DISPLAY_WALLPAPER),
+        read: |g| Value::Str(g.get_wallpaper().as_str().into()),
+        write: |g, v| match v {
+            Value::Str(name) => {
+                g.set_wallpaper(name.as_str().into());
+                true
+            }
+            _ => false,
+        },
+    },
+    int_binding!(keys::DISPLAY_FONT_SIZE, get_font_size, set_font_size),
 ];
 
 /// The binding for `key`, if the shell shows it.
