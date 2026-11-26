@@ -84,6 +84,8 @@ export component WifiPage inherits NeoList {
             has-icon: true;
             icon: @image-url("@neoui/icons/sys/wifi.svg");
             icon-tint: net.bars >= 3 ? Theme.text : net.bars >= 1 ? Theme.text-secondary : Theme.text-dim;
+            has-badge: net.secured;
+            badge: @image-url("@neoui/icons/sys/lock.svg");
             clicked => {
                 SetState.wifi-current = net;
                 SetState.password = "";
@@ -97,8 +99,17 @@ export component WifiPage inherits NeoList {
         if SetState.wifi && SetState.wifi-hidden > 0: Note {
             text: SetState.wifi-hidden == 1 ? "1 hidden network nearby" : SetState.wifi-hidden + " hidden networks nearby";
         }
-        if !SetState.wifi: Note {
-            text: "Turn on Wi-Fi to see available networks.";
+        if !SetState.wifi: HorizontalLayout {
+            padding-left: Theme.margin + 4 * Theme.dp;
+            padding-right: Theme.margin + 4 * Theme.dp;
+            min-height: 64 * Theme.dp;
+            Text {
+                text: "Turn on Wi-Fi to see available networks.";
+                color: Theme.text-secondary;
+                font-size: Theme.font-body;
+                vertical-alignment: center;
+                wrap: word-wrap;
+            }
         }
         if SetState.wifi-saved-ok: ListRow {
             value-bright: true;
@@ -124,6 +135,9 @@ export component WifiSavedPage inherits NeoList {
             subtitle: net.detail;
             has-icon: true;
             icon: @image-url("@neoui/icons/sys/wifi.svg");
+            icon-tint: net.connected ? Theme.accent : Theme.text-secondary;
+            has-badge: true;
+            badge: @image-url("@neoui/icons/sys/lock.svg");
             pill: "Forget";
             pill-clicked => { SetState.act("wifi-saved-forget", i); }
             clicked => { SetState.act("wifi-saved-forget", i); }
@@ -137,6 +151,7 @@ export component WifiSavedPage inherits NeoList {
 // A tapped network: what the phone knows about it, the password, Connect (set2-wifi-join).
 export component WifiJoinSheet inherits Sheet {
     title-start: true;
+    title-large: true;
     // the shell's keyboard over the surface's bottom: the card grows by it, so its field and buttons stay above
     in property <length> kb;
     property <bool> tried;
@@ -199,6 +214,7 @@ export component WifiJoinSheet inherits Sheet {
 // The current network's details (set2-wifi-details): what the link is, Forget, Sign in, Disconnect.
 export component WifiDetailsSheet inherits Sheet {
     title-start: true;
+    title-large: true;
     title: SetState.wifi-link.name;
     VerticalLayout {
         padding-left: 20 * Theme.dp;
@@ -218,7 +234,7 @@ export component WifiDetailsSheet inherits Sheet {
                 horizontal-stretch: 1;
                 color: Theme.text;
                 font-size: Theme.font-label;
-                wrap: word-wrap;
+                overflow: elide;
             }
         }
 

@@ -39,8 +39,9 @@ export component TextField inherits Rectangle {
     in-out property <string> text;
     in property <string> placeholder;
     in property <int> keys: 1;
-    // masked as dots
+    // masked as dots; an eye at the end shows or hides the password
     in property <bool> password;
+    property <bool> shown;
     in property <bool> autofocus;
     // a validation message under the field (the border turns red); the layout leaves 22 dp under the field for it
     in property <string> error;
@@ -58,28 +59,65 @@ export component TextField inherits Rectangle {
         font-size: Theme.font-label;
     }
 
+    property <length> room: self.width - 28 * Theme.dp - (root.password ? 34 * Theme.dp : 0);
     if root.text == "": Text {
         x: 14 * Theme.dp;
+        width: root.room;
         text: root.placeholder;
         color: Theme.text-dim;
         font-size: Theme.font-body;
         vertical-alignment: center;
+        overflow: elide;
     }
-    input := FieldInput {
+    // a text wider than the field slides left while it's edited, so its end (and the caret there) stays in view
+    Rectangle {
         x: 14 * Theme.dp;
-        width: parent.width - 28 * Theme.dp;
+        width: root.room;
         height: parent.height;
-        text <=> root.text;
-        keys: root.keys;
-        input-type: root.password ? InputType.password : root.keys == 3 ? InputType.number : InputType.text;
-        accepted => {
-            root.accepted(self.text);
+        clip: true;
+        input := FieldInput {
+            x: self.has-focus ? min(0px, parent.width - self.width) : 0px;
+            width: max(parent.width, self.preferred-width + 2 * Theme.dp);
+            height: parent.height;
+            text <=> root.text;
+            keys: root.keys;
+            input-type: root.password && !root.shown ? InputType.password : root.keys == 3 ? InputType.number : InputType.text;
+            accepted => {
+                root.accepted(self.text);
+            }
+        }
+    }
+    changed text => {
+        // a cleared field (a PIN that was refused) starts hidden again
+        if root.text == "" {
+            root.shown = false;
         }
     }
     // the keyboard was put away while this field kept the focus: a tap on it brings the keyboard back
     if KeyboardFocus.dismissed && input.has-focus: TouchArea {
         clicked => {
             input.reopen();
+        }
+    }
+
+    // show / hide the password; the field keeps its focus and the keyboard stays
+    if root.password: Rectangle {
+        x: parent.width - self.width - 4 * Theme.dp;
+        width: 40 * Theme.dp;
+        height: parent.height;
+        accessible-role: button;
+        accessible-label: root.shown ? "Hide password" : "Show password";
+        accessible-action-default => { root.shown = !root.shown; }
+        Image {
+            width: 22 * Theme.dp;
+            height: self.width;
+            source: root.shown ? @image-url("../icons/sys/eye_off.svg") : @image-url("../icons/sys/eye.svg");
+            colorize: Theme.text-secondary;
+        }
+        TouchArea {
+            clicked => {
+                root.shown = !root.shown;
+            }
         }
     }
 

@@ -271,6 +271,7 @@ impl Wifi {
                 .map(|(n, d)| WifiSaved {
                     name: n.as_str().into(),
                     detail: (*d).into(),
+                    connected: d.starts_with("Connected"),
                 })
                 .collect();
             s.set_wifi_saved(ModelRc::new(VecModel::from(model)));

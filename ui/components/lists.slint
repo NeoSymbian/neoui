@@ -106,6 +106,9 @@ export component ListRow inherits Rectangle {
     in property <bool> value-bright;
     // the icon on a coloured rounded tile (Settings' drive and page rows); transparent = a bare glyph
     in property <color> tile: transparent;
+    // a small mark on the icon's lower right (a lock on a secured network)
+    in property <image> badge;
+    in property <bool> has-badge;
     // a small pill button at the right (Forget); its tap is pill-clicked, not clicked
     in property <string> pill;
     in property <bool> pill-danger: true;
@@ -176,9 +179,26 @@ export component ListRow inherits Rectangle {
         }
         if has-icon && root.tile == transparent: VerticalLayout {
             alignment: center;
-            Glyph {
-                source: icon;
-                colorize: icon-tint;
+            Rectangle {
+                width: Theme.row-icon;
+                height: self.width;
+                Glyph {
+                    source: icon;
+                    colorize: icon-tint;
+                }
+                if root.has-badge: Rectangle {
+                    x: parent.width - self.width + 4 * Theme.dp;
+                    y: parent.height - self.height + 3 * Theme.dp;
+                    width: 13 * Theme.dp;
+                    height: self.width;
+                    border-radius: self.width / 2;
+                    background: Theme.bg;
+                    Glyph {
+                        source: root.badge;
+                        size: 11 * Theme.dp;
+                        colorize: root.icon-tint;
+                    }
+                }
             }
         }
         if has-icon && root.tile != transparent: VerticalLayout {
@@ -192,6 +212,19 @@ export component ListRow inherits Rectangle {
                     source: icon;
                     size: 18 * Theme.dp;
                     colorize: white;
+                }
+                if root.has-badge: Rectangle {
+                    x: parent.width - self.width + 4 * Theme.dp;
+                    y: parent.height - self.height + 3 * Theme.dp;
+                    width: 13 * Theme.dp;
+                    height: self.width;
+                    border-radius: self.width / 2;
+                    background: Theme.bg;
+                    Glyph {
+                        source: root.badge;
+                        size: 11 * Theme.dp;
+                        colorize: root.icon-tint;
+                    }
                 }
             }
         }

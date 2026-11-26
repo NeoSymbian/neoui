@@ -12,6 +12,8 @@ export component Sheet inherits Rectangle {
     in property <string> title;
     // the title at the start, under the handle (Settings' sheets), not centred
     in property <bool> title-start;
+    // a larger title (19 dp) for a sheet about one thing (a network), with title-start
+    in property <bool> title-large;
     in-out property <bool> open;
     callback dismissed();
     visible: self.opacity > 0.01;
@@ -86,11 +88,11 @@ export component Sheet inherits Rectangle {
                 padding-left: 20 * Theme.dp;
                 padding-right: 20 * Theme.dp;
                 padding-top: 10 * Theme.dp;
-                padding-bottom: 4 * Theme.dp;
+                padding-bottom: root.title-large ? 14 * Theme.dp : 4 * Theme.dp;
                 Text {
                     text: root.title;
                     color: Theme.text;
-                    font-size: Theme.font-body;
+                    font-size: root.title-large ? Theme.font-title : Theme.font-body;
                     font-weight: 600;
                     wrap: word-wrap;
                 }
