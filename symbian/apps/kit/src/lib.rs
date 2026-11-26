@@ -54,7 +54,7 @@ fn samples() -> alloc::vec::Vec<neoapp::Notification> {
         initials: initials.into(),
         tint,
         actions: vec!["Reply".into(), "Mark read".into()],
-        action_kinds: vec![action::REPLY],
+        action_kinds: vec![action::REPLY, action::IN_PLACE],
         ..card(id, who, text)
     };
     vec![

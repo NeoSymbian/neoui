@@ -521,7 +521,10 @@ export component Shell inherits Window {
         notes-cleared => { root.notes-cleared(); }
         group-toggled(i) => { root.group-toggled(i); }
         note-opened(i, a) => {
-            root.shade-open = false;
+            // an in-place action (kind 3, Mark read) leaves the shade open: its app isn't coming to the front
+            if !(a > 0 && root.notes[i].kinds.length >= a && root.notes[i].kinds[a - 1] == 3) {
+                root.shade-open = false;
+            }
             root.note-opened(i, a);
         }
         app-unread: root.app-unread;

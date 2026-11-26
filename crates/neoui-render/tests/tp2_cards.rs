@@ -39,7 +39,7 @@ fn cards_by_section_group_swipe_and_clear() {
         initials: initials.into(),
         tint,
         actions: vec!["Reply".into(), "Mark read".into(), "Call".into()],
-        action_kinds: vec![action::REPLY],
+        action_kinds: vec![action::REPLY, action::IN_PLACE],
         ..card(id, who, text)
     };
     let ava = chat(
@@ -83,6 +83,12 @@ fn cards_by_section_group_swipe_and_clear() {
     common::frame(&mut r, &mut buf, w, "first stop");
     common::write_png("tp2-shade-first-pixel.png", &buf, w, h);
     let first = buf.clone();
+
+    // Mark read (in place) on the Messages card: reported, and the shade stays open
+    common::tap(&mut r, (MARK_READ_X * d) as i32, (MARK_READ_Y * d) as i32);
+    common::frame(&mut r, &mut buf, w, "mark read");
+    assert_eq!(r.take_notes_opened(), vec![("messages".to_string(), 2, 2)]);
+    assert!(r.overlay_open(), "an in-place action leaves the shade open");
 
     // See all (right of NOTIFICATIONS)
     common::tap(&mut r, (w as f32 - 40.0 * d) as i32, (SEE_ALL_Y * d) as i32);
@@ -181,6 +187,8 @@ fn cards_by_section_group_swipe_and_clear() {
 
 // where things are in dp (measured from the snapshots): See all's row, the group's ▾, a Live and an Alerts card, Clear all
 const SEE_ALL_Y: f32 = 226.0;
+const MARK_READ_X: f32 = 115.0;
+const MARK_READ_Y: f32 = 505.0;
 const GROUP_Y: f32 = 291.0;
 const LIVE_Y: f32 = 162.0;
 const ALERT_Y: f32 = 515.0;

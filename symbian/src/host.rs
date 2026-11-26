@@ -27,7 +27,7 @@ use neoui_proto::Rect;
 // the screen keys that are separate processes, their EXEs and command lines: shared with Settings' Apps page
 use neoui_proto::apps::{self, APPS, LEGACY};
 use neoui_proto::ipc::{self as proto, AppEvent};
-use neoui_proto::page::{NOTE_MAX, NOTIFICATION_MAX, PAGE_MAX, QUERY_MAX};
+use neoui_proto::page::{NOTE_MAX, NOTIFICATION_MAX, PAGE_MAX, QUERY_MAX, action};
 use neoui_proto::recents::Recents;
 use neoui_proto::settings::value::ENCODED_MAX;
 use neoui_proto::settings::{Caller, KEY_MAX, Value, access, kerr, keys};
@@ -415,6 +415,26 @@ impl Host {
             key,
             action
         );
+        // an in-place action (Mark read): the app hears it where it is, started hidden if it isn't running
+        let in_place = action > 0 && n.action_kind(usize::from(action - 1)) == action::IN_PLACE;
+        if in_place {
+            let running = self
+                .apps
+                .find(|a| a.key == key && a.quit_at.is_none())
+                .is_some();
+            // `connect` binds the newest app without a session: no hidden start while another app connects
+            let connecting = self
+                .apps
+                .find(|a| a.session.is_none() && a.quit_at.is_none())
+                .is_some();
+            if !running && !connecting {
+                self.launch(key);
+            }
+            if !self.post(key, AppEvent::Notified { id: n.id, action }) {
+                dprintln!("neoui: in-place action for {} not delivered", key);
+            }
+            return;
+        }
         // the shell's own entry for a Wi-Fi login: the browser opens on the login page
         if key == BROWSER && n.id == PORTAL_ENTRY {
             self.open_portal(now_ms);

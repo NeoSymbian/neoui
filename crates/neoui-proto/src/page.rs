@@ -82,13 +82,15 @@ pub mod style {
     pub(crate) const LAST: u8 = CHRONO;
 }
 
-/// The kind of a [`Notification`] action (1.18): a plain button, the inline Reply (TP4; drawn as the main one), or
-/// one that destroys something (red).
+/// The kind of a [`Notification`] action (1.18): a plain button, the inline Reply (TP4; drawn as the main one), one
+/// that destroys something (red), or one done in place (Mark read): the app hears it without coming to the front,
+/// started hidden if it isn't running.
 pub mod action {
     pub const BUTTON: u8 = 0;
     pub const REPLY: u8 = 1;
     pub const DANGER: u8 = 2;
-    pub(crate) const LAST: u8 = DANGER;
+    pub const IN_PLACE: u8 = 3;
+    pub(crate) const LAST: u8 = IN_PLACE;
 }
 
 /// `progress` written as this when there is none but 1.18's fields follow.
