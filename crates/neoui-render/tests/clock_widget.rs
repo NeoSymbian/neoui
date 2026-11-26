@@ -3,11 +3,11 @@
 #[allow(dead_code)] // helpers shared with the snapshot tests
 mod common;
 
-use neoui_proto::clock::alarm::{Alarms, Weekdays};
 use neoui_proto::clock::face::{Face, LocalTime};
 
 /// The home clock widget is live: `set_now` changes what it draws (time, date, next alarm), and a tap on it opens
-/// the Clock app.
+/// the Clock app. The agenda card shows `dtsrv.next`'s event (`set_next_event`), "No events" without one, and a tap
+/// on it opens Calendar.
 #[test]
 fn clock_widget() {
     let (w, h) = (540, 1080);
@@ -21,15 +21,17 @@ fn clock_widget() {
         hour: 20,
         minute: 30,
     };
-    let mut alarms = Alarms::new();
-    alarms.add(7, 15, Weekdays::WORKDAYS, "").expect("room");
-
-    r.set_now(&Face::new(&mon, true, &alarms));
+    // what dtsrv.next gives for a 07:15 workdays alarm (`clock::next::Next::alarm_text`)
+    r.set_now(&Face::new(&mon, true, "Tomorrow 07:15"));
     common::frame(&mut r, &mut buf, w, "home");
     let before = buf.clone();
     common::write_png("home-clock-widget-540x1080.png", &buf, w, h);
 
-    r.set_now(&Face::new(&LocalTime { minute: 31, ..mon }, false, &alarms));
+    r.set_now(&Face::new(
+        &LocalTime { minute: 31, ..mon },
+        false,
+        "Tomorrow 7:15 AM",
+    ));
     common::frame(&mut r, &mut buf, w, "home");
     common::write_png("home-clock-widget-12h-540x1080.png", &buf, w, h);
     let d = common::dp(w, h);
@@ -51,4 +53,26 @@ fn clock_widget() {
     common::settle();
     r.render(&mut buf, w as usize);
     assert_eq!(r.screen(), "clock");
+
+    r.show("home", "");
+    common::frame(&mut r, &mut buf, w, "home");
+    let none = buf.clone();
+    r.set_next_event("Today 21:00", "Kernel review", 0x8656e8);
+    common::frame(&mut r, &mut buf, w, "home");
+    common::write_png("home-agenda-540x1080.png", &buf, w, h);
+    let rows: Vec<usize> = (0..h as usize)
+        .filter(|y| {
+            let row = y * w as usize..(y + 1) * w as usize;
+            buf[row.clone()] != none[row]
+        })
+        .collect();
+    let (first, last) = (rows[0], rows[rows.len() - 1]);
+    assert!(
+        first as f32 > 25.0 * d + 180.0 * d && last - first > (20.0 * d) as usize,
+        "the agenda card did not draw the event: rows {first}..{last}"
+    );
+    common::tap(&mut r, (40.0 * d) as i32, ((first + last) / 2) as i32);
+    common::settle();
+    r.render(&mut buf, w as usize);
+    assert_eq!(r.screen(), "calendar");
 }

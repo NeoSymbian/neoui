@@ -21,6 +21,7 @@ pub const VALUELESS: &[&str] = &[
     "root.about",
     "privacy.clip",
     "apps.clock",
+    "apps.calendar",
     "apps.terminal",
     "apps.files",
     "apps.devtools",

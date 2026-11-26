@@ -3,6 +3,7 @@
 import { Theme } from "../theme.slint";
 import { SystemSettings } from "../system-settings.slint";
 import { Data } from "../data.slint";
+import { Now } from "../now.slint";
 import { Card, PageDots } from "../components/controls.slint";
 import { ClockWidget } from "../components/widgets.slint";
 import { Avatar } from "../components/lists.slint";
@@ -50,44 +51,60 @@ component DockIcon inherits Rectangle {
     }
 }
 
+// The next event (dtsrv.next, DT7): its time, title and calendar colour, or "No events". Tap: Calendar.
 component AgendaCard inherits Card {
-    height: 30 * Theme.dp + 2 * 46 * Theme.dp + 2 * Theme.card-pad;
+    callback clicked;
+    height: 30 * Theme.dp + 46 * Theme.dp + 2 * Theme.card-pad;
     VerticalLayout {
         padding: Theme.card-pad;
         spacing: 8 * Theme.dp;
         Text {
-            text: "TODAY";
+            text: "NEXT";
             color: Theme.text-dim;
             font-size: Theme.font-status * 0.9;
             font-weight: 600;
             letter-spacing: 0.06 * Theme.font-status;
         }
 
-        for e[i] in Data.events: HorizontalLayout {
-            visible: i >= 1 && i <= 2;
-            height: i >= 1 && i <= 2 ? 40 * Theme.dp : 0;
+        if Now.next-event-title == "": Text {
+            height: 40 * Theme.dp;
+            text: "No events";
+            color: Theme.text-dim;
+            font-size: Theme.font-body;
+            vertical-alignment: center;
+        }
+
+        if Now.next-event-title != "": HorizontalLayout {
+            height: 40 * Theme.dp;
             spacing: 12 * Theme.dp;
             Rectangle {
                 width: 4 * Theme.dp;
                 border-radius: 2 * Theme.dp;
-                background: e.tint;
+                background: Now.next-event-colour;
             }
 
             VerticalLayout {
                 alignment: center;
                 Text {
-                    text: e.title;
+                    text: Now.next-event-title;
                     color: Theme.text;
                     font-size: Theme.font-body;
                     font-weight: 600;
+                    overflow: elide;
                 }
 
                 Text {
-                    text: e.time + " · " + e.place;
+                    text: Now.next-event-time;
                     color: Theme.text-dim;
                     font-size: Theme.font-label;
                 }
             }
+        }
+    }
+
+    TouchArea {
+        clicked => {
+            root.clicked();
         }
     }
 }
@@ -225,7 +242,9 @@ export component HomeScreen inherits Rectangle {
 
                     Rectangle { height: 4 * Theme.dp; }
 
-                    AgendaCard { }
+                    AgendaCard {
+                        clicked => { root.open-app("calendar"); }
+                    }
 
                     Card {
                         height: 96 * Theme.dp;
@@ -278,7 +297,9 @@ export component HomeScreen inherits Rectangle {
                         alignment: center;
                         spacing: 10 * Theme.dp;
                         horizontal-stretch: 1;
-                        AgendaCard { }
+                        AgendaCard {
+                        clicked => { root.open-app("calendar"); }
+                    }
                     }
                 }
             }

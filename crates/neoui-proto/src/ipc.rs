@@ -4,9 +4,9 @@
 //! width), draws, reports [`DAMAGE`], and keeps one [`NEXT_EVENT`] request outstanding for input and quit.
 //!
 //! Since 1.1 an app also reads, writes and watches settings ([`SETTING_GET`], [`SETTING_SET`], [`SETTING_WATCH`],
-//! [`AppEvent::Settings`]; the model is [`crate::settings`]). Since 1.2 the server wakes the Clock app for a due
-//! alarm ([`AppEvent::Alarm`]). Since 1.3 the system keyboard has modes ([`KEYBOARD_TEXT`], [`KEYBOARD_TERMINAL`]) and
-//! a height that changes with its language and settings ([`AppEvent::Keyboard`]). Since 1.4 an app sets its title
+//! [`AppEvent::Settings`]; the model is [`crate::settings`]). From 1.2 to 1.18 the server woke the Clock app for
+//! a due alarm (`AppEvent::Alarm`, retired in 1.19: DTSRV opens Clock on its ring page). Since 1.3 the system
+//! keyboard has modes ([`KEYBOARD_TEXT`], [`KEYBOARD_TERMINAL`]) and a height that changes with its language and settings ([`AppEvent::Keyboard`]). Since 1.4 an app sets its title
 //! ([`TITLE`]) and the toolbar's middle button ([`TOOLBAR`], [`AppEvent::Action`]), and the server opens one of its
 //! pages ([`AppEvent::Page`]): the Phone app is one process behind the Phone and Contacts icons. Since 1.5 the
 //! keyboard has number and phone pads ([`KEYBOARD_NUMBER`], [`KEYBOARD_PHONE`]), and the user can put it away with
@@ -43,13 +43,16 @@
 //! Since 1.18 (top-panel TP2a) a card carries flags, a style, a group, its time and action kinds
 //! ([`crate::page::Notification`]), an app clears all of its cards ([`NOTIFY_CLEAR`]) and hears when the user swipes
 //! or clears one ([`AppEvent::NotifyGone`]); NOTIFY, NOTIFY_CLEAR and BADGE come only from the app's own EXE.
+//! Since 1.19 (datetime DT1) an app can be a service (`crate::apps::App::service`: DTSRV, no screen): the shell starts
+//! it at boot and keeps it alive, its cards' taps and actions all arrive in place, and its [`OPEN`] carries flags
+//! ([`OPEN_WAKE`]: the screen comes on for a ringing alarm).
 
 use crate::{InputEvent, TouchPhase};
 
 /// The server's name (no leading `!`: that needs ProtServ).
 pub const SERVER: &str = "NeoUi";
 /// Protocol version (major, minor); a connect with another major is refused.
-pub const VERSION: (u8, u8) = (1, 18);
+pub const VERSION: (u8, u8) = (1, 19);
 
 /// `[Des8 out: GEOMETRY_LEN bytes = width, height, dp × 256 (u32 LE)]` → 0. `dp` is the shell's design unit in
 /// pixels (`min(screen w, h) / 360`), so apps size things like the shell does.
@@ -113,6 +116,7 @@ pub const ENTRY_ICON_MAX: u16 = 128;
 pub const ENTRIES_MAX: usize = 64;
 /// `[front: 0 | 1]` → 0: 1 shows the calling app's surface on its screen and sends [`AppEvent::Visible`] with `true`;
 /// 0 shows the shell's screen for its key again and sends `Visible(false)`. The app keeps running.
+/// `KErrNotSupported` from a service (1.19).
 pub const FRONT: i32 = 14;
 /// `[Des8 page]` ([`crate::page::Page`], at most [`crate::page::PAGE_MAX`] bytes) → the height in pixels of the
 /// app's area: the body, or the whole screen for a full-screen page. A malformed page gives `KErrArgument`.
@@ -149,7 +153,14 @@ pub const CLIP_MAX: usize = 2048;
 /// Back at the target's root ([`crate::page::Page::can_back`] false) or [`DONE`] returns there. `KErrNotFound` for
 /// an unknown key, `KErrArgument` for a malformed one or an arg over the limit. An app may open itself (a footer tab
 /// for the app already in front is a no-op on the user's side).
+///
+/// 1.19: slot 3 holds flags ([`OPEN_WAKE`]; 0 when an older client leaves it out). They count only from a service,
+/// whose opened app's Back at its root goes home (a service has no screen to return to). A service can't be opened
+/// (`KErrNotSupported`).
 pub const OPEN: i32 = 22;
+/// [`OPEN`] flag (1.19, services only): turn the screen on, as an incoming call does, and close the shade (a ringing
+/// alarm).
+pub const OPEN_WAKE: i32 = 1;
 pub const ARG_MAX: usize = 256;
 /// `[Des8 out arg]` → the length of the arg the last [`OPEN`] of this app carried (0: none), written into argument
 /// 0; reading takes it. `KErrOverflow` when it doesn't fit.
@@ -278,8 +289,6 @@ pub enum AppEvent {
     /// A watched setting changed ([`SETTING_WATCH`]); the app reads the keys it cares about again. `seq` is the
     /// store's change counter, for logs.
     Settings { seq: u32 },
-    /// Alarm `id` (`crate::clock::alarm`) is due: the server brought the Clock app to the front to ring it.
-    Alarm { id: u16 },
     /// The open system keyboard now covers `h` pixels of the surface's bottom (its language or settings changed).
     Keyboard { h: u32 },
     /// Show page `page` (the app's own numbering): the user opened it from an icon, a notification or Settings.
@@ -316,7 +325,7 @@ const KIND_OPTIONS: u32 = 5;
 // 11 (1.7's Action), 13 (Primary), 14 (Cancel) and 15 (Option) are retired
 const KIND_VISIBLE: u32 = 6;
 const KIND_SETTINGS: u32 = 7;
-const KIND_ALARM: u32 = 8;
+// 8 (1.2's Alarm) is retired in 1.19: DTSRV opens Clock on its ring page instead
 const KIND_KEYBOARD: u32 = 9;
 const KIND_PAGE: u32 = 10;
 const KIND_ENTRY: u32 = 12;
@@ -348,7 +357,6 @@ impl AppEvent {
             AppEvent::Options => [KIND_OPTIONS, 0, 0, 0],
             AppEvent::Visible(v) => [KIND_VISIBLE, v as u32, 0, 0],
             AppEvent::Settings { seq } => [KIND_SETTINGS, seq, 0, 0],
-            AppEvent::Alarm { id } => [KIND_ALARM, u32::from(id), 0, 0],
             AppEvent::Keyboard { h } => [KIND_KEYBOARD, h, 0, 0],
             AppEvent::Page { page } => [KIND_PAGE, u32::from(page), 0, 0],
             AppEvent::Entry { id } => [KIND_ENTRY, id, 0, 0],
@@ -391,9 +399,6 @@ impl AppEvent {
             KIND_OPTIONS => AppEvent::Options,
             KIND_VISIBLE => AppEvent::Visible(w(1) != 0),
             KIND_SETTINGS => AppEvent::Settings { seq: w(1) },
-            KIND_ALARM => AppEvent::Alarm {
-                id: u16::try_from(w(1)).ok()?,
-            },
             KIND_KEYBOARD => AppEvent::Keyboard { h: w(1) },
             KIND_PAGE => AppEvent::Page {
                 page: u16::try_from(w(1)).ok()?,
@@ -446,8 +451,6 @@ mod tests {
             AppEvent::Visible(false),
             AppEvent::Settings { seq: 0 },
             AppEvent::Settings { seq: u32::MAX },
-            AppEvent::Alarm { id: 0 },
-            AppEvent::Alarm { id: u16::MAX },
             AppEvent::Keyboard { h: 0 },
             AppEvent::Keyboard { h: 369 },
             AppEvent::Page { page: 1 },
@@ -486,8 +489,8 @@ mod tests {
         let mut big_answer = AppEvent::Answer { i: 0 }.encode();
         big_answer[6] = 1;
         assert_eq!(AppEvent::decode(&big_answer), None);
-        // 1.7's retired kinds are not events any more
-        for kind in [11u8, 13, 14, 15] {
+        // 1.7's retired kinds and 1.19's Alarm (8) are not events any more
+        for kind in [8u8, 11, 13, 14, 15] {
             let mut b = [0; EVENT_LEN];
             b[0] = kind;
             assert_eq!(AppEvent::decode(&b), None, "kind {kind}");

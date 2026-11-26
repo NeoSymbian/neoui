@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! The shell's side of the Clock: the time shown (the status bar and the home clock widget), alarms that ring
-//! whether or not the Clock app runs, and the clock kept across restarts ([`clock::Keeper`]).
+//! The shell's side of the Clock: the time shown (the status bar, the home clock widget and agenda card), the zone's
+//! summer time, and the clock kept across restarts ([`clock::Keeper`]).
 //!
-//! Alarms live in the Clock app's setting `clock.alarms`; the server reads them straight from its settings store
-//! with the same model the app uses (`neoui_proto::clock::alarm`), so "due" means the same to both.
+//! Alarms and events are DTSRV's (NeoSymbian/datetime, protocol 1.19): it rings them and publishes the next of each
+//! as the setting `dtsrv.next` (`neoui_proto::clock::next`), which the widget and the card show.
 
 use crate::clock;
 use crate::host::Host;
@@ -11,16 +11,14 @@ use crate::settings::Settings;
 use alloc::format;
 use alloc::string::String;
 use e32::{dprintln, time};
-use neoui_proto::clock::alarm::{Alarms, Minute};
+use neoui_proto::clock::alarm::Minute;
 use neoui_proto::clock::face::{Face, LocalTime};
+use neoui_proto::clock::next::Next;
 use neoui_proto::clock::{datetime, world};
-use neoui_proto::ipc::{self as proto, AppEvent};
+use neoui_proto::ipc as proto;
 use neoui_proto::settings::keys;
 use neoui_proto::settings_app::info::Clock;
 use neoui_render::Renderer;
-
-/// The Clock app's screen key (`neoui_proto::apps`).
-const CLOCK_APP: &str = "clock";
 
 pub struct Clockwork {
     keeper: clock::Keeper,
@@ -29,14 +27,10 @@ pub struct Clockwork {
     shown: Option<(LocalTime, u32, bool, u32, i32)>,
     /// Where the time last came from (Settings -> Date & time), set by the network clock.
     pub synced: String,
-    /// The last minute alarms were checked for.
-    checked: Option<Minute>,
     /// The last minute the zone's rule was applied.
     zone_checked: Option<Minute>,
     /// The zone (`time.zone`) as last seen.
     zone_seen: String,
-    /// An alarm that rang, until the Clock app has been told.
-    ringing: Option<u16>,
 }
 
 impl Clockwork {
@@ -46,14 +40,12 @@ impl Clockwork {
             keeper: clock::Keeper::boot(),
             shown: None,
             synced: String::from("Not yet"),
-            checked: None,
             zone_checked: None,
             zone_seen: String::new(),
-            ringing: None,
         }
     }
 
-    /// Once per frame: keeps the clock, updates the face, rings due alarms.
+    /// Once per frame: keeps the clock and updates the face.
     pub fn frame(&mut self, ui: &mut Renderer, host: &mut Host, now_ms: u64) {
         self.keeper.tick(now_ms);
         let auto_zone = host.settings.get(keys::TIME_AUTO_ZONE).unwrap_or(true);
@@ -81,12 +73,13 @@ impl Clockwork {
         let seconds = host.settings.get(keys::STATUS_SECONDS).unwrap_or(false);
         let second = if seconds { second } else { 0 };
         let seq = host.settings.store().seq();
-        let offset = time::utc_now().1;
+        let (utc, offset) = time::utc_now();
         let shown = (now, second, h24, seq, offset);
         if self.shown != Some(shown) {
             let minute_changed = self.shown.is_none_or(|s| s.0 != now || s.2 != h24);
             self.shown = Some(shown);
-            let face = Face::new(&now, h24, &alarms(&host.settings));
+            let next = next(&host.settings);
+            let face = Face::new(&now, h24, &next.alarm_text(utc, offset, h24));
             let mut text = status_text(&face);
             if seconds {
                 text = format!("{text}:{second:02}");
@@ -96,32 +89,18 @@ impl Clockwork {
             }
             ui.set_clock(&text);
             ui.set_now(&face);
+            ui.set_next_event(
+                &next.event_text(utc, offset, h24),
+                &next.event_title,
+                next.event_colour,
+            );
             let format = host.settings.get(keys::TIME_DATE_FORMAT).unwrap_or(0);
             ui.set_date_text(&datetime::date_text(&now, format));
             let info = Clock {
-                zone: datetime::zone_text(time::utc_now().0, offset, &zone),
+                zone: datetime::zone_text(utc, offset, &zone),
                 synced: self.synced.clone(),
             };
             host.set_info(proto::INFO_CLOCK, info.encode());
-        }
-        if self.checked != Some(minute) {
-            self.checked = Some(minute);
-            if let Some(alarm) = alarms(&host.settings).due(minute).next() {
-                dprintln!(
-                    "neoui: alarm {:02}:{:02} due (id {})",
-                    alarm.hour,
-                    alarm.minute,
-                    alarm.id
-                );
-                self.ringing = Some(alarm.id);
-                ui.show(CLOCK_APP, "");
-            }
-        }
-        // the app is started when the shell shows its screen (next frame); the event waits in its queue
-        if let Some(id) = self.ringing
-            && host.post(CLOCK_APP, AppEvent::Alarm { id })
-        {
-            self.ringing = None;
         }
     }
 
@@ -152,17 +131,14 @@ fn local_now() -> (LocalTime, u32) {
     (local, t.second)
 }
 
-/// The alarms as saved by the Clock app; none when unset or unreadable (logged).
-fn alarms(settings: &Settings) -> Alarms {
-    let Ok(blob) = settings.get(keys::CLOCK_ALARMS) else {
-        return Alarms::new();
+/// What DTSRV says comes next; nothing when it hasn't published (not running) or the blob is unreadable (logged).
+fn next(settings: &Settings) -> Next {
+    let Ok(blob) = settings.get(keys::DTSRV_NEXT) else {
+        return Next::default();
     };
-    if blob.0.is_empty() {
-        return Alarms::new();
-    }
-    Alarms::decode(&blob.0).unwrap_or_else(|e| {
-        dprintln!("neoui: clock.alarms unreadable ({}): no alarms", e);
-        Alarms::new()
+    Next::decode(&blob.0).unwrap_or_else(|e| {
+        dprintln!("neoui: dtsrv.next unreadable ({}): nothing next", e);
+        Next::default()
     })
 }
 

@@ -173,7 +173,7 @@ pub fn status_apps(keys: &[&str], missed: bool, unread: bool) -> (Vec<i32>, i32)
         "messages" => 1,
         "phone" => 2,
         "files" => 3,
-        "clock" => 4,
+        "clock" | "dtsrv" => 4,
         _ => 0,
     };
     let shown = apps
@@ -956,6 +956,15 @@ impl Renderer {
         now.set_am_pm(face.am_pm.into());
         now.set_date(face.date.as_str().into());
         now.set_next_alarm(face.next_alarm.as_str().into());
+    }
+
+    /// The home agenda card's next event (`dtsrv.next`, DT7): when ("Today 13:00"), its title and its calendar's
+    /// colour (0xRRGGBB). An empty title shows "No events".
+    pub fn set_next_event(&mut self, when: &str, title: &str, rgb: u32) {
+        let now = self.ui.global::<Now>();
+        now.set_next_event_time(when.into());
+        now.set_next_event_title(title.into());
+        now.set_next_event_colour(slint::Color::from_argb_encoded(0xFF00_0000 | rgb));
     }
 
     /// The shade's date, in its format (`time.date_format`).

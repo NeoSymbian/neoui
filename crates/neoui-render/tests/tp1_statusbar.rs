@@ -3,7 +3,6 @@
 mod common;
 
 use neoui_proto::battery::Snapshot;
-use neoui_proto::clock::alarm::{Alarms, Weekdays};
 use neoui_proto::clock::face::{Face, LocalTime};
 use neoui_proto::settings::Value;
 
@@ -36,7 +35,7 @@ fn tp1_states() {
     let idle = |r: &mut neoui_render::Renderer| {
         r.show("home", "");
         r.set_clock("10:24");
-        r.set_now(&Face::new(&mon, true, &Alarms::new()));
+        r.set_now(&Face::new(&mon, true, ""));
         r.set_network(4, "Ucom AM", "LTE");
         r.set_network_state("", false);
         r.set_battery(&battery(72, 0));
@@ -58,8 +57,6 @@ fn tp1_states() {
         }),
         ("ring off, vibrate, alarm", |r| {
             r.apply_setting("sound.silent", &Value::Bool(true));
-            let mut alarms = Alarms::new();
-            alarms.add(7, 15, Weekdays::WORKDAYS, "").expect("room");
             r.set_now(&Face::new(
                 &LocalTime {
                     year: 2026,
@@ -70,7 +67,7 @@ fn tp1_states() {
                     minute: 24,
                 },
                 true,
-                &alarms,
+                "Tomorrow 07:15",
             ));
         }),
         ("silent", |r| {

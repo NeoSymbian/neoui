@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 //! The clock face as text and numbers: the hour in 24- or 12-hour form, the date line and the next alarm. The UI
-//! server (the home clock widget) and the Clock app (its face page) both show this, so they always agree.
+//! server (the home clock widget) and the Clock app (its face page) both show this, so they always agree. The next
+//! alarm's text comes from DTSRV's `dtsrv.next` ([`super::next::Next::alarm_text`]).
 
-use super::alarm::{Alarms, DAY_NAMES, Minute, format_hm};
+use super::alarm::Minute;
 use alloc::format;
 use alloc::string::String;
 
@@ -75,8 +76,9 @@ pub struct Face {
 }
 
 impl Face {
+    /// `next_alarm`: "Today 07:30" and the like, empty when none ([`super::next::Next::alarm_text`]).
     #[must_use]
-    pub fn new(t: &LocalTime, h24: bool, alarms: &Alarms) -> Self {
+    pub fn new(t: &LocalTime, h24: bool, next_alarm: &str) -> Self {
         let hour = t.hour.min(23);
         let (hours, am_pm) = if h24 {
             (hour, "")
@@ -95,29 +97,14 @@ impl Face {
             h24,
             am_pm,
             date,
-            next_alarm: next_alarm(t.minute_of_week(), h24, alarms),
+            next_alarm: next_alarm.into(),
         }
     }
-}
-
-/// "Today 07:30", "Tomorrow 7:30 AM", "Sat 06:30", or empty.
-fn next_alarm(now: Minute, h24: bool, alarms: &Alarms) -> String {
-    let Some((alarm, minutes)) = alarms.next(now) else {
-        return String::new();
-    };
-    let at = now.plus(minutes);
-    let day = match (u32::from(at.weekday) + 7 - u32::from(now.weekday)) % 7 {
-        0 if minutes < 24 * 60 => "Today",
-        1 => "Tomorrow",
-        _ => DAY_NAMES[usize::from(at.weekday % 7)],
-    };
-    format!("{day} {}", format_hm(alarm.hour, alarm.minute, h24))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::clock::alarm::Weekdays;
 
     /// Monday 9 November 2026, 20:30
     const MON: LocalTime = LocalTime {
@@ -131,34 +118,17 @@ mod tests {
 
     #[test]
     fn hours_and_dates_in_both_modes() {
-        let none = Alarms::new();
-        let f = Face::new(&MON, true, &none);
+        let f = Face::new(&MON, true, "");
         assert_eq!(
             (f.hours, f.minutes, f.am_pm, f.date.as_str()),
             (20, 30, "", "Monday, 9 November")
         );
         assert_eq!(f.next_alarm, "");
-        let f = Face::new(&MON, false, &none);
+        let f = Face::new(&MON, false, "");
         assert_eq!((f.hours, f.am_pm), (8, "PM"));
         let midnight = LocalTime { hour: 0, ..MON };
-        assert_eq!(Face::new(&midnight, false, &none).hours, 12);
-        assert_eq!(Face::new(&midnight, false, &none).am_pm, "AM");
-    }
-
-    #[test]
-    fn the_next_alarm_says_today_tomorrow_or_the_day() {
-        let mut a = Alarms::new();
-        let late = a.add(22, 0, Weekdays::ONCE, "").expect("room");
-        assert_eq!(Face::new(&MON, true, &a).next_alarm, "Today 22:00");
-        a.set_on(late, false);
-        a.add(7, 15, Weekdays::WORKDAYS, "").expect("room");
-        assert_eq!(Face::new(&MON, false, &a).next_alarm, "Tomorrow 7:15 AM");
-        let fri = LocalTime { weekday: 4, ..MON };
-        assert_eq!(Face::new(&fri, true, &a).next_alarm, "Mon 07:15");
-        // in its own minute, a daily alarm's next time is tomorrow, not "Today"
-        let mut d = Alarms::new();
-        d.add(20, 30, Weekdays::EVERY_DAY, "").expect("room");
-        assert_eq!(Face::new(&MON, true, &d).next_alarm, "Tomorrow 20:30");
+        assert_eq!(Face::new(&midnight, false, "").hours, 12);
+        assert_eq!(Face::new(&midnight, false, "").am_pm, "AM");
     }
 
     #[test]
@@ -170,7 +140,7 @@ mod tests {
             minute: 99,
             ..MON
         };
-        let f = Face::new(&odd, true, &Alarms::new());
+        let f = Face::new(&odd, true, "");
         assert_eq!((f.hours, f.minutes), (23, 59));
         assert!(f.date.ends_with("January"));
     }

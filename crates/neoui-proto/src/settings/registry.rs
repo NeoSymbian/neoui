@@ -371,15 +371,60 @@ registry! {
     /// The Clock app's open page: 0 Clock, 1 Alarms, 2 World, 3 Timer, 4 Stopwatch.
     CLOCK_TAB: i32 = "clock.tab", default DefaultValue::Int(0),
         limit Limit::Range { min: 0, max: 4 }, owner Owner::App("clock");
-    /// The alarms (`clock::alarm::Alarms` blob; empty = none). The UI server's scheduler reads it too.
-    CLOCK_ALARMS: Bytes = "clock.alarms", default DefaultValue::Bytes(&[]), limit Limit::None, owner Owner::App("clock");
+    /// The alarms as the Clock app kept them before DTSRV (NeoSymbian/datetime `datetime-core::alarm::Alarms` blob;
+    /// empty = none): DTSRV imports them into its own store once, then deletes them.
+    CLOCK_ALARMS: Bytes = "clock.alarms", default DefaultValue::Bytes(&[]), limit Limit::None,
+        owner Owner::Apps(&["clock", "dtsrv"]);
     /// The world clocks (`clock::world::Cities` blob; empty = the default cities).
     CLOCK_CITIES: Bytes = "clock.cities", default DefaultValue::Bytes(&[]), limit Limit::None, owner Owner::App("clock");
-    /// The countdown timer (`clock::timer::Timer` blob; empty = a new 5-minute timer).
-    CLOCK_TIMER: Bytes = "clock.timer", default DefaultValue::Bytes(&[]), limit Limit::None, owner Owner::App("clock");
-    /// The stopwatch (`clock::stopwatch::Stopwatch` blob; empty = reset).
+    /// The countdown timer as the Clock app kept it before DTSRV (`datetime-core::timer::Timer` blob; empty = none):
+    /// imported and deleted like `clock.alarms`.
+    CLOCK_TIMER: Bytes = "clock.timer", default DefaultValue::Bytes(&[]), limit Limit::None,
+        owner Owner::Apps(&["clock", "dtsrv"]);
+    /// The stopwatch (`datetime-core::stopwatch::Stopwatch` blob; empty = reset).
     CLOCK_STOPWATCH: Bytes = "clock.stopwatch", default DefaultValue::Bytes(&[]), limit Limit::None,
         owner Owner::App("clock");
+    /// Snooze puts a ringing alarm off this many minutes (Clock settings; DTSRV reads it).
+    CLOCK_SNOOZE: i32 = "clock.snooze", default DefaultValue::Int(5), limit Limit::Range { min: 1, max: 60 },
+        owner Owner::App("clock");
+    /// How many times an alarm can be snoozed before it stops ringing.
+    CLOCK_SNOOZE_COUNT: i32 = "clock.snooze_count", default DefaultValue::Int(3),
+        limit Limit::Range { min: 0, max: 10 }, owner Owner::App("clock");
+    /// The alarm sound's name (DTSRV's built-in tones).
+    CLOCK_SOUND: alloc::string::String = "clock.sound", default DefaultValue::Str("Dawn"), limit Limit::MaxLen(32),
+        owner Owner::App("clock");
+    /// Alarms start quietly and get louder.
+    CLOCK_RISE: bool = "clock.rise", default DefaultValue::Bool(false), limit Limit::None, owner Owner::App("clock");
+    /// The shade shows the next alarm ahead of time.
+    CLOCK_SHADE_NEXT: bool = "clock.shade_next", default DefaultValue::Bool(true), limit Limit::None,
+        owner Owner::App("clock");
+    /// The Calendar app's view: 0 Month, 1 Week, 2 Day, 3 To-do.
+    CALENDAR_VIEW: i32 = "calendar.view", default DefaultValue::Int(0), limit Limit::Range { min: 0, max: 3 },
+        owner Owner::App("calendar");
+    /// The first day of the week: 0 Monday .. 6 Sunday.
+    CALENDAR_WEEK_START: i32 = "calendar.week_start", default DefaultValue::Int(0),
+        limit Limit::Range { min: 0, max: 6 }, owner Owner::App("calendar");
+    /// Week numbers in the month and week views.
+    CALENDAR_WEEK_NUMBERS: bool = "calendar.week_numbers", default DefaultValue::Bool(false), limit Limit::None,
+        owner Owner::App("calendar");
+    /// A new event's reminder, in minutes before it starts.
+    CALENDAR_REMINDER: i32 = "calendar.reminder", default DefaultValue::Int(15),
+        limit Limit::Range { min: 0, max: 65_535 }, owner Owner::App("calendar");
+    /// A new event's length, in minutes.
+    CALENDAR_LENGTH: i32 = "calendar.length", default DefaultValue::Int(60),
+        limit Limit::Range { min: 0, max: 65_535 }, owner Owner::App("calendar");
+    /// Reminders ring like an alarm (else a shade entry only); DTSRV reads it.
+    CALENDAR_RING: bool = "calendar.ring", default DefaultValue::Bool(true), limit Limit::None,
+        owner Owner::App("calendar");
+    /// Contacts' birthdays show in the calendar; DTSRV reads it.
+    CALENDAR_BIRTHDAYS: bool = "calendar.birthdays", default DefaultValue::Bool(true), limit Limit::None,
+        owner Owner::App("calendar");
+    /// The calendars hidden from the views (their ids; empty = all shown).
+    CALENDAR_HIDDEN: Bytes = "calendar.hidden", default DefaultValue::Bytes(&[]), limit Limit::None,
+        owner Owner::App("calendar");
+    /// The next alarm and the next event, published by DTSRV for the home clock widget and the agenda card
+    /// (`clock::next::Next` blob; empty = nothing next, or DTSRV not running).
+    DTSRV_NEXT: Bytes = "dtsrv.next", default DefaultValue::Bytes(&[]), limit Limit::None, owner Owner::App("dtsrv");
     /// The app that always opens a file type, chosen in an Open with sheet's "Always" (`crate::open::always`:
     /// `ext=key;` entries).
     OPEN_ALWAYS: Bytes = "open.always", default DefaultValue::Bytes(&[]), limit Limit::None, owner Owner::Any;
@@ -391,16 +436,28 @@ mod tests {
     fn clocks_clear_data_is_its_own_keys_but_24_hour_time() {
         let names: alloc::vec::Vec<&str> = cleared_with("clock").map(|s| s.name).collect();
         for k in [
-            "clock.alarms",
-            "clock.timer",
             "clock.stopwatch",
             "clock.cities",
             "clock.face",
+            "clock.snooze",
+            "clock.shade_next",
         ] {
             assert!(names.contains(&k), "{k}");
         }
         assert!(!names.contains(&"clock.24h"));
         assert!(names.iter().all(|n| n.starts_with("clock.")));
+        // the alarms and the timer are DTSRV's now (Clock's Clear data asks it), and so is what it publishes
+        assert!(!names.contains(&"clock.alarms") && !names.contains(&"clock.timer"));
+        assert!(!names.contains(&"dtsrv.next"));
+        let calendar: alloc::vec::Vec<&str> = cleared_with("calendar").map(|s| s.name).collect();
+        assert_eq!(calendar.len(), 8);
+        assert!(calendar.iter().all(|n| n.starts_with("calendar.")));
+        assert_eq!(
+            cleared_with("dtsrv")
+                .map(|s| s.name)
+                .collect::<alloc::vec::Vec<_>>(),
+            ["dtsrv.next"]
+        );
         // shared keys are no one app's to clear
         assert!(cleared_with("contacts").next().is_none());
     }

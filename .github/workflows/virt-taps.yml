@@ -49,7 +49,7 @@ jobs:
           cargo clippy-arm --workspace -- -D warnings
           cargo arm --workspace
           mkdir -p ../../build/rust
-          cp target/armv8a-neosymbian-eabi/release/{libneoui_symbian,libneoclock,libneoterm,libneodevtools,libneokit,libneoset}.a exes.txt ../../build/rust/
+          cp target/armv8a-neosymbian-eabi/release/{libneoui_symbian,libneoterm,libneodevtools,libneokit,libneoset}.a exes.txt ../../build/rust/
 
       # NeoSymbian/phone: NEOPHONE.EXE (Phone), NEOCONT.EXE (Contacts), NEOMSG.EXE (Messages). Phone and Messages are
       # resident (host::RESIDENT); the three open each other (ipc OPEN, protocol 1.9).
@@ -71,6 +71,24 @@ jobs:
           cd files/symbian && cargo arm
           cp target/armv8a-neosymbian-eabi/release/libneofiles.a ../../build/rust/
           grep -E '^NEOFILES\.EXE' exes.txt >> ../../build/rust/exes.txt
+
+      # NeoSymbian/datetime: NEOCLOCK.EXE (Clock, moved out of neoui), NEOCAL.EXE (Calendar) and DTSRV.EXE (the
+      # service that rings alarms, timers and reminders, protocol 1.19; host::RESIDENT starts it first). The taps'
+      # Clock checks below are NEOCLOCK's log lines. A lib the datetime ref doesn't build yet is left out.
+      # DATETIME_REF: a branch while a datetime change and its taps here are reviewed together; main otherwise
+      - name: NeoSymbian/datetime
+        env:
+          DATETIME_REF: main
+        run: |
+          git clone -q --depth 1 --branch "$DATETIME_REF" https://github.com/NeoSymbian/datetime.git
+          cd datetime/symbian && cargo arm --workspace
+          for l in neoclock dtsrv neocal; do
+            a=target/armv8a-neosymbian-eabi/release/lib$l.a
+            if [ -f "$a" ]; then
+              cp "$a" ../../build/rust/
+              grep -E "[[:space:]]lib$l\.a" exes.txt >> ../../build/rust/exes.txt
+            fi
+          done
 
       # NEOTEST.EXE (e32-rs's on-device tests), so ESHELL in the Terminal app has a 2010-style text program to run
       # NEOSRV.EXE too: neotest's fs_share starts it (a file handle passed between processes)
