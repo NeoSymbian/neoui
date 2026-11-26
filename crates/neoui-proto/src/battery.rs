@@ -253,7 +253,8 @@ fn checksum(b: &[u8]) -> u32 {
 /// state once a minute. No per-app shares (D4) and no screen-on time (nothing records it).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct Usage {
-    /// The window starts at the last full charge the history saw; else at its first reading.
+    /// The window starts at the last full charge the phone then ran on battery from; else at the history's first
+    /// reading.
     pub since_full: bool,
     pub start_utc: i64,
     pub end_utc: i64,
@@ -289,7 +290,16 @@ impl History {
     /// Battery usage over the history, or `None` before its first reading ("No data yet").
     #[must_use]
     pub fn usage(&self) -> Option<Usage> {
-        let full = self.points.iter().rposition(|p| p.observation.is_full());
+        // the last full charge the phone then ran down from (still full or charging on the cable: no window yet)
+        let unplugged = self
+            .points
+            .iter()
+            .rposition(|p| p.observation.discharging());
+        let full = unplugged.and_then(|d| {
+            self.points
+                .range(..d)
+                .rposition(|p| p.observation.is_full())
+        });
         let start = full.or_else(|| self.points.iter().position(|p| p.observation.read()))?;
         let window = self.points.range(start..);
         let first = window.clone().next()?;
@@ -429,6 +439,27 @@ mod usage_tests {
         assert_eq!(t.title, "Last 24 hours (no full charge seen)");
         assert_eq!(t.levels, "From 60% to 59% over 3 min");
         assert_eq!(t.gaps, "Off or not recorded for 1 min, not counted");
+    }
+
+    #[test]
+    fn full_on_the_cable_now_keeps_the_last_run_down() {
+        let mut h = History::default();
+        h.observe(0, at(100, 4)); // full
+        h.observe(60, at(99, 1)); // unplugged
+        h.observe(120, at(98, 1));
+        h.observe(180, at(98, 2)); // plugged in again
+        h.observe(240, at(100, 4)); // full on the cable now
+        let u = h.usage().unwrap();
+        assert!(u.since_full);
+        assert_eq!((u.start_utc, u.end_utc), (0, 240));
+        assert_eq!(u.on_battery_s, 120);
+        // never unplugged since the history began: the whole history, not a window from now
+        let mut h = History::default();
+        h.observe(0, at(90, 2));
+        h.observe(60, at(100, 4));
+        let u = h.usage().unwrap();
+        assert!(!u.since_full);
+        assert_eq!((u.start_utc, u.on_battery_s), (0, 0));
     }
 
     #[test]

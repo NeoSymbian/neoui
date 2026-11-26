@@ -85,4 +85,34 @@ fn battery_status_bar_updates_and_clears_stale_readings() {
         buf, unknown,
         "invalid stale fields must not show a bolt, a level or a colour"
     );
+
+    // Settings -> Battery -> Show percentage (SE3a): on (the default) the percent shows inside the icon on
+    // battery; off, only the level's fill
+    r.set_battery(&Snapshot {
+        valid: 63,
+        present: 1,
+        percent: 80,
+        voltage_uv: 3_900_000,
+        usb_present: 0,
+        usb_online: 0,
+        charge: 1,
+    });
+    common::frame(&mut r, &mut buf, w, "battery with its percent");
+    let shown = buf[..status_end].to_vec();
+    assert!(r.apply_setting(
+        "battery.show_percent",
+        &neoui_proto::settings::Value::Bool(false)
+    ));
+    common::frame(&mut r, &mut buf, w, "battery without its percent");
+    assert_ne!(buf[..status_end], shown[..], "off hides the number");
+    assert!(
+        buf[..status_end].contains(&0xff22_b46a),
+        "the level's fill stays"
+    );
+    r.apply_setting(
+        "battery.show_percent",
+        &neoui_proto::settings::Value::Bool(true),
+    );
+    common::frame(&mut r, &mut buf, w, "battery with its percent again");
+    assert_eq!(buf[..status_end], shown[..]);
 }

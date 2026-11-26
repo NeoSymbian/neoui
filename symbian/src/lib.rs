@@ -179,6 +179,8 @@ fn main() -> i32 {
     let panel_max = display_max_brightness();
     let mut brightness_sent = -1;
     let mut brightness_retry_at = 0u64;
+    let mut saver_logged: Option<bool> = None;
+    let mut pulse_logged = false;
     // the Power menu covers the whole screen: no app surface over it, every touch to the shell
     let mut power_menu = false;
     // the store's change counter the sound profiles last looked at (u32::MAX: not yet, so the upgrade runs once)
@@ -826,11 +828,19 @@ fn main() -> i32 {
             }
             if panel_max > 0 && scr.is_on() {
                 // Battery saver caps the level without moving the setting (SE3a); off, the setting's level at once
-                let want = neoui_proto::effects::panel_level(
-                    host.settings.get(keys::DISPLAY_BRIGHTNESS).unwrap_or(160),
-                    panel_max,
-                    host.settings.get(keys::BATTERY_SAVER).unwrap_or(false),
-                );
+                let setting = host.settings.get(keys::DISPLAY_BRIGHTNESS).unwrap_or(160);
+                let saver = host.settings.get(keys::BATTERY_SAVER).unwrap_or(false);
+                let want = neoui_proto::effects::panel_level(setting, panel_max, saver);
+                if saver_logged != Some(saver) {
+                    dprintln!(
+                        "neoui: battery saver {}: panel {} of {} (setting {})",
+                        if saver { "on" } else { "off" },
+                        want,
+                        panel_max,
+                        setting
+                    );
+                    saver_logged = Some(saver);
+                }
                 // a refused write (the saver lifting too) is tried again a second later, not taken as done
                 if want != brightness_sent && ms >= brightness_retry_at {
                     if set_brightness(want) {
@@ -842,12 +852,21 @@ fn main() -> i32 {
             }
             // Keypress vibration (SE3a): one pulse per press of the system keyboard, whatever it typed and wherever
             let presses = ui.take_key_presses();
+            let pulse = neoui_proto::effects::key_pulse(
+                host.settings.get(keys::KEYBOARD_VIBRATE).unwrap_or(false),
+            );
             if presses > 0
-                && let Some((ms, amp)) = neoui_proto::effects::key_pulse(
-                    host.settings.get(keys::KEYBOARD_VIBRATE).unwrap_or(false),
-                )
+                && let Some((ms, amp)) = pulse
             {
-                haptic(ms, amp);
+                let r = haptic(ms, amp);
+                // the first pulse since the setting came on, and any that fails (the log stays quiet otherwise)
+                if !pulse_logged || r != 0 {
+                    dprintln!("neoui: key pulse {} ms amplitude {} -> {}", ms, amp, r);
+                    pulse_logged = true;
+                }
+            }
+            if pulse.is_none() {
+                pulse_logged = false;
             }
             if !scr.is_on() {
                 touches.clear(); // a sleeping touchscreen sends no lifts; the rings go at the next frame
