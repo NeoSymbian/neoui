@@ -82,12 +82,48 @@ component FilesPage inherits Rectangle {
     }
 }
 
+// TP2a's cards from an app (docs neoui-shell/top-panel.md): post a sample set, clear it, and what the shade did
+export global NotifyDemo {
+    in property <string> status: "Post sample cards, then pull the shade down.";
+    callback post();
+    callback clear();
+}
+
+component NotificationsPage inherits Rectangle {
+    VerticalLayout {
+        padding: Theme.margin;
+        spacing: Theme.margin;
+        alignment: start;
+        Button {
+            text: "Post sample cards";
+            clicked => {
+                NotifyDemo.post();
+            }
+        }
+
+        Button {
+            text: "Clear them";
+            primary: false;
+            clicked => {
+                NotifyDemo.clear();
+            }
+        }
+
+        Text {
+            text: NotifyDemo.status;
+            color: Theme.text-secondary;
+            font-size: Theme.font-label;
+            wrap: word-wrap;
+        }
+    }
+}
+
 export component KitApp inherits Window {
     default-font-family: "NeoSans";
     background: Theme.bg;
     property <[string]> names: [
         "Headers", "Footer", "Lists", "Menus", "Date picker", "Time picker", "Controls", "Feedback", "Phone parts",
-        "Files"
+        "Files", "Notifications"
     ];
     VerticalLayout {
         Header {
@@ -103,6 +139,9 @@ export component KitApp inherits Window {
             vertical-stretch: 1;
         }
         if GalleryState.page == 9: FilesPage {
+            vertical-stretch: 1;
+        }
+        if GalleryState.page == 10: NotificationsPage {
             vertical-stretch: 1;
         }
     }

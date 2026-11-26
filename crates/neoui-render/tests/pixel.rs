@@ -53,7 +53,7 @@ fn pixel() {
         text: "Clock · Time's up".into(),
         ..neoui_render::Notification::default()
     };
-    r.set_notes(&[&timer]);
+    r.set_notes(&[("clock", &timer)], 0, 0, true);
     common::frame(&mut r, &mut buf, w, "home");
     common::tap(&mut r, (w / 2) as i32, (12.0 * d) as i32);
     common::frame(&mut r, &mut buf, w, "shade");
@@ -67,7 +67,7 @@ fn pixel() {
         progress: Some(45),
         ..neoui_render::Notification::default()
     };
-    r.set_notes(&[&copying, &timer]);
+    r.set_notes(&[("files", &copying), ("clock", &timer)], 0, 0, true);
     common::frame(&mut r, &mut buf, w, "shade progress");
     common::write_png("shade-progress-pixel.png", &buf, w, h);
 

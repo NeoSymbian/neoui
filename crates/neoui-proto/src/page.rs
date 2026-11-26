@@ -33,8 +33,10 @@ pub const QUERY_MAX: usize = 2 + 1 + TEXT_MAX + BUTTONS_MAX * (1 + LABEL_MAX);
 pub const NOTE_TEXT_MAX: usize = 80;
 /// The largest encoded [`Note`].
 pub const NOTE_MAX: usize = 1 + NOTE_TEXT_MAX + 1 + LABEL_MAX;
-/// The most actions on a [`Notification`] (1.9).
-pub const NOTIFY_ACTIONS_MAX: usize = 2;
+/// The most actions on a [`Notification`] (1.9: 2; 1.18: 3).
+pub const NOTIFY_ACTIONS_MAX: usize = 3;
+/// The longest notification group key (1.18), in bytes.
+pub const GROUP_MAX: usize = 16;
 /// The longest notification action label, in bytes.
 pub const ACTION_MAX: usize = 16;
 /// The longest notification avatar's initials and time text, in bytes.
@@ -53,7 +55,44 @@ pub const NOTIFICATION_MAX: usize = 6
     + 4
     + 1
     + TIME_MAX
-    + 1;
+    + 1
+    + 3
+    + 1
+    + GROUP_MAX
+    + 8
+    + NOTIFY_ACTIONS_MAX;
+
+/// [`Notification::flags`] (1.18): an ongoing card (a call, a download) can't be swiped away and sits in Live.
+pub const NOTIFY_ONGOING: u8 = 1;
+/// Updating the card makes no sound and shows no banner (TP4).
+pub const NOTIFY_SILENT_UPDATE: u8 = 2;
+/// The text is hidden on the lock screen (TP8).
+pub const NOTIFY_PRIVATE: u8 = 4;
+const NOTIFY_FLAGS: u8 = NOTIFY_ONGOING | NOTIFY_SILENT_UPDATE | NOTIFY_PRIVATE;
+
+/// [`Notification::style`] (1.18; docs neoui-shell/top-panel.md "Cards").
+pub mod style {
+    pub const BASIC: u8 = 0;
+    pub const BIG_TEXT: u8 = 1;
+    pub const PROGRESS: u8 = 2;
+    /// One card per conversation: the Conversations section.
+    pub const CONVERSATION: u8 = 3;
+    pub const CALL: u8 = 4;
+    pub const CHRONO: u8 = 5;
+    pub(crate) const LAST: u8 = CHRONO;
+}
+
+/// The kind of a [`Notification`] action (1.18): a plain button, the inline Reply (TP4; drawn as the main one), or
+/// one that destroys something (red).
+pub mod action {
+    pub const BUTTON: u8 = 0;
+    pub const REPLY: u8 = 1;
+    pub const DANGER: u8 = 2;
+    pub(crate) const LAST: u8 = DANGER;
+}
+
+/// `progress` written as this when there is none but 1.18's fields follow.
+const NO_PROGRESS: u8 = 255;
 
 /// What an app shows now. Send it again whenever any of it changes.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -113,6 +152,41 @@ pub struct Notification {
     pub time: String,
     /// A bar under the text, 0-100 (1.11: a copy in Files); `None` = no bar.
     pub progress: Option<u8>,
+    /// 1.18: [`NOTIFY_ONGOING`], [`NOTIFY_SILENT_UPDATE`], [`NOTIFY_PRIVATE`].
+    pub flags: u8,
+    /// 1.18: one of [`style`].
+    pub style: u8,
+    /// 1.18: the app's channel (TP4's `CHANNEL`; 0 until then).
+    pub channel: u8,
+    /// 1.18: cards of one app with the same group (at most [`GROUP_MAX`] bytes; "" = none) stack as one.
+    pub group: String,
+    /// 1.18: when it happened, unix ms (0 = when posted); the shade writes "now", "2 min", then the clock time.
+    pub when: u64,
+    /// 1.18: each action's kind ([`action`]); missing ones are buttons.
+    pub action_kinds: Vec<u8>,
+}
+
+impl Notification {
+    /// It can't be swiped away or cleared (a call in progress, a download).
+    #[must_use]
+    pub fn ongoing(&self) -> bool {
+        self.flags & NOTIFY_ONGOING != 0
+    }
+
+    /// Action `i`'s kind ([`action`]).
+    #[must_use]
+    pub fn action_kind(&self, i: usize) -> u8 {
+        self.action_kinds.get(i).copied().unwrap_or(action::BUTTON)
+    }
+
+    fn has_1_18(&self) -> bool {
+        self.flags != 0
+            || self.style != 0
+            || self.channel != 0
+            || !self.group.is_empty()
+            || self.when != 0
+            || self.action_kinds.iter().any(|k| *k != action::BUTTON)
+    }
 }
 
 /// A [`Page`] or [`Query`] that is malformed or over a limit (`KErrArgument`).
@@ -230,10 +304,12 @@ impl Notification {
         out.extend_from_slice(&self.page.to_le_bytes());
         put(&mut out, &self.title, TITLE_MAX)?;
         put(&mut out, &self.text, TEXT_MAX)?;
+        let ext = self.has_1_18();
         let extra = !self.initials.is_empty()
             || !self.time.is_empty()
             || self.tint != 0
-            || self.progress.is_some();
+            || self.progress.is_some()
+            || ext;
         if !self.actions.is_empty() || extra {
             if self.actions.len() > NOTIFY_ACTIONS_MAX {
                 return Err(PageError);
@@ -253,6 +329,21 @@ impl Notification {
                 return Err(PageError);
             }
             out.push(p);
+        } else if ext {
+            out.push(NO_PROGRESS);
+        }
+        if ext {
+            if self.flags & !NOTIFY_FLAGS != 0
+                || self.style > style::LAST
+                || self.action_kinds.len() > self.actions.len()
+                || self.action_kinds.iter().any(|k| *k > action::LAST)
+            {
+                return Err(PageError);
+            }
+            out.extend([self.flags, self.style, self.channel]);
+            put(&mut out, &self.group, GROUP_MAX)?;
+            out.extend_from_slice(&self.when.to_le_bytes());
+            out.extend((0..self.actions.len()).map(|i| self.action_kind(i)));
         }
         Ok(out)
     }
@@ -289,10 +380,32 @@ impl Notification {
         }
         if !r.0.is_empty() {
             let p = r.byte()?;
-            if p > 100 {
+            if p > 100 && !(p == NO_PROGRESS && r.0.len() > 1) {
                 return Err(PageError);
             }
-            n.progress = Some(p);
+            n.progress = (p <= 100).then_some(p);
+        }
+        if !r.0.is_empty() {
+            n.flags = r.byte()?;
+            n.style = r.byte()?;
+            n.channel = r.byte()?;
+            n.group = r.text(GROUP_MAX)?;
+            let w = r.0.get(..8).ok_or(PageError)?;
+            n.when = u64::from_le_bytes([w[0], w[1], w[2], w[3], w[4], w[5], w[6], w[7]]);
+            r.0 = &r.0[8..];
+            n.action_kinds = (0..n.actions.len())
+                .map(|_| r.byte())
+                .collect::<Result<_, _>>()?;
+            if n.flags & !NOTIFY_FLAGS != 0
+                || n.style > style::LAST
+                || n.action_kinds.iter().any(|k| *k > action::LAST)
+            {
+                return Err(PageError);
+            }
+            // a 1.18 record with nothing of 1.18 in it isn't one the encoder writes
+            while n.action_kinds.last() == Some(&action::BUTTON) {
+                n.action_kinds.pop();
+            }
         }
         if !r.0.is_empty() {
             return Err(PageError);
@@ -506,11 +619,11 @@ mod tests {
             ..n.clone()
         };
         assert_eq!(Notification::decode(&avatar.encode().unwrap()), Ok(avatar));
-        let three = Notification {
-            actions: vec![s("a"), s("b"), s("c")],
+        let four = Notification {
+            actions: vec![s("a"), s("b"), s("c"), s("d")],
             ..n.clone()
         };
-        assert_eq!(three.encode(), Err(PageError));
+        assert_eq!(four.encode(), Err(PageError));
         let long = Notification {
             actions: vec!["z".repeat(ACTION_MAX + 1)],
             ..n
@@ -521,11 +634,21 @@ mod tests {
             title: "x".repeat(TITLE_MAX),
             text: "y".repeat(TEXT_MAX),
             page: u16::MAX,
-            actions: vec!["a".repeat(ACTION_MAX), "b".repeat(ACTION_MAX)],
+            actions: vec![
+                "a".repeat(ACTION_MAX),
+                "b".repeat(ACTION_MAX),
+                "c".repeat(ACTION_MAX),
+            ],
             initials: "i".repeat(INITIALS_MAX),
             tint: 0x22b46a,
             time: "t".repeat(TIME_MAX),
             progress: Some(100),
+            flags: NOTIFY_ONGOING | NOTIFY_PRIVATE,
+            style: style::CALL,
+            channel: 255,
+            group: "g".repeat(GROUP_MAX),
+            when: u64::MAX,
+            action_kinds: vec![action::REPLY, action::BUTTON, action::DANGER],
         };
         assert_eq!(big.encode().unwrap().len(), NOTIFICATION_MAX);
         assert_eq!(Notification::decode(&big.encode().unwrap()), Ok(big));
@@ -538,6 +661,82 @@ mod tests {
         for n in 0..good.len() {
             assert_eq!(Notification::decode(&good[..n]), Err(PageError));
         }
+    }
+
+    #[test]
+    fn notifications_grow_in_1_18_and_old_records_still_read() {
+        let old = Notification {
+            id: 7,
+            title: s("Ava Lindqvist"),
+            text: s("Running late, see you at 7?"),
+            actions: vec![s("Reply"), s("Call")],
+            initials: s("AL"),
+            tint: 0x22b46a,
+            ..Notification::default()
+        };
+        let ob = old.encode().unwrap();
+        // nothing of 1.18: the 1.12 record, byte for byte
+        assert_eq!(Notification::decode(&ob), Ok(old.clone()));
+        let new = Notification {
+            style: style::CONVERSATION,
+            group: s("thread"),
+            when: 1_795_691_635_000,
+            actions: vec![s("Reply"), s("Mark read"), s("Call")],
+            action_kinds: vec![action::REPLY],
+            ..old.clone()
+        };
+        let nb = new.encode().unwrap();
+        assert_eq!(Notification::decode(&nb), Ok(new.clone()));
+        // no progress, but 1.18 follows: the bar byte says none
+        assert_eq!(Notification::decode(&nb).unwrap().progress, None);
+        assert!(!new.ongoing());
+        assert_eq!(new.action_kind(0), action::REPLY);
+        assert_eq!(new.action_kind(2), action::BUTTON);
+        // a bare ongoing card: the actions count and the avatar block come along
+        let bare = Notification {
+            id: 1,
+            title: s("Call in progress"),
+            flags: NOTIFY_ONGOING,
+            ..Notification::default()
+        };
+        let bb = bare.encode().unwrap();
+        assert_eq!(Notification::decode(&bb), Ok(bare.clone()));
+        assert!(Notification::decode(&bb).unwrap().ongoing());
+        // limits: unknown flags, styles and kinds, a long group, more kinds than actions
+        for bad in [
+            Notification {
+                flags: 8,
+                ..bare.clone()
+            },
+            Notification {
+                style: style::LAST + 1,
+                ..bare.clone()
+            },
+            Notification {
+                group: "g".repeat(GROUP_MAX + 1),
+                ..bare.clone()
+            },
+            Notification {
+                action_kinds: vec![action::DANGER],
+                ..bare.clone()
+            },
+            Notification {
+                actions: vec![s("x")],
+                action_kinds: vec![action::LAST + 1],
+                ..bare.clone()
+            },
+        ] {
+            assert_eq!(bad.encode(), Err(PageError), "{bad:?}");
+        }
+        // every cut inside the 1.18 part (from the bar byte on) is refused, and so is a trailing byte; cuts before
+        // it are older records
+        let tail = 3 + 1 + new.group.len() + 8 + new.actions.len();
+        for n in nb.len() - tail..nb.len() {
+            assert_eq!(Notification::decode(&nb[..n]), Err(PageError), "{n}");
+        }
+        let mut long = nb;
+        long.push(0);
+        assert_eq!(Notification::decode(&long), Err(PageError));
     }
 
     #[test]

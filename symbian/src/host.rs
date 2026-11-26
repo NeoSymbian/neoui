@@ -340,6 +340,42 @@ impl Host {
         }
     }
 
+    /// The user swiped the shade's card `i` away: it goes, and its app (if running) hears why. Ongoing cards stay.
+    pub fn dismiss_notification(&mut self, i: usize) {
+        if self.notifications.get(i).is_none_or(|(_, n)| n.ongoing()) {
+            return;
+        }
+        let (key, n) = self.notifications.remove(i);
+        self.notes_changed = true;
+        dprintln!("neoui: notification {} of {} dismissed", n.id, key);
+        self.post(
+            key,
+            AppEvent::NotifyGone {
+                id: n.id,
+                why: proto::GONE_SWIPED,
+            },
+        );
+    }
+
+    /// Clear all: every card but the ongoing ones goes, and each running app hears it.
+    pub fn clear_notifications(&mut self) {
+        let (keep, gone): (Vec<_>, Vec<_>) = core::mem::take(&mut self.notifications)
+            .into_iter()
+            .partition(|(_, n)| n.ongoing());
+        self.notifications = keep;
+        self.notes_changed = true;
+        dprintln!("neoui: {} notifications cleared", gone.len());
+        for (key, n) in gone {
+            self.post(
+                key,
+                AppEvent::NotifyGone {
+                    id: n.id,
+                    why: proto::GONE_CLEARED,
+                },
+            );
+        }
+    }
+
     /// The user tapped the shade's entry `i` (`action` 0) or one of its actions (`i + 1`): its app comes to the
     /// front on the entry's page and is told which; the entry goes.
     pub fn open_notification(&mut self, i: usize, action: u16, now_ms: u64) {
@@ -389,7 +425,7 @@ impl Host {
             page: PORTAL_PAGE,
             ..Notification::default()
         };
-        let _ = notify(&mut self.notifications, BROWSER, n);
+        let _ = notify(&mut self.notifications, BROWSER, n, unix_ms());
         self.notes_changed = true;
         self.portal = arg;
     }
@@ -986,24 +1022,42 @@ fn entry(
     Ok(0)
 }
 
-/// Adds, replaces or (empty title) removes app `key`'s shade entry; the newest goes first.
+/// Adds, replaces or (empty title) removes app `key`'s shade entry. A new card goes first; a card posted again keeps
+/// its place (top-panel TP2a: an update doesn't jump). `when` 0 becomes `now_ms` (unix ms); a 25th card of one app
+/// pushes out its oldest.
 fn notify(
     list: &mut Vec<(&'static str, Notification)>,
     key: &'static str,
-    n: Notification,
+    mut n: Notification,
+    now_ms: u64,
 ) -> Result<i32, i32> {
     let old = list.iter().position(|(k, o)| *k == key && o.id == n.id);
-    if let Some(i) = old {
-        list.remove(i);
-    }
     if n.title.is_empty() {
+        if let Some(i) = old {
+            list.remove(i);
+        }
         return Ok(0);
     }
-    if list.iter().filter(|(k, _)| *k == key).count() >= proto::NOTIFICATIONS_MAX {
-        return Err(kerr::OVERFLOW);
+    if n.when == 0 {
+        // an update keeps the time the card first came, unless the app gives one
+        n.when = old.map_or(now_ms, |i| list[i].1.when);
+    }
+    if let Some(i) = old {
+        list[i].1 = n;
+        return Ok(0);
+    }
+    if list.iter().filter(|(k, _)| *k == key).count() >= proto::NOTIFICATIONS_MAX
+        && let Some(oldest) = list.iter().rposition(|(k, _)| *k == key)
+    {
+        list.remove(oldest);
     }
     list.insert(0, (key, n));
     Ok(0)
+}
+
+/// Now as unix milliseconds (a card's `when`).
+fn unix_ms() -> u64 {
+    u64::try_from(e32::time::utc_now().0).unwrap_or(0) * 1000
 }
 
 /// `CLIP_GET [out text]` → the text's length.
@@ -1211,15 +1265,34 @@ impl Service for Host {
                 }
                 Err(e) => m.complete(e),
             },
+            // cards and badges only from the app's own EXE (1.18, top-panel TP2a "Step 0"): the session binding
+            // ("the newest app without a session") is checked against the caller's secure ID
+            proto::NOTIFY | proto::NOTIFY_CLEAR | proto::BADGE
+                if apps::sid(app.key).is_some_and(|sid| sid != m.client_sid()) =>
+            {
+                dprintln!(
+                    "neoui: {} refused for {}: SID {:#x}",
+                    m.function(),
+                    app.key,
+                    m.client_sid()
+                );
+                m.complete(kerr::PERMISSION_DENIED);
+            }
             proto::NOTIFY => {
                 let key = app.key;
                 let r = read_bytes(&m, 0, NOTIFICATION_MAX)
                     .and_then(|b| Notification::decode(&b).map_err(|_| kerr::ARGUMENT))
-                    .and_then(|n| notify(&mut self.notifications, key, n));
+                    .and_then(|n| notify(&mut self.notifications, key, n, unix_ms()));
                 if r.is_ok() {
                     self.notes_changed = true;
                 }
                 m.complete(r.unwrap_or_else(|e| e));
+            }
+            proto::NOTIFY_CLEAR => {
+                let key = app.key;
+                self.notifications.retain(|(k, _)| *k != key);
+                self.notes_changed = true;
+                m.complete(0);
             }
             proto::BADGE => {
                 let (key, id, count) = (app.key, m.int(0) as u32, m.int(1) as u32);

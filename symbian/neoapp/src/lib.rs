@@ -37,6 +37,15 @@ pub use neoui_proto::ipc::AppEvent;
 /// Which apps open which files, and the pages of Files other apps open (protocol 1.12).
 pub use neoui_proto::open;
 pub use neoui_proto::page::{Note, Notification, Page, Query};
+
+/// What a [`Notification`] card carries since 1.18 (top-panel TP2a): flags, styles, action kinds, and why the shade
+/// removed one ([`AppEvent::NotifyGone`]).
+pub mod card {
+    pub use neoui_proto::ipc::{GONE_CLEARED, GONE_OFF, GONE_SWIPED};
+    pub use neoui_proto::page::{
+        NOTIFY_ONGOING, NOTIFY_PRIVATE, NOTIFY_SILENT_UPDATE, action, style,
+    };
+}
 use neoui_proto::settings::value::ENCODED_MAX;
 use neoui_proto::settings::{Key as SettingKey, Setting, Value, kerr};
 use neoui_proto::{InputEvent, Rect, ScrollPlan, Scrolling, TouchPhase};
@@ -553,6 +562,13 @@ impl App {
     /// id, action: i + 1 }`.
     pub fn notify(&self, n: &Notification) -> Result<(), i32> {
         self.send_bytes(proto::NOTIFY, &n.encode().map_err(|_| kerr::ARGUMENT)?)
+    }
+
+    /// Remove every card of this app from the shade, ongoing ones too (1.18).
+    pub fn clear_notify(&self) -> Result<(), i32> {
+        self.server
+            .send_receive(proto::NOTIFY_CLEAR, &TIpcArgs::new())
+            .map(drop)
     }
 
     /// Remove the shade's entry `id`.

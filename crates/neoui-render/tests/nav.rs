@@ -4,8 +4,8 @@
 mod common;
 
 // where the first shade entry's actions sit (dp): the row under its text, Call after Reply
-const NOTE_ACTIONS_Y: f32 = 332.0;
-const NOTE_CALL_X: f32 = 194.0;
+const NOTE_ACTIONS_Y: f32 = 365.0;
+const NOTE_CALL_X: f32 = 96.0;
 
 use neoui_proto::settings::Value;
 use neoui_render::{Nav, Note, Notification, Page, Query, Renderer};
@@ -169,7 +169,7 @@ fn the_v2_chrome() {
         text: "Clock · Time's up".into(),
         ..Notification::default()
     };
-    r.set_notes(&[&ava, &timer]);
+    r.set_notes(&[("messages", &ava), ("clock", &timer)], 0, 0, true);
     common::frame(&mut r, &mut buf, w, "notes");
     press(&mut r, &mut buf, w as i32 / 2, (12.0 * d) as i32);
     assert!(r.overlay_open(), "the shade is open");

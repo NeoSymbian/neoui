@@ -242,6 +242,15 @@ pub struct Renderer {
     nav: Rc<RefCell<Vec<Nav>>>,
     entries: Rc<RefCell<Vec<u32>>>,
     notes_opened: Rc<RefCell<Vec<(usize, u16)>>>,
+    /// TP2a: the shade's rows → the cards' places in the shell's list; the cards and the clock they were laid out
+    /// with; the group shown open (app key, group); the cards swiped away (places); Clear all; a ▾ to lay out again.
+    shade_rows: Rc<RefCell<Vec<usize>>>,
+    shade_cards: Vec<(String, Notification)>,
+    shade_clock: (u64, i32, bool),
+    open_group: Rc<RefCell<Option<(String, String)>>>,
+    notes_gone: Rc<RefCell<Vec<usize>>>,
+    notes_cleared: Rc<Cell<bool>>,
+    relayout: Rc<Cell<bool>>,
     closed: Rc<RefCell<Vec<alloc::string::String>>>,
     power: Rc<RefCell<Vec<i32>>>,
     power_asked: Rc<Cell<bool>>,
@@ -327,8 +336,52 @@ impl Renderer {
             })
         });
         let notes_opened: Rc<RefCell<Vec<(usize, u16)>>> = Rc::default();
-        let sink = notes_opened.clone();
-        ui.on_note_opened(move |i, a| sink.borrow_mut().push((i as usize, a as u16)));
+        let shade_rows: Rc<RefCell<Vec<usize>>> = Rc::default();
+        let (sink, rows) = (notes_opened.clone(), shade_rows.clone());
+        ui.on_note_opened(move |i, a| {
+            if let Some(at) = usize::try_from(i)
+                .ok()
+                .and_then(|i| rows.borrow().get(i).copied())
+            {
+                sink.borrow_mut().push((at, a as u16));
+            }
+        });
+        let notes_gone: Rc<RefCell<Vec<usize>>> = Rc::default();
+        let (sink, rows) = (notes_gone.clone(), shade_rows.clone());
+        ui.on_note_dismissed(move |i| {
+            if let Some(at) = usize::try_from(i)
+                .ok()
+                .and_then(|i| rows.borrow().get(i).copied())
+            {
+                sink.borrow_mut().push(at);
+            }
+        });
+        let notes_cleared: Rc<Cell<bool>> = Rc::default();
+        let sink = notes_cleared.clone();
+        ui.on_notes_cleared(move || sink.set(true));
+        let open_group: Rc<RefCell<Option<(String, String)>>> = Rc::default();
+        let relayout: Rc<Cell<bool>> = Rc::default();
+        let (open, again, weak) = (open_group.clone(), relayout.clone(), ui.as_weak());
+        ui.on_group_toggled(move |i| {
+            let Some(ui) = weak.upgrade() else { return };
+            let Some(n) = usize::try_from(i)
+                .ok()
+                .and_then(|i| ui.get_notes().row_data(i))
+            else {
+                return;
+            };
+            let mut open = open.borrow_mut();
+            let this = (
+                String::from(n.app_key.as_str()),
+                String::from(n.group.as_str()),
+            );
+            *open = if open.as_ref() == Some(&this) {
+                None
+            } else {
+                Some(this)
+            };
+            again.set(true);
+        });
         let entries: Rc<RefCell<Vec<u32>>> = Rc::default();
         let sink = entries.clone();
         // Slint uses signed ints; preserve all 32 UID bits on the round trip.
@@ -368,6 +421,13 @@ impl Renderer {
             nav,
             entries,
             notes_opened,
+            shade_rows,
+            shade_cards: Vec::new(),
+            shade_clock: (0, 0, true),
+            open_group,
+            notes_gone,
+            notes_cleared,
+            relayout,
             closed,
             power,
             power_asked,
@@ -575,39 +635,110 @@ impl Renderer {
         self.ui.set_note_action(action.into());
     }
 
-    /// The apps' entries in the shade (`neoui_proto::ipc::NOTIFY`), newest first: (title, text) each.
-    pub fn set_notes(&mut self, notes: &[&Notification]) {
-        let model: Vec<ShadeNote> = notes
+    /// The apps' cards in the shade (`neoui_proto::ipc::NOTIFY`): (app key, card), newest first, as the shell keeps
+    /// them; `now_ms` (unix), the zone's `offset_s` and `h24` write their times ("now", "2 min", "10:24"). The shade
+    /// draws them by section and group (`neoui_proto::shade::layout`).
+    pub fn set_notes(
+        &mut self,
+        notes: &[(&str, &Notification)],
+        now_ms: u64,
+        offset_s: i32,
+        h24: bool,
+    ) {
+        self.shade_cards = notes
             .iter()
-            .enumerate()
-            .map(|(i, n)| {
+            .map(|(k, n)| ((*k).into(), (*n).clone()))
+            .collect();
+        self.shade_clock = (now_ms, offset_s, h24);
+        // a group that went away isn't open any more
+        let gone = self
+            .open_group
+            .borrow()
+            .as_ref()
+            .is_some_and(|(k, g)| !notes.iter().any(|(key, n)| key == k && n.group == *g));
+        if gone {
+            *self.open_group.borrow_mut() = None;
+        }
+        self.lay_out_notes();
+    }
+
+    fn lay_out_notes(&mut self) {
+        let list: Vec<(&str, &Notification)> = self
+            .shade_cards
+            .iter()
+            .map(|(k, n)| (k.as_str(), n))
+            .collect();
+        let open = self.open_group.borrow().clone();
+        let rows =
+            neoui_proto::shade::layout(&list, open.as_ref().map(|(k, g)| (k.as_str(), g.as_str())));
+        let (now, offset, h24) = self.shade_clock;
+        let model: Vec<ShadeNote> = rows
+            .iter()
+            .map(|r| {
+                let (key, n) = list[r.index];
                 // two lines: the earlier one dim over the newest
                 let (earlier, text) = n.text.rsplit_once('\n').unwrap_or(("", n.text.as_str()));
+                let strings = |v: &[String]| {
+                    slint::ModelRc::from(Rc::new(slint::VecModel::from(
+                        v.iter()
+                            .map(|s| s.as_str().into())
+                            .collect::<Vec<slint::SharedString>>(),
+                    )))
+                };
                 ShadeNote {
+                    app_key: key.into(),
+                    app: neoui_proto::apps::find(key).map_or(key, |a| a.name).into(),
+                    group: n.group.as_str().into(),
                     title: n.title.as_str().into(),
                     earlier: earlier.into(),
                     text: text.into(),
-                    actions: slint::ModelRc::from(Rc::new(slint::VecModel::from(
-                        n.actions
+                    actions: strings(&n.actions),
+                    kinds: slint::ModelRc::from(Rc::new(slint::VecModel::from(
+                        n.action_kinds
                             .iter()
-                            .map(|s| s.as_str().into())
-                            .collect::<Vec<slint::SharedString>>(),
+                            .map(|k| i32::from(*k))
+                            .collect::<Vec<i32>>(),
                     ))),
                     initials: n.initials.as_str().into(),
                     tint: slint::Color::from_argb_encoded(0xff00_0000 | n.tint),
-                    time: n.time.as_str().into(),
-                    // only the newest entry opens up (p2-msg-notify)
-                    expanded: i == 0,
+                    // an old record's own text; a 1.18 one's time as the shade writes it
+                    time: if n.when == 0 || !n.time.is_empty() {
+                        n.time.as_str().into()
+                    } else {
+                        neoui_proto::shade::when_text(n.when, now, offset, h24).into()
+                    },
+                    expanded: true,
                     progress: n.progress.map_or(-1.0, |p| f32::from(p) / 100.0),
+                    section: if r.first { r.section.label() } else { "" }.into(),
+                    count: i32::try_from(r.count).unwrap_or(i32::MAX),
+                    open: open
+                        .as_ref()
+                        .is_some_and(|(k, g)| k == key && *g == n.group)
+                        && r.count > 1,
+                    member: r.member,
+                    ongoing: n.ongoing(),
                 }
             })
             .collect();
+        *self.shade_rows.borrow_mut() = rows.iter().map(|r| r.index).collect();
+        self.ui
+            .set_cards(i32::try_from(list.len()).unwrap_or(i32::MAX));
         self.ui
             .set_notes(slint::ModelRc::from(Rc::new(slint::VecModel::from(model))));
     }
 
-    /// The shade's app entries tapped since the last call: (index into what [`Renderer::set_notes`] gave, 0 for the
-    /// entry itself or `i + 1` for its action `i`).
+    /// The cards swiped away since the last call, as places in the list [`Renderer::set_notes`] gave.
+    pub fn take_notes_dismissed(&mut self) -> Vec<usize> {
+        core::mem::take(&mut *self.notes_gone.borrow_mut())
+    }
+
+    /// Clear all was tapped since the last call.
+    pub fn take_notes_cleared(&mut self) -> bool {
+        self.notes_cleared.replace(false)
+    }
+
+    /// The shade's cards tapped since the last call: (place in the list [`Renderer::set_notes`] gave, 0 for the card
+    /// itself or `i + 1` for its action `i`).
     pub fn take_notes_opened(&mut self) -> Vec<(usize, u16)> {
         core::mem::take(&mut *self.notes_opened.borrow_mut())
     }
@@ -920,6 +1051,10 @@ impl Renderer {
 
     pub fn render(&mut self, buf: &mut [u32], stride_px: usize) -> Damage {
         slint::platform::update_timers_and_animations();
+        // a group's ▾ (the callback can't reach the renderer): lay the cards out again
+        if self.relayout.replace(false) {
+            self.lay_out_notes();
+        }
         // smooth-ui S2d: one list scrolled (`ui/components/scroll.slint`, its change handler ran above): move what it
         // showed, and Slint draws only the rows that came into view. Once the scrolling stops, one full redraw puts
         // right whatever the skipped rows missed (a highlight, a sub-pixel position).
