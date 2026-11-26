@@ -315,18 +315,10 @@ export component Shade inherits Rectangle {
     in property <bool> open;
     callback dismissed;
     callback open-app(string);
-    in property <int> missed;
-    // unread messages and the newest one's line
-    in property <int> unread;
-    in property <string> unread-line;
-    in property <bool> active-call;
-    callback return-call;
     // the apps' entries (ipc NOTIFY), newest first; a tap opens the app on its page
     in property <[ShadeNote]> notes;
     // (entry, 0) for the entry itself, (entry, i + 1) for its action i
     callback note-opened(int, int);
-    // an app posts its own entries for these (Messages: one per conversation): the shell's summary row hides
-    in property <bool> app-unread;
     // an app on one of its pages (app key, view: host::PAGES)
     callback open-view(string, string);
     // the header's ⏻: the Power menu (the UI server opens it, as for a held Power key)
@@ -524,33 +516,6 @@ export component Shade inherits Rectangle {
                                 scrolled(d) => { root.scroll-by(d); }
                             }
                         }
-                    }
-                    // the shell's own rows (until Phone and Messages post cards, TP2b), in the list so they scroll
-                    // with it
-                    if active-call: ListRow {
-                        title: "Call in progress";
-                        subtitle: "Return to call controls";
-                        icon: @image-url("../icons/sys/call.svg");
-                        has-icon: true;
-                        clicked => { root.return-call(); }
-                    }
-
-                    if missed > 0: ListRow {
-                        title: missed == 1 ? "Missed call" : missed + " missed calls";
-                        subtitle: "Since this phone session started";
-                        icon: @image-url("../icons/sys/missed_call.svg");
-                        has-icon: true;
-                        icon-tint: Theme.danger;
-                        clicked => { root.open-view("phone", "recents"); }
-                    }
-
-                    if unread > 0 && !root.app-unread: ListRow {
-                        title: unread == 1 ? "New message" : unread + " new messages";
-                        subtitle: unread-line;
-                        icon: @image-url("../icons/sys/message.svg");
-                        has-icon: true;
-                        icon-tint: Theme.accent;
-                        clicked => { root.open-app("messages"); }
                     }
                 }
             }

@@ -42,9 +42,9 @@ fn pixel() {
     r.set_note(None);
     r.set_app_front(false);
     r.show("home", "");
-    // two unread messages (C9): the status bar's envelope, the shade's row
-    r.set_unread_messages(2, "+374 91 234567: Running late, see you at 7?");
-    // an app's entry (NOTIFY) above the shell's own rows
+    // two unread messages (C9): Messages' badge only (Messages posts its own cards, TP2b)
+    r.set_unread_messages(2);
+    // an app's entry (NOTIFY)
     let timer = neoui_render::Notification {
         title: "Timer done · 05:00".into(),
         text: "Clock · Time's up".into(),

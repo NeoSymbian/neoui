@@ -186,7 +186,7 @@ fn the_v2_chrome() {
     assert!(!r.overlay_open(), "an action closes the shade");
 
     // badges on the Apps menu (and the dock): Phone 2, Messages 3 (MODEMD's count while the app posts none), Clock 1
-    r.set_unread_messages(3, "Ava: on my way");
+    r.set_unread_messages(3);
     r.set_badges(&[("phone", 2), ("clock", 1)]);
     r.show("menu", "");
     common::frame(&mut r, &mut buf, w, "menu badges");

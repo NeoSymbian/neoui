@@ -770,7 +770,6 @@ fn main() -> i32 {
                     host.notifications.iter().map(|(k, n)| (*k, n)).collect();
                 let h24 = host.settings.get(keys::CLOCK_24H).unwrap_or(true);
                 ui.set_notes(&notes, u64::try_from(unix).unwrap_or(0) * 1000, offset, h24);
-                ui.set_app_unread(host.notifications.iter().any(|(k, _)| *k == "messages"));
                 let keys: Vec<&str> = host.notifications.iter().map(|(k, _)| *k).collect();
                 ui.set_status_apps(&keys);
             }

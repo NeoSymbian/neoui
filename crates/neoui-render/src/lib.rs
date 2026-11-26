@@ -155,16 +155,13 @@ pub fn touch_ring_pixel(x: i32, y: i32, d: i32, under: u32) -> Option<u32> {
 /// At most this many app glyphs in the status bar; more apps show as "+n" (tp-statusbar).
 pub const STATUS_APPS_MAX: usize = 3;
 
-/// The status bar's app glyphs (tp-statusbar, TP1): one per app with cards in the shade, `keys` newest first, then
-/// the shell's own rows (missed calls for Phone, unread SMS for Messages) for an app that posts none. Gives at most
-/// [`STATUS_APPS_MAX`] glyph ids (0 bell, 1 message, 2 missed call, 3 folder, 4 alarm; `StatusBar` draws them) and
-/// how many more apps there are.
+/// The status bar's app glyphs (tp-statusbar, TP1): one per app with cards in the shade, `keys` newest first (Phone
+/// and Messages post their own cards since TP2b). Gives at most [`STATUS_APPS_MAX`] glyph ids (0 bell, 1 message,
+/// 2 missed call, 3 folder, 4 alarm; `StatusBar` draws them) and how many more apps there are.
 #[must_use]
-pub fn status_apps(keys: &[&str], missed: bool, unread: bool) -> (Vec<i32>, i32) {
+pub fn status_apps(keys: &[&str]) -> (Vec<i32>, i32) {
     let mut apps: Vec<&str> = Vec::new();
-    let shell = [("phone", missed), ("messages", unread)];
-    let rows = shell.iter().filter(|(_, on)| *on).map(|(k, _)| *k);
-    for k in keys.iter().copied().chain(rows) {
+    for k in keys.iter().copied() {
         if !apps.contains(&k) {
             apps.push(k);
         }
@@ -192,17 +189,16 @@ mod status_apps_tests {
 
     #[test]
     fn one_glyph_per_app_newest_first_then_plus_n() {
-        assert_eq!(status_apps(&[], false, false), (vec![], 0));
-        // Messages twice (two conversations) is one app; the shell's unread row adds nothing while it posts
+        assert_eq!(status_apps(&[]), (vec![], 0));
+        // Messages twice (two conversations) is one app
         assert_eq!(
-            status_apps(&["messages", "files", "messages"], false, true),
+            status_apps(&["messages", "files", "messages"]),
             (vec![1, 3], 0)
         );
-        // the shell's rows count for apps that post nothing, after the apps' own cards
-        assert_eq!(status_apps(&["browser"], true, true), (vec![0, 2, 1], 0));
+        assert_eq!(status_apps(&["browser", "phone"]), (vec![0, 2], 0));
         assert_eq!(
-            status_apps(&["clock", "files", "store", "kit"], true, false),
-            (vec![4, 3, 0], 2)
+            status_apps(&["clock", "files", "store", "kit"]),
+            (vec![4, 3, 0], 1)
         );
     }
 }
@@ -769,11 +765,6 @@ impl Renderer {
         core::mem::take(&mut *self.notes_opened.borrow_mut())
     }
 
-    /// Messages posts its own entries (one per conversation): the shade hides its summary row of unread messages.
-    pub fn set_app_unread(&mut self, on: bool) {
-        self.ui.set_app_unread(on);
-    }
-
     /// The apps with cards in the shade, newest first (app keys, repeats allowed): the status bar's app glyphs.
     pub fn set_status_apps(&mut self, keys: &[&str]) {
         self.status_keys = keys.iter().map(|k| (*k).into()).collect();
@@ -782,11 +773,7 @@ impl Renderer {
 
     fn update_status_apps(&mut self) {
         let keys: Vec<&str> = self.status_keys.iter().map(String::as_str).collect();
-        let (glyphs, more) = status_apps(
-            &keys,
-            self.ui.get_missed_calls() > 0,
-            self.ui.get_unread_messages() > 0,
-        );
+        let (glyphs, more) = status_apps(&keys);
         self.ui
             .set_status_glyphs(slint::ModelRc::from(Rc::new(slint::VecModel::from(glyphs))));
         self.ui.set_status_more(more);
@@ -1046,11 +1033,6 @@ impl Renderer {
         self.ui.set_roaming(roaming);
     }
 
-    /// A call is up (ringing, dialling or connected): the shade offers to return to it.
-    pub fn set_in_call(&mut self, on: bool) {
-        self.ui.set_in_call(on);
-    }
-
     pub fn set_phone_feedback(&mut self, pending: bool, feedback: &str) {
         self.ui.set_phone_pending(pending);
         self.ui.set_phone_feedback(feedback.into());
@@ -1062,20 +1044,18 @@ impl Renderer {
         self.ui.set_pin_attempts(attempts.map_or(-1, i32::from));
     }
 
+    /// The modem failed; `missed` new missed calls: Phone's badge while it posts no count of its own.
     pub fn set_phone_availability(&mut self, failed: bool, missed: u32) {
         self.ui.set_modem_failed(failed);
         self.ui.set_missed_calls(missed.min(i32::MAX as u32) as i32);
         self.update_badges();
-        self.update_status_apps();
     }
 
-    /// Unread messages (C9): the status bar's envelope and the shade's row with the newest one's `line`.
-    pub fn set_unread_messages(&mut self, count: u32, line: &str) {
+    /// Unread messages (C9): Messages' badge while it posts no count of its own.
+    pub fn set_unread_messages(&mut self, count: u32) {
         self.ui
             .set_unread_messages(count.min(i32::MAX as u32) as i32);
-        self.ui.set_unread_line(line.into());
         self.update_badges();
-        self.update_status_apps();
     }
 
     /// What the SIM prompt and the modem banner asked since the last call: "pin" + PIN, "sim-dismiss", "dial" +
