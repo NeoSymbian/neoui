@@ -90,17 +90,26 @@ pub fn dates(app: &App, ui: &SettingsApp) {
 pub const ROOT_GRID: &str = "settings.root_grid";
 
 /// The sound profiles as the shell's reducer keeps them (read the same way, `sound_profile::read`).
+/// The keys come one IPC each: a commit between them (the power menu, the shade) shows as the active id changing,
+/// and they are read again.
 pub fn read_profiles(app: &App) -> Profiles {
-    let blob = match app.setting_raw("sound.profiles") {
-        Ok(Value::Bytes(b)) => b,
-        _ => Vec::new(),
-    };
-    let mirrors = Mirrors {
-        silent: get(app, keys::SOUND_SILENT),
-        vibrate: get(app, keys::SOUND_VIBRATE),
-        volume: get(app, keys::SOUND_RING_VOLUME).clamp(0, 10) as u8,
-    };
-    sound_profile::read(get(app, keys::SOUND_PROFILE), &blob, mirrors)
+    let mut tries = 0;
+    loop {
+        let active = get(app, keys::SOUND_PROFILE);
+        let blob = match app.setting_raw("sound.profiles") {
+            Ok(Value::Bytes(b)) => b,
+            _ => Vec::new(),
+        };
+        let mirrors = Mirrors {
+            silent: get(app, keys::SOUND_SILENT),
+            vibrate: get(app, keys::SOUND_VIBRATE),
+            volume: get(app, keys::SOUND_RING_VOLUME).clamp(0, 10) as u8,
+        };
+        tries += 1;
+        if get(app, keys::SOUND_PROFILE) == active || tries == 3 {
+            return sound_profile::read(active, &blob, mirrors);
+        }
+    }
 }
 
 /// The profiles into Sounds & profiles; the profile page's own follows its id.

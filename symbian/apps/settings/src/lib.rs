@@ -167,8 +167,9 @@ fn run() -> Result<(), i32> {
                     dprintln!("settings: pads reset ({:?})", r);
                 }
                 Some(Asked::ProfileDelete(id)) if i == 0 => {
-                    ctx.profile(sound_profile::Command::Delete(id));
-                    ctx.back();
+                    if ctx.profile(sound_profile::Command::Delete(id)) {
+                        ctx.back();
+                    }
                 }
                 Some(Asked::Forget(ssid)) => {
                     if i == 0 && ctx.wifi.borrow_mut().forget(&ssid).is_err() {
@@ -361,8 +362,8 @@ impl Ctx {
         }
     }
 
-    /// A sound profile command for the shell's reducer; a refusal shows as a note.
-    fn profile(&self, cmd: sound_profile::Command) {
+    /// A sound profile command for the shell's reducer; a refusal shows as a note. True when it was done.
+    fn profile(&self, cmd: sound_profile::Command) -> bool {
         let r = self
             .app
             .settings_action_with(proto::ACTION_PROFILE, &cmd.encode());
@@ -378,6 +379,7 @@ impl Ctx {
         if let Some(ui) = self.ui() {
             store::profiles(&self.app, &ui);
         }
+        r.is_ok()
     }
 
     /// The old apps the legacy bridge registered (INFO_APPS), into the Apps page; a 1.13 shell can't say.
@@ -583,6 +585,12 @@ impl Ctx {
                     self.query.borrow_mut().clear();
                     self.hits.borrow_mut().clear();
                     s.set_results(ModelRc::new(VecModel::from(Vec::<SearchHit>::new())));
+                    if r.opens == Page::Profile {
+                        // search shows the active profile's values: its page opens on that profile
+                        let mut p = s.get_profile_current();
+                        p.id = -1;
+                        s.set_profile_current(p);
+                    }
                     self.go(r.opens);
                     if r.on != Page::Root {
                         s.set_found(r.id.into());
@@ -604,14 +612,14 @@ impl Ctx {
             // sound profiles (SE2a): the shell's reducer does them (ACTION_PROFILE)
             "profile-choose" => {
                 if let Ok(id) = value.parse::<u8>() {
-                    self.profile(sound_profile::Command::Choose(id));
+                    let _ = self.profile(sound_profile::Command::Choose(id));
                 }
             }
             "profile-set" => {
                 let p = s.get_profile_current();
                 let v: Vec<i32> = value.split(',').filter_map(|x| x.parse().ok()).collect();
                 if let ([ring, volume, vibrate], Ok(id)) = (v.as_slice(), u8::try_from(p.id)) {
-                    self.profile(sound_profile::Command::Set {
+                    let _ = self.profile(sound_profile::Command::Set {
                         id,
                         ring: *ring != 0,
                         volume: (*volume).clamp(0, 10) as u8,
@@ -619,13 +627,16 @@ impl Ctx {
                     });
                 }
             }
-            "profile-add" => self.profile(sound_profile::Command::Add(String::from(value.trim()))),
+            "profile-add" => {
+                let _ = self.profile(sound_profile::Command::Add(String::from(value.trim())));
+            }
             "profile-rename" => {
-                if let Ok(id) = u8::try_from(s.get_profile_current().id) {
-                    self.profile(sound_profile::Command::Rename(
+                if let Ok(id) = u8::try_from(s.get_profile_current().id)
+                    && self.profile(sound_profile::Command::Rename(
                         id,
                         String::from(value.trim()),
-                    ));
+                    ))
+                {
                     s.set_title(value.trim().into());
                 }
             }

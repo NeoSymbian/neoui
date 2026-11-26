@@ -218,7 +218,8 @@ impl Profiles {
                     return Err(Refused::NotFound);
                 }
                 let p = self.get_mut(id).ok_or(Refused::NotFound)?;
-                p.ring = ring;
+                // Silent never rings: muting chooses it, so a ringing Silent would undo the mute
+                p.ring = ring && id != SILENT;
                 p.volume = volume;
                 p.vibrate = vibrate;
                 self.repair();
@@ -294,13 +295,41 @@ impl Profiles {
             self.before_offline = GENERAL;
         }
         if !self.audible(self.last_audible) {
-            self.last_audible = GENERAL;
+            // the first profile that rings (General when none does: unmuting can't do better then)
+            self.last_audible = self
+                .list
+                .iter()
+                .map(|p| p.id)
+                .find(|id| self.audible(*id))
+                .unwrap_or(GENERAL);
         }
     }
 
     /// Fold in a write to the mirrors or to airplane mode made by anyone but the reducer. Returns the radios to set
     /// when it means leaving Offline, `Some(None)` when the profiles changed otherwise, `None` when nothing did.
     pub fn reconcile(&mut self, now: Mirrors, airplane: bool) -> Option<Option<Radios>> {
+        // first a volume or vibrate change, into the profile that supplies it now: a silent flip or Offline ending in
+        // the same frame must not drop it
+        let expected = self.mirrors();
+        let edited = now.volume != expected.volume || now.vibrate != expected.vibrate;
+        if edited {
+            let sound = if self.active == OFFLINE {
+                GENERAL
+            } else {
+                self.active
+            };
+            let volume_from = if self.audible(sound) {
+                sound
+            } else {
+                self.last_audible
+            };
+            if let Some(p) = self.get_mut(volume_from) {
+                p.volume = now.volume.min(10);
+            }
+            if let Some(p) = self.get_mut(sound) {
+                p.vibrate = now.vibrate;
+            }
+        }
         if self.active == OFFLINE && !airplane {
             // airplane mode turned off elsewhere: Offline ends, the other radios come back; airplane stays off
             let back = self.before_offline;
@@ -310,11 +339,7 @@ impl Profiles {
             }
             return Some(set);
         }
-        let expected = self.mirrors();
-        if now == expected {
-            return None;
-        }
-        if now.silent != expected.silent {
+        if now.silent != self.mirrors().silent {
             let to = if now.silent {
                 SILENT
             } else {
@@ -322,24 +347,7 @@ impl Profiles {
             };
             return Some(self.choose(to, Radios::default()));
         }
-        // a volume or vibrate change edits the profile that supplies it
-        let sound = if self.active == OFFLINE {
-            GENERAL
-        } else {
-            self.active
-        };
-        let volume_from = if self.audible(sound) {
-            sound
-        } else {
-            self.last_audible
-        };
-        if let Some(p) = self.get_mut(volume_from) {
-            p.volume = now.volume.min(10);
-        }
-        if let Some(p) = self.get_mut(sound) {
-            p.vibrate = now.vibrate;
-        }
-        Some(None)
+        edited.then_some(None)
     }
 
     /// `sound.profiles`: the built-ins' overrides and the added profiles, with what Silent and Offline remember.
@@ -403,7 +411,7 @@ impl Profiles {
                 let p = &mut list[usize::from(id)];
                 (p.ring, p.volume, p.vibrate) = (ring, volume, vibrate);
             } else {
-                if name.is_empty() || list.iter().any(|p| p.id == id) {
+                if name.trim().is_empty() || list.iter().any(|p| p.id == id) {
                     return None;
                 }
                 list.push(Profile {
@@ -606,6 +614,8 @@ pub mod store {
         cmd: Command,
         now_ms: u64,
     ) -> Result<(), ApplyError> {
+        // a write the reconciler hasn't folded in yet (this frame) goes in first, or the commit would undo it
+        reconcile(s, now_ms);
         let mut p = load(s);
         let set = p.apply(cmd, radios(s)).map_err(ApplyError::Refused)?;
         commit(s, &p, set, now_ms).map_err(ApplyError::Store)
@@ -616,7 +626,10 @@ pub mod store {
     pub fn reconcile<B: Backend>(s: &mut Service<B>, now_ms: u64) -> bool {
         let mut p = load(s);
         let stored = s.get(keys::SOUND_PROFILES).map(|b| b.0).unwrap_or_default();
-        let fresh = stored.is_empty();
+        // the upgrade's first write, or a damaged blob read as the upgrade: write what is in force now, so
+        // `sound.profile` agrees with it
+        let active = s.get(keys::SOUND_PROFILE).unwrap_or(0).clamp(0, 254) as u8;
+        let fresh = stored.is_empty() || Profiles::decode(active, &stored).is_none();
         match p.reconcile(mirrors(s), radios(s).airplane) {
             Some(set) => commit(s, &p, set, now_ms).is_ok(),
             // the upgrade's first write: the profiles go into the store as they were found
@@ -798,6 +811,61 @@ mod tests {
     }
 
     #[test]
+    fn writes_in_one_frame_are_all_kept() {
+        // silent on and a new volume together: the volume reaches General, then Silent
+        let mut p = today(false);
+        let mut m = p.mirrors();
+        m.silent = true;
+        m.volume = 3;
+        p.reconcile(m, false);
+        assert_eq!((p.active, p.get(GENERAL).unwrap().volume), (SILENT, 3));
+        assert_eq!(p.mirrors().volume, 3);
+        // Offline ending (airplane off) with a vibrate change in the same frame: both kept
+        let mut p = today(false);
+        p.apply(Command::Choose(OFFLINE), ON).unwrap();
+        let mut m = p.mirrors();
+        m.vibrate = true;
+        assert_eq!(p.reconcile(m, false), Some(Some(ON)));
+        assert_eq!(p.active, GENERAL);
+        assert!(p.get(GENERAL).unwrap().vibrate);
+    }
+
+    #[test]
+    fn mute_and_unmute_do_what_was_asked() {
+        // Silent never rings, so muting never writes silent off
+        let mut p = today(false);
+        p.apply(
+            Command::Set {
+                id: SILENT,
+                ring: true,
+                volume: 5,
+                vibrate: true,
+            },
+            ON,
+        )
+        .unwrap();
+        assert!(!p.get(SILENT).unwrap().ring);
+        // General stops ringing while it is the one unmute goes back to: unmute goes to one that rings
+        p.apply(
+            Command::Set {
+                id: GENERAL,
+                ring: false,
+                volume: 6,
+                vibrate: false,
+            },
+            ON,
+        )
+        .unwrap();
+        assert_eq!(p.last_audible, MEETING);
+        p.apply(Command::Choose(SILENT), ON).unwrap();
+        let mut m = p.mirrors();
+        m.silent = false;
+        p.reconcile(m, false);
+        assert_eq!(p.active, MEETING);
+        assert!(!p.mirrors().silent);
+    }
+
+    #[test]
     fn the_blob_round_trips_within_its_limit() {
         let mut p = today(true);
         for i in 0..11 {
@@ -874,6 +942,38 @@ mod tests {
                 vibrate: s.get(keys::SOUND_VIBRATE).unwrap(),
                 volume: s.get(keys::SOUND_RING_VOLUME).unwrap() as u8,
             }
+        }
+
+        #[test]
+        fn a_command_keeps_a_write_made_earlier_in_the_frame() {
+            let (mut s, _) = Service::open(Mem::default());
+            assert!(store::reconcile(&mut s, 0));
+            // an app turns the ring volume down, then (same frame, before reconcile) a profile is added
+            s.set(Caller::Shell, keys::SOUND_RING_VOLUME, 3, 1)
+                .map(drop)
+                .unwrap();
+            store::apply(&mut s, Command::Add("Car".into()), 1).unwrap();
+            assert_eq!(s.get(keys::SOUND_RING_VOLUME).unwrap(), 3);
+            assert_eq!(store::load(&s).get(GENERAL).unwrap().volume, 3);
+        }
+
+        #[test]
+        fn a_damaged_blob_is_rewritten_as_what_is_in_force() {
+            let (mut s, _) = Service::open(Mem::default());
+            s.set(Caller::Shell, keys::SOUND_PROFILE, i32::from(OUTDOOR), 0)
+                .map(drop)
+                .unwrap();
+            s.set(
+                Caller::Shell,
+                keys::SOUND_PROFILES,
+                crate::settings::Bytes(alloc::vec![9, 9]),
+                0,
+            )
+            .map(drop)
+            .unwrap();
+            assert!(store::reconcile(&mut s, 1));
+            assert_eq!(s.get(keys::SOUND_PROFILE).unwrap(), i32::from(GENERAL));
+            assert!(!store::reconcile(&mut s, 2));
         }
 
         #[test]

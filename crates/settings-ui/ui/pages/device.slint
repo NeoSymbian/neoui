@@ -250,7 +250,8 @@ export component ProfilePage inherits NeoList {
             checked: SetState.found == "profile.tone";
             value: p.ring ? "Built-in ringtone" : "None";
         }
-        if !offline: ListRow {
+        // Silent never rings (muting chooses it)
+        if !offline && p.id != 1: ListRow {
             title: "Ring";
             checked: SetState.found == "profile.ring";
             subtitle: p.ring ? "The ringtone sounds" : "Silent: no ringing";

@@ -15,7 +15,9 @@ export component PowerMenu inherits Rectangle {
     in property <int> active;
     // 2 = power off, 0 = restart, -1 = dismissed, 100 + id = that sound profile
     callback chosen(int);
-    property <length> rows: root.profiles.length * 40 * Theme.dp;
+    // only the rows that fit above the buttons (the server puts the active profile first)
+    property <int> fit: max(0, floor((root.height / 2 - 134 * Theme.dp) / (40 * Theme.dp)));
+    property <length> rows: min(root.profiles.length, root.fit) * 40 * Theme.dp;
     visible: open;
     background: #000000b0;
 
@@ -27,7 +29,7 @@ export component PowerMenu inherits Rectangle {
 
     Rectangle {
         width: 280 * Theme.dp;
-        height: 220 * Theme.dp + root.rows + (root.profiles.length > 0 ? 12 * Theme.dp : 0);
+        height: 220 * Theme.dp + root.rows + (root.rows > 0 ? 12 * Theme.dp : 0);
         x: (root.width - self.width) / 2;
         y: (root.height - 220 * Theme.dp) / 2 - (self.height - 220 * Theme.dp);
         background: Theme.bg-raised;
@@ -36,6 +38,7 @@ export component PowerMenu inherits Rectangle {
         TouchArea { }
 
         for p[i] in root.profiles: Rectangle {
+            visible: i < root.fit;
             x: 8 * Theme.dp;
             y: 12 * Theme.dp + i * 40 * Theme.dp;
             width: parent.width - 16 * Theme.dp;

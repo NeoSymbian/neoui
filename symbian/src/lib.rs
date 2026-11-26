@@ -716,8 +716,10 @@ fn main() -> i32 {
                 power_down_at = None;
                 dprintln!("neoui: power menu");
                 let p = sound_profile::store::load(&host.settings);
-                let names: Vec<(u8, &str)> =
+                // the active profile first: the menu shows only as many as fit
+                let mut names: Vec<(u8, &str)> =
                     p.list.iter().map(|x| (x.id, x.name.as_str())).collect();
+                names.sort_by_key(|(id, _)| *id != p.active);
                 ui.set_power_profiles(&names, p.active);
                 ui.set_power_menu(true);
                 power_menu = true;
