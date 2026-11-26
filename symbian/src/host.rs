@@ -42,6 +42,9 @@ use neoui_render::{LauncherEntry, Nav, Note, Notification, Page, Query};
 pub mod notifications;
 #[path = "settings_info.rs"]
 mod settings_info;
+// (D10) Settings' Edit home and Open apps' thumbnails
+#[path = "home.rs"]
+mod home;
 
 /// Apps whose shell screen is a launcher grid until they request FRONT(1).
 // shortcut: a fixed table like APPS; apps declare launcher support when apps are installable.
@@ -294,6 +297,8 @@ pub struct Host {
     clip_unseen: bool,
     /// (TP4) The apps' channels, the rate limit and the newest card's alert ([`notifications`]).
     pub policies: notifications::Policies,
+    /// (D10) the home editor asked for, thumbnails taken ([`home`])
+    pub d10: home::D10,
 }
 
 impl Host {
@@ -346,6 +351,7 @@ impl Host {
             clip_notices: ClipNotices::default(),
             clip_unseen: false,
             policies: notifications::Policies::boot(),
+            d10: home::D10::default(),
         }
     }
 
@@ -791,6 +797,7 @@ impl Host {
         if self.front == key {
             return;
         }
+        self.take_thumb(); // (G3) before its frame is released below
         if let Some(old) = self.front.take()
             && let Some(app) = self.apps.find_mut(|a| a.key == old && a.quit_at.is_none())
         {
@@ -1674,6 +1681,11 @@ impl Service for Host {
                     proto::ACTION_CLEAR => self.clear_action(&m),
                     proto::ACTION_MEASURE_APP => self.measure_action(&m),
                     proto::ACTION_RESET => self.reset_action(&m),
+                    // (D10) the home editor
+                    proto::ACTION_EDIT_HOME => {
+                        let key = app.key;
+                        self.edit_home_action(key, &m)
+                    }
                     _ => kerr::ARGUMENT,
                 };
                 m.complete(r);

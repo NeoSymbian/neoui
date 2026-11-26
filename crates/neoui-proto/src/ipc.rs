@@ -283,7 +283,9 @@ pub const ACTION_CLEAR: i32 = 6;
 pub const ACTION_MEASURE_APP: i32 = 7;
 /// Reserved (D7): install a wallpaper from an RGB888 file.
 pub const ACTION_INSTALL_WALLPAPER: i32 = 8;
-/// Reserved (D10): open the shell's Home editor.
+/// 1.20 (D10), Settings only: an empty request ([`crate::settings_app::wire::edit_home_request`]) → 0: home comes to
+/// the front in its editor (again: the draft stays); the editor's own Done or Back saves `home.layout`. Another caller
+/// `KErrPermissionDenied`, a nonempty request `KErrArgument`.
 pub const ACTION_EDIT_HOME: i32 = 9;
 /// Reserved (D17): dismount, remount or export E:.
 pub const ACTION_VOLUME: i32 = 10;

@@ -125,7 +125,8 @@ impl Spec {
 ///   be folded back into the active profile;
 /// - the radio switches (airplane mode, Wi-Fi, Bluetooth, data), which aren't preferences;
 /// - the old apps' pad epoch, a counter;
-/// - the apps chosen to open each file type (`open.always`), which belong with the apps.
+/// - the apps chosen to open each file type (`open.always`), which belong with the apps;
+/// - home's pages and dock (`home.layout`, D10), the user's own arrangement.
 pub const RESET_KEEPS: &[&str] = &[
     "sound.profile",
     "sound.profiles",
@@ -145,6 +146,7 @@ pub const RESET_KEEPS: &[&str] = &[
     "radio.airplane",
     "legacy.pad.epoch",
     "open.always",
+    "home.layout",
 ];
 
 /// The keys Reset settings puts back to their defaults: every key no app owns, but [`RESET_KEEPS`]. Apps' keys
@@ -294,6 +296,20 @@ registry! {
     /// band for the previous / next app), 2 N9 gestures (left Back, right Open apps, a right flick for the last app).
     /// A stored 1 (v1's Gestures) becomes the Thumb map.
     NAV_MODE: i32 = "nav.mode", default DefaultValue::Int(1), limit Limit::Range { min: 0, max: 2 }, owner Owner::Shell;
+    /// (D10, G3) Open apps' columns: 2 or 3 cards to a row (their thumbnails scale with them).
+    NAV_SWITCHER_COLS: i32 = "nav.switcher_cols", default DefaultValue::Int(2),
+        limit Limit::Range { min: 2, max: 3 }, owner Owner::Shell;
+    /// (D10, G4) In Gestures and N9 gestures, a drag down from the status bar over an app closes it past half the
+    /// screen (a resident app goes home and keeps running); the shade then opens by a tap on the bar.
+    NAV_SWIPE_CLOSE: bool = "nav.swipe_close", default DefaultValue::Bool(false), limit Limit::None,
+        owner Owner::Shell;
+    /// (D10, G5) Home: 0 Pages (Belle's widget pages), 1 Lanes (N9: Events, Home, Open apps).
+    HOME_STYLE: i32 = "home.style", default DefaultValue::Int(0), limit Limit::Range { min: 0, max: 1 },
+        owner Owner::Shell;
+    /// (D10) Home's pages and dock (`home::Layout`, version byte first), written by the shell's home editor only;
+    /// empty or damaged = the default layout.
+    HOME_LAYOUT: Bytes = "home.layout", default DefaultValue::Bytes(&[]), limit Limit::MaxLen(2048),
+        owner Owner::Shell;
     /// Settings -> Date & time: the network (the modem's NITZ, else an HTTP Date) sets the clock.
     TIME_AUTO: bool = "time.auto", default DefaultValue::Bool(true), limit Limit::None, owner Owner::Shell;
     /// The mobile network's time zone (NITZ) sets the offset; off, the Time zone row picks it.

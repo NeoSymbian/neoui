@@ -64,5 +64,9 @@ fn server_transitions_switch_screens_in_one_render() {
         );
     }
     r.set_home_page(9);
-    assert_eq!(r.home_page(), neoui_render::HOME_PAGES - 1, "clamped");
+    assert_eq!(
+        r.home_page(),
+        r.home_pages() - 1,
+        "clamped to the pages home has"
+    );
 }

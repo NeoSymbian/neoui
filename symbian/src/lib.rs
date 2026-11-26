@@ -36,14 +36,14 @@ use e32::rt::{self, Either};
 use e32::server::{self, Server};
 use e32::{dprintln, time};
 use host::Host;
-use neoui_proto::gesture::{Edge, Map, Recognizer, Step};
+use neoui_proto::gesture::{Edge, Gesture, Map, Recognizer, Step};
 use neoui_proto::ipc::{self as proto, AppEvent};
 use neoui_proto::settings::keys;
 use neoui_proto::settings_app::info::encode_ip;
 use neoui_proto::sound_profile;
 use neoui_proto::{Damage, InputEvent, Rect, TouchPhase, coalesce_moves, next_deadline};
+use neoui_render::Renderer;
 use neoui_render::layer::{self, Slide, Transition};
-use neoui_render::{HOME_PAGES, Renderer};
 
 e32::main!(main);
 
@@ -236,6 +236,11 @@ fn main() -> i32 {
         // Show touches (SE3a): the fingers down (id, x, y) and the rings drawn for them
         let mut touches: Vec<(u8, i32, i32)> = Vec::new();
         let mut touches_drawn: Vec<Rect> = Vec::new();
+        // (G4) swipe down closes apps: where finger 0 went down, the app being dragged down and how far (px), and
+        // that the screen must be put back whole when the drag ends
+        let mut press_y = 0;
+        let mut close_drag: Option<(&'static str, i32)> = None;
+        let mut close_restore = false;
         loop {
             // a dark screen draws nothing: no frame pacing for animations or a pending draw
             let wait = if scr.is_on()
@@ -356,10 +361,16 @@ fn main() -> i32 {
                         && transition.is_none()
                         && swipe.is_none();
                     // home keeps its side edges for the pages (Back does nothing there); N9's right edge is Open apps
+                    // (G4) the status bar over an app (not a full-screen page: it has none) drags the app down
+                    let top = gestures
+                        && host.settings.get(keys::NAV_SWIPE_CLOSE).unwrap_or(false)
+                        && host.front().is_some()
+                        && !host.front_full();
                     let live: &[Edge] = match (gestures, mode, screen.as_str()) {
                         (false, _, _) => &[],
                         (true, 2, "home") => &[Edge::Right, Edge::Bottom],
                         (true, _, "home") => &[Edge::Bottom],
+                        _ if top => &[Edge::Left, Edge::Right, Edge::Bottom, Edge::Top],
                         _ => &[Edge::Left, Edge::Right, Edge::Bottom],
                     };
                     let ms = time::millis();
@@ -372,6 +383,9 @@ fn main() -> i32 {
                         if id != 0 {
                             routed.push(ev); // gestures follow the first finger only; in order with it (below)
                             continue;
+                        }
+                        if phase == TouchPhase::Down {
+                            press_y = y;
                         }
                         match gest.feed(phase, x, y, ms, live) {
                             Step::Pass => routed.push(ev),
@@ -386,6 +400,27 @@ fn main() -> i32 {
                                 routed.push(ev);
                             }
                             Step::Drop => {}
+                            // (G4) the app follows the finger; nothing closes before the release
+                            Step::Track {
+                                edge: Edge::Top, ..
+                            } => {
+                                held.clear();
+                                let key = close_drag
+                                    .map(|(k, _)| k)
+                                    .or_else(|| host.front().map(|a| a.key));
+                                close_drag = key.map(|k| (k, y - press_y));
+                            }
+                            Step::Commit(Gesture::Close) => {
+                                // the app the drag started on, once, if it is still the one in front
+                                if let Some((key, _)) = close_drag.take()
+                                    && host.front().map(|a| a.key) == Some(key)
+                                {
+                                    dprintln!("neoui: gesture close {}", key);
+                                    host.close(key, ms);
+                                    ui.gesture(Gesture::Close);
+                                }
+                                close_restore = true;
+                            }
                             Step::Track { edge, progress } => {
                                 held.clear();
                                 hint = Some((
@@ -402,7 +437,10 @@ fn main() -> i32 {
                                     host.send_nav(n);
                                 }
                             }
-                            Step::Cancel => hint = None,
+                            Step::Cancel => {
+                                hint = None;
+                                close_restore |= close_drag.take().is_some();
+                            }
                         }
                     }
                     let mut evs = routed;
@@ -441,6 +479,7 @@ fn main() -> i32 {
                                     swallow = swipe.is_some();
                                     // the shade over home takes its own drags: no page slide under it
                                     home_press = (screen == "home"
+                                        && !ui.home_editing()
                                         && !app_on_screen
                                         && !power_menu
                                         && !ui.overlay_open()
@@ -548,7 +587,7 @@ fn main() -> i32 {
                                 {
                                     let (dir, page) = ((x - x0).signum(), ui.home_page());
                                     let to = page - dir;
-                                    if (0..HOME_PAGES).contains(&to)
+                                    if (0..ui.home_pages()).contains(&to)
                                         && (old.len() == w * h
                                             || old.try_reserve_exact(w * h).is_ok())
                                     {
@@ -633,10 +672,14 @@ fn main() -> i32 {
                 }
             }
             // a gesture under way ends when the screen changes under it (a call, an alarm, the PIN prompt)
-            if modal || ui.screen() != screen {
+            // (G4) an overlay (the shade, a dialog) or another app in front ends a drag down too
+            let drag_lost = close_drag
+                .is_some_and(|(k, _)| ui.overlay_open() || host.front().map(|a| a.key) != Some(k));
+            if modal || ui.screen() != screen || drag_lost {
                 gest.reset();
                 held.clear();
                 hint = None;
+                close_restore |= close_drag.take().is_some();
             }
             if modal_changed {
                 host.refresh = true;
@@ -651,7 +694,19 @@ fn main() -> i32 {
             due = false;
 
             // App lifecycle: the shell's screen decides which app is in front; the others keep running (R10).
-            let mut repaint_all = modal_changed | core::mem::take(&mut host.repaint);
+            let mut repaint_all = modal_changed
+                | core::mem::take(&mut host.repaint)
+                | core::mem::take(&mut close_restore);
+            if repaint_all {
+                host.refresh = true;
+            }
+            // (D10) Settings' Edit home; (G3) the thumbnails of apps that went to the back
+            if core::mem::take(&mut host.d10.edit_home) {
+                ui.edit_home();
+            }
+            for (key, tw, th, px) in host.d10.thumbs.drain(..) {
+                ui.set_thumb(key, tw, th, &px);
+            }
             let ms = time::millis();
             host.tick_jobs(ms);
             for key in host.reap(ms) {
@@ -994,10 +1049,18 @@ fn main() -> i32 {
                 let at = hint.map_or(0, |(_, _, at)| at);
                 hint = Some((edge, progress, at));
             }
-            let fading = transition.is_some() || swipe.is_some();
+            let fading = transition.is_some() || swipe.is_some() || close_drag.is_some();
             let (px, damage, render_us, mut copy_us) =
                 present(&mut ui, &mut frame, &display, &perf, !fading);
             perf.shifts(ui.take_shifts());
+            if let Some((_, dy)) = close_drag
+                && front_surface(&host).is_some()
+            {
+                drag_down(&frame, &host, dy, (w, h), &mut rows.1, &display);
+                host.release_frames();
+                perf.idle();
+                continue;
+            }
             if let Some((s, from)) = swipe.as_mut() {
                 perf.frame(render_us, 0, 0, px);
                 let m = perf.mark();
@@ -1198,6 +1261,31 @@ fn fade(
     }
 }
 
+/// (G4) One frame of a swipe down to close: the front app's body `dy` px lower, the shell's frame dimmed above it (the
+/// status bar stays).
+fn drag_down(
+    frame: &[u32],
+    host: &Host,
+    dy: i32,
+    (w, h): (usize, usize),
+    out: &mut [u32],
+    display: &Display,
+) {
+    let app = front_surface(host);
+    let Some((_, _, area)) = app else { return };
+    let (y0, dy) = (area.y.max(0) as usize, dy.max(0) as usize);
+    for y in y0..h {
+        out.copy_from_slice(&frame[y * w..][..w]);
+        if y >= y0 + dy {
+            app_row(app, y - dy, out);
+        } else {
+            out.iter_mut()
+                .for_each(|p| *p = 0xff00_0000 | (*p >> 1 & 0x007f_7f7f));
+        }
+        display.blit_to(out, w, (0, 0, w, 1), (0, y));
+    }
+}
+
 /// One frame of a home page swipe (smooth-ui S2c): the pages band only (the rest of the screen stays as it was),
 /// the current page (`old`) at `offset` with the neighbour (in `frame`) beside it.
 fn slide(
@@ -1264,6 +1352,8 @@ fn hint_rect(
             let len = (dp(48) + w.saturating_sub(dp(48)) * p / 512).min(w);
             Rect::new(((w - len) / 2) as i32, (h - t) as i32, len as u32, t as u32)
         }
+        // (G4) the top edge draws the app itself ([`drag_down`]), not a hint
+        Edge::Top => Rect::new(0, 0, 0, 0),
     };
     Hint {
         rect,

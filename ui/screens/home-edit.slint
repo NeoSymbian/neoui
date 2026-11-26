@@ -1,0 +1,239 @@
+// SPDX-License-Identifier: Apache-2.0
+// (D10) Home's layout as the UI server's renderer projects it (neoui-proto `home::Layout`, `home.layout`) and the home
+// editor's parts: its toolbar (+ and Done) and the Add sheet (Widgets, Apps). The editor is home itself in edit mode
+// (home.slint): a long press on home → Edit home, or Settings' Edit home (SETTINGS_ACTION 9), enters it; Done or Back
+// leaves and saves once. Every change goes to the renderer as `op` (neoui-render's home.rs), which checks that it
+// fits before it changes anything and says why not in `message`.
+import { Theme } from "../theme.slint";
+import { Glyph } from "../components/frame.slint";
+import { Sheet } from "../components/sheet.slint";
+import { NeoList } from "../components/scroll.slint";
+import { Apps } from "menu.slint";
+
+// An item on a page (`page`, its `index` there) at `col`, `row` and `w` × `h` cells of the 4 × 6 grid; `kind` 0 is an
+// app's icon (`key`), 1 a widget (`widget`: 1 Clock, 2 Agenda, 3 Favourites, 4 Media).
+export struct HomeCell { page: int, index: int, kind: int, key: string, widget: int, col: int, row: int, w: int, h: int }
+
+export global HomeModel {
+    // the pages (1..5) and their items; Lanes' Home lane has every page's items in one column (`lane-rows` rows)
+    in property <int> pages: 3;
+    in property <[HomeCell]> cells;
+    in property <[HomeCell]> lane-cells;
+    in property <int> lane-rows;
+    // the dock's four slots ("" empty); Apps follows them, fixed
+    in property <[string]> dock: ["phone", "messages", "browser", "camera"];
+    // the widget picker's rows (home::CATALOGUE's labels, in widget id order)
+    in property <[string]> widgets: ["Clock", "Agenda", "Favourites", "Music"];
+    in-out property <bool> editing;
+    // the Add sheet: "" closed, "add" (to the page), "dock" (dock slot `dock-slot`)
+    in-out property <string> sheet;
+    in-out property <int> dock-slot;
+    // why the last change didn't happen ("No room on this page"), "" when it did
+    in property <string> message;
+    // "enter", "done", "remove" (page, index), "drop" (page, index, col, row: the cell it was let go over),
+    // "edge" (page, index, -1 | 1: to the end of the page beside it, a new one past the last), "pin" (page, key),
+    // "widget" (page, widget id), "dock" (slot, key; "" empties it)
+    callback op(string, int, int, int, int, string);
+}
+
+// A 40 dp round icon button of the bar.
+component BarIcon inherits Rectangle {
+    in property <image> icon;
+    in property <string> label;
+    in property <bool> enabled: true;
+    callback clicked;
+    width: 40 * Theme.dp;
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-action-default => { root.clicked(); }
+    background: t.pressed && root.enabled ? Theme.pressed : transparent;
+    border-radius: self.width / 2;
+    opacity: root.enabled ? 1 : 0.35;
+    Glyph {
+        source: root.icon;
+        size: 24 * Theme.dp;
+    }
+    t := TouchArea {
+        enabled: root.enabled;
+        clicked => { root.clicked(); }
+    }
+}
+
+// Edit mode's bar at the top of home: Add (the sheet), ‹ the page ›, Done; under it, why the last change didn't happen.
+export component EditBar inherits Rectangle {
+    in-out property <int> page;
+    in property <int> pages;
+    height: 48 * Theme.dp;
+    background: #0d0f13e6;
+    HorizontalLayout {
+        padding-left: 8 * Theme.dp;
+        padding-right: 8 * Theme.dp;
+        spacing: 4 * Theme.dp;
+        BarIcon {
+            icon: @image-url("../icons/sys/add.svg");
+            label: "Add to home";
+            clicked => { HomeModel.sheet = "add"; }
+        }
+
+        BarIcon {
+            icon: @image-url("../icons/sys/chevron_left.svg");
+            label: "Previous page";
+            enabled: root.page > 0;
+            clicked => { root.page -= 1; }
+        }
+
+        Text {
+            horizontal-stretch: 1;
+            text: "Page " + (root.page + 1) + " of " + root.pages;
+            color: Theme.text-secondary;
+            font-size: Theme.font-label;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+
+        BarIcon {
+            icon: @image-url("../icons/sys/chevron_right.svg");
+            label: "Next page";
+            enabled: root.page < root.pages - 1;
+            clicked => { root.page += 1; }
+        }
+
+        Rectangle {
+            width: 72 * Theme.dp;
+            accessible-role: button;
+            accessible-label: "Done";
+            accessible-action-default => { HomeModel.op("done", 0, 0, 0, 0, ""); }
+            background: done-t.pressed ? Theme.pressed : transparent;
+            border-radius: Theme.radius;
+            Text {
+                text: "Done";
+                color: Theme.accent;
+                font-size: Theme.font-body;
+                font-weight: 600;
+            }
+            done-t := TouchArea {
+                clicked => { HomeModel.op("done", 0, 0, 0, 0, ""); }
+            }
+        }
+    }
+
+    if HomeModel.message != "": Rectangle {
+        y: parent.height;
+        height: 28 * Theme.dp;
+        background: #0d0f13e6;
+        Text {
+            text: HomeModel.message;
+            color: Theme.danger-text;
+            font-size: Theme.font-label;
+        }
+    }
+}
+
+// The Add sheet: Widgets (to the page) or Apps (to the page, or the dock slot being filled).
+export component AddSheet inherits Sheet {
+    in property <int> page;
+    in-out property <bool> apps-tab: HomeModel.sheet == "dock";
+    title: HomeModel.sheet == "dock" ? "Dock slot " + (HomeModel.dock-slot + 1) : "Add to home";
+    title-start: true;
+    dismissed => { HomeModel.sheet = ""; }
+
+    if HomeModel.sheet == "add": HorizontalLayout {
+        padding-left: 20 * Theme.dp;
+        padding-right: 20 * Theme.dp;
+        padding-bottom: 6 * Theme.dp;
+        spacing: 8 * Theme.dp;
+        for t[i] in ["Widgets", "Apps"]: Rectangle {
+            height: 36 * Theme.dp;
+            horizontal-stretch: 1;
+            border-radius: self.height / 2;
+            background: (i == 1) == root.apps-tab ? Theme.accent : Theme.card;
+            accessible-role: tab;
+            accessible-label: t;
+            accessible-action-default => { root.apps-tab = i == 1; }
+            Text {
+                text: t;
+                color: Theme.text;
+                font-size: Theme.font-label;
+                font-weight: 600;
+            }
+            TouchArea {
+                clicked => { root.apps-tab = i == 1; }
+            }
+        }
+    }
+
+    if !root.apps-tab: VerticalLayout {
+        for name[i] in HomeModel.widgets: Rectangle {
+            height: Theme.list-row-h;
+            background: w-t.pressed ? Theme.pressed : transparent;
+            accessible-role: button;
+            accessible-label: "Add " + name;
+            accessible-action-default => { HomeModel.op("widget", root.page, i + 1, 0, 0, ""); }
+            Text {
+                x: 20 * Theme.dp;
+                text: name + (i < 2 ? "  ·  4 × 2" : "  ·  4 × 1");
+                color: Theme.text;
+                font-size: Theme.font-body;
+                vertical-alignment: center;
+            }
+            w-t := TouchArea {
+                clicked => { HomeModel.op("widget", root.page, i + 1, 0, 0, ""); }
+            }
+        }
+    }
+
+    if root.apps-tab: NeoList {
+        height: min(6, Apps.all.length + (HomeModel.sheet == "dock" ? 1 : 0)) * Theme.list-row-h;
+        content-height: (Apps.all.length + (HomeModel.sheet == "dock" ? 1 : 0)) * Theme.list-row-h;
+        for app[i] in Apps.all: Rectangle {
+            y: i * Theme.list-row-h;
+            height: Theme.list-row-h;
+            background: a-t.pressed ? Theme.pressed : transparent;
+            accessible-role: button;
+            accessible-label: app.name;
+            accessible-action-default => {
+                HomeModel.op(HomeModel.sheet == "dock" ? "dock" : "pin", HomeModel.sheet == "dock" ? HomeModel.dock-slot : root.page, 0, 0, 0, app.key);
+            }
+            HorizontalLayout {
+                padding-left: 20 * Theme.dp;
+                spacing: 14 * Theme.dp;
+                Image {
+                    y: (parent.height - self.height) / 2;
+                    width: 32 * Theme.dp;
+                    height: 32 * Theme.dp;
+                    source: app.icon;
+                }
+                Text {
+                    text: app.name;
+                    color: Theme.text;
+                    font-size: Theme.font-body;
+                    vertical-alignment: center;
+                }
+            }
+            a-t := TouchArea {
+                clicked => {
+                    HomeModel.op(HomeModel.sheet == "dock" ? "dock" : "pin", HomeModel.sheet == "dock" ? HomeModel.dock-slot : root.page, 0, 0, 0, app.key);
+                }
+            }
+        }
+        // the dock slot can also be left empty
+        if HomeModel.sheet == "dock": Rectangle {
+            y: Apps.all.length * Theme.list-row-h;
+            height: Theme.list-row-h;
+            background: e-t.pressed ? Theme.pressed : transparent;
+            accessible-role: button;
+            accessible-label: "Leave empty";
+            accessible-action-default => { HomeModel.op("dock", HomeModel.dock-slot, 0, 0, 0, ""); }
+            Text {
+                x: 20 * Theme.dp;
+                text: "Leave empty";
+                color: Theme.danger-text;
+                font-size: Theme.font-body;
+                vertical-alignment: center;
+            }
+            e-t := TouchArea {
+                clicked => { HomeModel.op("dock", HomeModel.dock-slot, 0, 0, 0, ""); }
+            }
+        }
+    }
+}

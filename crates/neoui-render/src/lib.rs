@@ -6,6 +6,7 @@
 
 extern crate alloc;
 
+mod home;
 pub mod keyboard;
 pub mod layer;
 mod settings;
@@ -29,8 +30,8 @@ use slint::platform::software_renderer::{
 use slint::platform::{Platform, PointerEventButton, WindowAdapter, WindowEvent};
 use slint::{ComponentHandle, LogicalPosition, Model, PhysicalSize, PlatformError};
 
-/// The home screen's page count (`ui/screens/home.slint`).
-pub const HOME_PAGES: i32 = 3;
+/// The most pages home has (`neoui_proto::home::MAX_PAGES`); [`Renderer::home_pages`] has how many it has now.
+pub const HOME_PAGES: i32 = neoui_proto::home::MAX_PAGES as i32;
 
 slint::include_modules!();
 
@@ -309,6 +310,10 @@ pub struct Renderer {
     /// lists scrolled by shifting pixels (smooth-ui S2d), and how many frames did so
     scrolling: Scrolling,
     shifts: u32,
+    /// (D10) home's saved layout and the editor's draft
+    home: Rc<RefCell<home::State>>,
+    /// (G3) the switcher's thumbnails, by app key
+    thumbs: Vec<(String, slint::Image)>,
 }
 
 /// Slint's lines for a scrolled list's frame (smooth-ui S2d): the rows of `list` outside `draw` were moved into place
@@ -465,6 +470,7 @@ impl Renderer {
         let sink = edited.clone();
         ui.global::<SystemSettings>()
             .on_edited(move |k| sink.borrow_mut().push(k.as_str().into()));
+        let home = home::wire(&ui, edited.clone());
         Ok(Self {
             window,
             ui,
@@ -491,6 +497,8 @@ impl Renderer {
             status_keys: Vec::new(),
             scrolling: Scrolling::default(),
             shifts: 0,
+            home,
+            thumbs: Vec::new(),
         })
     }
 
@@ -602,14 +610,73 @@ impl Renderer {
         )
     }
 
-    /// The home page on show (0..`HOME_PAGES`).
+    /// The home page on show (0..[`Renderer::home_pages`]).
     pub fn home_page(&self) -> i32 {
         self.ui.get_home_page()
     }
 
     /// Show home page `n` (at once with server transitions on).
     pub fn set_home_page(&mut self, n: i32) {
-        self.ui.set_home_page(n.clamp(0, HOME_PAGES - 1));
+        self.ui.set_home_page(n.clamp(0, self.home_pages() - 1));
+    }
+
+    /// (D10) How many pages home has now (1..=5), or Lanes' three lanes.
+    pub fn home_pages(&self) -> i32 {
+        self.ui.get_home_page_count().max(1)
+    }
+
+    /// (D10) Home comes up in its editor (Settings' Edit home, `ipc::ACTION_EDIT_HOME`); asked again while editing,
+    /// the draft stays.
+    pub fn edit_home(&mut self) {
+        self.show("home", "");
+        self.ui
+            .global::<HomeModel>()
+            .invoke_op("enter".into(), 0, 0, 0, 0, "".into());
+    }
+
+    /// (D10) Is home's editor on? The UI server's page slide and pull to the shade stay off meanwhile.
+    pub fn home_editing(&self) -> bool {
+        self.home.borrow().editing()
+    }
+
+    /// (G3) The thumbnail of app `key` for Open apps: `w` × `h` XRGB8888 pixels (`layer::downsample`'s).
+    pub fn set_thumb(&mut self, key: &str, w: usize, h: usize, px: &[u32]) {
+        let (Ok(w32), Ok(h32)) = (u32::try_from(w), u32::try_from(h)) else {
+            return;
+        };
+        if w == 0 || h == 0 || px.len() < w * h {
+            return;
+        }
+        let mut buf = slint::SharedPixelBuffer::<slint::Rgb8Pixel>::new(w32, h32);
+        for (d, &p) in buf.make_mut_slice().iter_mut().zip(px) {
+            *d = slint::Rgb8Pixel::new((p >> 16) as u8, (p >> 8) as u8, p as u8);
+        }
+        self.thumbs.retain(|(k, _)| k != key);
+        self.thumbs.push((key.into(), slint::Image::from_rgb8(buf)));
+        self.show_thumbs();
+    }
+
+    /// The thumbnails in the order of the running apps; those of apps no longer running go.
+    fn show_thumbs(&mut self) {
+        let running: Vec<String> = self
+            .ui
+            .get_running()
+            .iter()
+            .map(|k| k.as_str().into())
+            .collect();
+        self.thumbs.retain(|(k, _)| running.contains(k));
+        let model: Vec<slint::Image> = running
+            .iter()
+            .map(|k| {
+                self.thumbs
+                    .iter()
+                    .find(|(t, _)| t == k)
+                    .map(|(_, i)| i.clone())
+                    .unwrap_or_default()
+            })
+            .collect();
+        self.ui
+            .set_thumbs(slint::ModelRc::from(Rc::new(slint::VecModel::from(model))));
     }
 
     /// The UI server animates screen changes itself, from snapshots (smooth-ui S2): Slint switches screens at once.
@@ -922,7 +989,22 @@ impl Renderer {
                 .and_then(|i| running.get(i)),
             _ => None,
         };
+        // the home editor: going home or to the apps is its Done (D10)
+        if screen == "home" && self.home_editing() && g != Gesture::Back {
+            self.ui
+                .global::<HomeModel>()
+                .invoke_op("done".into(), 0, 0, 0, 0, "".into());
+            return;
+        }
+        let lanes = self.ui.global::<SystemSettings>().get_home_style() == 1;
         match g {
+            // Lanes (G5): Open apps is home's third lane
+            Gesture::OpenApps if lanes => {
+                self.show("home", "");
+                self.ui.set_home_page(2);
+            }
+            // the UI server closes the app (G4); home comes up
+            Gesture::Close => self.show("home", ""),
             Gesture::Back => self.ui.invoke_nav_back(),
             Gesture::OpenApps if screen != "switcher" => self.ui.invoke_open("switcher".into()),
             Gesture::Home if screen != "home" => self.show("home", ""),
@@ -946,6 +1028,7 @@ impl Renderer {
         let model: Vec<slint::SharedString> = keys.iter().map(|k| (*k).into()).collect();
         self.ui
             .set_running(slint::ModelRc::from(Rc::new(slint::VecModel::from(model))));
+        self.show_thumbs();
     }
 
     /// Apps the switcher's × asked to close since the last call.
@@ -995,18 +1078,29 @@ impl Renderer {
     /// The registry keys of the settings the shell shows, for the UI server to fill at boot with
     /// [`Renderer::apply_setting`].
     pub fn shown_settings() -> impl Iterator<Item = &'static str> {
-        settings::BINDINGS.iter().map(|b| b.key)
+        settings::BINDINGS
+            .iter()
+            .map(|b| b.key)
+            .chain(core::iter::once(home::KEY))
     }
 
     /// Shows a setting's value (from the UI server's store). False when the shell doesn't show `key` or `value` has
     /// another type than the key's.
     pub fn apply_setting(&mut self, key: &str, value: &Value) -> bool {
+        if key == home::KEY {
+            let Value::Bytes(b) = value else { return false };
+            home::stored(&self.ui, &mut self.home.borrow_mut(), b);
+            return true;
+        }
         let global = self.ui.global::<SystemSettings>();
         settings::binding(key).is_some_and(|b| (b.write)(&global, value))
     }
 
     /// The UI's current value of a shown setting.
     pub fn setting(&self, key: &str) -> Option<Value> {
+        if key == home::KEY {
+            return Some(Value::Bytes(self.home.borrow().saved_bytes()));
+        }
         let global = self.ui.global::<SystemSettings>();
         settings::binding(key).map(|b| (b.read)(&global))
     }
@@ -1018,10 +1112,16 @@ impl Renderer {
         keys.sort_unstable();
         keys.dedup();
         let global = self.ui.global::<SystemSettings>();
-        keys.iter()
+        let mut edits: Vec<(&'static str, Value)> = keys
+            .iter()
             .filter_map(|k| settings::binding(k))
             .map(|b| (b.key, (b.read)(&global)))
-            .collect()
+            .collect();
+        // the home editor's Done (D10)
+        if let Some(bytes) = self.home.borrow_mut().take_save() {
+            edits.push((home::KEY, Value::Bytes(bytes)));
+        }
+        edits
     }
 
     /// The clock face the shell shows (the home clock widget): the time, the date and the next alarm.

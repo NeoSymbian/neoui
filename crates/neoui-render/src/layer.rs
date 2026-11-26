@@ -129,8 +129,51 @@ impl Slide {
     }
 }
 
+/// (G3) An Open apps thumbnail: the top `h` rows (`w` wide, `stride` per row) of an XRGB8888 surface, each `k` × `k`
+/// block averaged into one pixel (`w / k` × `h / k`, the edge's leftover pixels dropped).
+#[must_use]
+pub fn downsample(
+    src: &[u32],
+    stride: usize,
+    w: usize,
+    h: usize,
+    k: usize,
+) -> (usize, usize, alloc::vec::Vec<u32>) {
+    let k = k.max(1);
+    let (tw, th) = (w / k, h.min(src.len() / stride.max(1)) / k);
+    let n = (k * k) as u32;
+    let mut out = alloc::vec::Vec::with_capacity(tw * th);
+    for ty in 0..th {
+        for tx in 0..tw {
+            let (mut r, mut g, mut b) = (0u32, 0u32, 0u32);
+            for y in ty * k..ty * k + k {
+                for &p in &src[y * stride + tx * k..][..k] {
+                    r += p >> 16 & 0xff;
+                    g += p >> 8 & 0xff;
+                    b += p & 0xff;
+                }
+            }
+            out.push(0xff00_0000 | ((r / n) << 16) | ((g / n) << 8) | (b / n));
+        }
+    }
+    (tw, th, out)
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn downsample_averages_blocks() {
+        // 4 × 3 pixels, stride 5: two 2 × 2 blocks (the third row and the fifth column are dropped)
+        let src = [
+            0x00_00_00, 0x00_00_10, 0xff_00_00, 0xff_00_00, 0x12_34_56, //
+            0x00_00_20, 0x00_00_30, 0xff_00_00, 0xff_00_00, 0, //
+            0xab, 0xab, 0xab, 0xab, 0xab,
+        ];
+        let (w, h, px) = super::downsample(&src, 5, 4, 3, 2);
+        assert_eq!((w, h), (2, 1));
+        assert_eq!(px, [0xff00_0018, 0xffff_0000]);
+    }
+
     use super::*;
 
     fn reference(a: u32, b: u32, t: u32) -> u32 {

@@ -655,6 +655,7 @@ impl Features {
             ipc::ACTION_RESET,
             ipc::ACTION_CLEAR,
             ipc::ACTION_MEASURE_APP,
+            ipc::ACTION_EDIT_HOME,
         ]),
         // every built opcode: 1–10, 13–30, 32, 34, 40–45 (11/12 are retired, 31, 33 and 35–39 reserved)
         opcodes: (((1u64 << 31) - 1) & !1 & !(1 << 11) & !(1 << 12))
@@ -826,6 +827,13 @@ impl MeasureRequest {
         r.end()?;
         (m.nonce != 0).then_some(m)
     }
+}
+
+/// `ACTION_EDIT_HOME` (1.20, D10): the request is empty (the editor needs nothing from Settings); `false` for any
+/// other request, which the shell refuses with `KErrArgument`.
+#[must_use]
+pub const fn edit_home_request(b: &[u8]) -> bool {
+    b.is_empty()
 }
 
 /// The longest `SETTINGS_ACTION` request of 1.20's subkinds.

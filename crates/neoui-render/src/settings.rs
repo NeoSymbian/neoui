@@ -223,6 +223,14 @@ pub(crate) static BINDINGS: &[Binding] = &[
         },
     },
     int_binding!(keys::DISPLAY_FONT_SIZE, get_font_size, set_font_size),
+    // D10: Open apps' columns, swipe down closes apps, home's style
+    int_binding!(
+        keys::NAV_SWITCHER_COLS,
+        get_switcher_cols,
+        set_switcher_cols
+    ),
+    bool_binding!(keys::NAV_SWIPE_CLOSE, get_swipe_close, set_swipe_close),
+    int_binding!(keys::HOME_STYLE, get_home_style, set_home_style),
 ];
 
 /// The binding for `key`, if the shell shows it.

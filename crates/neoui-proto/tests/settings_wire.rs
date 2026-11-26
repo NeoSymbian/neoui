@@ -495,7 +495,7 @@ fn features_golden_and_what_is_advertised() {
     let want = [
         &[1u8, 21, 0, 0][..],
         &[0xFE, 0x63, 0, 0, 0, 0, 0, 0], // INFO 1–7 (7 since 1.21), 8, 9, 13, 14
-        &[0xFE, 0, 0, 0, 0, 0, 0, 0],    // actions 1–7
+        &[0xFE, 0x02, 0, 0, 0, 0, 0, 0], // actions 1–7, 9 (D10's EDIT_HOME)
         &[0xFE, 0xE7, 0xFF, 0x7F, 0x05, 0x3F, 0, 0], // opcodes 1–10, 13–30, 32, 34 (1.21), 40–45
     ]
     .concat();
@@ -518,8 +518,11 @@ fn features_golden_and_what_is_advertised() {
     );
     assert!(f.has_info(ipc::INFO_APP_DETAIL), "D4 produces INFO 8");
     for a in ipc::ACTION_INSTALL_WALLPAPER..=ipc::ACTION_LOCK_DIALOG {
-        assert!(!f.has_action(a), "action {a}");
+        assert_eq!(f.has_action(a), a == ipc::ACTION_EDIT_HOME, "action {a}");
     }
+    // D10: EDIT_HOME takes nothing
+    assert!(neoui_proto::settings_app::wire::edit_home_request(&[]));
+    assert!(!neoui_proto::settings_app::wire::edit_home_request(&[0]));
     for op in [11, 12, 31, ipc::REPLY_TEXT, 36, ipc::TILE, 38, 39] {
         assert!(!f.has_opcode(op), "opcode {op}");
     }

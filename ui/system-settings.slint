@@ -64,6 +64,11 @@ export global SystemSettings {
     // (display.font_size 0..3): the shell's own text follows it through Theme.font-size
     in-out property <string> wallpaper: "night";
     in-out property <int> font-size: 1;
+    // (D10) Open apps' columns 2..3 (nav.switcher_cols, G3), a drag down from the status bar closes the app in front
+    // (nav.swipe_close, G4), home as 0 Pages or 1 Lanes (home.style, G5)
+    in-out property <int> switcher-cols: 2;
+    in-out property <bool> swipe-close: false;
+    in-out property <int> home-style: 0;
 
     // A setting changed in the UI (its registry key); the server reads the property and stores it.
     callback edited(string);
@@ -106,6 +111,9 @@ export global SystemSettings {
     changed legacy-pad-console => { edited("legacy.pad.console"); }
     changed legacy-pad-epoch => { edited("legacy.pad.epoch"); }
     changed wallpaper => { edited("display.wallpaper"); }
+    changed switcher-cols => { edited("nav.switcher_cols"); }
+    changed swipe-close => { edited("nav.swipe_close"); }
+    changed home-style => { edited("home.style"); }
     changed font-size => {
         Theme.font-size = font-size;
         edited("display.font_size");

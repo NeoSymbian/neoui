@@ -414,8 +414,9 @@ jobs:
       # - Protocol 1.12 (Files FA8): the UI kit (Apps row 4, 449,985) -> ⋮ (500,73) -> Files (menu row 9, 400,805) ->
       #   Save a file (270,244) opens Files' Save as on C:\ (no C:\Data there); its Save (470,998) answers the kit
       #   with the new file by handle, and the kit writes into it.
-      # Then the N9 map (Settings, still running at its root -> Home & navigation -> N9 gestures, 270,490): the right
-      # edge's drag is Open apps.
+      # Then the N9 map (Settings, still running at its root -> Home & navigation -> N9 gestures, 270,490); D10's
+      # Swipe down closes apps (its switch, 480,704, under the three modes): a drag down from the status bar past half
+      # the screen closes Settings and home comes up; from home the right edge's drag is Open apps.
       - name: Boot again; gesture navigation (the Thumb map, then N9)
         working-directory: build
         run: |
@@ -445,6 +446,8 @@ jobs:
           wait_s 1; swipe 270 1075 270 900; expect "neoui: screen home"
           wait_s 1; tap 485 973; tap 270 805; wait_s 2
           tap 270 721; expect "settings: page navigation"; tap 270 490; expect "neoui: settings saved"; wait_s 1
+          tap 480 704; expect "neoui: setting nav.swipe_close"; wait_s 1
+          swipe 270 10 270 760; expect "neoui: gesture close settings"; expect "neoui: screen home"; wait_s 1
           swipe 534 540 340 540; expect "neoui: screen switcher"
           ui_run 180
           s=out/serial.log

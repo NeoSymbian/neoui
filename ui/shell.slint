@@ -27,6 +27,7 @@ import { Shade, ShadeNote } from "components/shade.slint";
 import { NotificationBanner } from "components/notification-banner.slint";
 export { ShadeNote } from "components/shade.slint";
 export { Apps } from "screens/menu.slint";
+export { HomeModel } from "screens/home-edit.slint";
 import { Keyboard } from "components/keyboard/keyboard.slint";
 import { Alphabets } from "components/keyboard/glyphs.slint";
 export { Layouts } from "components/keyboard/layouts.slint";
@@ -37,6 +38,7 @@ export { Kit } from "components/layers.slint";
 import { KeyboardFocus } from "components/keyboard/focus.slint";
 import { PowerMenu, PowerProfile } from "components/powermenu.slint";
 import { HomeScreen } from "screens/home.slint";
+import { HomeModel } from "screens/home-edit.slint";
 import { MenuScreen } from "screens/menu.slint";
 import { OldAppsScreen, OldApp } from "screens/oldapps.slint";
 import { CameraScreen } from "screens/camera.slint";
@@ -111,6 +113,8 @@ export component Shell inherits Window {
     // the home screen's pages, for the UI server's swipe (smooth-ui S2c): which one shows, and the band they fill
     in-out property <int> home-page <=> home.page;
     out property <length> home-strip-h: home.strip-h;
+    // (D10) home's pages (or Lanes' three lanes) side by side
+    out property <int> home-page-count: home.page-count;
     // one rule for the shell's screens and apps (rule 16): Buttons 720 - 25 - 56 = 639, Gestures 720 - 25 - 16 = 679;
     // a mode switch resizes running apps once (AppEvent::Area)
     out property <length> body-h: self.height - Theme.status-h - bottom-h;
@@ -160,6 +164,8 @@ export component Shell inherits Window {
     callback group-toggled(int);
     // in: the apps the UI server keeps running, most recent first (R10); out: the switcher's close button
     in property <[string]> running;
+    // (G3) their thumbnails, in the same order (an empty image: none)
+    in property <[image]> thumbs;
     callback close-app(string);
     // Open apps' ⋮ Close all (the resident Phone stays)
     callback close-all();
@@ -238,6 +244,11 @@ export component Shell inherits Window {
     public function back() {
         if (root.shade-open) {
             root.shade-open = false;
+        } else if (root.screen == "home" && HomeModel.sheet != "") {
+            HomeModel.sheet = "";
+        } else if (root.screen == "home" && HomeModel.editing) {
+            // the home editor's Back is its Done (D10): saved once
+            HomeModel.op("done", 0, 0, 0, 0, "");
         } else if (root.view != "") {
             root.view = "";
         } else if (root.screen == "menu") {
@@ -360,6 +371,11 @@ export component Shell inherits Window {
         Slot {
             active: screen == "home";
             home := HomeScreen {
+                notes: root.notes;
+                running: root.running;
+                thumbs: root.thumbs;
+                note-opened(i) => { root.note-opened(i, 0); }
+                close-app(a) => { root.close-app(a); }
                 open-app(a) => { root.open(a); }
                 open-view(a, v) => { root.open(a); root.view = v; }
             }
@@ -408,6 +424,8 @@ export component Shell inherits Window {
             active: screen == "switcher";
             SwitcherScreen {
                 running: root.running;
+                thumbs: root.thumbs;
+                shown: screen == "switcher";
                 open-app(a) => { root.open(a); }
                 close-app(a) => { root.close-app(a); }
             }
@@ -465,7 +483,7 @@ export component Shell inherits Window {
     // the bottom (rule 06 / D17): Buttons' key row (also for 3 s over a full-screen page after a tap), or the band
     if root.buttons && (!root.full || root.key-row-peek): KeyRow {
         y: root.height - Theme.key-row-h;
-        can-back: root.shade-open || (root.app-front ? root.app-back : root.screen != "home");
+        can-back: root.shade-open || (root.app-front ? root.app-back : root.screen != "home" || HomeModel.editing);
         keyboard: kb.visible;
         back => {
             root.nav-back();

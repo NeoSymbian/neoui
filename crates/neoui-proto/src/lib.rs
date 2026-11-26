@@ -10,6 +10,7 @@ pub mod clock;
 pub mod devtools;
 pub mod effects;
 pub mod gesture;
+pub mod home;
 pub mod ipc;
 pub mod notification_policy;
 pub mod open;
