@@ -19,6 +19,7 @@ extern crate alloc;
 
 pub mod build;
 pub mod hal;
+pub mod settings_info;
 pub mod sys;
 
 use alloc::boxed::Box;

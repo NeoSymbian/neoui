@@ -36,6 +36,10 @@ use neoui_proto::sound_profile;
 use neoui_proto::{InputEvent, TouchPhase};
 use neoui_render::{LauncherEntry, Nav, Note, Notification, Page, Query};
 
+// 1.20's paged Settings kinds, owner work and thumbnails (a child module: it works on the apps here)
+#[path = "settings_info.rs"]
+mod settings_info;
+
 /// Apps whose shell screen is a launcher grid until they request FRONT(1).
 // shortcut: a fixed table like APPS; apps declare launcher support when apps are installable.
 pub const LAUNCHERS: &[&str] = &["legacy"];
@@ -121,6 +125,10 @@ pub struct App {
 
 impl App {
     fn send(&mut self, e: AppEvent) {
+        // an older decoder refuses a newer event, and its app ends
+        if self.minor < e.needs_minor() {
+            return;
+        }
         match self.waiting.take() {
             Some(m) => deliver(m, e),
             None => {
@@ -140,6 +148,16 @@ impl App {
                     && matches!(last, AppEvent::Input(InputEvent::Touch { id: q, .. }) if *q == id)
                 {
                     *last = e;
+                    return;
+                }
+                // one hint per kind is enough: it carries the newest revision
+                if let AppEvent::SettingsInfo { kind, .. } = e
+                    && let Some(old) = self
+                        .queue
+                        .iter_mut()
+                        .find(|q| matches!(q, AppEvent::SettingsInfo { kind: k, .. } if *k == kind))
+                {
+                    *old = e;
                     return;
                 }
                 self.queue.push_back(e);
@@ -249,6 +267,8 @@ pub struct Host {
     clipboard: String,
     /// What the clipboard holds (`proto::CLIP_TEXT`, `CLIP_PATHS_COPY`, `CLIP_PATHS_MOVE`; `CLIP_KIND`).
     clip_kind: i32,
+    /// 1.20: revisions, Settings' subscriptions, owner work and thumbnails ([`settings_info`]).
+    shelf: settings_info::Shelf,
 }
 
 impl Host {
@@ -292,6 +312,7 @@ impl Host {
             badges_changed: false,
             clipboard: String::new(),
             clip_kind: proto::CLIP_TEXT,
+            shelf: settings_info::Shelf::boot(),
         }
     }
 
@@ -1445,6 +1466,11 @@ impl Service for Host {
                 let r = write_info(&m, &encode_running(&running));
                 m.complete(r.unwrap_or_else(|e| e));
             }
+            proto::SETTINGS_INFO if m.int(0) > proto::INFO_RUNNING => {
+                let key = app.key;
+                let r = self.paged_info(key, *id, &m);
+                m.complete(r);
+            }
             proto::SETTINGS_INFO => {
                 let r = settings_info(&self.info, &m);
                 m.complete(r.unwrap_or_else(|e| e));
@@ -1485,24 +1511,46 @@ impl Service for Host {
                         }
                     }
                     // Settings → Apps → an app (SE4a): Settings only, by its secure ID
-                    proto::ACTION_STOP | proto::ACTION_CLEAR | proto::ACTION_RESET
+                    proto::ACTION_STOP
+                    | proto::ACTION_CLEAR
+                    | proto::ACTION_RESET
+                    | proto::ACTION_MEASURE_APP
                         if access::caller(app.key, m.client_sid()) != Caller::Settings =>
                     {
                         kerr::PERMISSION_DENIED
                     }
                     proto::ACTION_STOP => self.stop_action(&m),
+                    // 1.20: a confirmed clear is acknowledged by its owner, never downgraded to the 1.17 event
+                    proto::ACTION_CLEAR if settings_info::is_confirmed_clear(&m) => {
+                        self.confirmed_clear(&m)
+                    }
                     proto::ACTION_CLEAR => self.clear_action(&m),
+                    proto::ACTION_MEASURE_APP => self.measure_action(&m),
                     proto::ACTION_RESET => self.reset_action(&m),
                     _ => kerr::ARGUMENT,
                 };
                 m.complete(r);
             }
             proto::ENTRY => {
-                let r = entry(&mut self.entries, &mut self.refused, app.key, &m);
+                let key = app.key;
+                let r = entry(&mut self.entries, &mut self.refused, key, &m);
                 if r.is_ok() {
                     self.entries_changed = true;
+                    if key == LEGACY {
+                        self.legacy_entries_changed();
+                    }
                 }
                 m.complete(r.unwrap_or_else(|e| e));
+            }
+            proto::OWNER_REPORT => {
+                let (key, minor) = (app.key, app.minor);
+                let r = self.owner_report(key, minor, *id, &m);
+                m.complete(r);
+            }
+            proto::ENTRY_THUMB => {
+                let key = app.key;
+                let r = self.entry_thumb(key, &m);
+                m.complete(r);
             }
             proto::FRONT if apps::is_service(app.key) => m.complete(err::KERR_NOT_SUPPORTED),
             proto::FRONT => {
@@ -1628,6 +1676,7 @@ impl Service for Host {
 
     fn disconnect(&mut self, id: u32) -> ControlFlow<()> {
         self.settings.drop_session(id);
+        self.settings_session_gone(id);
         // Complete what the session still has outstanding before its disconnect completes.
         let (gone, kept): (Vec<_>, Vec<_>) = self.frames.drain(..).partition(|(s, _)| *s == id);
         self.frames = kept;
