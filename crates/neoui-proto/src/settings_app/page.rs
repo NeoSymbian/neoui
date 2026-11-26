@@ -122,13 +122,16 @@ impl Page {
             .unwrap_or(Page::Root)
     }
 
-    /// The page an open from outside the app shows: an app's page needs the app chosen on Apps, so Apps.
+    /// The page an open from outside the app shows: an app's page needs the app chosen on Apps, so Apps; a
+    /// ringtone needs its profile chosen, so Sounds & profiles; a city needs Date & time's automatic zone off, so
+    /// Date & time.
     #[must_use]
     pub fn from_outside(self) -> Self {
-        if self == Page::AppDetail {
-            Page::Apps
-        } else {
-            self
+        match self {
+            Page::AppDetail => Page::Apps,
+            Page::Ringtone => Page::Sounds,
+            Page::TimeZone => Page::DateTime,
+            p => p,
         }
     }
 
@@ -197,6 +200,8 @@ mod tests {
         assert_eq!(Page::from_id(25), None);
         assert_eq!(Page::Ringtone.parent(), Some(Page::Profile));
         assert_eq!(Page::TimeZone.parent(), Some(Page::DateTime));
+        assert_eq!(Page::opened(23, "").from_outside(), Page::Sounds);
+        assert_eq!(Page::opened(0, "timezone").from_outside(), Page::DateTime);
         assert_eq!(Page::AppDetail.parent(), Some(Page::Apps));
         assert_eq!(Page::Reset.parent(), Some(Page::About));
         assert_eq!(Page::opened(21, "").from_outside(), Page::Apps);

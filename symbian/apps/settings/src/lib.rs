@@ -677,7 +677,10 @@ impl Ctx {
                     .parse::<usize>()
                     .ok()
                     .and_then(|i| self.cities.borrow().get(i).copied());
-                if let Some(name) = name {
+                // a city is the phone's zone only while the automatic zone is off
+                if let Some(name) = name
+                    && !s.get_time_auto_zone()
+                {
                     store::write(app, &ui, "time.zone", name);
                 }
             }
