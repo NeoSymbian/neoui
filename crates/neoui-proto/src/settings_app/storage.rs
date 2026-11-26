@@ -98,6 +98,8 @@ pub struct Tally {
     pub folders: u32,
     /// Folders that couldn't be listed (access denied, the medium removed): skipped, counted.
     pub unreadable: u32,
+    /// Of those, drive roots: nothing on that drive was counted.
+    pub roots_unread: u32,
     /// Folders not entered: deeper than [`DEPTH_MAX`], or past [`PENDING_MAX`] waiting.
     pub skipped: u32,
     /// The whole walk ran (not cancelled).
@@ -120,6 +122,7 @@ impl Tally {
         t.apps += b.apps;
         t.folders += b.folders;
         t.unreadable += b.unreadable;
+        t.roots_unread += b.roots_unread;
         t.skipped += b.skipped;
         t.done = self.done && b.done;
         t
@@ -160,6 +163,9 @@ pub fn scan(
             }
             let Ok(entries) = list(&dir) else {
                 t.unreadable += 1;
+                if depth == 0 {
+                    t.roots_unread += 1;
+                }
                 progress(&t);
                 continue;
             };
@@ -183,6 +189,42 @@ pub fn scan(
     }
     t.done = true;
     t
+}
+
+/// How one drive's count ended (D3), so a count never puts files it couldn't see under Other as if it had.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Outcome {
+    /// every folder read, the same mount throughout
+    Complete,
+    /// done, but some folders couldn't be read: shown marked partial only while the drive has no complete count
+    Partial,
+    /// stopped, remounted, gone or its root unreadable: nothing of it is kept
+    Dropped,
+}
+
+impl Tally {
+    /// This count's [`Outcome`]; `remounted`: the drive's mount changed while it was counted.
+    #[must_use]
+    pub fn outcome(&self, remounted: bool) -> Outcome {
+        if !self.done || remounted || self.roots_unread > 0 {
+            Outcome::Dropped
+        } else if self.unreadable > 0 {
+            Outcome::Partial
+        } else {
+            Outcome::Complete
+        }
+    }
+}
+
+/// Whether a drive's new count with outcome `o` replaces the one kept for it (`kept`: `None`, or whether that one
+/// is partial): a complete count always, a partial one only over nothing or another partial one, a dropped one never.
+#[must_use]
+pub fn replaces(kept: Option<bool>, o: Outcome) -> bool {
+    match o {
+        Outcome::Complete => true,
+        Outcome::Partial => kept.is_none_or(|partial| partial),
+        Outcome::Dropped => false,
+    }
 }
 
 /// "Other (system and app data)": what the drives use besides the counted files and apps. Never below zero: the
@@ -435,6 +477,41 @@ mod tests {
             (301, 2, 150, false)
         );
         assert!(c.plus(&c).done);
+    }
+
+    #[test]
+    fn a_drive_keeps_its_last_complete_count() {
+        let f = fs();
+        // an unreadable root (E:\ here) is dropped, not a drive of Other
+        let e = scan(
+            &["E:\\"],
+            |p| f.get(p).cloned().ok_or(-12),
+            || false,
+            |_| {},
+        );
+        assert_eq!((e.roots_unread, e.outcome(false)), (1, Outcome::Dropped));
+        // C:\Data\Gone couldn't be read: partial
+        let c = scan(
+            &["C:\\"],
+            |p| f.get(p).cloned().ok_or(-12),
+            || false,
+            |_| {},
+        );
+        assert_eq!((c.roots_unread, c.outcome(false)), (0, Outcome::Partial));
+        assert_eq!(c.outcome(true), Outcome::Dropped); // remounted while counted
+        let whole = Tally {
+            done: true,
+            ..Tally::default()
+        };
+        assert_eq!(whole.outcome(false), Outcome::Complete);
+        assert_eq!(Tally::default().outcome(false), Outcome::Dropped); // stopped
+        // what replaces the kept count
+        assert!(replaces(Some(false), Outcome::Complete));
+        assert!(!replaces(Some(false), Outcome::Partial));
+        assert!(replaces(Some(true), Outcome::Partial));
+        assert!(replaces(None, Outcome::Partial));
+        assert!(!replaces(None, Outcome::Dropped));
+        assert!(!replaces(Some(true), Outcome::Dropped));
     }
 
     #[test]

@@ -167,9 +167,9 @@ fn fill(sh: &Shot) {
     s.set_storage_free("C: 3.1 GB free".into());
     // D3: C:'s own Apps, Files and Other inside its bar (the board's 11.2 %, 6.2 %, 8.8 %)
     s.set_storage_c_parts(model(vec![
-        bar("", "", 0.0, 0.112),
-        bar("", "", 0.112, 0.062),
-        bar("", "", 0.174, 0.088),
+        bar("Apps", "918 MB", 0.0, 0.112),
+        bar("Files", "508 MB", 0.112, 0.062),
+        bar("Other", "721 MB", 0.174, 0.088),
     ]));
     s.set_build(strings(&[
         "kernel 1885e2c 2026-11-16T09:46Z bonito",

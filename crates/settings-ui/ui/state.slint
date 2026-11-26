@@ -188,6 +188,8 @@ export global SetState {
     in property <string> storage-free;
     // D3: C:'s own Apps, Files and Other from its last whole count (shares of its size); empty: the plain used bar
     in property <[PartRow]> storage-c-parts;
+    // D3: a drive's kept count is partial (folders it couldn't read): the by-kind readings say so
+    in property <bool> storage-partial;
 
     // About phone: the kernel's, the ROM's and neoui's build lines; Sounds: the test's progress
     in property <[string]> build;

@@ -358,6 +358,8 @@ pub enum KindsState {
     Counting,
     /// counted: its status ("Last counted 06:50")
     Counted(String),
+    /// counted, but a drive's count is partial (folders it couldn't read, D3): its status
+    Partial(String),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -726,6 +728,7 @@ impl Provider for OverviewKinds {
         match (&f.kinds_state, size) {
             (KindsState::Counting, _) => Reading::Pending,
             (KindsState::Counted(_), Some(size)) => Reading::Value(size.clone()),
+            (KindsState::Partial(_), Some(size)) => Reading::Partial(size.clone()),
             _ => Reading::Unavailable("Not counted yet"),
         }
     }
@@ -733,7 +736,7 @@ impl Provider for OverviewKinds {
     // a count is a measurement of then: it names when
     fn detail(&self, f: &Facts, _key: &RowKey) -> String {
         match &f.kinds_state {
-            KindsState::Counted(at) => at.clone(),
+            KindsState::Counted(at) | KindsState::Partial(at) => at.clone(),
             _ => String::new(),
         }
     }
@@ -1348,6 +1351,12 @@ mod tests {
         assert_eq!(
             (row.primary.as_str(), row.detail.as_str()),
             ("6.2 GB", "Last counted 06:50")
+        );
+        // a partial count says so (D3)
+        f.kinds_state = KindsState::Partial("Last counted 06:50 · E: partial".into());
+        assert_eq!(
+            project_all(&f).get(&images).unwrap().reading,
+            Reading::Partial("6.2 GB".into())
         );
         // the console row only when the kernel answered
         assert_eq!(

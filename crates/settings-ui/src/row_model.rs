@@ -174,6 +174,8 @@ pub fn facts(s: &SetState<'_>, sample: Sample, epochs: Epochs) -> Facts {
         .collect();
     f.kinds_state = if s.get_storage_counting() {
         KindsState::Counting
+    } else if s.get_storage_counted() && s.get_storage_partial() {
+        KindsState::Partial(String::from(s.get_storage_status().as_str()))
     } else if s.get_storage_counted() {
         KindsState::Counted(String::from(s.get_storage_status().as_str()))
     } else {

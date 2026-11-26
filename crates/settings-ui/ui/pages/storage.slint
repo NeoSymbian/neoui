@@ -21,7 +21,10 @@ component DriveItem inherits Rectangle {
     property <bool> is-z: letter.starts-with("Z:");
     property <color> tint: is-e ? #e2a92a : is-c ? #2f80ed : is-d ? #1aa37a : #5b616b;
     accessible-role: text;
-    accessible-label: d.title + ", " + d.used + (d.note == "" ? "" : ", " + d.note);
+    // the bar's parts by name and size too (D3: C:'s Apps, Files, Other), not by colour only
+    accessible-label: d.title + ", " + d.used + (d.note == "" ? "" : ", " + d.note)
+        + (parts.length == 3 ? ", " + parts[0].name + " " + parts[0].size + ", " + parts[1].name + " " + parts[1].size
+            + ", " + parts[2].name + " " + parts[2].size : "");
     height: 76 * Theme.dp;
     background: found ? Theme.selected : transparent;
     HorizontalLayout {
