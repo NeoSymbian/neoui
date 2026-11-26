@@ -146,6 +146,12 @@ pub fn profiles(app: &App, ui: &SettingsApp) {
             .map_or("General", |x| x.name.as_str())
             .into(),
     );
+    s.set_active_profile_summary(
+        p.get(p.active)
+            .map(|x| x.summary())
+            .unwrap_or_default()
+            .into(),
+    );
     let current = s.get_profile_current().id;
     let pick = rows
         .iter()
@@ -230,6 +236,7 @@ pub fn write(app: &App, ui: &SettingsApp, key: &str, value: &str) {
 
 /// The city sheet's rows for `query` (case-insensitive, anywhere in the name): their names, and "Name · UTC+04:00".
 pub fn cities(query: &str) -> (Vec<&'static str>, Vec<String>) {
+    // the names, and each one's offset now ("UTC+04:00")
     let q = query.trim().to_lowercase();
     let utc = e32::time::utc_now().0;
     CATALOGUE
@@ -239,10 +246,15 @@ pub fn cities(query: &str) -> (Vec<&'static str>, Vec<String>) {
             let o = c.offset_at(utc);
             let m = o.unsigned_abs() / 60;
             let sign = if o < 0 { '-' } else { '+' };
-            (
-                c.name,
-                format!("{} · UTC{sign}{:02}:{:02}", c.name, m / 60, m % 60),
-            )
+            (c.name, format!("UTC{sign}{:02}:{:02}", m / 60, m % 60))
         })
         .unzip()
+}
+
+/// The city the phone keeps the time of (`time.zone`), "" before one was picked.
+pub fn zone(app: &App) -> String {
+    match app.setting_raw("time.zone") {
+        Ok(Value::Str(s)) => s,
+        _ => String::new(),
+    }
 }

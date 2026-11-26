@@ -39,8 +39,9 @@ export component TextField inherits Rectangle {
     in-out property <string> text;
     in property <string> placeholder;
     in property <int> keys: 1;
-    // masked as dots
+    // masked as dots; an eye at the end shows or hides the password
     in property <bool> password;
+    property <bool> shown;
     in property <bool> autofocus;
     // a validation message under the field (the border turns red); the layout leaves 22 dp under the field for it
     in property <string> error;
@@ -58,28 +59,65 @@ export component TextField inherits Rectangle {
         font-size: Theme.font-label;
     }
 
+    property <length> room: self.width - 28 * Theme.dp - (root.password ? 34 * Theme.dp : 0);
     if root.text == "": Text {
         x: 14 * Theme.dp;
+        width: root.room;
         text: root.placeholder;
         color: Theme.text-dim;
         font-size: Theme.font-body;
         vertical-alignment: center;
+        overflow: elide;
     }
-    input := FieldInput {
+    // a text wider than the field slides left while it's edited, so its end (and the caret there) stays in view
+    Rectangle {
         x: 14 * Theme.dp;
-        width: parent.width - 28 * Theme.dp;
+        width: root.room;
         height: parent.height;
-        text <=> root.text;
-        keys: root.keys;
-        input-type: root.password ? InputType.password : root.keys == 3 ? InputType.number : InputType.text;
-        accepted => {
-            root.accepted(self.text);
+        clip: true;
+        input := FieldInput {
+            x: self.has-focus ? min(0px, parent.width - self.width) : 0px;
+            width: max(parent.width, self.preferred-width + 2 * Theme.dp);
+            height: parent.height;
+            text <=> root.text;
+            keys: root.keys;
+            input-type: root.password && !root.shown ? InputType.password : root.keys == 3 ? InputType.number : InputType.text;
+            accepted => {
+                root.accepted(self.text);
+            }
+        }
+    }
+    changed text => {
+        // a cleared field (a PIN that was refused) starts hidden again
+        if root.text == "" {
+            root.shown = false;
         }
     }
     // the keyboard was put away while this field kept the focus: a tap on it brings the keyboard back
     if KeyboardFocus.dismissed && input.has-focus: TouchArea {
         clicked => {
             input.reopen();
+        }
+    }
+
+    // show / hide the password; the field keeps its focus and the keyboard stays
+    if root.password: Rectangle {
+        x: parent.width - self.width - 4 * Theme.dp;
+        width: 40 * Theme.dp;
+        height: parent.height;
+        accessible-role: button;
+        accessible-label: root.shown ? "Hide password" : "Show password";
+        accessible-action-default => { root.shown = !root.shown; }
+        Image {
+            width: 22 * Theme.dp;
+            height: self.width;
+            source: root.shown ? @image-url("../icons/sys/eye_off.svg") : @image-url("../icons/sys/eye.svg");
+            colorize: Theme.text-secondary;
+        }
+        TouchArea {
+            clicked => {
+                root.shown = !root.shown;
+            }
         }
     }
 
@@ -199,15 +237,27 @@ export component SearchField inherits Rectangle {
 
         Rectangle {
             horizontal-stretch: 1;
+            // a query wider than the field slides left while it's edited, so its end and the caret stay in view
+            clip: true;
             if root.text == "": Text {
                 x: 0;
+                width: parent.width;
                 text: root.placeholder;
                 color: Theme.text-dim;
                 font-size: Theme.font-body;
                 vertical-alignment: center;
+                overflow: elide;
             }
-            FieldInput {
+            input := FieldInput {
+                x: self.has-focus ? min(0px, parent.width - self.width) : 0px;
+                width: max(parent.width, self.preferred-width + 2 * Theme.dp);
                 text <=> root.text;
+            }
+            // the keyboard was put away while this field kept the focus: a tap on it brings the keyboard back
+            if KeyboardFocus.dismissed && input.has-focus: TouchArea {
+                clicked => {
+                    input.reopen();
+                }
             }
         }
     }
@@ -258,7 +308,33 @@ export component TabBar inherits Rectangle {
 
 export component Slider inherits Rectangle {
     in-out property <float> value: 0.5;
+    // steps of this size (0.1 = eleven stops); 0 moves freely
+    in property <float> step;
+    // the page owns `value` (it follows a stored setting): a touch only reports `moved`, so the thumb keeps
+    // following the setting after a drag
+    in property <bool> controlled;
+    // what it sets, for a screen reader
+    in property <string> label;
+    // the finger (or a screen reader's step) asked for this value
+    callback moved(float);
     height: 32 * Theme.dp;
+    accessible-role: slider;
+    accessible-label: root.label;
+    accessible-value: round(root.value * 100) + "%";
+    accessible-value-minimum: 0;
+    accessible-value-maximum: 1;
+    accessible-value-step: root.step > 0 ? root.step : 0.05;
+    accessible-action-increment => { root.ask(root.value + (root.step > 0 ? root.step : 0.05)); }
+    accessible-action-decrement => { root.ask(root.value - (root.step > 0 ? root.step : 0.05)); }
+
+    function ask(v: float) {
+        let c = max(0, min(1, v));
+        let s = root.step > 0 ? round(c / root.step) * root.step : c;
+        if !root.controlled {
+            root.value = s;
+        }
+        root.moved(s);
+    }
     Rectangle {
         height: 4 * Theme.dp;
         border-radius: self.height / 2;
@@ -282,9 +358,10 @@ export component Slider inherits Rectangle {
     }
 
     TouchArea {
+        // a press, and moves while pressed (never a hover)
         pointer-event(e) => {
-            if (e.kind == PointerEventKind.down || e.kind == PointerEventKind.move) {
-                root.value = max(0, min(1, self.mouse-x / root.width));
+            if (e.kind == PointerEventKind.down || (e.kind == PointerEventKind.move && self.pressed)) {
+                root.ask(self.mouse-x / root.width);
             }
         }
     }

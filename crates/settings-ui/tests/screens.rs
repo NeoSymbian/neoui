@@ -6,7 +6,7 @@ mod common;
 use common::{BUTTONS, Shot, model, strings};
 use settings_ui::{
     AppRow, DriveRow, PartRow, ProfileRow, SearchHit, SetState, WifiDetail, WifiLink, WifiNet,
-    WifiSaved,
+    WifiSaved, ZoneRow,
 };
 use slint::{ComponentHandle, Model, SharedString};
 
@@ -54,12 +54,20 @@ fn fill(sh: &Shot) {
     ]));
     s.set_zone("UTC+04:00 · Yerevan".into());
     s.set_synced("Mobile network, 10:02".into());
-    s.set_cities(strings(&[
-        "Moscow · UTC+03:00",
-        "Tehran · UTC+03:30",
-        "Dubai · UTC+04:00",
-        "Yerevan · UTC+04:00",
-        "Tbilisi · UTC+04:00",
+    let city = |name: &str, offset: &str| ZoneRow {
+        name: name.into(),
+        offset: offset.into(),
+        current: name == "Yerevan",
+    };
+    s.set_cities(model(vec![
+        city("Moscow", "UTC+03:00"),
+        city("Nairobi", "UTC+03:00"),
+        city("Riyadh", "UTC+03:00"),
+        city("Baghdad", "UTC+03:00"),
+        city("Tehran", "UTC+03:30"),
+        city("Dubai", "UTC+04:00"),
+        city("Yerevan", "UTC+04:00"),
+        city("Tbilisi", "UTC+04:00"),
     ]));
     s.set_keyboards(model(vec![true, true, true]));
     s.set_keyboard_names(strings(&["English", "Armenian", "Russian"]));
@@ -229,6 +237,7 @@ fn fill(sh: &Shot) {
     s.set_message_tones(strings(&tone::ALL.map(tone::message_name)));
     s.set_active_profile(0);
     s.set_active_profile_name("General".into());
+    s.set_active_profile_summary(s.get_profiles().row_data(0).unwrap().summary);
     s.set_profile_current(s.get_profiles().row_data(0).unwrap());
     s.set_apps(model(
         neoui_proto::apps::listed()
@@ -259,14 +268,17 @@ fn fill(sh: &Shot) {
         WifiSaved {
             name: "Home-5G".into(),
             detail: "Connected · Secured".into(),
+            connected: true,
         },
         WifiSaved {
             name: "Cafe Guest".into(),
             detail: "Secured".into(),
+            connected: false,
         },
         WifiSaved {
             name: "Ararat-Office".into(),
             detail: "Secured · not in range".into(),
+            connected: false,
         },
     ]));
     s.set_wifi_status("3 networks".into());
@@ -451,10 +463,21 @@ fn every_page() {
     page(&sh, 5, "Display");
     sheet(&sh, "timeout");
     sh.shoot("set2-timeout");
-    page(&sh, 9, "Date & time");
+    page(&sh, 24, "Time zone");
     s.set_time_auto_zone(false);
-    sheet(&sh, "zone");
     sh.shoot("set2-timezone");
+    // a city's tap picks it and goes back to Date & time
+    sh.draw();
+    sh.take_acts();
+    sh.tap(100.0, 160.0 + 28.0);
+    assert_eq!(
+        sh.take_acts(),
+        vec![
+            ("zone-pick".to_string(), "0".to_string()),
+            ("back".to_string(), String::new())
+        ]
+    );
+    page(&sh, 9, "Date & time");
     sheet(&sh, "date-format");
     sh.shoot("set2-dateformat");
     sh.take_acts();
@@ -502,16 +525,28 @@ fn every_page() {
     // a ringtone's sheet (set2-ringtone): a tap asks for the tone (the app sets and previews it)
     s.set_profile_current(s.get_profiles().row_data(0).unwrap());
     page(&sh, 18, "General");
-    sheet(&sh, "ringtone");
+    page(&sh, 23, "Ringtone");
     sh.shoot("set2-ringtone");
+    // a row chooses the tone, its ▶ only plays it
+    sh.draw();
+    sh.take_acts();
+    sh.tap(100.0, 82.0 + 64.0 + 32.0);
+    sh.tap(320.0, 82.0 + 64.0 + 32.0);
+    assert_eq!(
+        sh.take_acts(),
+        acts(&[("profile-tone", "r,1"), ("tone-preview", "1")])
+    );
     sheet(&sh, "");
     page(&sh, 7, "Sounds & profiles");
     sh.draw();
     sh.take_acts();
-    sh.tap(100.0, 260.0); // Meeting's row (rows of 64 dp from 72 dp, the third)
+    sh.tap(100.0, 413.0); // Meeting's row (the third, under the active profile's card)
     assert_eq!(s.get_sheet().as_str(), "profile");
     assert_eq!(s.get_profile_current().id, 2);
     sheet(&sh, "");
+    sh.take_acts();
+    sh.tap(320.0, 140.0); // the card's ✎: the active profile's page
+    assert_eq!(sh.take_acts(), acts(&[("profile-open", "0")]));
 
     // Apps: a row opens its sheet; Open and App settings ask for the app (SE1d)
     page(&sh, 13, "Apps");

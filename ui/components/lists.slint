@@ -102,10 +102,19 @@ export component ListRow inherits Rectangle {
     in property <bool> divider: true;
     // a destructive action (Clear data, Stop app): the title in red
     in property <bool> danger;
+    // an action that adds (+ Add profile): the title in the accent
+    in property <bool> title-accent;
+    // the chosen one of a list (the active sound profile): a ✓ in the accent at the end
+    in property <bool> trailing-check;
+    // what the ✓ means, for a screen reader ("Active")
+    in property <string> check-label: "Selected";
     // the trailing value in the brighter secondary colour (Settings' values)
     in property <bool> value-bright;
     // the icon on a coloured rounded tile (Settings' drive and page rows); transparent = a bare glyph
     in property <color> tile: transparent;
+    // a small mark on the icon's lower right (a lock on a secured network)
+    in property <image> badge;
+    in property <bool> has-badge;
     // a small pill button at the right (Forget); its tap is pill-clicked, not clicked
     in property <string> pill;
     in property <bool> pill-danger: true;
@@ -176,9 +185,26 @@ export component ListRow inherits Rectangle {
         }
         if has-icon && root.tile == transparent: VerticalLayout {
             alignment: center;
-            Glyph {
-                source: icon;
-                colorize: icon-tint;
+            Rectangle {
+                width: Theme.row-icon;
+                height: self.width;
+                Glyph {
+                    source: icon;
+                    colorize: icon-tint;
+                }
+                if root.has-badge: Rectangle {
+                    x: parent.width - self.width + 4 * Theme.dp;
+                    y: parent.height - self.height + 3 * Theme.dp;
+                    width: 13 * Theme.dp;
+                    height: self.width;
+                    border-radius: self.width / 2;
+                    background: Theme.bg;
+                    Glyph {
+                        source: root.badge;
+                        size: 11 * Theme.dp;
+                        colorize: root.icon-tint;
+                    }
+                }
             }
         }
         if has-icon && root.tile != transparent: VerticalLayout {
@@ -193,6 +219,19 @@ export component ListRow inherits Rectangle {
                     size: 18 * Theme.dp;
                     colorize: white;
                 }
+                if root.has-badge: Rectangle {
+                    x: parent.width - self.width + 4 * Theme.dp;
+                    y: parent.height - self.height + 3 * Theme.dp;
+                    width: 13 * Theme.dp;
+                    height: self.width;
+                    border-radius: self.width / 2;
+                    background: Theme.bg;
+                    Glyph {
+                        source: root.badge;
+                        size: 11 * Theme.dp;
+                        colorize: root.icon-tint;
+                    }
+                }
             }
         }
         VerticalLayout {
@@ -202,7 +241,7 @@ export component ListRow inherits Rectangle {
             Text {
                 text: title;
                 font-family: title-font;
-                color: root.danger ? Theme.danger : Theme.text;
+                color: root.danger ? Theme.danger : root.title-accent ? Theme.accent : Theme.text;
                 font-size: Theme.font-body;
                 font-weight: unread ? 700 : 500;
                 overflow: elide;
@@ -255,6 +294,16 @@ export component ListRow inherits Rectangle {
                 height: self.width;
                 border-radius: self.width / 2;
                 background: Theme.accent;
+            }
+        }
+        if root.trailing-check: VerticalLayout {
+            alignment: center;
+            Glyph {
+                source: @image-url("../icons/sys/check.svg");
+                size: 22 * Theme.dp;
+                colorize: Theme.accent;
+                accessible-role: text;
+                accessible-label: root.check-label;
             }
         }
         if has-switch: VerticalLayout {

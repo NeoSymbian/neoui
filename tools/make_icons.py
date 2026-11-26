@@ -290,6 +290,15 @@ GLYPHS = {
     "share": [("c", (17.5, 5.8, 2.3)), ("c", (6.5, 12, 2.3)), ("c", (17.5, 18.2, 2.3)), ("p", "M8.5 10.9l7-3.9M8.5 13.1l7 3.9")],
     "sort": [("p", "M4.5 7h15M4.5 12h10M4.5 17h5")],
     "filter": [("p", "M4 5.5h16l-6.2 7.2v5.6l-3.6 1.8v-7.4z")],
+    # a sound profile (set2-sounds' active card): three tracks with their knobs
+    "profile": [("p", "M4 7h16M4 12h16M4 17h16"), ("c", (9, 7, 2)), ("c", (15, 12, 2)), ("c", (7.5, 17, 2))],
+    # a password field's show / hide (kit TextField)
+    "eye": [("p", "M2.5 12s3.6-6.3 9.5-6.3 9.5 6.3 9.5 6.3-3.6 6.3-9.5 6.3S2.5 12 2.5 12z"), ("c", (12, 12, 2.9))],
+    "eye_off": [
+        ("p", "M2.5 12s3.6-6.3 9.5-6.3 9.5 6.3 9.5 6.3-3.6 6.3-9.5 6.3S2.5 12 2.5 12z"),
+        ("c", (12, 12, 2.9)),
+        ("p", "M4 4l16 16"),
+    ],
 }
 
 # system glyphs whose names are also app tiles (ui/icons/sys/<name>.svg beside ui/icons/apps/<name>.svg): the footer
