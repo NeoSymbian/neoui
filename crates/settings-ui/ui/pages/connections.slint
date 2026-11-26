@@ -10,6 +10,7 @@ export component ConnectivityPage inherits NeoList {
         alignment: start;
         SectionHeader { text: "Wireless"; }
         ListRow {
+            value-bright: true;
             title: "Wi-Fi";
             checked: SetState.found == "conn.wifi";
             subtitle: !SetState.wifi ? "Off" : SetState.wifi-link.connected ? "Connected to " + SetState.wifi-link.name : SetState.wifi-status;
@@ -22,6 +23,8 @@ export component ConnectivityPage inherits NeoList {
         }
 
         ListRow {
+
+            value-bright: true;
             title: "Bluetooth";
             checked: SetState.found == "conn.bt";
             subtitle: SetState.bluetooth ? "On · no driver yet" : "Off";
@@ -36,6 +39,7 @@ export component ConnectivityPage inherits NeoList {
 
         SectionHeader { text: "Mobile"; }
         ListRow {
+            value-bright: true;
             title: "Mobile data";
             checked: SetState.found == "conn.data";
             subtitle: !SetState.mobile-data ? "Off" : SetState.rat == "" ? "No service" : SetState.rat;
@@ -47,6 +51,8 @@ export component ConnectivityPage inherits NeoList {
         }
 
         ListRow {
+
+            value-bright: true;
             title: "Airplane mode";
             checked: SetState.found == "conn.airplane";
             subtitle: SetState.airplane ? (SetState.radio-online ? "Turning radio off…" : "Radio off") : (SetState.radio-online ? "Radio on" : "Waiting for radio");
@@ -67,6 +73,7 @@ export component MobilePage inherits NeoList {
         alignment: start;
         SectionHeader { text: "SIM"; }
         ListRow {
+            value-bright: true;
             title: "SIM card & operator";
             checked: SetState.found == "mobile.sim";
             subtitle: (SetState.operator == "" ? "No operator" : SetState.operator) + " · " + SetState.sim;
@@ -76,6 +83,7 @@ export component MobilePage inherits NeoList {
 
         SectionHeader { text: "Data"; }
         ListRow {
+            value-bright: true;
             title: "Mobile data";
             checked: SetState.found == "mobile.data";
             subtitle: SetState.airplane ? "Airplane mode" : SetState.rat == "" ? "No service" : SetState.rat + (SetState.roaming ? " · roaming" : "");
@@ -95,6 +103,7 @@ export component BluetoothPage inherits NeoList {
     VerticalLayout {
         alignment: start;
         ListRow {
+            value-bright: true;
             title: "Bluetooth";
             checked: SetState.found == "bt.switch";
             subtitle: SetState.bluetooth ? "On" : "Off";

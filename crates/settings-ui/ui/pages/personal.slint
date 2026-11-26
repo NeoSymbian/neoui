@@ -10,6 +10,7 @@ export component DateTimePage inherits NeoList {
         alignment: start;
         SectionHeader { text: "Network time"; }
         ListRow {
+            value-bright: true;
             title: "Automatic time";
             checked: SetState.found == "time.auto";
             subtitle: "Last set: " + SetState.synced;
@@ -19,6 +20,8 @@ export component DateTimePage inherits NeoList {
         }
 
         ListRow {
+
+            value-bright: true;
             title: "Automatic time zone";
             checked: SetState.found == "time.auto_zone";
             subtitle: "From the mobile network";
@@ -28,6 +31,8 @@ export component DateTimePage inherits NeoList {
         }
 
         ListRow {
+
+            value-bright: true;
             title: "Time zone";
             checked: SetState.found == "time.zone";
             subtitle: SetState.zone;
@@ -45,6 +50,7 @@ export component DateTimePage inherits NeoList {
 
         SectionHeader { text: "Format"; }
         ListRow {
+            value-bright: true;
             title: "24-hour time";
             checked: SetState.found == "time.24h";
             has-switch: true;
@@ -53,6 +59,8 @@ export component DateTimePage inherits NeoList {
         }
 
         ListRow {
+
+            value-bright: true;
             title: "Seconds in the status bar";
             checked: SetState.found == "time.seconds";
             subtitle: "Uses more battery";
@@ -62,6 +70,8 @@ export component DateTimePage inherits NeoList {
         }
 
         ListRow {
+
+            value-bright: true;
             title: "Date in the shade";
             checked: SetState.found == "time.shade_date";
             has-switch: true;
@@ -70,6 +80,8 @@ export component DateTimePage inherits NeoList {
         }
 
         ListRow {
+
+            value-bright: true;
             title: "Date format";
             checked: SetState.found == "time.format";
             value: SetState.date-text;
@@ -82,6 +94,7 @@ export component DateTimePage inherits NeoList {
 
 // Time zone (set2-timezone): search the cities, a tap picks one; each city brings its summer-time rule.
 export component ZoneSheet inherits Sheet {
+    title-start: true;
     // the shell's keyboard over the surface's bottom: the list shrinks by it, so the field stays above
     in property <length> kb;
     property <string> query: SetState.city-query;
@@ -103,6 +116,7 @@ export component ZoneSheet inherits Sheet {
             VerticalLayout {
                 alignment: start;
                 for city[i] in SetState.cities: ListRow {
+                    value-bright: true;
                     title: city;
                     clicked => {
                         SetState.act("zone-pick", i);
@@ -124,6 +138,7 @@ export component KeyboardPage inherits NeoList {
         alignment: start;
         SectionHeader { text: "Keyboards"; }
         for name[i] in SetState.keyboard-names: ListRow {
+            value-bright: true;
             title: name;
             subtitle: SetState.keyboard-hints[i];
             has-switch: true;
@@ -135,6 +150,7 @@ export component KeyboardPage inherits NeoList {
 
         SectionHeader { text: "Typing"; }
         ListRow {
+            value-bright: true;
             title: "Current language";
             checked: SetState.found == "kb.current";
             value: SetState.keyboard-names.length > SetState.keyboard ? SetState.keyboard-names[SetState.keyboard] : "";
@@ -144,6 +160,8 @@ export component KeyboardPage inherits NeoList {
         }
 
         ListRow {
+
+            value-bright: true;
             title: "Same height for all languages";
             checked: SetState.found == "kb.same_height";
             subtitle: "Shorter ones get a row of digits";
@@ -155,6 +173,8 @@ export component KeyboardPage inherits NeoList {
         }
 
         ListRow {
+
+            value-bright: true;
             title: "Keypress vibration";
             checked: SetState.found == "kb.vibrate";
             subtitle: "A short pulse on each key";
@@ -173,6 +193,7 @@ export component PrivacyPage inherits NeoList {
         alignment: start;
         SectionHeader { text: "Clipboard"; }
         ListRow {
+            value-bright: true;
             title: "Clear clipboard";
             checked: SetState.found == "privacy.clip";
             subtitle: "It holds up to 2048 bytes until the next copy";

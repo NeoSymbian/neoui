@@ -26,6 +26,7 @@ export component AppsPage inherits NeoList {
         alignment: start;
         SectionHeader { text: SetState.apps.length + " apps"; }
         for a in SetState.apps: ListRow {
+            value-bright: true;
             title: a.name;
             checked: SetState.found == "apps." + a.key;
             subtitle: a.settings ? "ROM · has its own settings" : "ROM";
@@ -37,6 +38,7 @@ export component AppsPage inherits NeoList {
 
         SectionHeader { text: "Old apps"; }
         for a in SetState.old-apps: ListRow {
+            value-bright: true;
             title: a.name;
             subtitle: "S60 app";
             has-icon: true;
@@ -66,6 +68,7 @@ export component AppsPage inherits NeoList {
         }
         if !SetState.old-ok: Note { text: "This UI server can't list old apps."; }
         ListRow {
+            value-bright: true;
             title: "Key pads for old apps";
             checked: SetState.found == "apps.oldapps";
             subtitle: "Pads, buttons and vibration for S60 apps";
@@ -83,25 +86,31 @@ export component AppDetailPage inherits NeoList {
     VerticalLayout {
         alignment: start;
         ListRow {
+            value-bright: true;
             title: "Open";
             subtitle: "In the phone's ROM";
             chevron: true;
             clicked => { SetState.act("app-open", SetState.app-current.key); }
         }
         if SetState.app-current.settings: ListRow {
+            value-bright: true;
             title: "App settings";
             chevron: true;
             clicked => { SetState.act("app", SetState.app-current.key); }
         }
         if SetState.app-stoppable: ListRow {
+            value-bright: true;
             title: "Stop";
+            danger: SetState.app-running;
             subtitle: SetState.app-running ? "Running · closes it now; what isn't saved is lost" : "Not running";
             clicked => {
                 if SetState.app-running { SetState.act("app-stop", SetState.app-current.key); }
             }
         }
         if SetState.app-clear != "": ListRow {
+            value-bright: true;
             title: "Clear data";
+            danger: true;
             subtitle: SetState.app-clear;
             divider: false;
             clicked => { SetState.act("app-clear", SetState.app-current.key); }
@@ -114,12 +123,14 @@ export component ResetPage inherits NeoList {
     VerticalLayout {
         alignment: start;
         ListRow {
+            value-bright: true;
             title: "Reset network settings";
             checked: SetState.found == "reset.network";
             subtitle: "Forgets every saved Wi-Fi network";
             clicked => { SetState.act("reset", "network"); }
         }
         ListRow {
+            value-bright: true;
             title: "Reset settings";
             checked: SetState.found == "reset.settings";
             subtitle: "Back to their defaults; sound profiles stay";
@@ -134,6 +145,7 @@ export component ResetPage inherits NeoList {
 
 // An old app's sheet: Open (S60 apps run in the Old apps bridge, which owns them).
 export component AppSheet inherits Sheet {
+    title-start: true;
     title: SetState.app-current.name;
     VerticalLayout {
         padding-left: 20 * Theme.dp;
@@ -175,6 +187,7 @@ export component OldAppsPage inherits NeoList {
         alignment: start;
         SectionHeader { text: "Vibration"; }
         ListRow {
+            value-bright: true;
             title: "Key vibration";
             checked: SetState.found == "pads.vibrate";
             has-switch: true;
@@ -183,6 +196,8 @@ export component OldAppsPage inherits NeoList {
         }
 
         ListRow {
+
+            value-bright: true;
             title: "Vibration strength";
             checked: SetState.found == "pads.strength";
             subtitle: SetState.pad-strengths.length > SetState.pad-strength ? SetState.pad-strengths[SetState.pad-strength] : "";
@@ -192,6 +207,7 @@ export component OldAppsPage inherits NeoList {
 
         SectionHeader { text: "Pads"; }
         ListRow {
+            value-bright: true;
             title: "Default pad for new apps";
             checked: SetState.found == "pads.default";
             subtitle: SetState.pad-default == 0 ? "Auto · games get Gamepad" : SetState.pad-defaults.length > SetState.pad-default ? SetState.pad-defaults[SetState.pad-default] : "";
@@ -200,6 +216,8 @@ export component OldAppsPage inherits NeoList {
         }
 
         ListRow {
+
+            value-bright: true;
             title: "Gamepad directions";
             checked: SetState.found == "pads.dirs";
             subtitle: SetState.pad-dirs-names.length > SetState.pad-dirs ? SetState.pad-dirs-names[SetState.pad-dirs] : "";
@@ -208,6 +226,8 @@ export component OldAppsPage inherits NeoList {
         }
 
         ListRow {
+
+            value-bright: true;
             title: "Gamepad A button";
             checked: SetState.found == "pads.a";
             subtitle: SetState.pad-a-names.length > SetState.pad-a ? SetState.pad-a-names[SetState.pad-a] : "";
@@ -216,6 +236,8 @@ export component OldAppsPage inherits NeoList {
         }
 
         ListRow {
+
+            value-bright: true;
             title: "Gamepad B button";
             checked: SetState.found == "pads.b";
             subtitle: SetState.pad-b-names.length > SetState.pad-b ? SetState.pad-b-names[SetState.pad-b] : "";
@@ -224,6 +246,8 @@ export component OldAppsPage inherits NeoList {
         }
 
         ListRow {
+
+            value-bright: true;
             title: "Left-handed gamepad";
             checked: SetState.found == "pads.lefty";
             subtitle: "Swaps the d-pad and the buttons";
@@ -233,6 +257,8 @@ export component OldAppsPage inherits NeoList {
         }
 
         ListRow {
+
+            value-bright: true;
             title: "Open games in the console";
             checked: SetState.found == "pads.console";
             subtitle: "Landscape: d-pad left, buttons right";
@@ -264,6 +290,7 @@ export component DeveloperPage inherits NeoList {
         alignment: start;
         SectionHeader { text: "Debugging"; }
         ListRow {
+            value-bright: true;
             title: "USB debugging";
             checked: SetState.found == "dev.usb";
             subtitle: SetState.usb-debugging ? "Shell on the second USB port (phone.py sh)" : "Off";
@@ -276,6 +303,7 @@ export component DeveloperPage inherits NeoList {
 
         SectionHeader { text: "Logs"; }
         ListRow {
+            value-bright: true;
             title: "Kernel log";
             checked: SetState.found == "dev.log";
             subtitle: "Live, in Dev tools › Console";
@@ -284,6 +312,8 @@ export component DeveloperPage inherits NeoList {
         }
 
         ListRow {
+
+            value-bright: true;
             title: "Save logs";
             checked: SetState.found == "dev.save";
             subtitle: "To E:\\logs (C:\\logs without E:), in Dev tools › Tools";
@@ -293,6 +323,7 @@ export component DeveloperPage inherits NeoList {
 
         SectionHeader { text: "Input"; }
         ListRow {
+            value-bright: true;
             title: "Show touches";
             checked: SetState.found == "dev.touches";
             subtitle: "A dot under each finger";
@@ -304,6 +335,7 @@ export component DeveloperPage inherits NeoList {
 
         SectionHeader { text: "Tools"; }
         ListRow {
+            value-bright: true;
             title: "Open Dev tools";
             checked: SetState.found == "dev.tools";
             subtitle: "Devices, the kernel log, processes, saving logs";
@@ -382,6 +414,8 @@ export component AboutPage inherits NeoList {
         }
 
         ListRow {
+
+            value-bright: true;
             title: "Licences";
             checked: SetState.found == "about.licences";
             subtitle: "Apache-2.0 · EPL · GPL-3.0 (Slint) · fonts";
@@ -389,6 +423,7 @@ export component AboutPage inherits NeoList {
             clicked => { SetState.act("open", "16"); }
         }
         ListRow {
+            value-bright: true;
             title: "Reset";
             checked: SetState.found == "about.reset";
             subtitle: "Network settings, settings";

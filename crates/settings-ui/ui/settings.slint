@@ -97,6 +97,8 @@ export component SettingsApp inherits Window {
     }
     if SetState.sheet == "ringtone": ChoiceSheet {
         open: true;
+        radio-left: true;
+        title-start: true;
         title: "Ringtone";
         choices: SetState.ring-tones;
         current: SetState.profile-current.ringtone;
@@ -108,6 +110,8 @@ export component SettingsApp inherits Window {
     }
     if SetState.sheet == "message-tone": ChoiceSheet {
         open: true;
+        radio-left: true;
+        title-start: true;
         title: "Message tone";
         choices: SetState.message-tones;
         current: SetState.profile-current.message-tone;
@@ -142,6 +146,8 @@ export component SettingsApp inherits Window {
     }
     if SetState.sheet == "timeout": ChoiceSheet {
         open: true;
+        radio-left: true;
+        title-start: true;
         title: "Screen timeout";
         choices: SetState.timeouts;
         current: SetState.timeout-index;
@@ -150,14 +156,19 @@ export component SettingsApp inherits Window {
     }
     if SetState.sheet == "date-format": ChoiceSheet {
         open: true;
+        radio-left: true;
+        title-start: true;
         title: "Date format";
         choices: SetState.date-formats;
+        descriptions: ["Weekday, day and month", "Day.month.year", "Year-month-day (ISO 8601)", "Month/day/year"];
         current: SetState.date-format;
         chosen(i) => { SetState.act("time.date_format", i); }
         dismissed => { SetState.sheet = ""; }
     }
     if SetState.sheet == "pad-strength": ChoiceSheet {
         open: true;
+        radio-left: true;
+        title-start: true;
         title: "Vibration strength";
         choices: SetState.pad-strengths;
         current: SetState.pad-strength;
@@ -166,6 +177,8 @@ export component SettingsApp inherits Window {
     }
     if SetState.sheet == "pad-default": ChoiceSheet {
         open: true;
+        radio-left: true;
+        title-start: true;
         title: "Default pad for new apps";
         choices: SetState.pad-defaults;
         current: SetState.pad-default;
@@ -174,6 +187,8 @@ export component SettingsApp inherits Window {
     }
     if SetState.sheet == "pad-dirs": ChoiceSheet {
         open: true;
+        radio-left: true;
+        title-start: true;
         title: "Gamepad directions";
         choices: SetState.pad-dirs-names;
         current: SetState.pad-dirs;
@@ -182,6 +197,8 @@ export component SettingsApp inherits Window {
     }
     if SetState.sheet == "pad-a": ChoiceSheet {
         open: true;
+        radio-left: true;
+        title-start: true;
         title: "Gamepad A button";
         choices: SetState.pad-a-names;
         current: SetState.pad-a;
@@ -190,6 +207,8 @@ export component SettingsApp inherits Window {
     }
     if SetState.sheet == "pad-b": ChoiceSheet {
         open: true;
+        radio-left: true;
+        title-start: true;
         title: "Gamepad B button";
         choices: SetState.pad-b-names;
         current: SetState.pad-b;

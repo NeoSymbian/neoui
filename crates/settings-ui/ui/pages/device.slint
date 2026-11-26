@@ -26,6 +26,7 @@ export component DisplayPage inherits NeoList {
 
         SectionHeader { text: "Appearance"; }
         ListRow {
+            value-bright: true;
             title: "Dark theme";
             checked: SetState.found == "display.dark";
             has-icon: true;
@@ -36,6 +37,8 @@ export component DisplayPage inherits NeoList {
         }
 
         ListRow {
+
+            value-bright: true;
             title: "Screen timeout";
             checked: SetState.found == "display.timeout";
             value: SetState.timeout-text;
@@ -69,6 +72,7 @@ export component SoundsPage inherits NeoList {
         // the profiles (set2-sounds, S05): a row's sheet activates it or opens its page
         SectionHeader { text: "Profiles"; }
         for p in SetState.profiles: ListRow {
+            value-bright: true;
             title: p.name;
             checked: SetState.found == "sounds.p" + p.id;
             subtitle: p.summary;
@@ -80,6 +84,7 @@ export component SoundsPage inherits NeoList {
             }
         }
         ListRow {
+            value-bright: true;
             title: "Add profile";
             checked: SetState.found == "sounds.add";
             subtitle: "A copy of General you can change";
@@ -97,6 +102,7 @@ export component SoundsPage inherits NeoList {
 
         SectionHeader { text: "Media"; }
         ListRow {
+            value-bright: true;
             title: "Media volume";
             checked: SetState.found == "sounds.media";
             value: SetState.media-volume;
@@ -119,6 +125,8 @@ export component SoundsPage inherits NeoList {
         }
 
         ListRow {
+
+            value-bright: true;
             title: "Play media on";
             checked: SetState.found == "sounds.route";
             value: SetState.media-routes.length > SetState.media-route ? SetState.media-routes[SetState.media-route] : "";
@@ -126,6 +134,8 @@ export component SoundsPage inherits NeoList {
         }
 
         ListRow {
+
+            value-bright: true;
             title: "Microphone";
             checked: SetState.found == "sounds.mic";
             value: SetState.mics.length > SetState.mic ? SetState.mics[SetState.mic] : "";
@@ -232,6 +242,7 @@ export component BatteryPage inherits NeoList {
     // SE3a: the saver (by hand only), the status bar's percent, and Battery usage
     SectionHeader { text: "Saving"; }
     ListRow {
+        value-bright: true;
         title: "Battery saver";
         checked: SetState.found == "battery.saver";
         subtitle: "Dims the screen";
@@ -243,6 +254,8 @@ export component BatteryPage inherits NeoList {
     }
 
     ListRow {
+
+        value-bright: true;
         title: "Show percentage";
         checked: SetState.found == "battery.percent";
         subtitle: "In the status bar";
@@ -252,6 +265,8 @@ export component BatteryPage inherits NeoList {
     }
 
     ListRow {
+
+        value-bright: true;
         title: "Battery usage";
         checked: SetState.found == "battery.usage";
         subtitle: "Level and time on battery";
@@ -326,6 +341,7 @@ export component ProfilePage inherits NeoList {
         if offline: Note { text: "Offline turns the mobile network, Wi-Fi and Bluetooth off, and sounds like General. Leaving it turns them back on."; }
         if !offline: SectionHeader { text: "Calls"; }
         if !offline && p.ring: ListRow {
+            value-bright: true;
             title: "Ringtone";
             checked: SetState.found == "profile.tone";
             value: SetState.ring-tones.length > p.ringtone ? SetState.ring-tones[p.ringtone] : "";
@@ -336,6 +352,7 @@ export component ProfilePage inherits NeoList {
         if !offline: Note { text: "A tone you pick plays once, at the media volume; calls ring at the ring volume."; }
         // Silent never rings (muting chooses it)
         if !offline && p.id != 1: ListRow {
+            value-bright: true;
             title: "Ring";
             checked: SetState.found == "profile.ring";
             subtitle: p.ring ? "The ringtone sounds" : "Silent: no ringing";
@@ -344,6 +361,7 @@ export component ProfilePage inherits NeoList {
             switch-toggled(v) => { SetState.act("profile-set", (v ? "1" : "0") + "," + p.volume + "," + (p.vibrate ? "1" : "0")); }
         }
         if !offline && p.ring: ListRow {
+            value-bright: true;
             title: "Ring volume";
             checked: SetState.found == "profile.volume";
             value: p.volume;
@@ -364,6 +382,7 @@ export component ProfilePage inherits NeoList {
             }
         }
         if !offline: ListRow {
+            value-bright: true;
             title: "Vibrate";
             checked: SetState.found == "profile.vibrate";
             has-switch: true;
@@ -372,6 +391,7 @@ export component ProfilePage inherits NeoList {
         }
         if !offline: SectionHeader { text: "Messages"; }
         if !offline: ListRow {
+            value-bright: true;
             title: "Message tone";
             checked: SetState.found == "profile.message";
             value: SetState.message-tones.length > p.message-tone ? SetState.message-tones[p.message-tone] : "";
@@ -402,6 +422,7 @@ export component ProfilePage inherits NeoList {
 
 // A profile's sheet from the list: Activate, or its page.
 export component ProfileSheet inherits Sheet {
+    title-start: true;
     title: SetState.profile-current.name;
     VerticalLayout {
         padding-left: 20 * Theme.dp;
@@ -440,6 +461,7 @@ export component ProfileSheet inherits Sheet {
 
 // Add profile / Rename: the name (at most 24 bytes).
 export component ProfileNameSheet inherits Sheet {
+    title-start: true;
     in property <length> kb;
     in property <bool> rename;
     title: rename ? "Rename profile" : "Add profile";

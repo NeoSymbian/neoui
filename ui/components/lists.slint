@@ -47,10 +47,25 @@ export component Switch inherits Rectangle {
 
 export component SectionHeader inherits Rectangle {
     in property <string> text;
+    // a short state beside the section's own action, at the right ("Searching…")
+    in property <string> action-text;
+    // room kept free at the right for that action (an icon button the page draws)
+    in property <length> action-room;
     height: Theme.section-h;
+    action := Text {
+        visible: root.action-text != "";
+        x: parent.width - self.width - Theme.margin - 4 * Theme.dp - root.action-room;
+        y: parent.height - self.height - 6 * Theme.dp;
+        text: root.action-text;
+        color: Theme.text-dim;
+        font-size: Theme.font-status;
+    }
     Text {
         x: Theme.margin + 4 * Theme.dp;
         y: parent.height - self.height - 6 * Theme.dp;
+        // beside an action the title keeps clear of it
+        width: root.action-text != "" ? action.x - self.x - 8 * Theme.dp : parent.width - self.x - Theme.margin;
+        overflow: elide;
         text: root.text.to-uppercase();
         color: Theme.text-dim;
         font-size: Theme.font-status * 0.92;
@@ -76,6 +91,16 @@ export component ListRow inherits Rectangle {
     in-out property <bool> switch-on;
     in property <bool> unread;
     in property <bool> divider: true;
+    // a destructive action (Clear data, Stop app): the title in red
+    in property <bool> danger;
+    // the trailing value in the brighter secondary colour (Settings' values)
+    in property <bool> value-bright;
+    // the icon on a coloured rounded tile (Settings' drive and page rows); transparent = a bare glyph
+    in property <color> tile: transparent;
+    // a small pill button at the right (Forget); its tap is pill-clicked, not clicked
+    in property <string> pill;
+    in property <bool> pill-danger: true;
+    callback pill-clicked;
     // room kept free at the right (a letter strip beside the list)
     in property <length> trailing-room;
     callback clicked;
@@ -140,11 +165,25 @@ export component ListRow inherits Rectangle {
                 tint: avatar-tint;
             }
         }
-        if has-icon: VerticalLayout {
+        if has-icon && root.tile == transparent: VerticalLayout {
             alignment: center;
             Glyph {
                 source: icon;
                 colorize: icon-tint;
+            }
+        }
+        if has-icon && root.tile != transparent: VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: Theme.row-tile;
+                height: self.width;
+                border-radius: 8 * Theme.dp;
+                background: root.tile;
+                Glyph {
+                    source: icon;
+                    size: 18 * Theme.dp;
+                    colorize: white;
+                }
             }
         }
         VerticalLayout {
@@ -154,7 +193,7 @@ export component ListRow inherits Rectangle {
             Text {
                 text: title;
                 font-family: title-font;
-                color: Theme.text;
+                color: root.danger ? Theme.danger : Theme.text;
                 font-size: Theme.font-body;
                 font-weight: unread ? 700 : 500;
                 overflow: elide;
@@ -172,9 +211,32 @@ export component ListRow inherits Rectangle {
             alignment: center;
             Text {
                 text: value;
-                color: unread ? Theme.accent : Theme.text-dim;
-                font-size: Theme.font-label;
+                color: unread ? Theme.accent : root.value-bright ? Theme.text-secondary : Theme.text-dim;
+                font-size: root.value-bright ? Theme.font-value : Theme.font-label;
                 horizontal-alignment: right;
+            }
+        }
+        if root.pill != "": VerticalLayout {
+            alignment: center;
+            Rectangle {
+                accessible-role: button;
+                accessible-label: root.pill + " " + root.title;
+                accessible-action-default => { root.pill-clicked(); }
+                height: 36 * Theme.dp;
+                width: pill-text.preferred-width + 28 * Theme.dp;
+                border-radius: self.height / 2;
+                background: pill-touch.pressed ? Theme.pressed : Theme.pill;
+                pill-text := Text {
+                    text: root.pill;
+                    color: root.pill-danger ? Theme.danger : Theme.text;
+                    font-size: Theme.font-value;
+                    font-weight: 600;
+                }
+                pill-touch := TouchArea {
+                    clicked => {
+                        root.pill-clicked();
+                    }
+                }
             }
         }
         if unread: VerticalLayout {
@@ -206,7 +268,7 @@ export component ListRow inherits Rectangle {
     }
 
     if divider: Rectangle {
-        x: Theme.margin + 4 * Theme.dp + (selecting ? 38 * Theme.dp : 0) + (avatar != "" ? Theme.avatar + 14 * Theme.dp : (has-icon ? Theme.row-icon + 14 * Theme.dp : 0));
+        x: Theme.margin + 4 * Theme.dp + (selecting ? 38 * Theme.dp : 0) + (avatar != "" ? Theme.avatar + 14 * Theme.dp : (has-icon ? (root.tile != transparent ? Theme.row-tile : Theme.row-icon) + 14 * Theme.dp : 0));
         y: parent.height - self.height;
         width: parent.width - self.x;
         height: max(1px, Theme.dp / 2);
