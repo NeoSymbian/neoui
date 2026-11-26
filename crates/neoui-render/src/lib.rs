@@ -606,7 +606,22 @@ impl Renderer {
         self.ui.set_power_open(open);
     }
 
-    /// What the Power menu chose since the last call: 2 = power off, 0 = restart, -1 = dismissed.
+    /// The sound profiles the Power menu offers (id, name) and the active one.
+    pub fn set_power_profiles(&mut self, profiles: &[(u8, &str)], active: u8) {
+        let model: Vec<PowerProfile> = profiles
+            .iter()
+            .map(|(id, name)| PowerProfile {
+                id: i32::from(*id),
+                name: (*name).into(),
+            })
+            .collect();
+        self.ui
+            .set_power_profiles(slint::ModelRc::new(slint::VecModel::from(model)));
+        self.ui.set_power_profile(i32::from(active));
+    }
+
+    /// What the Power menu chose since the last call: 2 = power off, 0 = restart, -1 = dismissed, 100 + id = that
+    /// sound profile.
     pub fn take_power(&mut self) -> Vec<i32> {
         core::mem::take(&mut *self.power.borrow_mut())
     }

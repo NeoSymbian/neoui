@@ -15,6 +15,7 @@ pub mod page;
 pub mod recents;
 pub mod settings;
 pub mod settings_app;
+pub mod sound_profile;
 pub mod wifi;
 
 /// This neoui build: "neoui <commit>[+dirty] <UTC time>, e32-rs <commit>" (build.rs).

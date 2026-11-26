@@ -32,6 +32,7 @@ use neoui_proto::recents::Recents;
 use neoui_proto::settings::value::ENCODED_MAX;
 use neoui_proto::settings::{Caller, KEY_MAX, Value, access, kerr};
 use neoui_proto::settings_app::info::OldApps;
+use neoui_proto::sound_profile;
 use neoui_proto::{InputEvent, TouchPhase};
 use neoui_render::{LauncherEntry, Nav, Note, Notification, Page, Query};
 
@@ -1151,6 +1152,49 @@ impl Service for Host {
                         0
                     }
                     proto::ACTION_SIGN_IN => err::KERR_NOT_READY,
+                    // a sound profile (SE2a): Settings only; the shell's reducer changes everything at once
+                    proto::ACTION_PROFILE => {
+                        if access::caller(app.key, m.client_sid()) != Caller::Settings {
+                            kerr::PERMISSION_DENIED
+                        } else {
+                            let mut b = [0u8; 4 + sound_profile::NAME_MAX];
+                            match m.des_len(1) {
+                                Ok(n) if (4..=b.len()).contains(&n) => {
+                                    match m.read8(1, &mut b, 0) {
+                                        Ok(n) => {
+                                            match sound_profile::Command::decode(&b[..n]) {
+                                                Some(cmd) => {
+                                                    let r = sound_profile::store::apply(
+                                                        &mut self.settings,
+                                                        cmd.clone(),
+                                                        e32::time::millis(),
+                                                    );
+                                                    dprintln!(
+                                                        "neoui: settings profile {:?} ({:?})",
+                                                        cmd,
+                                                        r
+                                                    );
+                                                    match r {
+                                                Ok(()) => 0,
+                                                Err(sound_profile::store::ApplyError::Refused(
+                                                    sound_profile::Refused::NotFound,
+                                                )) => err::KERR_NOT_FOUND,
+                                                Err(sound_profile::store::ApplyError::Refused(
+                                                    sound_profile::Refused::Full,
+                                                )) => kerr::OVERFLOW,
+                                                Err(_) => kerr::ARGUMENT,
+                                            }
+                                                }
+                                                None => kerr::ARGUMENT,
+                                            }
+                                        }
+                                        Err(e) => e,
+                                    }
+                                }
+                                _ => kerr::ARGUMENT,
+                            }
+                        }
+                    }
                     // open an old app: Settings only (by its secure ID), an id the legacy bridge registered
                     proto::ACTION_OPEN_ENTRY => {
                         if access::caller(app.key, m.client_sid()) != Caller::Settings {

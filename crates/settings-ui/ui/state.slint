@@ -11,6 +11,8 @@ export struct SearchHit { id: string, title: string, path: string, value: string
 // a network WIFID remembers (Saved networks): its name, "Connected · Secured" / "Secured · not in range"
 export struct WifiSaved { name: string, detail: string }
 // an app on the Apps page: a ROM app by its screen key, or an old app (old: true) by its id in hex
+// a sound profile (neoui-proto sound_profile): its row's summary and what the profile page edits
+export struct ProfileRow { id: int, name: string, summary: string, ring: bool, volume: int, vibrate: bool }
 export struct AppRow { key: string, name: string, old: bool, settings: bool }
 export struct WifiLink { shown: bool, connected: bool, name: string, subtitle: string, bars: int, band: string, details: [WifiDetail], sign-in: bool }
 
@@ -105,6 +107,14 @@ export global SetState {
     in property <bool> old-ok: true;
     in-out property <AppRow> app-current;
 
+    // Sounds & profiles (SE2a): every profile, the active one, the one a sheet or the profile page is about, and the
+    // name typed for Add / Rename
+    in property <[ProfileRow]> profiles;
+    in property <int> active-profile;
+    in property <string> active-profile-name: "General";
+    in-out property <ProfileRow> profile-current;
+    in-out property <string> new-name;
+
     // the modem (MODEMD): operator, SIM, technology ("LTE", "3G", "2G", "" = no service), radio on
     in property <string> operator;
     in property <string> sim;
@@ -137,6 +147,8 @@ export global SetState {
     // - "open" + a page id; "back";
     // - "wifi-refresh", "wifi-connect" (wifi-current, password), "wifi-disconnect", "wifi-forget", "wifi-sign-in";
     //   "wifi-saved-forget" + a saved network's row (the app asks to confirm first);
+    // - "profile-choose" + an id; "profile-set" + "ring,volume,vibrate" (0/1, 0..10, 0/1) for profile-current;
+    //   "profile-add" / "profile-rename" (new-name); "profile-delete" (the app asks to confirm first);
     // - "app-open" + a ROM app's key; "old-open" + an old app's id (hex); "app" + an app's key (its own settings);
     // - "sound" + "test" | "record"; "keyboard" + an index to turn on or off ("+0"/"-0"); "keyboard-next";
     // - "city-query" + the search text; "pad-reset" (QUERY first); "clip-clear";

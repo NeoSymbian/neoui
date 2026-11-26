@@ -169,6 +169,14 @@ registry! {
     /// C7 built-in ringtone volume, matching NeoModem's 0..=10 steps.
     SOUND_RING_VOLUME: i32 = "sound.ring_volume", default DefaultValue::Int(8),
         limit Limit::Range { min: 0, max: 10 }, owner Owner::Shell;
+    /// The active sound profile (`sound_profile`: 0 General, 1 Silent, 2 Meeting, 3 Outdoor, 4 Offline, 5.. added).
+    /// Written only by the shell's reducer; `sound.silent/vibrate/ring_volume` are its live values.
+    SOUND_PROFILE: i32 = "sound.profile", default DefaultValue::Int(0),
+        limit Limit::Range { min: 0, max: 254 }, owner Owner::Shell;
+    /// The profiles (`sound_profile::Profiles::encode`): built-in overrides, added profiles, what Silent and Offline
+    /// remember. Written only by the shell's reducer.
+    SOUND_PROFILES: Bytes = "sound.profiles", default DefaultValue::Bytes(&[]),
+        limit Limit::MaxLen(1024), owner Owner::Shell;
     /// Media volume (NeoAudio's amp volume, docs/hardware/audio.md): 0..=10; the volume keys outside a call.
     SOUND_MEDIA_VOLUME: i32 = "sound.media_volume", default DefaultValue::Int(7),
         limit Limit::Range { min: 0, max: 10 }, owner Owner::Shell;

@@ -40,6 +40,7 @@ use neoui_proto::gesture::{Edge, Map, Recognizer, Step};
 use neoui_proto::ipc::{self as proto, AppEvent};
 use neoui_proto::settings::keys;
 use neoui_proto::settings_app::info::encode_ip;
+use neoui_proto::sound_profile;
 use neoui_proto::{Damage, InputEvent, Rect, TouchPhase, coalesce_moves, next_deadline};
 use neoui_render::layer::{self, Slide, Transition};
 use neoui_render::{HOME_PAGES, Renderer};
@@ -179,6 +180,8 @@ fn main() -> i32 {
     let mut brightness_sent = -1;
     // the Power menu covers the whole screen: no app surface over it, every touch to the shell
     let mut power_menu = false;
+    // the store's change counter the sound profiles last looked at (u32::MAX: not yet, so the upgrade runs once)
+    let mut profiles_seq = u32::MAX;
     let mut overlay_shown = false;
     let mut front_shown = false; // the shell knows an app is in front // the shade or the Options menu over the app (last frame)
     // a refused HAL query must not freeze the clock below, which would hold every frame back
@@ -712,6 +715,10 @@ fn main() -> i32 {
             if power_down_at.is_some_and(|t| ms.saturating_sub(t) >= POWER_HOLD_MS) {
                 power_down_at = None;
                 dprintln!("neoui: power menu");
+                let p = sound_profile::store::load(&host.settings);
+                let names: Vec<(u8, &str)> =
+                    p.list.iter().map(|x| (x.id, x.name.as_str())).collect();
+                ui.set_power_profiles(&names, p.active);
                 ui.set_power_menu(true);
                 power_menu = true;
             }
@@ -720,7 +727,15 @@ fn main() -> i32 {
                 ui.set_power_menu(false);
                 power_menu = false;
                 host.refresh = true; // the app's surface again, whole
-                if a >= 0 {
+                if a >= 100 {
+                    // a sound profile (SE2a)
+                    let r = sound_profile::store::apply(
+                        &mut host.settings,
+                        sound_profile::Command::Choose((a - 100) as u8),
+                        ms,
+                    );
+                    dprintln!("neoui: power menu profile {} ({:?})", a - 100, r);
+                } else if a >= 0 {
                     power = Some(a);
                 }
             }
@@ -741,6 +756,17 @@ fn main() -> i32 {
             host.set_portal(wifi.portal());
             host.set_info(proto::INFO_NET, encode_ip(wifi.ip()));
             mirror.sync(&mut ui, &mut host.settings, ms);
+            // the sound profiles fold in what others wrote (the shade's Silent tile, airplane mode off) before MODEMD
+            // hears of it: the profile, its blob and its live values change together (SE2a)
+            if host.settings.store().seq() != profiles_seq {
+                if sound_profile::store::reconcile(&mut host.settings, ms) {
+                    dprintln!(
+                        "neoui: sound profile {}",
+                        host.settings.get(keys::SOUND_PROFILE).unwrap_or(0)
+                    );
+                }
+                profiles_seq = host.settings.store().seq();
+            }
             phone.sync_settings(&host.settings, ms); // (phone.poll runs right after the select, C7)
             sound.poll(&host.settings, ms);
             if let Some(worker) = usb_debug.as_mut() {

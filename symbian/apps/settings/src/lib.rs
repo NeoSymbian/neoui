@@ -31,6 +31,7 @@ use neoui_proto::settings_app::info::OldApps;
 use neoui_proto::settings_app::info::{Battery, Clock};
 use neoui_proto::settings_app::page::Page;
 use neoui_proto::settings_app::rows;
+use neoui_proto::sound_profile;
 use settings_ui::{
     AppRow, KeyboardFocus, Kit, SearchHit, SetState, SettingsApp, Theme, live_value,
 };
@@ -50,6 +51,8 @@ fn main() -> i32 {
 
 /// A QUERY waiting for its answer.
 enum Asked {
+    /// Delete this added sound profile
+    ProfileDelete(u8),
     /// "Reset remembered pads"
     PadReset,
     /// Saved networks' Forget, for this network (raw SSID)
@@ -163,6 +166,10 @@ fn run() -> Result<(), i32> {
                     let r = app.set_setting(keys::LEGACY_PAD_EPOCH, epoch.saturating_add(1));
                     dprintln!("settings: pads reset ({:?})", r);
                 }
+                Some(Asked::ProfileDelete(id)) if i == 0 => {
+                    ctx.profile(sound_profile::Command::Delete(id));
+                    ctx.back();
+                }
                 Some(Asked::Forget(ssid)) => {
                     if i == 0 && ctx.wifi.borrow_mut().forget(&ssid).is_err() {
                         let _ = app.note("Couldn't forget the network", "");
@@ -238,6 +245,11 @@ impl Ctx {
         s.set_found(SharedString::new());
         ui.global::<KeyboardFocus>().set_open(false);
         dprintln!("settings: page {}", page.name());
+        if page == Page::Profile {
+            // the profile a sheet chose, or (from search) the active one
+            store::profiles(&self.app, &ui);
+            s.set_title(s.get_profile_current().name);
+        }
         self.tick(true);
     }
 
@@ -346,6 +358,25 @@ impl Ctx {
         if *self.hits.borrow() != hits {
             s.set_results(ModelRc::new(VecModel::from(hits.clone())));
             *self.hits.borrow_mut() = hits;
+        }
+    }
+
+    /// A sound profile command for the shell's reducer; a refusal shows as a note.
+    fn profile(&self, cmd: sound_profile::Command) {
+        let r = self
+            .app
+            .settings_action_with(proto::ACTION_PROFILE, &cmd.encode());
+        dprintln!("settings: profile {:?} ({:?})", cmd, r);
+        let text = match r {
+            Ok(()) => None,
+            Err(-9) => Some("No room for another profile"), // KErrOverflow
+            Err(_) => Some("Couldn't change the profile"),
+        };
+        if let Some(text) = text {
+            let _ = self.app.note(text, "");
+        }
+        if let Some(ui) = self.ui() {
+            store::profiles(&self.app, &ui);
         }
     }
 
@@ -569,6 +600,45 @@ impl Ctx {
                     .and_then(|a| a.settings)
                     .map(|(key, page, arg)| app.open(key, page, arg));
                 dprintln!("settings: open {} settings ({:?})", value, r);
+            }
+            // sound profiles (SE2a): the shell's reducer does them (ACTION_PROFILE)
+            "profile-choose" => {
+                if let Ok(id) = value.parse::<u8>() {
+                    self.profile(sound_profile::Command::Choose(id));
+                }
+            }
+            "profile-set" => {
+                let p = s.get_profile_current();
+                let v: Vec<i32> = value.split(',').filter_map(|x| x.parse().ok()).collect();
+                if let ([ring, volume, vibrate], Ok(id)) = (v.as_slice(), u8::try_from(p.id)) {
+                    self.profile(sound_profile::Command::Set {
+                        id,
+                        ring: *ring != 0,
+                        volume: (*volume).clamp(0, 10) as u8,
+                        vibrate: *vibrate != 0,
+                    });
+                }
+            }
+            "profile-add" => self.profile(sound_profile::Command::Add(String::from(value.trim()))),
+            "profile-rename" => {
+                if let Ok(id) = u8::try_from(s.get_profile_current().id) {
+                    self.profile(sound_profile::Command::Rename(
+                        id,
+                        String::from(value.trim()),
+                    ));
+                    s.set_title(value.trim().into());
+                }
+            }
+            "profile-delete" => {
+                let p = s.get_profile_current();
+                let q = Query {
+                    text: alloc::format!("Delete the profile {}?", p.name),
+                    buttons: alloc::vec![String::from("Delete"), String::from("Cancel")],
+                    destructive: true,
+                };
+                if let (Ok(()), Ok(id)) = (app.query(&q), u8::try_from(p.id)) {
+                    self.asked.replace(Some(Asked::ProfileDelete(id)));
+                }
             }
             // an app itself (Apps page)
             "app-open" => {

@@ -4,7 +4,9 @@
 mod common;
 
 use common::{BUTTONS, Shot, model, strings};
-use settings_ui::{AppRow, SearchHit, SetState, WifiDetail, WifiLink, WifiNet, WifiSaved};
+use settings_ui::{
+    AppRow, ProfileRow, SearchHit, SetState, WifiDetail, WifiLink, WifiNet, WifiSaved,
+};
 use slint::{ComponentHandle, Model, SharedString};
 
 /// The sample state the boards show (set2-root-list's values).
@@ -149,6 +151,31 @@ fn fill(sh: &Shot) {
     ]));
     s.set_wifi_hidden(1);
     s.set_wifi_saved_ok(true);
+    let mut profiles = neoui_proto::sound_profile::builtins();
+    profiles[0].volume = 7;
+    profiles.push(neoui_proto::sound_profile::Profile {
+        id: 5,
+        name: "Gym".into(),
+        ring: true,
+        volume: 10,
+        vibrate: false,
+    });
+    s.set_profiles(model(
+        profiles
+            .iter()
+            .map(|p| ProfileRow {
+                id: i32::from(p.id),
+                name: p.name.as_str().into(),
+                summary: p.summary().into(),
+                ring: p.ring,
+                volume: i32::from(p.volume),
+                vibrate: p.vibrate,
+            })
+            .collect(),
+    ));
+    s.set_active_profile(0);
+    s.set_active_profile_name("General".into());
+    s.set_profile_current(s.get_profiles().row_data(0).unwrap());
     s.set_apps(model(
         neoui_proto::apps::listed()
             .map(|a| AppRow {
@@ -285,6 +312,7 @@ fn every_page() {
         (15, "Privacy", "set2-privacy"),
         (16, "Licences", "set2-licences"),
         (17, "Saved networks", "set2-wifi-saved"),
+        (18, "General", "set2-profile"),
     ] {
         page(&sh, id, title);
         sh.shoot(name);
@@ -344,6 +372,27 @@ fn every_page() {
         acts(&[("nav.mode", "0")]),
         "after {first:?}"
     );
+
+    // Sounds & profiles (SE2a): a row's sheet activates it or opens its page; the page asks the reducer
+    page(&sh, 7, "Sounds");
+    s.set_profile_current(s.get_profiles().row_data(2).unwrap()); // Meeting
+    sheet(&sh, "profile");
+    sh.shoot("set2-profile-sheet");
+    sheet(&sh, "profile-add");
+    sh.shoot("set2-profile-add");
+    sheet(&sh, "");
+    for (i, name) in [(4, "set2-profile-offline"), (5, "set2-profile-added")] {
+        s.set_profile_current(s.get_profiles().row_data(i).unwrap());
+        page(&sh, 18, s.get_profile_current().name.as_str());
+        sh.shoot(name);
+    }
+    page(&sh, 7, "Sounds");
+    sh.draw();
+    sh.take_acts();
+    sh.tap(100.0, 260.0); // Meeting's row (rows of 64 dp from 72 dp, the third)
+    assert_eq!(s.get_sheet().as_str(), "profile");
+    assert_eq!(s.get_profile_current().id, 2);
+    sheet(&sh, "");
 
     // Apps: a row opens its sheet; Open and App settings ask for the app (SE1d)
     page(&sh, 13, "Apps");
