@@ -198,18 +198,18 @@ jobs:
           tap 270 721; expect "settings: page navigation"; tap 270 355; expect "neoui: settings saved"
           # SE1d: back to the root (←), search (🔍 426,73) "apps" on the keyboard (now in Gestures), the first result
           # (app y 118 dp, under the results count) -> Apps; its first row, Clock (118 dp), opens the app's page
-          # (SE4a); Open (84 dp) opens Clock
+          # (SE4a); Open (278 dp, under the header and Storage) opens Clock
           NAV=gestures
           wait_s 1; tap 36 73; expect "settings: back"
           tap 426 73; wait_s 1; kb_globe; kb_type apps   # the keyboard is still Russian (Files): globe -> English
           tap 270 214; expect "settings: page apps"; wait_s 1
           tap 270 214; expect "settings: page app"; wait_s 1
-          tap 270 126; expect "settings: open app clock (Ok"; expect "clock: visible true"
-          # SE4a: Settings again (resumes on Clock's page); Stop (156 dp) -> the shell's dialog "Stop Clock?" -> its
+          tap 270 453; expect "settings: open app clock (Ok"; expect "clock: visible true"
+          # SE4a: Settings again (resumes on Clock's page); Stop app (343 dp) -> the shell's dialog "Stop Clock?" -> its
           # Stop (first of two buttons at the dialog's right, 297,566): the shell closes Clock
           wait_s 1; swipe 270 1075 270 900; expect "neoui: screen home"   # Clock is in front: home first
           tap 485 973; tap 270 805; expect "neoui: app settings resumed"; wait_s 2
-          tap 270 234; wait_s 1; tap 297 566; expect "neoui: settings stops app clock"; expect "clock: quit"
+          tap 270 551; wait_s 1; tap 297 566; expect "neoui: settings stops app clock"; expect "clock: quit"
           # SE2a, Offline (virt is the only device it may run on): ← to Apps, ← to the root,
           # search "offline" -> its row on Sounds (406 dp) -> the sheet's Activate (529 dp): airplane on, Wi-Fi and BT
           # off; then General (118 dp) -> Activate: everything as it was

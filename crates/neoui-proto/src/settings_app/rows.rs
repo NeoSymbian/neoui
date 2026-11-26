@@ -317,14 +317,14 @@ pub const ROWS: &[Row] = &[
         Keyboard,
         Keyboard,
         "Armenian",
-        &["hayeren", "keyboard"],
+        &["hayeren", "հայերեն", "keyboard"],
     ),
     row(
         "kb.2",
         Keyboard,
         Keyboard,
         "Russian",
-        &["cyrillic", "keyboard"],
+        &["cyrillic", "русский", "keyboard"],
     ),
     row(
         "kb.current",
@@ -571,5 +571,8 @@ mod tests {
         assert_eq!(search("SMS")[0].id, "apps.messages");
         // a root row opens its page
         assert_eq!(search("about")[0].opens, Page::About);
+        // the languages' own names find their keyboards (the rows show them since V2 batch 4)
+        assert_eq!(search("Русский")[0].id, "kb.2");
+        assert_eq!(search("հայերեն")[0].id, "kb.1");
     }
 }

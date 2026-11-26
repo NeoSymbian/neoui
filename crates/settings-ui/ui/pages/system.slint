@@ -343,7 +343,7 @@ export component DeveloperPage inherits NeoList {
             value-bright: true;
             title: "USB debugging";
             checked: SetState.found == "dev.usb";
-            subtitle: "Shell on the second USB port (phone.py sh)";
+            subtitle: "Second USB port · phone.py sh";
             has-switch: true;
             switch-on <=> SetState.usb-debugging;
             switch-toggled(v) => { SetState.act("developer.usb_debugging", v ? "1" : "0"); }
@@ -364,7 +364,7 @@ export component DeveloperPage inherits NeoList {
             value-bright: true;
             title: "Save logs";
             checked: SetState.found == "dev.save";
-            subtitle: "To E:\\logs (C:\\logs without E:)";
+            subtitle: "To E:\\logs (C:\\logs without E:), in Dev tools";
             chevron: true;
             clicked => { SetState.act("devtools", "tools"); }
         }

@@ -315,6 +315,11 @@ fn fill(sh: &Shot) {
     });
 }
 
+/// The app row with this key (the catalogue's order changes as apps come and go).
+fn by_key(apps: &slint::ModelRc<AppRow>, key: &str) -> AppRow {
+    apps.iter().find(|a| a.key == key).unwrap()
+}
+
 fn page(sh: &Shot, id: i32, title: &str) {
     let s = sh.ui.global::<SetState>();
     s.set_page(id);
@@ -558,10 +563,7 @@ fn every_page() {
     sh.shoot("set2-apps"); // every ROM app, as the board lists them
     // the old apps (a short ROM list so they are in view): two, more than the grid keeps, and none yet
     let rom = s.get_apps();
-    s.set_apps(model(vec![
-        rom.row_data(0).unwrap(),
-        rom.row_data(5).unwrap(),
-    ]));
+    s.set_apps(model(vec![rom.row_data(0).unwrap(), by_key(&rom, "phone")]));
     sh.shoot("set2-apps-old");
     s.set_old_total(70);
     sh.shoot("set2-apps-many");
@@ -598,7 +600,7 @@ fn every_page() {
     sh.draw();
     sh.tap(100.0, 343.0);
     assert!(sh.take_acts().is_empty());
-    s.set_app_current(s.get_apps().row_data(5).unwrap());
+    s.set_app_current(by_key(&s.get_apps(), "phone"));
     s.set_app_stoppable(false);
     s.set_app_clear("The call history (contacts stay)".into());
     page(&sh, 21, "Phone");
