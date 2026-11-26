@@ -188,13 +188,16 @@ mod tests {
     fn known_changed_since_says_which_edits_are_stale() {
         let mut s = Store::new();
         let shown = s.seq();
-        s.set_raw("radio.wifi", Value::Bool(false)).unwrap();
+        s.set_raw("radio.wifi", Value::Bool(false))
+            .map(drop)
+            .unwrap();
         assert!(s.known_changed_since(shown, "radio.wifi"));
         assert!(!s.known_changed_since(shown, "radio.bt"));
         assert!(!s.known_changed_since(s.seq(), "radio.wifi"));
         // more changes than the journal keeps: it can't tell, so nothing is called stale (edits go through)
         for i in 0..=JOURNAL_LEN {
             s.set_raw("sound.ring_volume", Value::Int((i % 10) as i32))
+                .map(drop)
                 .unwrap();
         }
         assert!(s.changes_since(shown).is_none());
