@@ -109,6 +109,21 @@ impl Tally {
     pub fn files_total(&self) -> u64 {
         self.files.iter().sum()
     }
+
+    /// `self` and `b` together (C: and E:'s counts for the overview); whole only when both are.
+    #[must_use]
+    pub fn plus(&self, b: &Tally) -> Tally {
+        let mut t = *self;
+        for (f, g) in t.files.iter_mut().zip(b.files) {
+            *f += g;
+        }
+        t.apps += b.apps;
+        t.folders += b.folders;
+        t.unreadable += b.unreadable;
+        t.skipped += b.skipped;
+        t.done = self.done && b.done;
+        t
+    }
 }
 
 /// One listed entry: its name, whether it is a folder, its size.
@@ -175,6 +190,37 @@ pub fn scan(
 #[must_use]
 pub fn other(used: u64, t: &Tally) -> u64 {
     used.saturating_sub(t.files_total().saturating_add(t.apps))
+}
+
+/// One drive's bar (D3, the C: row of `set2-storage`): Apps, Files and Other bytes that add up to `used` exactly, so
+/// the parts end where the drive's used fill does: counted bytes past `used` (files deleted since the count) are cut,
+/// and Other is the rest.
+#[must_use]
+pub fn drive_parts(used: u64, t: &Tally) -> [u64; 3] {
+    let apps = t.apps.min(used);
+    let files = t.files_total().min(used - apps);
+    [apps, files, used - apps - files]
+}
+
+/// What a drive holds, with its mounted file system (D3): `fs` is `RFs::FileSystemSubType` (`FAT32`, or the name of
+/// a file system without sub types: `Rom`, `Rofs`, `Composite`), empty when unknown. The read-only Z: says what makes
+/// it up instead.
+#[must_use]
+pub fn drive_note(letter: char, fs: &str) -> String {
+    let (_, note) = drive_names(letter);
+    if letter.eq_ignore_ascii_case(&'Z') {
+        return String::from(match fs {
+            "Composite" => "ROFS + core ROM · read-only",
+            "Rom" => "Core ROM · read-only",
+            "Rofs" => "ROFS · read-only",
+            _ => note,
+        });
+    }
+    match (note, fs) {
+        (n, "") => String::from(n),
+        ("", f) => String::from(f),
+        (n, f) => format!("{n} · {f}"),
+    }
 }
 
 /// A drive as the page names it: (name, what it holds), by its letter.
@@ -362,6 +408,43 @@ mod tests {
         assert_eq!(t.skipped, 10);
         assert_eq!(t.folders as usize, 2 + PENDING_MAX);
         assert_eq!(kind_of("budget.TSV"), Kind::Documents);
+    }
+
+    #[test]
+    fn a_drive_bar_ends_at_its_used_bytes() {
+        let t = Tally {
+            files: [100, 0, 50, 0, 0],
+            apps: 300,
+            ..Tally::default()
+        };
+        assert_eq!(drive_parts(1000, &t), [300, 150, 550]);
+        // files deleted since the count: Files is cut, nothing is negative
+        assert_eq!(drive_parts(400, &t), [300, 100, 0]);
+        assert_eq!(drive_parts(200, &t), [200, 0, 0]);
+        // not counted yet: all of it is Other
+        assert_eq!(drive_parts(7, &Tally::default()), [0, 0, 7]);
+        // two drives' counts add up, whole only when both are
+        let c = Tally { done: true, ..t };
+        let both = c.plus(&Tally {
+            apps: 1,
+            folders: 2,
+            ..Tally::default()
+        });
+        assert_eq!(
+            (both.apps, both.folders, both.files_total(), both.done),
+            (301, 2, 150, false)
+        );
+        assert!(c.plus(&c).done);
+    }
+
+    #[test]
+    fn notes_name_the_file_system() {
+        assert_eq!(drive_note('E', "FAT32"), "Media and documents · FAT32");
+        assert_eq!(drive_note('C', ""), "Settings, installed apps, app data");
+        assert_eq!(drive_note('Q', "FAT16"), "FAT16");
+        assert_eq!(drive_note('Z', "Composite"), "ROFS + core ROM · read-only");
+        assert_eq!(drive_note('z', "Rom"), "Core ROM · read-only");
+        assert_eq!(drive_note('Z', ""), "Read-only");
     }
 
     #[test]

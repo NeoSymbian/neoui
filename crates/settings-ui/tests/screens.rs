@@ -117,17 +117,22 @@ fn fill(sh: &Shot) {
         drive(
             "E: Mass memory",
             "12.4 of 41.8 GB",
-            "Media and documents",
-            0.3,
+            "Media and documents · FAT32",
+            0.297,
         ),
         drive(
             "C: Phone",
             "2.1 of 8 GB",
-            "Settings, installed apps, app data",
-            0.26,
+            "Settings, installed apps, app data · FAT32",
+            0.262,
         ),
         drive("D: RAM", "18 MB", "Temporary files", -1.0),
-        drive("Z: System", "1.2 GB", "Read-only", -1.0),
+        drive(
+            "Z: System",
+            "Read-only",
+            "ROFS + core ROM · read-only",
+            -1.0,
+        ),
     ]));
     let bar = |name: &str, size: &str, start: f32, share: f32| PartRow {
         name: name.into(),
@@ -151,7 +156,13 @@ fn fill(sh: &Shot) {
     ]));
     s.set_storage_counted(true);
     s.set_storage_status("Last counted 06:50".into());
-    s.set_storage_free("35.3 GB free".into());
+    s.set_storage_free("C: 3.1 GB free".into());
+    // D3: C:'s own Apps, Files and Other inside its bar (the board's 11.2 %, 6.2 %, 8.8 %)
+    s.set_storage_c_parts(model(vec![
+        bar("", "", 0.0, 0.112),
+        bar("", "", 0.112, 0.062),
+        bar("", "", 0.174, 0.088),
+    ]));
     s.set_build(strings(&[
         "kernel 1885e2c 2026-11-16T09:46Z bonito",
         "rom 2026-11-16T09:59Z build 269cf8d",

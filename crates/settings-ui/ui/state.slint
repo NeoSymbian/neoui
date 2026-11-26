@@ -170,6 +170,8 @@ export global SetState {
     in property <string> storage-status;
     in property <string> storage-unreadable;
     in property <string> storage-free;
+    // D3: C:'s own Apps, Files and Other from its last whole count (shares of its size); empty: the plain used bar
+    in property <[PartRow]> storage-c-parts;
 
     // About phone: the kernel's, the ROM's and neoui's build lines; Sounds: the test's progress
     in property <[string]> build;
