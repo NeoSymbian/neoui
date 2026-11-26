@@ -358,6 +358,7 @@ pub const ROWS: &[Row] = &[
     // Apps
     // the ROM apps (crate::apps, the ones Settings lists; tests/rows.rs keeps them in step)
     row("apps.clock", Apps, Apps, "Clock", &["alarms", "timer"]),
+    row("apps.calendar", Apps, Apps, "Calendar", &["events"]),
     row("apps.terminal", Apps, Apps, "Terminal", &["shell"]),
     row("apps.files", Apps, Apps, "Files", &[]),
     row("apps.devtools", Apps, Apps, "Dev tools", &["logs"]),

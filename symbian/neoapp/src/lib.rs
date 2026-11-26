@@ -739,9 +739,17 @@ impl App {
     /// `proto::ARG_MAX` bytes) (`proto::OPEN`): it gets `AppEvent::Open { page }` and reads `arg` with
     /// [`App::arg`]; Back at its root comes back here.
     pub fn open(&self, key: &str, page: u16, arg: &str) -> Result<(), i32> {
+        self.open_with(key, page, arg, 0)
+    }
+
+    /// [`App::open`] with `flags` (1.19, `proto::OPEN_WAKE`): they count only from a service.
+    pub fn open_with(&self, key: &str, page: u16, arg: &str, flags: i32) -> Result<(), i32> {
         let (k, a) = (TPtrC8::new(key.as_bytes()), TPtrC8::new(arg.as_bytes()));
         let mut args = TIpcArgs::new();
-        args.desc8(0, &k).int(1, i32::from(page)).desc8(2, &a);
+        args.desc8(0, &k)
+            .int(1, i32::from(page))
+            .desc8(2, &a)
+            .int(3, flags);
         self.server.send_receive(proto::OPEN, &args).map(drop)
     }
 

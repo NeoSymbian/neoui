@@ -15,6 +15,9 @@ pub struct App {
     pub name: &'static str,
     /// `OPEN(key, page, arg)` of the app's own settings page, if it has one.
     pub settings: Option<(&'static str, u16, &'static str)>,
+    /// 1.19: a service, an app with no screen (DTSRV): started at boot and kept alive, never the screen, never
+    /// listed; its card taps arrive in place and its `OPEN` flags count (docs neoui-shell/protocol.md "Services").
+    pub service: bool,
 }
 
 const fn app(key: &'static str, exe: &'static str, name: &'static str) -> App {
@@ -24,6 +27,7 @@ const fn app(key: &'static str, exe: &'static str, name: &'static str) -> App {
         args: "",
         name,
         settings: None,
+        service: false,
     }
 }
 
@@ -32,7 +36,14 @@ pub const SETTINGS: &str = "settings";
 pub const LEGACY: &str = "legacy";
 
 pub const APPS: &[App] = &[
+    // the alarms, timers, events and to-dos, rung whether or not Clock or Calendar runs (NeoSymbian/datetime)
+    App {
+        service: true,
+        ..app("dtsrv", "dtsrv", "Clock & Calendar")
+    },
+    // Clock and Calendar (NeoSymbian/datetime)
     app("clock", "neoclock", "Clock"),
+    app("calendar", "neocal", "Calendar"),
     app("terminal", "neoterm", "Terminal"),
     app("files", "neofiles", "Files"),
     App {
@@ -63,9 +74,17 @@ pub const APPS: &[App] = &[
     app(SETTINGS, "neoset", "Settings"),
 ];
 
-/// The apps the Settings app's Apps page lists: all but itself and the old apps' bridge (its apps are listed instead).
+/// The apps the Settings app's Apps page lists: all but itself, the services and the old apps' bridge (its apps are
+/// listed instead).
 pub fn listed() -> impl Iterator<Item = &'static App> {
-    APPS.iter().filter(|a| a.key != SETTINGS && a.key != LEGACY)
+    APPS.iter()
+        .filter(|a| a.key != SETTINGS && a.key != LEGACY && !a.service)
+}
+
+/// Is `key` a service (1.19, [`App::service`])?
+#[must_use]
+pub fn is_service(key: &str) -> bool {
+    find(key).is_some_and(|a| a.service)
 }
 
 /// The apps that clear their own data on `ipc::AppEvent::ClearData` (Settings → Apps → an app → Clear data, 1.17).
@@ -73,7 +92,7 @@ pub fn listed() -> impl Iterator<Item = &'static App> {
 /// handle the event.
 #[must_use]
 pub fn clears_data(key: &str) -> bool {
-    key == "clock"
+    matches!(key, "clock" | "calendar")
 }
 
 /// The secure ID of app `key`'s EXE (its UID3 in the `exes.txt` that builds it), or `None` for one the shell doesn't
@@ -82,7 +101,9 @@ pub fn clears_data(key: &str) -> bool {
 #[must_use]
 pub fn sid(key: &str) -> Option<u32> {
     Some(match key {
-        "clock" => 0xE000_2002,
+        "clock" => 0xE000_8001,
+        "calendar" => 0xE000_8002,
+        "dtsrv" => 0xE000_8003,
         "terminal" => 0xE000_2003,
         "devtools" => 0xE000_2005,
         "kit" => 0xE000_2006,
@@ -128,7 +149,17 @@ mod tests {
         }
     }
 
-    /// Every app the shell's Apps menu shows that is a process here has the same name there (ui/screens/menu.slint).
+    #[test]
+    fn services_are_not_listed() {
+        assert!(is_service("dtsrv"));
+        assert!(!is_service("clock") && !is_service("nope"));
+        assert!(listed().all(|a| !a.service));
+        assert!(listed().any(|a| a.key == "calendar"));
+        assert!(clears_data("calendar") && !clears_data("dtsrv"));
+    }
+
+    /// Every app the shell's Apps menu shows that is a process here has the same name there (ui/screens/menu.slint);
+    /// a service isn't in the menu.
     #[test]
     fn the_apps_menu_names_match() {
         extern crate std;
@@ -151,7 +182,7 @@ mod tests {
         }
         assert_eq!(
             seen,
-            APPS.len(),
+            APPS.iter().filter(|a| !a.service).count(),
             "an app here is missing from the Apps menu"
         );
     }

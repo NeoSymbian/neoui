@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //! The screen's on/off state (D2 display): off after `display.timeout` seconds without a touch or key, or by a short
-//! press of the power key; on by the power key or an incoming call (touch can't wake it: the kernel puts the
-//! touchscreen to sleep). The state machine is pure and tested on the host; `lib.rs` applies it through the display
+//! press of the power key; on by the power key, an incoming call or a ringing alarm (a service's `OPEN_WAKE`, 1.19;
+//! touch can't wake it: the kernel puts the touchscreen to sleep). The state machine is pure and tested on the host; `lib.rs` applies it through the display
 //! HAL (`EDisplayHalSetState`, `EDisplayHalSetDisplayBrightness`).
 
 /// What the UI server does with the screen after an input.

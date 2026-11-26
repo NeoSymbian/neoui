@@ -878,7 +878,8 @@ fn main() -> i32 {
                 clockwork.set_synced(source);
             }
             clockwork.frame(&mut ui, &mut host, ms);
-            let woke = if phone.take_ring() {
+            // a ringing call, or a service's OPEN_WAKE (an alarm, 1.19)
+            let woke = if phone.take_ring() | core::mem::take(&mut host.wake) {
                 scr.wake(ms)
             } else {
                 None

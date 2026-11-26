@@ -43,13 +43,16 @@
 //! Since 1.18 (top-panel TP2a) a card carries flags, a style, a group, its time and action kinds
 //! ([`crate::page::Notification`]), an app clears all of its cards ([`NOTIFY_CLEAR`]) and hears when the user swipes
 //! or clears one ([`AppEvent::NotifyGone`]); NOTIFY, NOTIFY_CLEAR and BADGE come only from the app's own EXE.
+//! Since 1.19 (datetime DT1) an app can be a service (`crate::apps::App::service`: DTSRV, no screen): the shell starts
+//! it at boot and keeps it alive, its cards' taps and actions all arrive in place, and its [`OPEN`] carries flags
+//! ([`OPEN_WAKE`]: the screen comes on for a ringing alarm).
 
 use crate::{InputEvent, TouchPhase};
 
 /// The server's name (no leading `!`: that needs ProtServ).
 pub const SERVER: &str = "NeoUi";
 /// Protocol version (major, minor); a connect with another major is refused.
-pub const VERSION: (u8, u8) = (1, 18);
+pub const VERSION: (u8, u8) = (1, 19);
 
 /// `[Des8 out: GEOMETRY_LEN bytes = width, height, dp × 256 (u32 LE)]` → 0. `dp` is the shell's design unit in
 /// pixels (`min(screen w, h) / 360`), so apps size things like the shell does.
@@ -113,6 +116,7 @@ pub const ENTRY_ICON_MAX: u16 = 128;
 pub const ENTRIES_MAX: usize = 64;
 /// `[front: 0 | 1]` → 0: 1 shows the calling app's surface on its screen and sends [`AppEvent::Visible`] with `true`;
 /// 0 shows the shell's screen for its key again and sends `Visible(false)`. The app keeps running.
+/// `KErrNotSupported` from a service (1.19).
 pub const FRONT: i32 = 14;
 /// `[Des8 page]` ([`crate::page::Page`], at most [`crate::page::PAGE_MAX`] bytes) → the height in pixels of the
 /// app's area: the body, or the whole screen for a full-screen page. A malformed page gives `KErrArgument`.
@@ -149,7 +153,14 @@ pub const CLIP_MAX: usize = 2048;
 /// Back at the target's root ([`crate::page::Page::can_back`] false) or [`DONE`] returns there. `KErrNotFound` for
 /// an unknown key, `KErrArgument` for a malformed one or an arg over the limit. An app may open itself (a footer tab
 /// for the app already in front is a no-op on the user's side).
+///
+/// 1.19: slot 3 holds flags ([`OPEN_WAKE`]; 0 when an older client leaves it out). They count only from a service,
+/// whose opened app's Back at its root goes home (a service has no screen to return to). A service can't be opened
+/// (`KErrNotSupported`).
 pub const OPEN: i32 = 22;
+/// [`OPEN`] flag (1.19, services only): turn the screen on, as an incoming call does, and close the shade (a ringing
+/// alarm).
+pub const OPEN_WAKE: i32 = 1;
 pub const ARG_MAX: usize = 256;
 /// `[Des8 out arg]` → the length of the arg the last [`OPEN`] of this app carried (0: none), written into argument
 /// 0; reading takes it. `KErrOverflow` when it doesn't fit.

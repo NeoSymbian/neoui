@@ -55,9 +55,9 @@ pub const PAGES: &[(&str, &str, u16)] = &[
     ("settings", "navigation", 6),
 ];
 
-/// Apps started (hidden) at boot and never closed for room: an incoming call must show at once; Messages posts a
-/// shade entry per conversation as texts arrive.
-pub const RESIDENT: &[&str] = &["phone", "messages"];
+/// Apps started (hidden) at boot, in this order, and never closed for room: DTSRV (a service, 1.19) rings alarms
+/// whatever runs; an incoming call must show at once; Messages posts a shade entry per conversation as texts arrive.
+pub const RESIDENT: &[&str] = &["dtsrv", "phone", "messages"];
 
 /// The browser's key, and its page for a Wi-Fi login (NeoSymbian/browser NEOWEB `PAGE_PORTAL`, UI5)
 const BROWSER: &str = "browser";
@@ -206,6 +206,8 @@ pub struct Host {
     pub requested_screen: Option<&'static str>,
     /// With [`Self::requested_screen`] from `OPEN`: the app that opened it (Back at its root returns there).
     pub requested_from: Option<&'static str>,
+    /// A service's `OPEN` with `OPEN_WAKE` (1.19): the main loop turns the screen on.
+    pub wake: bool,
     /// What the Settings app reads with `SETTINGS_INFO` (kinds `INFO_BATTERY`, `INFO_NET`, `INFO_CLOCK` at 0..=2,
     /// `INFO_BATTERY_USAGE` at 4; `INFO_APPS` is answered from the bridge's entries),
     /// kept fresh by the main loop ([`Self::set_info`]).
@@ -269,6 +271,7 @@ impl Host {
             front: None,
             requested_screen: None,
             requested_from: None,
+            wake: false,
             info: Default::default(),
             portal: None,
             leave: false,
@@ -415,8 +418,10 @@ impl Host {
             key,
             action
         );
-        // an in-place action (Mark read): the app hears it where it is, started hidden if it isn't running
-        let in_place = action > 0 && n.action_kind(usize::from(action - 1)) == action::IN_PLACE;
+        // an in-place action (Mark read): the app hears it where it is, started hidden if it isn't running; a
+        // service (1.19) hears every tap so, and opens what it wants itself
+        let in_place = apps::is_service(key)
+            || (action > 0 && n.action_kind(usize::from(action - 1)) == action::IN_PLACE);
         if in_place {
             let running = self
                 .apps
@@ -488,12 +493,14 @@ impl Host {
     /// Settings' Sign in, or the shade's entry: the browser on the network's login page.
     pub fn open_portal(&mut self, now_ms: u64) {
         if let Some(arg) = self.portal.clone() {
-            self.open_app("settings", BROWSER, PORTAL_PAGE, arg, None, now_ms);
+            self.open_app("settings", BROWSER, PORTAL_PAGE, arg, None, 0, now_ms);
         }
     }
 
     /// App `from` opens app `key` on `page` with `arg` (ipc `OPEN`) or a file (`OPEN_FILE`): started or brought to
-    /// the front, told, and shown with `from` as where Back returns.
+    /// the front, told, and shown with `from` as where Back returns. From a service (1.19) Back returns home and
+    /// `flags` count (`OPEN_WAKE`).
+    #[allow(clippy::too_many_arguments)]
     fn open_app(
         &mut self,
         from: &'static str,
@@ -501,25 +508,36 @@ impl Host {
         page: u16,
         arg: String,
         file: Option<SharedFile>,
+        flags: i32,
         now_ms: u64,
     ) {
+        let service = apps::is_service(from);
         dprintln!(
-            "neoui: {} opens {} page {}{}",
+            "neoui: {} opens {} page {}{}{}",
             from,
             key,
             page,
-            if file.is_some() { " with a file" } else { "" }
+            if file.is_some() { " with a file" } else { "" },
+            if service && flags & proto::OPEN_WAKE != 0 {
+                " (wake)"
+            } else {
+                ""
+            }
         );
         self.limit_running(key, now_ms);
         self.start(key);
         if let Some(app) = self.apps.find_mut(|a| a.key == key && a.quit_at.is_none()) {
             app.arg = arg;
             app.file = file;
-            app.opened_by = Some(from);
+            app.opened_by = (!service).then_some(from);
             app.send(AppEvent::Open { page });
         }
         self.requested_screen = Some(key);
-        self.requested_from = Some(from);
+        // a service has no screen to return to: Back at the app's root goes home (not to a stale origin)
+        self.requested_from = Some(if service { "home" } else { from });
+        if service && flags & proto::OPEN_WAKE != 0 {
+            self.wake = true; // ui.show closes the shade
+        }
     }
 
     /// Start a [`RESIDENT`] app that isn't running (hidden), at most every [`RESIDENT_RETRY_MS`]. Call once per
@@ -539,15 +557,15 @@ impl Host {
         {
             return;
         }
-        let Some(key) = RESIDENT
-            .iter()
-            .copied()
-            .find(|k| self.apps.find(|a| a.key == *k).is_none())
-        else {
-            return;
-        };
-        self.resident_at = Some(now_ms);
-        self.launch(key);
+        // in order; one whose EXE is missing (no DTSRV in this ROM) doesn't hold up the others
+        for &key in RESIDENT {
+            if self.apps.find(|a| a.key == key).is_none() {
+                self.resident_at = Some(now_ms);
+                if self.launch(key) {
+                    return;
+                }
+            }
+        }
     }
 
     /// Answer the held `DAMAGE` calls: the frame they asked for is on screen (or won't be shown). Call once per server
@@ -642,7 +660,11 @@ impl Host {
 
     /// The shell moved to `screen`: hide the app that was in front, and show (or start) the one for `screen`.
     pub fn set_screen(&mut self, screen: &str, now_ms: u64) {
-        let key = APPS.iter().find(|a| a.key == screen).map(|a| a.key);
+        // a service is never the screen
+        let key = APPS
+            .iter()
+            .find(|a| a.key == screen && !a.service)
+            .map(|a| a.key);
         if self.screen == key {
             return;
         }
@@ -709,7 +731,8 @@ impl Host {
         }
     }
 
-    fn launch(&mut self, key: &'static str) {
+    /// Start app `key` (hidden); false when its process couldn't be made (logged).
+    fn launch(&mut self, key: &'static str) -> bool {
         let (exe, args) = APPS
             .iter()
             .find(|a| a.key == key)
@@ -739,8 +762,12 @@ impl Host {
                     opened_by: None,
                     result: None,
                 });
+                true
             }
-            Err(e) => dprintln!("neoui: app {} failed to start ({})", key, e),
+            Err(e) => {
+                dprintln!("neoui: app {} failed to start ({})", key, e);
+                false
+            }
         }
     }
 
@@ -1477,6 +1504,7 @@ impl Service for Host {
                 }
                 m.complete(r.unwrap_or_else(|e| e));
             }
+            proto::FRONT if apps::is_service(app.key) => m.complete(err::KERR_NOT_SUPPORTED),
             proto::FRONT => {
                 if app.quit_at.is_some() {
                     return m.complete(err::KERR_CANCEL);
@@ -1508,6 +1536,9 @@ impl Service for Host {
                 let Some(target) = target else {
                     return m.complete(err::KERR_NOT_FOUND);
                 };
+                if apps::is_service(target) {
+                    return m.complete(err::KERR_NOT_SUPPORTED); // never the screen
+                }
                 let Ok(page) = u16::try_from(m.int(1)) else {
                     return m.complete(kerr::ARGUMENT);
                 };
@@ -1525,7 +1556,13 @@ impl Service for Host {
                         }
                     }
                 };
-                self.open_app(from, target, page, arg, file, e32::time::millis());
+                // 1.19: OPEN's slot 3 is its flags (OPEN_FILE's file is in 2 and 3)
+                let flags = if m.function() == proto::OPEN {
+                    m.int(3)
+                } else {
+                    0
+                };
+                self.open_app(from, target, page, arg, file, flags, e32::time::millis());
                 m.complete(0);
             }
             proto::ARG_FILE | proto::RESULT_FILE => {
