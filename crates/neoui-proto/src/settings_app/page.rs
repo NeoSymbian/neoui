@@ -30,9 +30,13 @@ pub enum Page {
     /// One app (SE4a): Open, its settings, Stop, Clear data; the app is NEOSET's current one.
     AppDetail = 21,
     Reset = 22,
+    /// A profile's ringtone (set2-ringtone): the tones, each with a preview.
+    Ringtone = 23,
+    /// The city whose time the phone keeps (set2-timezone), when the time zone isn't automatic.
+    TimeZone = 24,
 }
 
-pub const ALL: [Page; 23] = [
+pub const ALL: [Page; 25] = [
     Page::Root,
     Page::Wifi,
     Page::Mobile,
@@ -56,6 +60,8 @@ pub const ALL: [Page; 23] = [
     Page::Storage,
     Page::AppDetail,
     Page::Reset,
+    Page::Ringtone,
+    Page::TimeZone,
 ];
 
 impl Page {
@@ -96,6 +102,8 @@ impl Page {
             Page::Storage => "storage",
             Page::AppDetail => "app",
             Page::Reset => "reset",
+            Page::Ringtone => "ringtone",
+            Page::TimeZone => "timezone",
         }
     }
 
@@ -151,6 +159,8 @@ impl Page {
             Page::Storage => "Storage",
             Page::AppDetail => "App",
             Page::Reset => "Reset",
+            Page::Ringtone => "Ringtone",
+            Page::TimeZone => "Time zone",
         }
     }
 
@@ -166,6 +176,8 @@ impl Page {
             Page::BatteryUsage => Some(Page::Battery),
             Page::AppDetail => Some(Page::Apps),
             Page::Reset => Some(Page::About),
+            Page::Ringtone => Some(Page::Profile),
+            Page::TimeZone => Some(Page::DateTime),
             _ => Some(Page::Root),
         }
     }
@@ -182,7 +194,9 @@ mod tests {
             assert_eq!(Page::from_id(p.id()), Some(*p));
             assert_eq!(Page::from_name(p.name()), Some(*p));
         }
-        assert_eq!(Page::from_id(23), None);
+        assert_eq!(Page::from_id(25), None);
+        assert_eq!(Page::Ringtone.parent(), Some(Page::Profile));
+        assert_eq!(Page::TimeZone.parent(), Some(Page::DateTime));
         assert_eq!(Page::AppDetail.parent(), Some(Page::Apps));
         assert_eq!(Page::Reset.parent(), Some(Page::About));
         assert_eq!(Page::opened(21, "").from_outside(), Page::Apps);

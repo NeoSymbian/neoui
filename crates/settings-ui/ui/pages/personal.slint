@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Personal: Date & time (set2-datetime; the city sheet of set2-timezone, the format sheet of set2-dateformat),
 // Language & keyboard (set2-language) and Privacy (set2-privacy: Clear clipboard; the rest is SE4).
-import { Theme, NeoList, SectionHeader, ListRow, Sheet, TextField } from "@neoui/kit.slint";
+import { Theme, NeoList, SectionHeader, ListRow, Sheet, TextField, SearchField } from "@neoui/kit.slint";
 import { Note } from "../parts.slint";
-import { SetState } from "../state.slint";
+import { SetState, ZoneRow } from "../state.slint";
 
 export component DateTimePage inherits NeoList {
     VerticalLayout {
@@ -43,7 +43,7 @@ export component DateTimePage inherits NeoList {
                 if !SetState.time-auto-zone {
                     SetState.city-query = "";
                     SetState.act("city-query", "");
-                    SetState.sheet = "zone";
+                    SetState.act("open", "24");
                 }
             }
         }
@@ -92,43 +92,102 @@ export component DateTimePage inherits NeoList {
     }
 }
 
-// Time zone (set2-timezone): search the cities, a tap picks one; each city brings its summer-time rule.
-export component ZoneSheet inherits Sheet {
-    title-start: true;
-    // the shell's keyboard over the surface's bottom: the list shrinks by it, so the field stays above
+// Time zone (set2-timezone): search the cities, a tap picks one (its summer-time rule comes with it); the phone's
+// city is marked.
+export component TimeZonePage inherits Rectangle {
+    // the shell's keyboard over the surface's bottom: the list ends above it
     in property <length> kb;
     property <string> query: SetState.city-query;
     changed query => {
         SetState.act("city-query", self.query);
     }
-    title: "Time zone";
     VerticalLayout {
-        padding-left: 16 * Theme.dp;
-        padding-right: 16 * Theme.dp;
-        spacing: 8 * Theme.dp;
-        TextField {
-            placeholder: "Search cities";
-            text <=> SetState.city-query;
+        alignment: start;
+        HorizontalLayout {
+            padding-left: Theme.margin;
+            padding-right: Theme.margin;
+            padding-top: 8 * Theme.dp;
+            SearchField {
+                placeholder: "Search cities";
+                text <=> SetState.city-query;
+            }
+        }
+
+        HorizontalLayout {
+            padding-left: Theme.margin + 4 * Theme.dp;
+            padding-right: Theme.margin + 4 * Theme.dp;
+            padding-top: 6 * Theme.dp;
+            padding-bottom: 4 * Theme.dp;
+            Text {
+                text: "Automatic time zone is off. A city brings its rule, summer time too.";
+                color: Theme.text-secondary;
+                font-size: Theme.font-status;
+                wrap: word-wrap;
+            }
         }
 
         NeoList {
-            height: max(120 * Theme.dp, 380 * Theme.dp - root.kb);
+            height: root.height - 104 * Theme.dp - root.kb;
             VerticalLayout {
                 alignment: start;
-                for city[i] in SetState.cities: ListRow {
-                    value-bright: true;
-                    title: city;
-                    clicked => {
+                for city[i] in SetState.cities: Rectangle {
+                    height: Theme.list-row-h;
+                    background: t.pressed ? Theme.pressed : city.current ? Theme.selected : transparent;
+                    accessible-role: button;
+                    accessible-label: city.name + ", " + city.offset;
+                    accessible-description: city.current ? "Current" : "";
+                    accessible-action-default => {
                         SetState.act("zone-pick", i);
-                        root.close();
+                        SetState.act("back", "");
+                    }
+                    t := TouchArea {
+                        clicked => {
+                            SetState.act("zone-pick", i);
+                            SetState.act("back", "");
+                        }
+                    }
+
+                    HorizontalLayout {
+                        padding-left: Theme.margin + 4 * Theme.dp;
+                        padding-right: Theme.margin + 4 * Theme.dp;
+                        spacing: 12 * Theme.dp;
+                        Text {
+                            text: city.name;
+                            color: Theme.text;
+                            font-size: Theme.font-body;
+                            font-weight: 500;
+                            vertical-alignment: center;
+                            horizontal-stretch: 1;
+                            overflow: elide;
+                        }
+                        Text {
+                            text: city.offset;
+                            color: Theme.text-secondary;
+                            font-size: Theme.font-value;
+                            vertical-alignment: center;
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            width: 22 * Theme.dp;
+                            if city.current: Image {
+                                width: 20 * Theme.dp;
+                                height: self.width;
+                                source: @image-url("@neoui/icons/sys/check.svg");
+                                colorize: Theme.accent;
+                            }
+                        }
+                    }
+
+                    Rectangle {
+                        x: Theme.margin + 4 * Theme.dp;
+                        y: parent.height - self.height;
+                        width: parent.width - self.x;
+                        height: max(1px, Theme.dp / 2);
+                        background: Theme.hairline;
                     }
                 }
                 if SetState.cities.length == 0: Note { text: "No city by that name."; }
             }
-        }
-
-        if root.kb > 0: Rectangle {
-            height: root.kb;
         }
     }
 }
