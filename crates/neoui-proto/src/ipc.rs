@@ -319,6 +319,10 @@ pub const CONTROL_FEEDBACK: i32 = 44;
 /// [`CONTROL_FEEDBACK`] kinds: a control (button, row, switch…), a dial pad key.
 pub const FEEDBACK_CONTROL: i32 = 0;
 pub const FEEDBACK_DIAL_KEY: i32 = 1;
+/// Settings D2: no arguments → 0: something drew straight onto the screen (the kernel console overlay, just turned
+/// off), so at the next frame the shell copies its whole frame and the front app's whole surface again. Any app may
+/// ask; a shell without it answers `KErrNotSupported` and the stale pixels stay until they are drawn over.
+pub const REPAINT: i32 = 45;
 /// [`AppEvent::NotifyGone`]'s `why`: the user swiped the card away.
 pub const GONE_SWIPED: u8 = 0;
 /// [`AppEvent::NotifyGone`]'s `why`: the user cleared the shade (Clear all).

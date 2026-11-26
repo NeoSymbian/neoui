@@ -254,6 +254,8 @@ pub struct Host {
     pub blits: Vec<Rect>,
     /// Show the foreground app's whole surface on the next compose (it just came back).
     pub refresh: bool,
+    /// Copy the shell's whole frame to the screen at the next frame (`proto::REPAINT`: the kernel console drew over it).
+    pub repaint: bool,
     /// The foreground app's `DAMAGE` calls (with their session), answered once that frame is on screen
     /// ([`Self::release_frames`]): the app doesn't draw over pixels the server hasn't copied yet.
     frames: Vec<(u32, Message)>,
@@ -319,6 +321,7 @@ impl Host {
             next_session: 1,
             blits: Vec::new(),
             refresh: false,
+            repaint: false,
             frames: Vec::new(),
             power: None,
             settings,
@@ -1741,6 +1744,11 @@ impl Service for Host {
                         .map(|()| core::mem::take(&mut app.arg).len() as i32)
                 };
                 m.complete(r.unwrap_or_else(|e| e));
+            }
+            proto::REPAINT => {
+                self.repaint = true;
+                self.refresh = true; // the app's surface too, whole
+                m.complete(0);
             }
             proto::HAPTIC => {
                 let ms = m.int(0).clamp(0, proto::HAPTIC_MS_MAX);

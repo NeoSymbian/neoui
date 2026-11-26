@@ -783,7 +783,7 @@ impl Ctx {
             }
             // an app itself (Apps page)
             "storage-recount" => self.storage.recount(),
-            "console" => d2::set_console(&ui, value == "1"),
+            "console" => d2::set_console(app, &ui, value == "1"),
             // a ROM app's page (SE4a)
             "app-detail" => {
                 if row_model::app_current(&s, value) {

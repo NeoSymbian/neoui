@@ -10,7 +10,7 @@
 use neoui_proto::settings_app::choices::{KEYBOARDS, NAV_MODES};
 use neoui_proto::settings_app::page::Page;
 use neoui_proto::settings_app::row_model::{
-    AppFact, AppId, Availability, DriveFact, Facts, KindsState, LinkFact, Reading, Scalar,
+    AppFact, AppId, Availability, Console, DriveFact, Facts, KindsState, LinkFact, Reading, Scalar,
     WifiField, project_all, search,
 };
 use neoui_proto::settings_app::rows::{ProviderId, ROOT_GRID, ROOT_LIST, ROWS};
@@ -253,7 +253,7 @@ fn facts() -> Facts {
         }),
         ..Facts::default()
     };
-    f.scalars.insert("dev.console", Scalar::On(false));
+    f.console = Console::Shown(false);
     f.scalars.insert("about.slot", Scalar::Text("a".into()));
     f.scalars
         .insert("storage.free", Scalar::Text("C: 5.9 GB free".into()));
@@ -346,9 +346,7 @@ const MANIFEST: &[(&str, &str, &str, ProviderId, Page, Gate)] = &[
         "dev.console",
         ProviderId::Builtin,
         Page::Developer,
-        |f| {
-            f.scalars.remove("dev.console");
-        },
+        |f| f.console = Console::Unsupported,
     ),
     (
         "set2-about",

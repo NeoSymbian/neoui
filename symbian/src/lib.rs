@@ -648,7 +648,7 @@ fn main() -> i32 {
             due = false;
 
             // App lifecycle: the shell's screen decides which app is in front; the others keep running (R10).
-            let mut repaint_all = modal_changed;
+            let mut repaint_all = modal_changed | core::mem::take(&mut host.repaint);
             let ms = time::millis();
             host.tick_jobs(ms);
             for key in host.reap(ms) {

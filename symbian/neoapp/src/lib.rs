@@ -827,6 +827,15 @@ impl App {
             .map(drop)
     }
 
+    /// Something drew straight onto the screen (the kernel console overlay, turned off): the shell shows its frame
+    /// and this app's surface whole again at the next frame (`proto::REPAINT`; `KErrNotSupported` from an older
+    /// shell).
+    pub fn repaint_screen(&self) -> Result<(), i32> {
+        self.server
+            .send_receive(proto::REPAINT, &TIpcArgs::new())
+            .map(drop)
+    }
+
     /// The clipboard's text, shared by every app and the shell (Copy text, Paste); `None` when empty.
     pub fn clipboard(&self) -> Option<alloc::string::String> {
         clip_get(&self.server)

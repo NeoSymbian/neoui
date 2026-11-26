@@ -8,8 +8,8 @@ use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 use neoui_proto::settings_app::row_model::{
-    AppFact, AppId, DriveFact, Epochs, Facts, Hit, KindsState, LinkFact, RowSnapshot, Sample,
-    Scalar, WifiField, project_all, search,
+    AppFact, AppId, Console, DriveFact, Epochs, Facts, Hit, KindsState, LinkFact, RowSnapshot,
+    Sample, Scalar, WifiField, project_all, search,
 };
 use neoui_proto::settings_app::storage::KINDS;
 use neoui_proto::sound_profile::Profile;
@@ -96,11 +96,6 @@ pub fn facts(s: &SetState<'_>, sample: Sample, epochs: Epochs) -> Facts {
         ("dev.usb", on(s.get_usb_debugging())),
         ("dev.touches", on(s.get_show_touches())),
         // D2: only what the kernel answered
-        (
-            "dev.console",
-            s.get_console_ok()
-                .then(|| Scalar::On(s.get_console_shown())),
-        ),
         (
             "about.slot",
             (!s.get_slot().is_empty()).then(|| Scalar::Text(String::from(s.get_slot().as_str()))),
@@ -209,6 +204,12 @@ pub fn facts(s: &SetState<'_>, sample: Sample, epochs: Epochs) -> Facts {
             })
             .collect(),
     });
+    // D2: only what the kernel answered, and nothing before it was asked
+    f.console = match (s.get_console_read(), s.get_console_ok()) {
+        (false, _) => Console::Unread,
+        (true, false) => Console::Unsupported,
+        (true, true) => Console::Shown(s.get_console_shown()),
+    };
     f
 }
 

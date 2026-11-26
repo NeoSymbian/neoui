@@ -29,7 +29,7 @@
 //!
 //! | Stream / module | First row → instance / producer |
 //! |---|---|
-//! | D2 `d2.rs` | `wifi.field` "Access point" → `WifiField { bssid, AccessPoint }` from `LinkView`; `dev.console` from HAL readback (Hidden when the kernel can't say) |
+//! | D2 `d2.rs` | `wifi.field` "Access point" → `WifiField { bssid, AccessPoint }` from `LinkView`; `dev.console` from HAL readback ([`Console`]: Pending before it is read, Unavailable when the kernel can't say; drawn and searched only once read) |
 //! | D3 `drive_detail.rs` | set2-storage-drive "Images & video" → `DriveKind { drive: E, kind }`; before Storage is visited a hit reads Pending or a timestamped count, and opens E: |
 //! | D4 `app_detail.rs` | set2-app-browser "Storage used" → `App(Native("browser"))`, INFO 8; partial coverage is `Partial` |
 //! | D5 `battery_cycle.rs` | set2-search "Screen-on time" → INFO 9; "since charged" only after an observed full→discharge boundary |
@@ -375,6 +375,18 @@ pub struct LinkFact {
     pub fields: Vec<(WifiField, String)>,
 }
 
+/// D2: the kernel console overlay as HAL 0x4e03 answered. Its row is drawn and searched only once read.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Console {
+    /// not asked yet (a cold search before the owners are read)
+    #[default]
+    Unread,
+    /// the kernel can't say (no such function on this board)
+    Unsupported,
+    /// shown over the screen or not
+    Shown(bool),
+}
+
 /// Everything the providers read, at one generation.
 #[derive(Clone, Debug, Default)]
 pub struct Facts {
@@ -391,6 +403,7 @@ pub struct Facts {
     pub kinds_state: KindsState,
     pub apps: Vec<AppFact>,
     pub link: Option<LinkFact>,
+    pub console: Console,
 }
 
 impl Facts {
@@ -533,6 +546,11 @@ impl Provider for Builtin {
                 Some(free) if !free.is_empty() => Reading::Value(String::from(free)),
                 _ => Reading::Unavailable("C: can't be read"),
             },
+            "dev.console" => match f.console {
+                Console::Unread => Reading::Pending,
+                Console::Unsupported => Reading::Unavailable("The kernel can't say"),
+                Console::Shown(b) => on_off(b),
+            },
             "root.datetime" => pick("Automatic", "Manual", f.on("time.auto")),
             "root.keyboard" => known(f.text("kb.current")),
             "root.apps" => Reading::Value(String::from("Phone, old apps")),
@@ -561,9 +579,8 @@ impl Provider for Builtin {
     fn availability(&self, f: &Facts, key: &RowKey) -> Availability {
         // D2: only drawn when the kernel answered
         match key.id.0 {
-            "dev.console" | "about.slot" if !f.scalars.contains_key(key.id.0) => {
-                Availability::Hidden
-            }
+            "dev.console" if !matches!(f.console, Console::Shown(_)) => Availability::Hidden,
+            "about.slot" if !f.scalars.contains_key(key.id.0) => Availability::Hidden,
             _ => Availability::Readable,
         }
     }
@@ -1358,12 +1375,30 @@ mod tests {
             project_all(&f).get(&images).unwrap().reading,
             Reading::Partial("6.2 GB".into())
         );
-        // the console row only when the kernel answered
+        // the console row only when the kernel answered: unread (a cold search) is pending, unsupported unavailable,
+        // and neither is drawn or found
+        let console = RowKey::of("dev.console");
+        let row = snap.get(&console).unwrap();
         assert_eq!(
-            snap.get(&RowKey::of("dev.console")).unwrap().availability,
-            Availability::Hidden
+            (&row.reading, &row.availability),
+            (&Reading::Pending, &Availability::Hidden)
         );
         assert!(search(&snap, "console overlay").is_empty());
+        f.console = Console::Unsupported;
+        let snap = project_all(&f);
+        let row = snap.get(&console).unwrap();
+        assert_eq!(
+            (&row.reading, &row.availability),
+            (
+                &Reading::Unavailable("The kernel can't say"),
+                &Availability::Hidden
+            )
+        );
+        assert!(search(&snap, "console overlay").is_empty());
+        f.console = Console::Shown(false);
+        let snap = project_all(&f);
+        assert_eq!(snap.get(&console).unwrap().reading, on_off(false));
+        assert_eq!(search(&snap, "console overlay").len(), 1);
     }
 
     #[test]

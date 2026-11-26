@@ -195,8 +195,9 @@ export global SetState {
     in property <[string]> build;
     in property <string> sound-feedback;
 
-    // D2: the kernel console drawn over the screen (HAL 0x4e03, as read back; hidden when the kernel can't say), and
-    // the booted A/B slot ("a", "b"; "" = no reading, no row)
+    // D2: the kernel console drawn over the screen (HAL 0x4e03, as read back: console-read once asked, console-ok when
+    // the kernel answered; no row otherwise), and the booted A/B slot ("a", "b"; "" = no reading, no row)
+    in property <bool> console-read;
     in property <bool> console-ok;
     in-out property <bool> console-shown;
     in property <string> slot;

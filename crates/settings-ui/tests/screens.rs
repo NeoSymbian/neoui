@@ -337,6 +337,7 @@ fn fill(sh: &Shot) {
         sign_in: false,
     });
     // D2: the kernel console (off) and the booted slot
+    s.set_console_read(true);
     s.set_console_ok(true);
     s.set_slot("a".into());
     // D7: Medium text, the Night wallpaper; D8: the clipboard toast on
@@ -502,7 +503,11 @@ fn every_page() {
     );
     assert!(resolve_hit(hit.token, &hits, &gone).is_err());
 
-    // a producer that isn't there: no console row, and C: unread reads so on the root
+    // a producer that isn't asked yet, then isn't there: no console row, and C: unread reads so on the root
+    s.set_console_read(false);
+    let snap = project(&sh, Epochs::default());
+    assert!(searched(&sh, &snap, "console overlay").is_empty());
+    s.set_console_read(true);
     s.set_console_ok(false);
     s.set_storage_free("".into());
     let snap = project(&sh, Epochs::default());

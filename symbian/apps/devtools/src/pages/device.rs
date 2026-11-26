@@ -67,7 +67,12 @@ pub fn bind(ctx: &Rc<Ctx>, s: &DevState<'_>) {
             Some("Kernel console on or off") => {
                 let text = match hal::console_shown() {
                     Ok(on) => match hal::set_console(!on) {
-                        Ok(()) => format!("kernel console {}", if on { "off" } else { "on" }),
+                        Ok(()) => {
+                            if on {
+                                let _ = c.app.repaint_screen(); // the console's text stays until repainted
+                            }
+                            format!("kernel console {}", if on { "off" } else { "on" })
+                        }
                         Err(e) => format!("console switch failed ({e})"),
                     },
                     Err(e) => format!("no kernel console on this board ({e})"),

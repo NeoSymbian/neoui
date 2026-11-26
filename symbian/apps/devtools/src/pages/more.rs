@@ -34,7 +34,12 @@ pub fn bind(ctx: &Rc<Ctx>, s: &DevState<'_>) {
     s.on_console_toggled(move |on| {
         c.update(|m| {
             m.tools_status = match hal::set_console(on) {
-                Ok(()) => format!("kernel console {}", if on { "on" } else { "off" }),
+                Ok(()) => {
+                    if !on {
+                        let _ = c.app.repaint_screen(); // the console's text stays until repainted
+                    }
+                    format!("kernel console {}", if on { "on" } else { "off" })
+                }
                 Err(e) => format!("no kernel console on this board ({e})"),
             };
             m.readings.console = Some(hal::console_shown());
