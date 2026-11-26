@@ -1,8 +1,88 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Storage (set2-storage, SE3b): the drives at once, then C: and E: by kind from a scan that only lists folders. Share
 // E: over USB waits for FS6, app data by owner for SE4, "Open in Files" at a drive for Files' own page.
-import { Theme, NeoList, SectionHeader, ListRow, Button } from "@neoui/kit.slint";
+import { Theme, NeoList, SectionHeader, ListRow, Button, Glyph } from "@neoui/kit.slint";
 import { SetState, DriveRow, PartRow } from "../state.slint";
+
+// A drive (set2-storage): its tile by letter, the title with the used size at the right, a bar when the drive has a
+// size, then what lives there. No chevron: a drive's own page waits for D3/FS6.
+component DriveItem inherits Rectangle {
+    in property <DriveRow> d;
+    in property <bool> divider: true;
+    property <string> letter: d.title;
+    property <bool> is-e: letter.starts-with("E");
+    property <bool> is-c: letter.starts-with("C");
+    property <bool> is-d: letter.starts-with("D");
+    property <color> tint: is-e ? #e2a92a : is-c ? #2f80ed : is-d ? #1aa37a : #5b616b;
+    accessible-role: text;
+    accessible-label: d.title + ", " + d.used + (d.note == "" ? "" : ", " + d.note);
+    height: 76 * Theme.dp;
+    HorizontalLayout {
+        padding-left: Theme.margin + 4 * Theme.dp;
+        padding-right: Theme.margin + 4 * Theme.dp;
+        spacing: 14 * Theme.dp;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: Theme.row-tile;
+                height: self.width;
+                border-radius: 8 * Theme.dp;
+                background: root.tint;
+                Glyph {
+                    source: is-e ? @image-url("@neoui/icons/sys/sdcard.svg") : is-c ? @image-url("@neoui/icons/sys/phone_storage.svg") : is-d ? @image-url("@neoui/icons/sys/flash.svg") : @image-url("@neoui/icons/sys/lock.svg");
+                    size: 18 * Theme.dp;
+                    colorize: white;
+                }
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            spacing: 5 * Theme.dp;
+            horizontal-stretch: 1;
+            HorizontalLayout {
+                spacing: 8 * Theme.dp;
+                Text {
+                    text: d.title;
+                    color: Theme.text;
+                    font-size: Theme.font-body;
+                    font-weight: 500;
+                    overflow: elide;
+                    horizontal-stretch: 1;
+                }
+                Text {
+                    text: d.used;
+                    color: Theme.text-secondary;
+                    font-size: Theme.font-value;
+                }
+            }
+            // a drive without a known size (D:, Z:) gets no bar
+            if d.fill >= 0: Rectangle {
+                height: 4 * Theme.dp;
+                border-radius: 2 * Theme.dp;
+                background: #2a2e35;
+                Rectangle {
+                    x: 0;
+                    width: parent.width * min(1, d.fill);
+                    border-radius: 2 * Theme.dp;
+                    background: Theme.accent;
+                }
+            }
+            if d.note != "": Text {
+                text: d.note;
+                color: Theme.text-dim;
+                font-size: Theme.font-label;
+                overflow: elide;
+            }
+        }
+    }
+    if divider: Rectangle {
+        x: Theme.margin + 4 * Theme.dp + Theme.row-tile + 14 * Theme.dp;
+        y: parent.height - self.height;
+        width: parent.width - self.x;
+        height: max(1px, Theme.dp / 2);
+        background: Theme.hairline;
+    }
+}
 
 export component StoragePage inherits NeoList {
     // the bar's colours: Apps, Files, Other, Free
@@ -10,11 +90,19 @@ export component StoragePage inherits NeoList {
     VerticalLayout {
         alignment: start;
         SectionHeader { text: "Drives"; }
-        for d[i] in SetState.drives: ListRow {
-            value-bright: true;
-            title: d.title;
-            subtitle: d.note == "" ? d.used : d.used + " · " + d.note;
+        for d[i] in SetState.drives: DriveItem {
+            d: d;
             divider: i < SetState.drives.length - 1;
+        }
+
+        SectionHeader { text: "USB"; }
+        ListRow {
+            title: "Share E: over USB";
+            checked: SetState.found == "storage.usb";
+            subtitle: "Not yet (FS6) · E: would unmount here";
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/usb.svg");
+            divider: false;
         }
 
         SectionHeader { text: "C: and E: by kind"; }

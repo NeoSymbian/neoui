@@ -17,6 +17,7 @@ pub const VALUELESS: &[&str] = &[
     "sounds.add",
     "battery.usage",
     "storage.files",
+    "storage.usb",
     "root.privacy",
     "root.about",
     "privacy.clip",

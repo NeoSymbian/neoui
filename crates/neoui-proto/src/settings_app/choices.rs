@@ -63,8 +63,8 @@ pub const PAD_B: [&str; 3] = ["Right softkey", "0", "#"];
 /// layouts.slint` keeps the same order; `keyboard.layout` is an index into it).
 pub const KEYBOARDS: [(&str, &str, &str); 3] = [
     ("keyboard.en", "English", "QWERTY"),
-    ("keyboard.hy", "Armenian", "Phonetic"),
-    ("keyboard.ru", "Russian", "ЙЦУКЕН"),
+    ("keyboard.hy", "Armenian", "Հայերեն · Phonetic"),
+    ("keyboard.ru", "Russian", "Русский · ЙЦУКЕН"),
 ];
 
 #[cfg(test)]

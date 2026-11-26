@@ -432,6 +432,13 @@ pub const ROWS: &[Row] = &[
         "Open Files",
         &["file manager"],
     ),
+    row(
+        "storage.usb",
+        Storage,
+        Storage,
+        "Share E: over USB",
+        &["mass storage", "usb"],
+    ),
     // Developer options
     row(
         "dev.usb",
