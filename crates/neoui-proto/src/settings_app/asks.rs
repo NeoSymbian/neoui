@@ -29,7 +29,7 @@ pub fn stop(name: &str) -> String {
 #[must_use]
 pub fn clear(name: &str, key: &str) -> String {
     format!(
-        "Delete {name}'s data? {}. This can't be undone.",
+        "Delete {name} data? {}. This can't be undone.",
         clear_what(key)
     )
 }
