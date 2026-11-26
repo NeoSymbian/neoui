@@ -4,9 +4,9 @@
 //! width), draws, reports [`DAMAGE`], and keeps one [`NEXT_EVENT`] request outstanding for input and quit.
 //!
 //! Since 1.1 an app also reads, writes and watches settings ([`SETTING_GET`], [`SETTING_SET`], [`SETTING_WATCH`],
-//! [`AppEvent::Settings`]; the model is [`crate::settings`]). Since 1.2 the server wakes the Clock app for a due
-//! alarm ([`AppEvent::Alarm`]). Since 1.3 the system keyboard has modes ([`KEYBOARD_TEXT`], [`KEYBOARD_TERMINAL`]) and
-//! a height that changes with its language and settings ([`AppEvent::Keyboard`]). Since 1.4 an app sets its title
+//! [`AppEvent::Settings`]; the model is [`crate::settings`]). From 1.2 to 1.18 the server woke the Clock app for
+//! a due alarm (`AppEvent::Alarm`, retired in 1.19: DTSRV opens Clock on its ring page). Since 1.3 the system
+//! keyboard has modes ([`KEYBOARD_TEXT`], [`KEYBOARD_TERMINAL`]) and a height that changes with its language and settings ([`AppEvent::Keyboard`]). Since 1.4 an app sets its title
 //! ([`TITLE`]) and the toolbar's middle button ([`TOOLBAR`], [`AppEvent::Action`]), and the server opens one of its
 //! pages ([`AppEvent::Page`]): the Phone app is one process behind the Phone and Contacts icons. Since 1.5 the
 //! keyboard has number and phone pads ([`KEYBOARD_NUMBER`], [`KEYBOARD_PHONE`]), and the user can put it away with
@@ -289,8 +289,6 @@ pub enum AppEvent {
     /// A watched setting changed ([`SETTING_WATCH`]); the app reads the keys it cares about again. `seq` is the
     /// store's change counter, for logs.
     Settings { seq: u32 },
-    /// Alarm `id` (`crate::clock::alarm`) is due: the server brought the Clock app to the front to ring it.
-    Alarm { id: u16 },
     /// The open system keyboard now covers `h` pixels of the surface's bottom (its language or settings changed).
     Keyboard { h: u32 },
     /// Show page `page` (the app's own numbering): the user opened it from an icon, a notification or Settings.
@@ -327,7 +325,7 @@ const KIND_OPTIONS: u32 = 5;
 // 11 (1.7's Action), 13 (Primary), 14 (Cancel) and 15 (Option) are retired
 const KIND_VISIBLE: u32 = 6;
 const KIND_SETTINGS: u32 = 7;
-const KIND_ALARM: u32 = 8;
+// 8 (1.2's Alarm) is retired in 1.19: DTSRV opens Clock on its ring page instead
 const KIND_KEYBOARD: u32 = 9;
 const KIND_PAGE: u32 = 10;
 const KIND_ENTRY: u32 = 12;
@@ -359,7 +357,6 @@ impl AppEvent {
             AppEvent::Options => [KIND_OPTIONS, 0, 0, 0],
             AppEvent::Visible(v) => [KIND_VISIBLE, v as u32, 0, 0],
             AppEvent::Settings { seq } => [KIND_SETTINGS, seq, 0, 0],
-            AppEvent::Alarm { id } => [KIND_ALARM, u32::from(id), 0, 0],
             AppEvent::Keyboard { h } => [KIND_KEYBOARD, h, 0, 0],
             AppEvent::Page { page } => [KIND_PAGE, u32::from(page), 0, 0],
             AppEvent::Entry { id } => [KIND_ENTRY, id, 0, 0],
@@ -402,9 +399,6 @@ impl AppEvent {
             KIND_OPTIONS => AppEvent::Options,
             KIND_VISIBLE => AppEvent::Visible(w(1) != 0),
             KIND_SETTINGS => AppEvent::Settings { seq: w(1) },
-            KIND_ALARM => AppEvent::Alarm {
-                id: u16::try_from(w(1)).ok()?,
-            },
             KIND_KEYBOARD => AppEvent::Keyboard { h: w(1) },
             KIND_PAGE => AppEvent::Page {
                 page: u16::try_from(w(1)).ok()?,
@@ -457,8 +451,6 @@ mod tests {
             AppEvent::Visible(false),
             AppEvent::Settings { seq: 0 },
             AppEvent::Settings { seq: u32::MAX },
-            AppEvent::Alarm { id: 0 },
-            AppEvent::Alarm { id: u16::MAX },
             AppEvent::Keyboard { h: 0 },
             AppEvent::Keyboard { h: 369 },
             AppEvent::Page { page: 1 },
@@ -497,8 +489,8 @@ mod tests {
         let mut big_answer = AppEvent::Answer { i: 0 }.encode();
         big_answer[6] = 1;
         assert_eq!(AppEvent::decode(&big_answer), None);
-        // 1.7's retired kinds are not events any more
-        for kind in [11u8, 13, 14, 15] {
+        // 1.7's retired kinds and 1.19's Alarm (8) are not events any more
+        for kind in [8u8, 11, 13, 14, 15] {
             let mut b = [0; EVENT_LEN];
             b[0] = kind;
             assert_eq!(AppEvent::decode(&b), None, "kind {kind}");

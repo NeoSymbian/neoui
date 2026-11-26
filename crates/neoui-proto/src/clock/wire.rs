@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-//! The byte codec the Clock's settings blobs share (`clock.alarms`, `clock.cities`, `clock.timer`,
-//! `clock.stopwatch`). Little-endian integers and length-prefixed strings. Each blob starts with its own format
+//! The byte codec the Clock's settings blobs share (`clock.cities`, `dtsrv.next`; in NeoSymbian/datetime the alarms,
+//! timers and the stopwatch). Little-endian integers and length-prefixed strings. Each blob starts with its own format
 //! version byte, so a later build can read an older blob or reject a newer one.
 
 use alloc::string::String;

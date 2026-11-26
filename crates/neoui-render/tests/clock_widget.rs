@@ -3,7 +3,6 @@
 #[allow(dead_code)] // helpers shared with the snapshot tests
 mod common;
 
-use neoui_proto::clock::alarm::{Alarms, Weekdays};
 use neoui_proto::clock::face::{Face, LocalTime};
 
 /// The home clock widget is live: `set_now` changes what it draws (time, date, next alarm), and a tap on it opens
@@ -21,15 +20,17 @@ fn clock_widget() {
         hour: 20,
         minute: 30,
     };
-    let mut alarms = Alarms::new();
-    alarms.add(7, 15, Weekdays::WORKDAYS, "").expect("room");
-
-    r.set_now(&Face::new(&mon, true, &alarms));
+    // what dtsrv.next gives for a 07:15 workdays alarm (`clock::next::Next::alarm_text`)
+    r.set_now(&Face::new(&mon, true, "Tomorrow 07:15"));
     common::frame(&mut r, &mut buf, w, "home");
     let before = buf.clone();
     common::write_png("home-clock-widget-540x1080.png", &buf, w, h);
 
-    r.set_now(&Face::new(&LocalTime { minute: 31, ..mon }, false, &alarms));
+    r.set_now(&Face::new(
+        &LocalTime { minute: 31, ..mon },
+        false,
+        "Tomorrow 7:15 AM",
+    ));
     common::frame(&mut r, &mut buf, w, "home");
     common::write_png("home-clock-widget-12h-540x1080.png", &buf, w, h);
     let d = common::dp(w, h);

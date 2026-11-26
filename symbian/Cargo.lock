@@ -2673,17 +2673,6 @@ version = "0.1.0"
 source = "git+https://github.com/NeoSymbian/neohw?rev=a11fa906f35bbd1dcec979495210dcdab3dc8651#a11fa906f35bbd1dcec979495210dcdab3dc8651"
 
 [[package]]
-name = "neoclock"
-version = "0.1.0"
-dependencies = [
- "e32",
- "neoapp",
- "neoui-kit",
- "neoui-proto",
- "slint",
-]
-
-[[package]]
 name = "neodevtools"
 version = "0.1.0"
 dependencies = [
