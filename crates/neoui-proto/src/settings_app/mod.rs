@@ -2,6 +2,7 @@
 //! The Settings app (`NEOSET.EXE`, docs neoui-shell/settings.md "The Settings app"): its pages, what the shell tells
 //! it ([`info`], over `ipc::SETTINGS_INFO`; since 1.20 the paged kinds and owner reports, [`wire`] and [`jobs`]), and the fixed choices its sheets offer.
 
+pub mod app_detail;
 pub mod asks;
 pub mod choices;
 pub mod info;

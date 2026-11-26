@@ -164,6 +164,12 @@ impl Jobs {
         Ok(())
     }
 
+    /// Is `key` registered as an owner now?
+    #[must_use]
+    pub fn registered(&self, key: &str) -> bool {
+        self.owner(key).is_some()
+    }
+
     fn owner(&self, key: &str) -> Option<&Owner> {
         self.owners.iter().find(|o| o.key == key)
     }
@@ -405,6 +411,41 @@ impl Jobs {
         if e.job.state != state::RUNNING || e.claimed != Some(session) {
             return Err(kerr::ARGUMENT);
         }
+        self.conclude(key, ticket, report, now_utc)?;
+        Ok(true)
+    }
+
+    /// D4: the shell measured app `key` itself (it isn't an owner, `apps::owner_scope`): its queued measurement
+    /// `ticket` ends with `report` as an owner's would. Like any change, it stands once the shell saved the table.
+    ///
+    /// # Errors
+    /// `KErrNotFound` for a ticket that isn't a queued measurement of `key`; `KErrArgument` for a report that
+    /// doesn't fit (as [`Self::finish`]).
+    pub fn finish_here(
+        &mut self,
+        key: &'static str,
+        ticket: u32,
+        report: OwnerReport,
+        now_utc: i64,
+    ) -> Result<(), i32> {
+        let e = self.entry(key, ticket)?;
+        if e.job.state != state::QUEUED || e.work() != wire::WORK_MEASURE {
+            return Err(kerr::NOT_FOUND);
+        }
+        self.conclude(key, ticket, report, now_utc)
+    }
+
+    /// End the unfinished `ticket` of `key` with `report`. A report with a coverage is also `key`'s latest
+    /// measurement: a clear's report carries the size after it.
+    fn conclude(
+        &mut self,
+        key: &'static str,
+        ticket: u32,
+        report: OwnerReport,
+        now_utc: i64,
+    ) -> Result<(), i32> {
+        let fp = fingerprint(&report);
+        let e = self.entry(key, ticket)?;
         let asked = e.job.requested_scope;
         let fits = report.committed_scope & !asked == 0
             && match report.state {
@@ -417,13 +458,13 @@ impl Jobs {
         }
         e.job.committed_scope = report.committed_scope;
         e.fp = fp;
-        let measure = e.work() == wire::WORK_MEASURE;
+        let measure = e.work() == wire::WORK_MEASURE || report.coverage != wire::coverage::UNKNOWN;
         self.complete(ticket, report.state, report.result, now_utc);
         if measure {
             self.measured.retain(|(k, _)| *k != key);
             self.measured.push((key, report));
         }
-        Ok(true)
+        Ok(())
     }
 
     /// Session `session` ended: its owner registration goes, a job it claimed is interrupted, one it was only woken

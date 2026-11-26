@@ -494,7 +494,7 @@ fn job_golden_and_strict() {
 fn features_golden_and_what_is_advertised() {
     let want = [
         &[1u8, 20, 0, 0][..],
-        &[0x7E, 0x62, 0, 0, 0, 0, 0, 0], // INFO 1–6, 9, 13, 14
+        &[0x7E, 0x63, 0, 0, 0, 0, 0, 0], // INFO 1–6, 8, 9, 13, 14
         &[0xFE, 0, 0, 0, 0, 0, 0, 0],    // actions 1–7
         &[0xFE, 0xE7, 0xFF, 0x7F, 0x01, 0x3F, 0, 0], // opcodes 1–10, 13–30, 32, 40–45
     ]
@@ -505,7 +505,6 @@ fn features_golden_and_what_is_advertised() {
     // a kind without its producer isn't advertised, nor is anything reserved
     for kind in [
         ipc::INFO_CHANNELS,
-        ipc::INFO_APP_DETAIL,
         ipc::INFO_VOLUME_STATE,
         ipc::INFO_UPDATE_STATUS,
         ipc::INFO_TILES,
@@ -518,6 +517,7 @@ fn features_golden_and_what_is_advertised() {
         f.has_info(ipc::INFO_BATTERY_CYCLE),
         "D5's producer is built"
     );
+    assert!(f.has_info(ipc::INFO_APP_DETAIL), "D4 produces INFO 8");
     for a in ipc::ACTION_INSTALL_WALLPAPER..=ipc::ACTION_LOCK_DIALOG {
         assert!(!f.has_action(a), "action {a}");
     }

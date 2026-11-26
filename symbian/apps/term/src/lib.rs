@@ -3,6 +3,10 @@
 //! console server ([`console`], `!E32WindowServer`) and starts ESHELL, so ESHELL and the 2010 text programs run in
 //! a window of the Rust UI. Keys come from the UI server (`NEXT_EVENT`): hardware keys and the system keyboard in its
 //! terminal mode (Esc, Tab and the arrows in a row above the letters).
+//!
+//! D4: it is the owner of its data for Settings → Apps → Terminal, and it keeps none (the screen and the ESHELL
+//! session go with the process): a measurement answers zero. ESHELL starts when the window is first shown, so a start
+//! only for that answer runs nothing and quits.
 #![no_std]
 
 extern crate alloc;
@@ -21,6 +25,7 @@ use e32::{dprintln, time};
 use neoapp::App;
 use neoui_proto::InputEvent;
 use neoui_proto::ipc::{self as proto, AppEvent};
+use neoui_proto::settings_app::wire::{self, DriveUsage, OwnerReport, capability, coverage, state};
 use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
 
 slint::include_modules!();
@@ -43,6 +48,9 @@ fn main() -> i32 {
 
 fn run() -> Result<(), i32> {
     let app = App::connect()?;
+    if let Err(e) = app.register_owner(capability::MEASURE) {
+        dprintln!("term: not an owner ({})", e);
+    }
     // The phone has no keys: the system keyboard covers the bottom, and the grid fits above it.
     // shortcut: always shown, no hide toggle, and the grid keeps its start size (term.slint lifts it when the keyboard
     // grows); add a reflow when ESHELL can be told of a resize.
@@ -81,10 +89,9 @@ fn run() -> Result<(), i32> {
 
     let mut con = console::Console::new(cols, rows);
     let server = Server::create(console::NAME)?;
-    let eshell = Process::spawn("eshell", "/p")?;
-    eshell.resume();
-    dprintln!("term: eshell started");
-    let mut eshell_running = true;
+    // started when first shown (a start for owner work never is)
+    let mut eshell: Option<Process> = None;
+    let mut eshell_running = false;
     let mut last_draw = 0u64;
 
     let mut receive = pin!(server.receive());
@@ -111,7 +118,7 @@ fn run() -> Result<(), i32> {
                         }
                         Either::Right(Either::Right(())) => {}
                     }
-                    if eshell_running && eshell.exit_info().is_some() {
+                    if eshell_running && eshell.as_ref().is_some_and(|p| p.exit_info().is_some()) {
                         eshell_running = false;
                         dprintln!("term: eshell exited");
                     }
@@ -130,8 +137,8 @@ fn run() -> Result<(), i32> {
                     // Held messages first: they die with the server handle, which is dropped before `con`.
                     con.close();
                     // shortcut: ESHELL (and anything it started) is killed with the terminal; no detach yet.
-                    if eshell_running {
-                        eshell.kill(0);
+                    if eshell_running && let Some(p) = &eshell {
+                        p.kill(0);
                     }
                     return Ok(());
                 }
@@ -139,9 +146,24 @@ fn run() -> Result<(), i32> {
                     con.key(console_key(code))
                 }
                 // neoapp draws only while shown (App::draw): it learns that here; draw what came while hidden
-                Some(e @ AppEvent::Visible(_)) => {
+                Some(e @ AppEvent::Visible(v)) => {
                     app.handle(&e);
                     con.dirty = true;
+                    if v && eshell.is_none() {
+                        let p = Process::spawn("eshell", "/p")?;
+                        p.resume();
+                        dprintln!("term: eshell started");
+                        eshell = Some(p);
+                        eshell_running = true;
+                    }
+                }
+                Some(AppEvent::OwnerWork { ticket }) => {
+                    owner_work(&app, ticket);
+                    if eshell.is_none() {
+                        dprintln!("term: owner work done, never shown: quit");
+                        con.close();
+                        return Ok(());
+                    }
                 }
                 Some(AppEvent::Keyboard { h }) => {
                     ui.set_kb_h(h as f32);
@@ -151,6 +173,35 @@ fn run() -> Result<(), i32> {
             }
         }
     })
+}
+
+/// D4: a measurement of Terminal's data: none on C:, every time (nothing is kept).
+fn owner_work(app: &App, ticket: u32) {
+    match app.claim_owner_work(ticket) {
+        Ok(w) if w.work == wire::WORK_MEASURE => {
+            let report = OwnerReport {
+                state: state::COMMITTED,
+                coverage: coverage::COMPLETE,
+                measured_utc: e32::time::utc_now().0,
+                version: neoui_proto::BUILD
+                    .split(' ')
+                    .take(2)
+                    .collect::<Vec<_>>()
+                    .join(" "),
+                drives: alloc::vec![DriveUsage {
+                    drive: 2,
+                    data: Some(0),
+                    ..DriveUsage::default()
+                }],
+                ..OwnerReport::default()
+            };
+            if let Err(e) = app.finish_owner_work(ticket, &report) {
+                dprintln!("term: report {} refused ({})", ticket, e);
+            }
+        }
+        Ok(_) => dprintln!("term: work {} isn't a measurement", ticket),
+        Err(e) => dprintln!("term: work {} not claimed ({})", ticket, e),
+    }
 }
 
 fn round(v: f32) -> f32 {

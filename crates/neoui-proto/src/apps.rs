@@ -95,6 +95,23 @@ pub fn clears_data(key: &str) -> bool {
     matches!(key, "clock" | "calendar")
 }
 
+/// D4: the apps of this image that answer owner work (protocol 1.20 `OWNER_REPORT`), so the shell may start one
+/// hidden for it, and the `clear_scope` each offers once it registered with the clear capability
+/// (`settings_app::wire::scope`). Any other app is measured by the shell itself (its EXE and private folder) and is
+/// never started for a size: a 1.19 app's normal startup (Files' index, Contacts' migration) would change what it
+/// measures. Clock, Calendar, Files, Browser, Phone and Messages join when their own repos land their owners.
+#[must_use]
+pub fn owner_scope(key: &str) -> Option<u32> {
+    use crate::settings_app::wire::scope;
+    match key {
+        // its tracked log exports (symbian/apps/devtools/src/app_data.rs)
+        "devtools" => Some(scope::LOGS),
+        // nothing kept: the screen and the ESHELL session go with the process
+        "terminal" => Some(0),
+        _ => None,
+    }
+}
+
 /// The secure ID of app `key`'s EXE (its UID3 in the `exes.txt` that builds it), or `None` for one the shell doesn't
 /// know by SID (the old apps' bridge). Since 1.18 the shell takes cards and badges (`ipc::NOTIFY`,
 /// `ipc::NOTIFY_CLEAR`, `ipc::BADGE`) for an app only from this process (top-panel TP2a "Step 0").
@@ -184,6 +201,19 @@ mod tests {
         assert!(listed().all(|a| !a.service));
         assert!(listed().any(|a| a.key == "calendar"));
         assert!(clears_data("calendar") && !clears_data("dtsrv"));
+    }
+
+    #[test]
+    fn owners_are_listed_apps_with_their_own_sid() {
+        for a in APPS.iter().filter(|a| owner_scope(a.key).is_some()) {
+            assert!(listed().any(|l| l.key == a.key), "{}", a.key);
+            assert!(a.key != "kit", "the kit shares the bridge's SID");
+        }
+        assert_eq!(
+            owner_scope("files"),
+            None,
+            "a 1.19 app is never started for a size"
+        );
     }
 
     /// Every app the shell's Apps menu shows that is a process here has the same name there (ui/screens/menu.slint);

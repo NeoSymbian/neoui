@@ -13,11 +13,13 @@
 //! - [`state`]: the model
 //! - [`probe`]: reading and testing the hardware
 //! - [`pages`]: one module per page (callbacks in, properties out)
+//! - [`app_data`]: the logs it saved, as their owner (D4: Settings measures and clears them)
 //! - this file: connecting, and the event loop (input, Back, refreshing as time passes)
 #![no_std]
 
 extern crate alloc;
 
+mod app_data;
 mod pages;
 mod probe;
 mod state;
@@ -68,6 +70,7 @@ fn console_rows(h: usize, dp: f32, cell: f32) -> usize {
 
 fn run() -> Result<(), i32> {
     let app = App::connect()?;
+    app_data::register(&app);
     let ui = DevApp::new().map_err(|_| -2)?;
     let dp = app.dp;
     ui.global::<Theme>().set_dp(dp);
@@ -128,6 +131,8 @@ fn run() -> Result<(), i32> {
     // In the background (R10) the app neither refreshes nor draws; the log is still followed (cheap, and the
     // kernel's ring would drop what it is not asked for).
     let mut visible = false;
+    // started only for owner work (D4), never shown: it quits once the work is done
+    let mut shown = false;
     // a finger is down: the periodic refresh waits, since replacing the list models under a press loses the drag
     // (the Flickable takes it only after 8 px) and the list wouldn't scroll
     let mut touching = false;
@@ -159,12 +164,20 @@ fn run() -> Result<(), i32> {
                 AppEvent::Visible(v) => {
                     dprintln!("devtools: visible {}", v);
                     visible = v;
+                    shown |= v;
                     if v {
                         // what the page shows, fresh, at once
                         ctx.refresh_stats();
                         ctx.refresh_devices();
                         (stats_at, devices_at) = (time::millis(), time::millis());
                         ctx.show();
+                    }
+                }
+                AppEvent::OwnerWork { ticket } | AppEvent::ClearTicket { ticket } => {
+                    app_data::work(&ctx.app, ticket);
+                    if !shown {
+                        dprintln!("devtools: owner work done, never shown: quit");
+                        return Ok(());
                     }
                 }
                 AppEvent::Area { h } if h > 0 => {

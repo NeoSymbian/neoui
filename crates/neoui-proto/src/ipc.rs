@@ -225,8 +225,8 @@ pub const INFO_BATTERY_USAGE: i32 = 5;
 pub const INFO_RUNNING: i32 = 6;
 /// Reserved (TP4, 1.21): the notification channels per app.
 pub const INFO_CHANNELS: i32 = 7;
-/// 1.20 (D4/D8), paged: one [`crate::settings_app::wire::AppDetail`] per app. No producer yet: an empty collection,
-/// not in [`INFO_FEATURES`].
+/// 1.20 (D4/D8), paged: one [`crate::settings_app::wire::AppDetail`] per listed app (`apps::listed`), from the
+/// catalogue, the EXE SYSSTART finds and the latest measurement (D4); capabilities wait for D8.
 pub const INFO_APP_DETAIL: i32 = 8;
 /// 1.20 (D5), paged singleton: [`crate::settings_app::wire::BatteryCycle`], from SYSSTART's recorder
 /// ([`crate::battery::cycle`]); an empty collection before the first valid battery reading.

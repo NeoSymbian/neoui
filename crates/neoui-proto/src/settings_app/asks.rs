@@ -34,6 +34,26 @@ pub fn clear(name: &str, key: &str) -> String {
     )
 }
 
+/// D4: what a confirmed clear of `scope` (INFO 8's `clear_scope`, `wire::scope` bits) deletes; `""` for a scope no
+/// owner here offers (no row).
+#[must_use]
+pub fn scope_what(scope: u32) -> &'static str {
+    use super::wire::scope;
+    match scope {
+        scope::LOGS => "The kernel logs it saved (other files in Logs stay)",
+        _ => "",
+    }
+}
+
+/// D4: the question before a confirmed clear of `scope` for the app called `name`.
+#[must_use]
+pub fn clear_scope(name: &str, scope: u32) -> String {
+    format!(
+        "Delete {name} data? {}. This can't be undone.",
+        scope_what(scope)
+    )
+}
+
 /// Reset ([`ipc::RESET_NETWORK`] or [`ipc::RESET_SETTINGS`]).
 #[must_use]
 pub fn reset(what: u8) -> &'static str {
@@ -71,5 +91,12 @@ mod tests {
             }
         }
         assert_eq!(clear_what("files"), "");
+        for a in crate::apps::listed() {
+            let scope = crate::apps::owner_scope(a.key).unwrap_or(0);
+            if scope != 0 {
+                assert!(!scope_what(scope).is_empty(), "{}", a.key);
+                fits(&clear_scope(a.name, scope));
+            }
+        }
     }
 }

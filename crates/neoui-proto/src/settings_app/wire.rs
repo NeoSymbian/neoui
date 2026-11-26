@@ -383,7 +383,8 @@ impl DriveUsage {
 }
 
 /// INFO 8 (`ipc::INFO_APP_DETAIL`), one app: who it is, what it may do, how much it stores and what it can clear.
-/// Producer: D4/D8 (not built: SYSSTART answers an empty collection and doesn't advertise the kind).
+/// Producer: D4 (SYSSTART `symbian/src/settings_info.rs`: the catalogue, the EXE it finds and owners' reports;
+/// capabilities wait for D8).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AppDetail {
     pub app: AppRef,
@@ -628,8 +629,8 @@ const fn bits(list: &[i32]) -> u64 {
 impl Features {
     pub const LEN: usize = 28;
 
-    /// What this build of SYSSTART answers. INFO 8 answers an empty collection until its producer (D4) lands, so it
-    /// isn't here; neither are the reserved kinds, actions and opcodes. INFO 9 since D5.
+    /// What this build of SYSSTART answers: INFO 8 since D4, INFO 9 since D5; not the reserved kinds, actions and
+    /// opcodes.
     pub const SHELL: Features = Features {
         major: ipc::VERSION.0,
         minor: ipc::VERSION.1,
@@ -640,6 +641,7 @@ impl Features {
             ipc::INFO_APPS,
             ipc::INFO_BATTERY_USAGE,
             ipc::INFO_RUNNING,
+            ipc::INFO_APP_DETAIL,
             ipc::INFO_BATTERY_CYCLE,
             ipc::INFO_JOBS,
             ipc::INFO_FEATURES,

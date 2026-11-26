@@ -8,8 +8,15 @@
 //! A change a request makes to the jobs table stands only once it is saved: otherwise the table goes back and the
 //! request fails (no ticket, no claim, no acknowledged report). INFO 13 shows the table as last saved. A change
 //! nobody asked for (an owner gone, a job expired) is kept and saved again every second until it is.
+//!
+//! D4 produces INFO 8 (`app_details`): per listed app its catalogue name and SID, the EXE the shell finds on C: or Z:
+//! (its installed bytes), the latest measurement (an owner's report, or the shell's own for an app that isn't one:
+//! `measure_here`, which stands like an owner's report once the table is saved) and the clear scope an owner offers
+//! (`apps::owner_scope`, once it registered with the clear capability). A version is only ever an owner's report.
 
 use super::{App, Host, read_bytes};
+use alloc::format;
+use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 use e32::dprintln;
@@ -19,9 +26,11 @@ use e32::sys::err;
 use neoui_proto::apps::{self, LEGACY, SETTINGS};
 use neoui_proto::ipc::{self as proto, AppEvent};
 use neoui_proto::settings::{Caller, access, kerr};
+use neoui_proto::settings_app::app_detail::with_installed;
 use neoui_proto::settings_app::jobs::Jobs;
 use neoui_proto::settings_app::wire::{
-    self, AppRef, ClearRequest, Dedup, Features, MeasureRequest, OwnerReport, Revisions,
+    self, AppDetail, AppRef, ClearRequest, Dedup, DriveUsage, Features, MeasureRequest,
+    OwnerReport, Revisions, capability, coverage, state,
 };
 
 /// The owner-work table across restarts, and the file a save writes first (then replaces the table with it).
@@ -48,6 +57,8 @@ pub struct Shelf {
     tick_at: u64,
     /// D5: INFO 9's record as last published (`None`: no valid battery reading yet).
     cycle: Option<wire::BatteryCycle>,
+    /// D4: each listed app's EXE as found (drive, bytes), read at boot and again when the shell measures the app.
+    found: Vec<(&'static str, Option<(u8, u64)>)>,
 }
 
 fn unix_s() -> i64 {
@@ -68,6 +79,7 @@ impl Shelf {
             published: Vec::new(),
             tick_at: 0,
             cycle: None,
+            found: apps::listed().map(|a| (a.key, find_exe(a.exe))).collect(),
         };
         s.load();
         s
@@ -147,8 +159,7 @@ impl Shelf {
     /// A paged kind's whole snapshot; `None` for a kind this shell doesn't build.
     fn records(&self, kind: i32) -> Option<Vec<Vec<u8>>> {
         Some(match kind {
-            // their producers (D4, D5) aren't built: an empty collection, and FEATURES doesn't list them
-            proto::INFO_APP_DETAIL => Vec::new(),
+            proto::INFO_APP_DETAIL => self.app_details(),
             proto::INFO_BATTERY_CYCLE => {
                 self.cycle.iter().map(wire::BatteryCycle::encode).collect()
             }
@@ -158,12 +169,143 @@ impl Shelf {
         })
     }
 
+    /// INFO 8: one record per listed app.
+    fn app_details(&self) -> Vec<Vec<u8>> {
+        apps::listed()
+            .map(|a| {
+                let report = self.jobs.measured(a.key);
+                let measuring = self.jobs.jobs().any(|j| {
+                    j.state < state::COMMITTED
+                        && i32::from(j.action) == proto::ACTION_MEASURE_APP
+                        && j.subject == Some(AppRef::Native(a.key))
+                });
+                let found = self
+                    .found
+                    .iter()
+                    .find(|(k, _)| *k == a.key)
+                    .and_then(|(_, f)| *f);
+                AppDetail {
+                    app: AppRef::Native(a.key),
+                    caption: a.name.into(),
+                    exe: format!("{}.EXE", a.exe.to_ascii_uppercase()),
+                    version: report.map(|r| r.version.clone()).unwrap_or_default(),
+                    identity_source: if found.is_some() { 2 } else { 1 },
+                    sid: apps::sid(a.key).unwrap_or(0),
+                    // D8 reads the capabilities
+                    cap_source: 0,
+                    caps: 0,
+                    coverage: if measuring {
+                        coverage::MEASURING
+                    } else {
+                        report.map_or(coverage::UNKNOWN, |r| r.coverage)
+                    },
+                    measured_utc: report.map_or(0, |r| r.measured_utc),
+                    clear_scope: self.jobs.offered(a.key),
+                    drives: with_installed(report.map_or(&[], |r| &r.drives), found),
+                }
+                .encode()
+            })
+            .collect()
+    }
+
+    /// D4: the shell's own measurement of app `key` (not an owner): its EXE again, and its private folder on C:
+    /// as data, partial (an app can keep data elsewhere: Clock's are DTSRV's, Phone's call log MODEMD's).
+    fn measure_here(&mut self, key: &'static str) -> OwnerReport {
+        let Some(a) = apps::find(key) else {
+            return failed(kerr::ARGUMENT);
+        };
+        let exe = find_exe(a.exe);
+        if let Some(f) = self.found.iter_mut().find(|(k, _)| *k == key) {
+            f.1 = exe;
+        }
+        let Some(sid) = apps::sid(key) else {
+            return failed(kerr::NOT_SUPPORTED);
+        };
+        let dir = format!("C:\\private\\{sid:08x}\\");
+        match Fs::connect().and_then(|fs| folder_bytes(&fs, &dir)) {
+            Ok(bytes) => OwnerReport {
+                state: state::PARTIAL,
+                coverage: coverage::PARTIAL,
+                measured_utc: unix_s(),
+                drives: vec![DriveUsage {
+                    drive: 2,
+                    data: Some(bytes),
+                    ..DriveUsage::default()
+                }],
+                ..OwnerReport::default()
+            },
+            Err(e) => {
+                dprintln!("neoui: measuring {} failed ({})", key, e);
+                failed(e)
+            }
+        }
+    }
+
     /// Session `id` ended: no more hints for it.
     pub fn drop_session(&mut self, id: u32) {
         if self.watch.is_some_and(|(s, _)| s == id) {
             self.watch = None;
         }
     }
+}
+
+fn failed(e: i32) -> OwnerReport {
+    OwnerReport {
+        state: state::FAILED,
+        result: e,
+        coverage: coverage::FAILED,
+        measured_utc: unix_s(),
+        ..OwnerReport::default()
+    }
+}
+
+/// Where the loader takes EXE `exe` from (C:, else Z:) and its bytes; `None` when it isn't in the image.
+fn find_exe(exe: &str) -> Option<(u8, u64)> {
+    let fs = Fs::connect().ok()?;
+    [(2u8, 'C'), (25, 'Z')].into_iter().find_map(|(drive, l)| {
+        fs.entry(&format!("{l}:\\sys\\bin\\{exe}.exe"))
+            .ok()
+            .map(|e| (drive, e.size))
+    })
+}
+
+/// Entries read at most for one app's folder (a bigger one counts as what was read: the count is partial anyway).
+// shortcut: counted in the shell's loop (a folder of a few files takes a few ms); a worker thread if an app's private
+// folder ever grows to thousands of entries.
+const FOLDER_ENTRIES_MAX: u32 = 1024;
+
+/// The bytes in folder `dir` (`X:\...\`) and below; a folder that isn't there holds none.
+fn folder_bytes(fs: &Fs, dir: &str) -> Result<u64, i32> {
+    const PAGE: usize = 64;
+    let (mut bytes, mut budget) = (0u64, FOLDER_ENTRIES_MAX);
+    let mut stack = vec![String::from(dir)];
+    while let Some(d) = stack.pop() {
+        let mut offset = 0u32;
+        loop {
+            let page = match fs.read_dir_page(&d, offset, PAGE) {
+                Ok(p) => p,
+                Err(err::KERR_NOT_FOUND | err::KERR_PATH_NOT_FOUND) if d == dir => return Ok(0),
+                Err(e) if d == dir => return Err(e),
+                Err(_) => break, // a subfolder that went away
+            };
+            for e in &page {
+                if e.is_dir() {
+                    stack.push(format!("{d}{}\\", e.name));
+                } else {
+                    bytes = bytes.saturating_add(e.size);
+                }
+            }
+            budget = budget.saturating_sub(page.len() as u32);
+            if budget == 0 {
+                return Ok(bytes);
+            }
+            if page.len() < PAGE {
+                break;
+            }
+            offset += page.len() as u32;
+        }
+    }
+    Ok(bytes)
 }
 
 /// `ACTION_CLEAR`'s request starts with [`wire::CONFIRMED`] (1.20) rather than an app key (1.17).
@@ -255,6 +397,8 @@ impl Host {
         if records != self.shelf.published {
             self.shelf.published = records;
             self.info_changed(proto::INFO_JOBS);
+            // D4: a measurement queued or ended, a clear's size
+            self.info_changed(proto::INFO_APP_DETAIL);
         }
         self.wake_owners();
     }
@@ -297,6 +441,11 @@ impl Host {
         if key == SETTINGS || key == LEGACY || apps::is_service(key) {
             return kerr::NOT_SUPPORTED;
         }
+        // D4: an app that isn't an owner (and isn't one registered now) is never started for a size: the shell
+        // measures it here, and the measurement stands with the ticket, once saved
+        let here = action == proto::ACTION_MEASURE_APP
+            && apps::owner_scope(key).is_none()
+            && !self.shelf.jobs.registered(key);
         let before = self.shelf.jobs.clone();
         let ticket = match self
             .shelf
@@ -306,6 +455,13 @@ impl Host {
             Ok(t) => t,
             Err(e) => return e,
         };
+        if here {
+            let report = self.shelf.measure_here(key);
+            if let Err(e) = self.shelf.jobs.finish_here(key, ticket, report, unix_s()) {
+                self.shelf.jobs = before;
+                return e;
+            }
+        }
         // the ticket exists once it is saved: a failed save answers its error and remembers nothing
         if let Err(e) = self.commit(before) {
             return e;
@@ -400,7 +556,18 @@ impl Host {
         self.shelf
             .jobs
             .register(key, sid, session, minor, &b, (now_ms, now_utc))?;
+        // D4: what this owner clears, offered from now on (also once it quit: a clear starts it again)
+        let offer = wire::decode_register(&b)
+            .is_some_and(|c| c & capability::CLEAR != 0)
+            .then(|| apps::owner_scope(key).unwrap_or(0))
+            .filter(|&scope| scope != self.shelf.jobs.offered(key));
+        if let Some(scope) = offer {
+            self.shelf.jobs.set_offered(key, scope);
+        }
         self.commit(before)?;
+        if offer.is_some() {
+            self.info_changed(proto::INFO_APP_DETAIL);
+        }
         dprintln!("neoui: {} registered as an owner", key);
         Ok(0)
     }
