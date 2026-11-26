@@ -179,6 +179,32 @@ fn cards_by_section_group_swipe_and_clear() {
         "a scroll opens nothing"
     );
 
+    // a drag that starts in a gap between cards scrolls back down
+    let before = buf.clone();
+    let y0 = (GAP_Y * d) as i32;
+    r.dispatch(InputEvent::Touch {
+        id: 0,
+        x,
+        y: y0,
+        phase: TouchPhase::Down,
+    });
+    for k in 1..=10 {
+        r.dispatch(InputEvent::Touch {
+            id: 0,
+            x,
+            y: y0 + k * (300.0 * d) as i32 / 10,
+            phase: TouchPhase::Move,
+        });
+    }
+    r.dispatch(InputEvent::Touch {
+        id: 0,
+        x,
+        y: y0 + (300.0 * d) as i32,
+        phase: TouchPhase::Up,
+    });
+    common::frame(&mut r, &mut buf, w, "scrolled from a gap");
+    assert_ne!(buf, before, "a drag in a gap scrolls the list");
+
     // Clear all, at the list's end
     common::tap(&mut r, (w / 2) as i32, (CLEAR_Y * d) as i32);
     common::frame(&mut r, &mut buf, w, "cleared");
@@ -187,6 +213,8 @@ fn cards_by_section_group_swipe_and_clear() {
 
 // where things are in dp (measured from the snapshots): See all's row, the group's ▾, a Live and an Alerts card, Clear all
 const SEE_ALL_Y: f32 = 226.0;
+// the 8 dp gap under the scrolled list's Conversations card (tp2-shade-scrolled-pixel.png)
+const GAP_Y: f32 = 357.0;
 const MARK_READ_X: f32 = 115.0;
 const MARK_READ_Y: f32 = 505.0;
 const GROUP_Y: f32 = 291.0;

@@ -202,10 +202,10 @@ component Card inherits Rectangle {
                         vertical-alignment: center;
                     }
                     Glyph {
-                        source: @image-url("../icons/sys/chevron_down.svg");
+                        source: note.open ? @image-url("../icons/sys/chevron_up.svg")
+                            : @image-url("../icons/sys/chevron_down.svg");
                         size: 14 * Theme.dp;
                         colorize: Theme.text-secondary;
-                        transform-rotation: note.open ? 180deg : 0deg;
                     }
                 }
                 // a tap, not a drag that started here
@@ -335,6 +335,10 @@ export component Shade inherits Rectangle {
     callback note-dismissed(int);
     callback notes-cleared();
     callback group-toggled(int);
+    // the list's scroll, from a card or a gap, kept inside the list
+    function scroll-by(d: length) {
+        list.content-y = max(min(0px, list.height - list.content-height), min(0px, list.content-y + d));
+    }
     changed open => {
         if !self.open {
             self.all = false;
@@ -476,11 +480,27 @@ export component Shade inherits Rectangle {
                 height: min(cards.preferred-height, root.all ? root.height - 150 * Theme.dp : 100000px);
                 content-height: cards.preferred-height;
                 interactive: false;
+                // under the cards: a drag in the gaps between them (or on a section label) scrolls too
+                gaps := TouchArea {
+                    height: cards.preferred-height;
+                    property <length> last-y;
+                    pointer-event(e) => {
+                        if e.kind == PointerEventKind.down {
+                            self.last-y = self.absolute-position.y + self.mouse-y;
+                        }
+                    }
+                    moved => {
+                        let y = self.absolute-position.y + self.mouse-y;
+                        root.scroll-by(y - self.last-y);
+                        self.last-y = y;
+                    }
+                }
+                // rows the first stop doesn't show take no room: each shown row carries its own gap
                 cards := VerticalLayout {
-                    spacing: 8 * Theme.dp;
                     for n[i] in root.notes: VerticalLayout {
                         if root.all || i < 2: VerticalLayout {
                             spacing: 6 * Theme.dp;
+                            padding-bottom: 8 * Theme.dp;
                             if root.all && n.section != "": Text {
                                 text: n.section;
                                 color: Theme.text-dim;
@@ -493,11 +513,12 @@ export component Shade inherits Rectangle {
                                 note: n;
                                 opened(a) => { root.note-opened(i, a); }
                                 dismissed => { root.note-dismissed(i); }
-                                toggled => { root.group-toggled(i); }
-                                scrolled(d) => {
-                                    list.content-y = max(min(0px, list.height - list.content-height),
-                                        min(0px, list.content-y + d));
+                                // the first stop shows 2 rows: an opened group shows in the list
+                                toggled => {
+                                    root.group-toggled(i);
+                                    root.all = true;
                                 }
+                                scrolled(d) => { root.scroll-by(d); }
                             }
                         }
                     }
