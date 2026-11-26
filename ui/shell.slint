@@ -39,8 +39,6 @@ import { OldAppsScreen, OldApp } from "screens/oldapps.slint";
 import { CameraScreen } from "screens/camera.slint";
 import { PhotosScreen } from "screens/photos.slint";
 import { MusicScreen } from "screens/music.slint";
-import { CalendarScreen } from "screens/calendar.slint";
-import { ClockScreen } from "screens/clock.slint";
 import { WifiLink } from "data.slint";
 import { TerminalScreen } from "screens/terminal.slint";
 import { SwitcherScreen } from "screens/switcher.slint";
@@ -380,18 +378,6 @@ export component Shell inherits Window {
             MusicScreen {
                 view <=> root.view;
             }
-        }
-
-        Slot {
-            active: screen == "calendar";
-            CalendarScreen {
-                view <=> root.view;
-            }
-        }
-
-        Slot {
-            active: screen == "clock" && !root.app-front;
-            ClockScreen { }
         }
 
         Slot {

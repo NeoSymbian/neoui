@@ -9,8 +9,6 @@ export struct WifiDetail { label: string, value: string }
 export struct WifiLink { shown: bool, connected: bool, name: string, subtitle: string, bars: int, band: string, details: [WifiDetail], sign-in: bool }
 export struct WifiNet { name: string, detail: string, bars: int, secured: bool, band: string, signal: string, channel: int, bssid: string }
 export struct Song { title: string, artist: string, length: string }
-export struct Event { time: string, title: string, place: string, tint: color }
-export struct Alarm { time: string, label: string, on: bool }
 export struct City { name: string, time: string, offset: string }
 
 export global Data {
@@ -43,17 +41,6 @@ export global Data {
         { title: "Copper Sky", artist: "The Harbour", length: "3:18" },
         { title: "Midnight Rail", artist: "Juno & Kite", length: "4:27" },
         { title: "Small Hours", artist: "Mira Vale", length: "3:56" },
-    ];
-    out property <[Event]> events: [
-        { time: "09:30", title: "Stand-up", place: "Video call", tint: #2f80ed },
-        { time: "13:00", title: "Lunch with Ben", place: "Harbour Café", tint: #22b46a },
-        { time: "16:00", title: "Kernel review", place: "Room 4", tint: #8656e8 },
-        { time: "19:00", title: "Dinner with Ava", place: "Trattoria", tint: #f2994a },
-    ];
-    out property <[Alarm]> alarms: [
-        { time: "06:45", label: "Weekdays", on: true },
-        { time: "08:00", label: "Weekend", on: false },
-        { time: "14:30", label: "Pick up parcel", on: true },
     ];
     out property <[City]> cities: [
         { name: "Yerevan", time: "13:24", offset: "+3 h" },

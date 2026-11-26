@@ -11,9 +11,6 @@ const SCREENS: &[(&str, &str)] = &[
     ("photos", "photo"),
     ("music", ""),
     ("music", "playing"),
-    ("calendar", ""),
-    ("calendar", "day"),
-    ("clock", ""),
     ("terminal", ""),
 ];
 

@@ -165,7 +165,7 @@ component Card inherits Rectangle {
                 source: note.app-key == "messages" ? @image-url("../icons/sys/message.svg")
                     : note.app-key == "phone" ? @image-url("../icons/sys/call.svg")
                     : note.app-key == "files" ? @image-url("../icons/sys/folder.svg")
-                    : note.app-key == "clock" ? @image-url("../icons/sys/alarm.svg")
+                    : note.app-key == "clock" || note.app-key == "dtsrv" ? @image-url("../icons/sys/alarm.svg")
                     : note.app-key == "browser" ? @image-url("../icons/sys/world.svg")
                     : @image-url("../icons/sys/bell.svg");
                 size: 16 * Theme.dp;

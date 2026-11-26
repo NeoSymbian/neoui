@@ -89,6 +89,11 @@ impl Clockwork {
             }
             ui.set_clock(&text);
             ui.set_now(&face);
+            ui.set_next_event(
+                &next.event_text(utc, offset, h24),
+                &next.event_title,
+                next.event_colour,
+            );
             let format = host.settings.get(keys::TIME_DATE_FORMAT).unwrap_or(0);
             ui.set_date_text(&datetime::date_text(&now, format));
             let info = Clock {
