@@ -11,7 +11,7 @@ component Tile inherits Rectangle {
     border-radius: 8 * Theme.dp;
     background: tint;
     Image {
-        width: 18 * Theme.dp;
+        width: 20 * Theme.dp;
         height: self.width;
         source: icon;
         colorize: white;
@@ -27,6 +27,7 @@ export component SettingRow inherits Rectangle {
     in property <color> tint;
     in property <bool> has-switch;
     in-out property <bool> switch-on;
+    in property <bool> divider: true;
     callback clicked;
     callback switch-toggled(bool);
     property <bool> value-under: root.has-switch && root.value != "";
@@ -103,6 +104,14 @@ export component SettingRow inherits Rectangle {
                 }
             }
         }
+    }
+
+    if root.divider: Rectangle {
+        x: Theme.margin + 4 * Theme.dp + Theme.row-tile + 12 * Theme.dp;
+        y: parent.height - self.height;
+        width: parent.width - self.x;
+        height: max(1px, Theme.dp / 2);
+        background: Theme.hairline;
     }
 }
 

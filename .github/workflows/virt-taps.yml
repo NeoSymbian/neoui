@@ -111,7 +111,7 @@ jobs:
       #   (90,805), Settings (270,805), Terminal (449,805).
       # The steps:
       # - Gestures is the default. Settings (the NEOSET app, docs neoui-shell/settings.md) -> Home & navigation
-      #   (270,672) -> Buttons (270,220), one of three choices (Gestures 270,355; N9 270,490). The app logs
+      #   (270,721) -> Buttons (270,220), one of three choices (Gestures 270,355; N9 270,490). The app logs
       #   "settings: page <name>"; the store's later "settings saved" shows the write went through (by NEOSET's SID).
       # - Clock; a tap inside it (270,500); ←.
       # - Terminal: `dir` on the system keyboard (R6c, above the key row), `neotest` on hardware keys, the keyboard's
@@ -139,7 +139,7 @@ jobs:
           export SCREEN=539x1079 NAV=buttons
           . ../neoui/symbian/taps.sh
           tap 485 973; tap 270 805; expect "neoui: app settings surface"; wait_s 2
-          tap 270 672; expect "settings: page navigation"; tap 270 220; expect "neoui: settings saved"
+          tap 270 721; expect "settings: page navigation"; tap 270 220; expect "neoui: settings saved"
           tap 270 1037; tap 485 913   # home, then the menu, in Buttons
           tap 449 603; expect "clock: surface"; wait_s 2   # the clock ticks once a second while shown (checked below)
           tap 270 500; expect "clock: touch"
@@ -177,13 +177,14 @@ jobs:
           tap 449 1037
           for i in 1 2 3 4; do tap 227 160; expect "exited (type 0"; done
           tap 270 1037; tap 485 913; tap 270 805; expect "neoui: app settings surface"; wait_s 2
-          tap 270 672; expect "settings: page navigation"; tap 270 355; expect "neoui: settings saved"
+          tap 270 721; expect "settings: page navigation"; tap 270 355; expect "neoui: settings saved"
           # SE1d: back to the root (←), search (🔍 426,73) "apps" on the keyboard (now in Gestures), the first result
-          # (app y 80 dp) -> Apps; its first row, Clock (118 dp), opens the app's page (SE4a); Open (84 dp) opens Clock
+          # (app y 118 dp, under the results count) -> Apps; its first row, Clock (118 dp), opens the app's page
+          # (SE4a); Open (84 dp) opens Clock
           NAV=gestures
           wait_s 1; tap 36 73; expect "settings: back"
           tap 426 73; wait_s 1; kb_globe; kb_type apps   # the keyboard is still Russian (Files): globe -> English
-          tap 270 157; expect "settings: page apps"; wait_s 1
+          tap 270 214; expect "settings: page apps"; wait_s 1
           tap 270 214; expect "settings: page app"; wait_s 1
           tap 270 126; expect "settings: open app clock (Ok"; expect "clock: visible true"
           # SE4a: Settings again (resumes on Clock's page); Stop (156 dp) -> the shell's dialog "Stop Clock?" -> its
@@ -196,7 +197,7 @@ jobs:
           # off; then General (118 dp) -> Activate: everything as it was
           wait_s 1; tap 36 73; expect "settings: back"; wait_s 1; tap 36 73; expect "settings: back"
           tap 426 73; wait_s 1; kb_type offline
-          tap 270 157; expect "settings: page sounds"; wait_s 1
+          tap 270 214; expect "settings: page sounds"; wait_s 1
           tap 270 645; wait_s 1; tap 270 829; expect "neoui: sound profile 4: airplane true, wifi false, bt false"
           wait_s 1; tap 270 214; wait_s 1; tap 270 829; expect "neoui: sound profile 0: airplane false, wifi true, bt false"
           # TP1: home, a swipe down on its pages opens the shade (shell.swipehome), and the shade's ⚙ (36 dp, left of
@@ -380,7 +381,7 @@ jobs:
 
       # Navigation v2's gestures (docs neoui-shell/navigation.md; edge zone 16 dp = 24 px, sides and the band commit at 72 dp =
       # 108 px, Home at 80 dp = 120 px). The Thumb map (Gestures, the default):
-      # - Settings (via Apps 485,973 and 270,805; the NEOSET app) -> Home & navigation (270,672).
+      # - Settings (via Apps 485,973 and 270,805; the NEOSET app) -> Home & navigation (270,721).
       # - The left edge goes Back (the app's page back to its root), the right edge too (the app leaves for the menu).
       # - Up from the bottom goes Home, and from home to the menu.
       # - Clock (449,603). Up and held still for Open apps.
@@ -398,7 +399,7 @@ jobs:
           export SCREEN=539x1079 NAV=gestures
           . ../neoui/symbian/taps.sh
           tap 485 973; tap 270 805; expect "neoui: app settings surface"; wait_s 2
-          tap 270 672; expect "settings: page navigation"; wait_s 1
+          tap 270 721; expect "settings: page navigation"; wait_s 1
           swipe 5 540 200 540; expect "neoui: gesture back"; expect "settings: back"
           wait_s 1; swipe 534 540 340 540; expect "neoui: screen menu"
           wait_s 1; swipe 270 1075 270 900; expect "neoui: screen home"
@@ -419,7 +420,7 @@ jobs:
           tap 470 998; expect "kit: saved"
           wait_s 1; swipe 270 1075 270 900; expect "neoui: screen home"
           wait_s 1; tap 485 973; tap 270 805; wait_s 2
-          tap 270 672; expect "settings: page navigation"; tap 270 490; expect "neoui: settings saved"; wait_s 1
+          tap 270 721; expect "settings: page navigation"; tap 270 490; expect "neoui: settings saved"; wait_s 1
           swipe 534 540 340 540; expect "neoui: screen switcher"
           ui_run 180
           s=out/serial.log

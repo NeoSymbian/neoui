@@ -102,3 +102,40 @@ fn the_search_table_matches_the_pages() {
         "(page, row) in settings_app::rows but not on that page: {missing_on_pages:?}"
     );
 }
+
+#[test]
+fn a_result_title_splits_around_the_query() {
+    use settings_ui::{Split, split_match};
+    let s = |pre: &str, mark: &str, post: &str, gap_before, gap_after| Split {
+        pre: pre.into(),
+        mark: mark.into(),
+        post: post.into(),
+        gap_before,
+        gap_after,
+    };
+    assert_eq!(
+        split_match("Automatic time", "TIME"),
+        s("Automatic", "time", "", true, false)
+    );
+    assert_eq!(
+        split_match("Screen timeout", " time "),
+        s("Screen", "time", "out", true, false)
+    );
+    assert_eq!(
+        split_match("Date & time", "date"),
+        s("", "Date", "& time", false, true)
+    );
+    assert_eq!(
+        split_match("Automatic time zone", "time"),
+        s("Automatic", "time", "zone", true, true)
+    );
+    // no match in the title (an alias found it): nothing highlighted
+    assert_eq!(
+        split_match("Wi-Fi", "wlan"),
+        s("Wi-Fi", "", "", false, false)
+    );
+    assert_eq!(split_match("Wi-Fi", ""), s("Wi-Fi", "", "", false, false));
+    // a partial match that fails later doesn't swallow the title
+    assert_eq!(split_match("aab", "ab"), s("a", "ab", "", false, false));
+    assert_eq!(split_match("Ünits", "ün"), s("", "Ün", "its", false, false));
+}

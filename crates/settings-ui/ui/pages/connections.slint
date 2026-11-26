@@ -28,7 +28,7 @@ export component ConnectivityPage inherits NeoList {
             title: "Bluetooth";
             checked: SetState.found == "conn.bt";
             subtitle: SetState.bluetooth ? "On · no driver yet" : "Off";
-            chevron: true;
+            
             clicked => { SetState.act("open", "3"); }
             has-icon: true;
             icon: @image-url("@neoui/icons/sys/bluetooth.svg");
@@ -48,16 +48,17 @@ export component ConnectivityPage inherits NeoList {
             has-switch: true;
             switch-on <=> SetState.mobile-data;
             switch-toggled(v) => { SetState.act("radio.data", v ? "1" : "0"); }
+            // the grid's Connectivity is the way to Mobile network (set2-root-grid)
+            clicked => { SetState.act("open", "2"); }
         }
 
         ListRow {
-
             value-bright: true;
             title: "Airplane mode";
             checked: SetState.found == "conn.airplane";
             subtitle: SetState.airplane ? (SetState.radio-online ? "Turning radio off…" : "Radio off") : (SetState.radio-online ? "Radio on" : "Waiting for radio");
             has-icon: true;
-            icon: @image-url("@neoui/icons/sys/lock.svg");
+            icon: @image-url("@neoui/icons/sys/plane.svg");
             has-switch: true;
             switch-on <=> SetState.airplane;
             switch-toggled(v) => { SetState.act("radio.airplane", v ? "1" : "0"); }

@@ -329,12 +329,20 @@ fn every_page() {
     s.set_root_grid(true);
     sh.shoot("set2-root-grid");
     s.set_root_grid(false);
-    let hit = |title: &str, path: &str, value: &str, page| SearchHit {
-        id: "root.datetime".into(),
-        title: title.into(),
-        path: path.into(),
-        value: value.into(),
-        page,
+    let hit = |title: &str, path: &str, value: &str, page| {
+        let m = settings_ui::split_match(title, "time");
+        SearchHit {
+            id: "root.datetime".into(),
+            title: title.into(),
+            pre: m.pre.into(),
+            mark: m.mark.into(),
+            post: m.post.into(),
+            gap_before: m.gap_before,
+            gap_after: m.gap_after,
+            path: path.into(),
+            value: value.into(),
+            page,
+        }
     };
     s.set_results(model(vec![
         hit("Date & time", "Settings", "", 9),
@@ -344,6 +352,7 @@ fn every_page() {
         hit("24-hour time", "Date & time", "On", 9),
         hit("Screen timeout", "Display", "30 seconds", 5),
     ]));
+    s.set_query("time".into());
     s.set_searching(true);
     sh.shoot("set2-search");
     sh.tap(100.0, 48.0 + 36.0);
@@ -360,7 +369,7 @@ fn every_page() {
         (4, "Connectivity", "set2-airplane"),
         (5, "Display", "set2-display"),
         (6, "Home & navigation", "set2-navigation"),
-        (7, "Sounds", "set2-sounds"),
+        (7, "Sounds & profiles", "set2-sounds"),
         (8, "Battery", "set2-battery"),
         (9, "Date & time", "set2-datetime"),
         (10, "Language & keyboard", "set2-language"),
@@ -472,7 +481,7 @@ fn every_page() {
     );
 
     // Sounds & profiles (SE2a): a row's sheet activates it or opens its page; the page asks the reducer
-    page(&sh, 7, "Sounds");
+    page(&sh, 7, "Sounds & profiles");
     s.set_profile_current(s.get_profiles().row_data(2).unwrap()); // Meeting
     sheet(&sh, "profile");
     sh.shoot("set2-profile-sheet");
@@ -490,7 +499,7 @@ fn every_page() {
     sheet(&sh, "ringtone");
     sh.shoot("set2-ringtone");
     sheet(&sh, "");
-    page(&sh, 7, "Sounds");
+    page(&sh, 7, "Sounds & profiles");
     sh.draw();
     sh.take_acts();
     sh.tap(100.0, 260.0); // Meeting's row (rows of 64 dp from 72 dp, the third)

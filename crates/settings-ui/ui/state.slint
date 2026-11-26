@@ -7,7 +7,10 @@ export struct WifiNet { name: string, detail: string, bars: int, secured: bool, 
 // the current link (neoui-proto wifi::LinkView, with the shell's IP rows)
 export struct WifiDetail { label: string, value: string }
 // a search result (set2-search): the row's title, where it is ("Date & time"), its live value, the page it opens
-export struct SearchHit { id: string, title: string, path: string, value: string, page: int }
+// a search result: the row, its title split around the match (pre, mark, post; a space before/after the match) for the
+// highlight, the page it is on,
+// its value now, and the page it opens
+export struct SearchHit { id: string, title: string, pre: string, mark: string, post: string, gap-before: bool, gap-after: bool, path: string, value: string, page: int }
 // a network WIFID remembers (Saved networks): its name, "Connected · Secured" / "Secured · not in range"
 export struct WifiSaved { name: string, detail: string }
 // an app on the Apps page: a ROM app by its screen key, or an old app (old: true) by its id in hex

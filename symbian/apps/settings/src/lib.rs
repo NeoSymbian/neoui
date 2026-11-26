@@ -35,7 +35,7 @@ use neoui_proto::settings_app::page::Page;
 use neoui_proto::settings_app::rows;
 use neoui_proto::sound_profile;
 use settings_ui::{
-    AppRow, KeyboardFocus, Kit, SearchHit, SetState, SettingsApp, Theme, live_value,
+    AppRow, KeyboardFocus, Kit, SearchHit, SetState, SettingsApp, Theme, live_value, split_match,
 };
 use slint::{ComponentHandle, Model, ModelRc, SharedString, Timer, TimerMode, VecModel};
 
@@ -416,17 +416,25 @@ impl Ctx {
         let query = self.query.borrow();
         let hits: Vec<SearchHit> = rows::search_with(&query, |r| live_value(&s, r.id))
             .into_iter()
-            .map(|r| SearchHit {
-                id: r.id.into(),
-                title: r.title.into(),
-                path: if r.on == Page::Root {
-                    "Settings"
-                } else {
-                    r.on.title()
+            .map(|r| {
+                let m = split_match(r.title, &query);
+                SearchHit {
+                    id: r.id.into(),
+                    title: r.title.into(),
+                    pre: m.pre.into(),
+                    mark: m.mark.into(),
+                    post: m.post.into(),
+                    gap_before: m.gap_before,
+                    gap_after: m.gap_after,
+                    path: if r.on == Page::Root {
+                        "Settings"
+                    } else {
+                        r.on.title()
+                    }
+                    .into(),
+                    value: live_value(&s, r.id).into(),
+                    page: i32::from(r.opens.id()),
                 }
-                .into(),
-                value: live_value(&s, r.id).into(),
-                page: i32::from(r.opens.id()),
             })
             .collect();
         if *self.hits.borrow() != hits {

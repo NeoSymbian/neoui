@@ -39,6 +39,58 @@ pub const VALUELESS: &[&str] = &[
     "reset.settings",
 ];
 
+/// A search result's title split around the first case-insensitive match of the query, for the highlight
+/// (set2-search). The row draws the pieces as separate texts, which drop spaces at their edges, so the pieces come
+/// trimmed and the gaps as flags. No match (an alias or the page matched) leaves it all in `pre`.
+#[derive(Debug, Default, PartialEq, Eq)]
+pub struct Split {
+    pub pre: String,
+    pub mark: String,
+    pub post: String,
+    /// a space between `pre` and `mark`
+    pub gap_before: bool,
+    /// a space between `mark` and `post`
+    pub gap_after: bool,
+}
+
+#[must_use]
+pub fn split_match(title: &str, query: &str) -> Split {
+    let q: alloc::vec::Vec<char> = query.trim().chars().flat_map(char::to_lowercase).collect();
+    if !q.is_empty() {
+        for (start, _) in title.char_indices() {
+            let mut got = 0;
+            for (off, c) in title[start..].char_indices() {
+                for l in c.to_lowercase() {
+                    if got < q.len() && l == q[got] {
+                        got += 1;
+                    } else {
+                        got = usize::MAX;
+                        break;
+                    }
+                }
+                if got == usize::MAX {
+                    break;
+                }
+                if got == q.len() {
+                    let end = start + off + c.len_utf8();
+                    let (pre, mark, post) = (&title[..start], &title[start..end], &title[end..]);
+                    return Split {
+                        pre: pre.trim_end().into(),
+                        mark: mark.trim().into(),
+                        post: post.trim_start().into(),
+                        gap_before: pre.ends_with(' ') || mark.starts_with(' '),
+                        gap_after: post.starts_with(' ') || mark.ends_with(' '),
+                    };
+                }
+            }
+        }
+    }
+    Split {
+        pre: title.into(),
+        ..Split::default()
+    }
+}
+
 /// What a row (`neoui_proto::settings_app::rows` id) shows now, as search matches and lists it: a switch as On/Off, a
 /// choice by its name, a reading as the page shows it. Every row not in [`VALUELESS`] has one (tests/rows.rs).
 #[must_use]
