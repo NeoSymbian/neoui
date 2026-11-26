@@ -241,14 +241,15 @@ pub struct Renderer {
     presses: Rc<core::cell::Cell<u32>>,
     nav: Rc<RefCell<Vec<Nav>>>,
     entries: Rc<RefCell<Vec<u32>>>,
-    notes_opened: Rc<RefCell<Vec<(usize, u16)>>>,
-    /// TP2a: the shade's rows → the cards' places in the shell's list; the cards and the clock they were laid out
-    /// with; the group shown open (app key, group); the cards swiped away (places); Clear all; a ▾ to lay out again.
-    shade_rows: Rc<RefCell<Vec<usize>>>,
+    notes_opened: Rc<RefCell<Vec<(String, u32, u16)>>>,
+    /// TP2a: the shade's rows → their cards (app key, id: a place in the shell's list can shift before the shell
+    /// acts); the cards and the clock they were laid out with; the group shown open (app key, group); the cards
+    /// swiped away; Clear all; a ▾ to lay out again.
+    shade_rows: Rc<RefCell<Vec<(String, u32)>>>,
     shade_cards: Vec<(String, Notification)>,
     shade_clock: (u64, i32, bool),
     open_group: Rc<RefCell<Option<(String, String)>>>,
-    notes_gone: Rc<RefCell<Vec<usize>>>,
+    notes_gone: Rc<RefCell<Vec<(String, u32)>>>,
     notes_cleared: Rc<Cell<bool>>,
     relayout: Rc<Cell<bool>>,
     closed: Rc<RefCell<Vec<alloc::string::String>>>,
@@ -335,25 +336,24 @@ impl Renderer {
                 _ => Nav::Answer(i),
             })
         });
-        let notes_opened: Rc<RefCell<Vec<(usize, u16)>>> = Rc::default();
-        let shade_rows: Rc<RefCell<Vec<usize>>> = Rc::default();
+        let notes_opened: Rc<RefCell<Vec<(String, u32, u16)>>> = Rc::default();
+        let shade_rows: Rc<RefCell<Vec<(String, u32)>>> = Rc::default();
+        let card = |rows: &Rc<RefCell<Vec<(String, u32)>>>, i: i32| {
+            usize::try_from(i)
+                .ok()
+                .and_then(|i| rows.borrow().get(i).cloned())
+        };
         let (sink, rows) = (notes_opened.clone(), shade_rows.clone());
         ui.on_note_opened(move |i, a| {
-            if let Some(at) = usize::try_from(i)
-                .ok()
-                .and_then(|i| rows.borrow().get(i).copied())
-            {
-                sink.borrow_mut().push((at, a as u16));
+            if let Some((key, id)) = card(&rows, i) {
+                sink.borrow_mut().push((key, id, a as u16));
             }
         });
-        let notes_gone: Rc<RefCell<Vec<usize>>> = Rc::default();
+        let notes_gone: Rc<RefCell<Vec<(String, u32)>>> = Rc::default();
         let (sink, rows) = (notes_gone.clone(), shade_rows.clone());
         ui.on_note_dismissed(move |i| {
-            if let Some(at) = usize::try_from(i)
-                .ok()
-                .and_then(|i| rows.borrow().get(i).copied())
-            {
-                sink.borrow_mut().push(at);
+            if let Some(c) = card(&rows, i) {
+                sink.borrow_mut().push(c);
             }
         });
         let notes_cleared: Rc<Cell<bool>> = Rc::default();
@@ -720,15 +720,18 @@ impl Renderer {
                 }
             })
             .collect();
-        *self.shade_rows.borrow_mut() = rows.iter().map(|r| r.index).collect();
+        *self.shade_rows.borrow_mut() = rows
+            .iter()
+            .map(|r| (String::from(list[r.index].0), list[r.index].1.id))
+            .collect();
         self.ui
             .set_cards(i32::try_from(list.len()).unwrap_or(i32::MAX));
         self.ui
             .set_notes(slint::ModelRc::from(Rc::new(slint::VecModel::from(model))));
     }
 
-    /// The cards swiped away since the last call, as places in the list [`Renderer::set_notes`] gave.
-    pub fn take_notes_dismissed(&mut self) -> Vec<usize> {
+    /// The cards swiped away since the last call: (app key, id).
+    pub fn take_notes_dismissed(&mut self) -> Vec<(String, u32)> {
         core::mem::take(&mut *self.notes_gone.borrow_mut())
     }
 
@@ -737,9 +740,9 @@ impl Renderer {
         self.notes_cleared.replace(false)
     }
 
-    /// The shade's cards tapped since the last call: (place in the list [`Renderer::set_notes`] gave, 0 for the card
-    /// itself or `i + 1` for its action `i`).
-    pub fn take_notes_opened(&mut self) -> Vec<(usize, u16)> {
+    /// The shade's cards tapped since the last call: (app key, id, 0 for the card itself or `i + 1` for its action
+    /// `i`).
+    pub fn take_notes_opened(&mut self) -> Vec<(String, u32, u16)> {
         core::mem::take(&mut *self.notes_opened.borrow_mut())
     }
 

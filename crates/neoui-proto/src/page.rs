@@ -304,6 +304,10 @@ impl Notification {
         out.extend_from_slice(&self.page.to_le_bytes());
         put(&mut out, &self.title, TITLE_MAX)?;
         put(&mut out, &self.text, TEXT_MAX)?;
+        // kinds belong to actions, whether or not anything else of 1.18 is set
+        if self.action_kinds.len() > self.actions.len() {
+            return Err(PageError);
+        }
         let ext = self.has_1_18();
         let extra = !self.initials.is_empty()
             || !self.time.is_empty()
@@ -719,6 +723,13 @@ mod tests {
             Notification {
                 action_kinds: vec![action::DANGER],
                 ..bare.clone()
+            },
+            // a plain card without actions: a kind with nothing to belong to
+            Notification {
+                id: 1,
+                title: s("x"),
+                action_kinds: vec![action::BUTTON],
+                ..Notification::default()
             },
             Notification {
                 actions: vec![s("x")],

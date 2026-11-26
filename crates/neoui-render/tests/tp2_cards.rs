@@ -125,7 +125,7 @@ fn cards_by_section_group_swipe_and_clear() {
     common::frame(&mut r, &mut buf, w, "swiped the call");
     assert_eq!(
         r.take_notes_dismissed(),
-        Vec::<usize>::new(),
+        Vec::<(String, u32)>::new(),
         "an ongoing card stays"
     );
     common::tap(&mut r, (w as f32 - 40.0 * d) as i32, (GROUP_Y * d) as i32); // close the group again
@@ -134,7 +134,7 @@ fn cards_by_section_group_swipe_and_clear() {
     common::frame(&mut r, &mut buf, w, "swiped an alert");
     assert_eq!(
         r.take_notes_dismissed(),
-        vec![0],
+        vec![("files".to_string(), 5)],
         "the Files card, first in the shell's list"
     );
 
@@ -166,10 +166,10 @@ fn cards_by_section_group_swipe_and_clear() {
     common::frame(&mut r, &mut buf, w, "scrolled");
     common::write_png("tp2-shade-scrolled-pixel.png", &buf, w, h);
     assert_ne!(buf, before, "the list scrolled");
-    assert_eq!(r.take_notes_dismissed(), Vec::<usize>::new());
+    assert_eq!(r.take_notes_dismissed(), Vec::<(String, u32)>::new());
     assert_eq!(
         r.take_notes_opened(),
-        Vec::<(usize, u16)>::new(),
+        Vec::<(String, u32, u16)>::new(),
         "a scroll opens nothing"
     );
 

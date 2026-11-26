@@ -85,8 +85,10 @@ const QUIT_GRACE_MS: u64 = 3000;
 
 pub struct App {
     pub key: &'static str,
-    /// Its `NeoUi` session, once it connected.
+    /// Its `NeoUi` session, once it connected, and the protocol minor version it connected with (1.18's
+    /// `NotifyGone` would end an older app: its decoder refuses unknown events).
     session: Option<u32>,
+    minor: u8,
     pub process: Process,
     pub surface: Option<Chunk>,
     /// The app's outstanding `NEXT_EVENT`, if any.
@@ -340,21 +342,39 @@ impl Host {
         }
     }
 
-    /// The user swiped the shade's card `i` away: it goes, and its app (if running) hears why. Ongoing cards stay.
-    pub fn dismiss_notification(&mut self, i: usize) {
-        if self.notifications.get(i).is_none_or(|(_, n)| n.ongoing()) {
-            return;
+    /// The shell's own card under an app's key (the Wi-Fi login's, under Browser): the app didn't post it, so it
+    /// isn't the app's to clear and the app isn't told when it goes.
+    fn shell_card(key: &str, n: &Notification) -> bool {
+        key == BROWSER && n.id == PORTAL_ENTRY
+    }
+
+    /// `NotifyGone` to app `key`, if it runs and speaks 1.18: an older decoder refuses the event and its app ends.
+    fn post_gone(&mut self, key: &'static str, id: u32, why: u8) {
+        let speaks = self
+            .apps
+            .find(|a| a.key == key && a.quit_at.is_none())
+            .is_some_and(|a| a.session.is_some() && a.minor >= 18);
+        if speaks {
+            self.post(key, AppEvent::NotifyGone { id, why });
         }
+    }
+
+    /// The user swiped app `key`'s card `id` away (gone already: nothing): it goes, and its app hears why. Ongoing
+    /// cards stay.
+    pub fn dismiss_notification(&mut self, key: &str, id: u32) {
+        let Some(i) = self
+            .notifications
+            .iter()
+            .position(|(k, n)| *k == key && n.id == id && !n.ongoing())
+        else {
+            return;
+        };
         let (key, n) = self.notifications.remove(i);
         self.notes_changed = true;
         dprintln!("neoui: notification {} of {} dismissed", n.id, key);
-        self.post(
-            key,
-            AppEvent::NotifyGone {
-                id: n.id,
-                why: proto::GONE_SWIPED,
-            },
-        );
+        if !Self::shell_card(key, &n) {
+            self.post_gone(key, n.id, proto::GONE_SWIPED);
+        }
     }
 
     /// Clear all: every card but the ongoing ones goes, and each running app hears it.
@@ -366,24 +386,29 @@ impl Host {
         self.notes_changed = true;
         dprintln!("neoui: {} notifications cleared", gone.len());
         for (key, n) in gone {
-            self.post(
-                key,
-                AppEvent::NotifyGone {
-                    id: n.id,
-                    why: proto::GONE_CLEARED,
-                },
-            );
+            if !Self::shell_card(key, &n) {
+                self.post_gone(key, n.id, proto::GONE_CLEARED);
+            }
         }
     }
 
-    /// The user tapped the shade's entry `i` (`action` 0) or one of its actions (`i + 1`): its app comes to the
-    /// front on the entry's page and is told which; the entry goes.
-    pub fn open_notification(&mut self, i: usize, action: u16, now_ms: u64) {
-        if i >= self.notifications.len() {
+    /// The user tapped app `key`'s card `id` (`action` 0) or one of its actions (`i + 1`): its app comes to the
+    /// front on the card's page and is told which; the card goes, unless it is ongoing (its app ends it). A card
+    /// already gone does nothing.
+    pub fn open_notification(&mut self, key: &str, id: u32, action: u16, now_ms: u64) {
+        let Some(i) = self
+            .notifications
+            .iter()
+            .position(|(k, n)| *k == key && n.id == id)
+        else {
             return;
-        }
-        let (key, n) = self.notifications.remove(i);
-        self.notes_changed = true;
+        };
+        let (key, n) = if self.notifications[i].1.ongoing() {
+            (self.notifications[i].0, self.notifications[i].1.clone())
+        } else {
+            self.notes_changed = true;
+            self.notifications.remove(i)
+        };
         dprintln!(
             "neoui: notification {} of {} opened ({})",
             n.id,
@@ -670,6 +695,7 @@ impl Host {
                 self.apps.push(App {
                     key,
                     session: None,
+                    minor: 0,
                     process,
                     surface: None,
                     waiting: None,
@@ -1147,6 +1173,7 @@ impl Service for Host {
             return Err(err::KERR_NOT_SUPPORTED);
         };
         app.session = Some(id);
+        app.minor = version.minor;
         self.next_session += 1;
         Ok(id)
     }
@@ -1290,7 +1317,8 @@ impl Service for Host {
             }
             proto::NOTIFY_CLEAR => {
                 let key = app.key;
-                self.notifications.retain(|(k, _)| *k != key);
+                self.notifications
+                    .retain(|(k, n)| *k != key || Self::shell_card(k, n));
                 self.notes_changed = true;
                 m.complete(0);
             }

@@ -182,7 +182,7 @@ fn the_v2_chrome() {
         (NOTE_CALL_X * d) as i32,
         (NOTE_ACTIONS_Y * d) as i32,
     );
-    assert_eq!(r.take_notes_opened(), [(0, 2)]);
+    assert_eq!(r.take_notes_opened(), [("messages".into(), 0, 2)]);
     assert!(!r.overlay_open(), "an action closes the shade");
 
     // badges on the Apps menu (and the dock): Phone 2, Messages 3 (MODEMD's count while the app posts none), Clock 1

@@ -772,14 +772,12 @@ fn main() -> i32 {
                 let keys: Vec<&str> = host.notifications.iter().map(|(k, _)| *k).collect();
                 ui.set_status_apps(&keys);
             }
-            for (i, action) in ui.take_notes_opened() {
-                host.open_notification(i, action, ms);
+            // by (app, id): whatever moved in the list since, the card the user touched (or nothing, if it went)
+            for (key, id, action) in ui.take_notes_opened() {
+                host.open_notification(&key, id, action, ms);
             }
-            // a swipe (TP2a): the places refer to the list the shade was given, so the highest goes first
-            let mut gone = ui.take_notes_dismissed();
-            gone.sort_unstable_by(|a, b| b.cmp(a));
-            for i in gone {
-                host.dismiss_notification(i);
+            for (key, id) in ui.take_notes_dismissed() {
+                host.dismiss_notification(&key, id);
             }
             if ui.take_notes_cleared() {
                 host.clear_notifications();

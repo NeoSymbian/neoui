@@ -67,9 +67,8 @@ pub fn layout(list: &[(&str, &Notification)], open: Option<(&str, &str)>) -> Vec
             if section(n) != s {
                 continue;
             }
-            let grouped = |(k, m): &(&str, &Notification)| {
-                *k == *key && m.group == n.group && section(m) == s
-            };
+            // a group is one stack whatever its cards' sections: it stands where its newest card goes
+            let grouped = |(k, m): &(&str, &Notification)| *k == *key && m.group == n.group;
             if !n.group.is_empty() {
                 // only the group's newest card stands for it
                 if list[..i].iter().any(grouped) {
@@ -184,6 +183,21 @@ mod tests {
         assert_eq!(
             members,
             vec![(2, false), (1, false), (3, true), (4, true), (0, false)]
+        );
+        // a group whose cards fall in two sections is still one stack, under its newest card's section
+        let live = card(7, "chat", style::CONVERSATION, NOTIFY_ONGOING);
+        let split: Vec<(&str, &Notification)> = vec![("messages", &ava), ("messages", &live)];
+        let rows = layout(&split, Some(("messages", "chat")));
+        let got: Vec<(usize, Section, usize, bool)> = rows
+            .iter()
+            .map(|r| (r.index, r.section, r.count, r.member))
+            .collect();
+        assert_eq!(
+            got,
+            vec![
+                (0, Section::Conversations, 2, false),
+                (1, Section::Conversations, 1, true)
+            ]
         );
         // another app's group of the same name is another group
         let other = card(6, "chat", style::CONVERSATION, 0);

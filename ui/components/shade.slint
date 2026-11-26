@@ -114,30 +114,34 @@ component Card inherits Rectangle {
     clip: true;
     swipe := TouchArea {
         moved => {
+            // the first 8 dp pick the axis by whichever way moved more
             if root.axis == 0 {
-                if abs(self.mouse-x - self.pressed-x) > 8 * Theme.dp {
-                    root.axis = 1;
-                } else if abs(self.mouse-y - self.pressed-y) > 8 * Theme.dp {
-                    root.axis = 2;
-                    root.last-y = self.pressed-y;
+                let dx = abs(self.mouse-x - self.pressed-x);
+                let dy = abs(self.mouse-y - self.pressed-y);
+                if dx > 8 * Theme.dp || dy > 8 * Theme.dp {
+                    root.axis = dx > dy ? 1 : 2;
+                    // on the screen, not in the card: the card moves with the list it scrolls
+                    root.last-y = root.absolute-position.y + self.pressed-y;
                 }
             }
             if root.axis == 1 && !root.note.ongoing {
                 root.drag = self.mouse-x - self.pressed-x;
             }
             if root.axis == 2 {
-                root.scrolled(self.mouse-y - root.last-y);
-                root.last-y = self.mouse-y;
+                let y = root.absolute-position.y + self.mouse-y;
+                root.scrolled(y - root.last-y);
+                root.last-y = y;
             }
         }
         pointer-event(e) => {
             if e.kind == PointerEventKind.down {
                 root.axis = 0;
             }
+            // only a lift dismisses: an interrupted swipe (cancel) springs back
+            if e.kind == PointerEventKind.up && abs(root.drag) > root.width / 3 {
+                root.dismissed();
+            }
             if e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel {
-                if abs(root.drag) > root.width / 3 {
-                    root.dismissed();
-                }
                 root.drag = 0;
             }
         }
@@ -204,8 +208,14 @@ component Card inherits Rectangle {
                         transform-rotation: note.open ? 180deg : 0deg;
                     }
                 }
+                // a tap, not a drag that started here
                 group-touch := TouchArea {
-                    clicked => { root.toggled(); }
+                    clicked => {
+                        if abs(self.mouse-x - self.pressed-x) < 10 * Theme.dp
+                            && abs(self.mouse-y - self.pressed-y) < 10 * Theme.dp {
+                            root.toggled();
+                        }
+                    }
                 }
             }
         }
@@ -249,10 +259,13 @@ component Card inherits Rectangle {
             spacing: 20 * Theme.dp;
             padding-left: 2 * Theme.dp;
             alignment: start;
+            // three long labels share the row: each at most a third of it, elided
             for a[j] in note.actions: Rectangle {
                 height: 32 * Theme.dp;
-                width: act-text.preferred-width;
+                width: min(act-text.preferred-width, (root.width - 68 * Theme.dp) / 3);
                 act-text := Text {
+                    width: parent.width;
+                    overflow: elide;
                     text: a;
                     // the reply (or, on an old card, the first action) leads in blue; a danger action is red
                     color: (j < note.kinds.length && note.kinds[j] == 2) ? Theme.danger
@@ -263,8 +276,14 @@ component Card inherits Rectangle {
                     vertical-alignment: center;
                     opacity: act-touch.pressed ? 0.6 : 1;
                 }
+                // a tap, not a drag that started on it
                 act-touch := TouchArea {
-                    clicked => { root.opened(j + 1); }
+                    clicked => {
+                        if abs(self.mouse-x - self.pressed-x) < 10 * Theme.dp
+                            && abs(self.mouse-y - self.pressed-y) < 10 * Theme.dp {
+                            root.opened(j + 1);
+                        }
+                    }
                 }
             }
         }
@@ -439,7 +458,8 @@ export component Shade inherits Rectangle {
                     horizontal-stretch: 1;
                     vertical-alignment: center;
                 }
-                if root.notes.length > 2: Text {
+                // always: the list is where Clear all is
+                Text {
                     text: "See all " + root.cards;
                     color: Theme.accent;
                     font-size: Theme.font-status * 0.95;
@@ -481,6 +501,33 @@ export component Shade inherits Rectangle {
                             }
                         }
                     }
+                    // the shell's own rows (until Phone and Messages post cards, TP2b), in the list so they scroll
+                    // with it
+                    if active-call: ListRow {
+                        title: "Call in progress";
+                        subtitle: "Return to call controls";
+                        icon: @image-url("../icons/sys/call.svg");
+                        has-icon: true;
+                        clicked => { root.return-call(); }
+                    }
+
+                    if missed > 0: ListRow {
+                        title: missed == 1 ? "Missed call" : missed + " missed calls";
+                        subtitle: "Since this phone session started";
+                        icon: @image-url("../icons/sys/missed_call.svg");
+                        has-icon: true;
+                        icon-tint: Theme.danger;
+                        clicked => { root.open-view("phone", "recents"); }
+                    }
+
+                    if unread > 0 && !root.app-unread: ListRow {
+                        title: unread == 1 ? "New message" : unread + " new messages";
+                        subtitle: unread-line;
+                        icon: @image-url("../icons/sys/message.svg");
+                        has-icon: true;
+                        icon-tint: Theme.accent;
+                        clicked => { root.open-app("messages"); }
+                    }
                 }
             }
 
@@ -506,31 +553,6 @@ export component Shade inherits Rectangle {
                 }
             }
 
-            if active-call: ListRow {
-                title: "Call in progress";
-                subtitle: "Return to call controls";
-                icon: @image-url("../icons/sys/call.svg");
-                has-icon: true;
-                clicked => { root.return-call(); }
-            }
-
-            if missed > 0: ListRow {
-                title: missed == 1 ? "Missed call" : missed + " missed calls";
-                subtitle: "Since this phone session started";
-                icon: @image-url("../icons/sys/missed_call.svg");
-                has-icon: true;
-                icon-tint: Theme.danger;
-                clicked => { root.open-view("phone", "recents"); }
-            }
-
-            if unread > 0 && !root.app-unread: ListRow {
-                title: unread == 1 ? "New message" : unread + " new messages";
-                subtitle: unread-line;
-                icon: @image-url("../icons/sys/message.svg");
-                has-icon: true;
-                icon-tint: Theme.accent;
-                clicked => { root.open-app("messages"); }
-            }
 
         }
     }
