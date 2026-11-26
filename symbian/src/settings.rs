@@ -143,7 +143,13 @@ impl UiMirror {
 
     /// Once per frame: stores the UI's edits, then shows what changed in the store.
     pub fn sync(&mut self, ui: &mut Renderer, settings: &mut Settings, now_ms: u64) {
+        // an edit the UI queued for a key the store changed since it was last shown is stale (the UI reports what it
+        // was shown too): the store's newer value wins and is shown below, it isn't written back over (when the
+        // store can't say what changed, the edits go through as before)
         for (key, value) in ui.take_setting_edits() {
+            if settings.store().known_changed_since(self.seq, key) {
+                continue;
+            }
             // a refused edit (logged by `set`) must not stay on screen: show the stored value again
             if set(settings, Caller::Shell, key, value, now_ms).is_err() {
                 show(ui, settings, key);

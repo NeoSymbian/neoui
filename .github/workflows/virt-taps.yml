@@ -185,7 +185,17 @@ jobs:
           tap 426 73; wait_s 1; kb_globe; kb_type apps   # the keyboard is still Russian (Files): globe -> English
           tap 270 157; expect "settings: page apps"; wait_s 1
           tap 270 214; wait_s 1; tap 270 917; expect "settings: open app clock (Ok"; expect "clock: visible true"
-          ui_run 330
+          # SE2a, Offline (virt is the only device it may run on): Settings again (resumes on Apps), ← to the root,
+          # search "offline" -> its row on Sounds (406 dp) -> the sheet's Activate (529 dp): airplane on, Wi-Fi and BT
+          # off; then General (118 dp) -> Activate: everything as it was
+          wait_s 1; swipe 270 1075 270 900; expect "neoui: screen home"   # Clock is in front: home first
+          tap 485 973; tap 270 805; expect "neoui: app settings resumed"; wait_s 1
+          tap 36 73; expect "settings: back"
+          tap 426 73; wait_s 1; kb_type offline
+          tap 270 157; expect "settings: page sounds"; wait_s 1
+          tap 270 645; wait_s 1; tap 270 829; expect "neoui: sound profile 4: airplane true, wifi false, bt false"
+          wait_s 1; tap 270 214; wait_s 1; tap 270 829; expect "neoui: sound profile 0: airplane false, wifi true, bt false"
+          ui_run 380
 
       - name: Check the output
         working-directory: build
@@ -201,6 +211,9 @@ jobs:
           # SE1d: search found Apps, and its sheet opened Clock
           grep -a 'settings: page apps' $s
           grep -a 'settings: open app clock (Ok' $s
+          # SE2a: Offline turned the radios off, General gave them back
+          grep -a 'neoui: sound profile 4: airplane true, wifi false, bt false' $s
+          grep -a 'neoui: sound profile 0: airplane false, wifi true, bt false' $s
           ! grep -aq 'settings: set nav.mode = [0-9] (Err' $s
           grep -aE 'neoui: clock [0-9]{2}:[0-9]{2}' $s
           # R9: frame timing (one summary per second of activity) on the fast counter

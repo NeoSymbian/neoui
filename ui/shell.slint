@@ -31,7 +31,7 @@ export { Layouts } from "components/keyboard/layouts.slint";
 export { Layout } from "components/keyboard/types.slint";
 export { KeyboardFocus } from "components/keyboard/focus.slint";
 import { KeyboardFocus } from "components/keyboard/focus.slint";
-import { PowerMenu } from "components/powermenu.slint";
+import { PowerMenu, PowerProfile } from "components/powermenu.slint";
 import { HomeScreen } from "screens/home.slint";
 import { MenuScreen } from "screens/menu.slint";
 import { OldAppsScreen, OldApp } from "screens/oldapps.slint";
@@ -155,6 +155,9 @@ export component Shell inherits Window {
     // in: the Power menu, opened by the UI server when Power is held (H3a); out: what it chose (2 = power off,
     // 0 = restart, -1 = dismissed)
     in property <bool> power-open;
+    // the sound profiles it offers (SE2a) and the active one; choosing one is power(100 + id)
+    in property <[PowerProfile]> power-profiles;
+    in property <int> power-profile;
     callback power(int);
     // in: the status bar's time, from the system clock (the default is the design's mock time)
     in property <string> clock: "10:24";
@@ -500,6 +503,8 @@ export component Shell inherits Window {
         width: root.width;
         height: root.height;
         open: power-open;
+        profiles: power-profiles;
+        active: power-profile;
         chosen(a) => { root.power(a); }
     }
 

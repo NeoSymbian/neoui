@@ -30,8 +30,9 @@ use neoui_proto::ipc::{self as proto, AppEvent};
 use neoui_proto::page::{NOTE_MAX, NOTIFICATION_MAX, PAGE_MAX, QUERY_MAX};
 use neoui_proto::recents::Recents;
 use neoui_proto::settings::value::ENCODED_MAX;
-use neoui_proto::settings::{Caller, KEY_MAX, Value, access, kerr};
+use neoui_proto::settings::{Caller, KEY_MAX, Value, access, kerr, keys};
 use neoui_proto::settings_app::info::OldApps;
+use neoui_proto::sound_profile;
 use neoui_proto::{InputEvent, TouchPhase};
 use neoui_render::{LauncherEntry, Nav, Note, Notification, Page, Query};
 
@@ -662,6 +663,41 @@ impl Host {
     }
 
     /// A cached tile can restart its owner; the normal event queue holds the UID until it connects.
+    /// `SETTINGS_ACTION` `ACTION_PROFILE` (SE2a): a sound profile command from Settings, through the reducer.
+    fn profile_action(&mut self, key: &str, m: &Message) -> i32 {
+        if access::caller(key, m.client_sid()) != Caller::Settings {
+            return kerr::PERMISSION_DENIED;
+        }
+        let mut b = [0u8; 4 + sound_profile::NAME_MAX];
+        let cmd = match m.des_len(1) {
+            Ok(n) if (4..=b.len()).contains(&n) => match m.read8(1, &mut b, 0) {
+                Ok(n) => sound_profile::Command::decode(&b[..n]),
+                Err(e) => return e,
+            },
+            _ => None,
+        };
+        let Some(cmd) = cmd else {
+            return kerr::ARGUMENT;
+        };
+        let r = sound_profile::store::apply(&mut self.settings, cmd.clone(), e32::time::millis());
+        dprintln!("neoui: settings profile {:?} ({:?})", cmd, r);
+        let g = |k| self.settings.get(k).unwrap_or(false);
+        dprintln!(
+            "neoui: sound profile {}: airplane {}, wifi {}, bt {}",
+            self.settings.get(keys::SOUND_PROFILE).unwrap_or(0),
+            g(keys::RADIO_AIRPLANE),
+            g(keys::RADIO_WIFI),
+            g(keys::RADIO_BT)
+        );
+        use sound_profile::{Refused, store::ApplyError};
+        match r {
+            Ok(()) => 0,
+            Err(ApplyError::Refused(Refused::NotFound)) => err::KERR_NOT_FOUND,
+            Err(ApplyError::Refused(Refused::Full)) => kerr::OVERFLOW,
+            Err(_) => kerr::ARGUMENT,
+        }
+    }
+
     /// The legacy bridge's entries for Settings' Apps page (`INFO_APPS`), with how many it had to refuse.
     fn old_apps(&self) -> OldApps {
         let apps: Vec<(u32, String)> = self
@@ -1151,6 +1187,11 @@ impl Service for Host {
                         0
                     }
                     proto::ACTION_SIGN_IN => err::KERR_NOT_READY,
+                    // a sound profile (SE2a): Settings only; the shell's reducer changes everything at once
+                    proto::ACTION_PROFILE => {
+                        let key = app.key;
+                        self.profile_action(key, &m)
+                    }
                     // open an old app: Settings only (by its secure ID), an id the legacy bridge registered
                     proto::ACTION_OPEN_ENTRY => {
                         if access::caller(app.key, m.client_sid()) != Caller::Settings {

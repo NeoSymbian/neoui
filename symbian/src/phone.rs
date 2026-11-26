@@ -215,7 +215,8 @@ impl Phone {
         if self.preferences == Some(desired) {
             return;
         }
-        let radio_result = self.request("airplane", if airplane { "1" } else { "0" });
+        // the ring first: entering or leaving Offline (a sound profile) changes both, and MODEMD must never have the
+        // radio back with the old profile's ring (SE2a)
         let ring_result = self.session.as_ref().map_or(-18, |session| {
             let mut args = TIpcArgs::new();
             args.int(0, i32::from(ring.volume));
@@ -225,6 +226,16 @@ impl Phone {
                 .send_receive(op::RING_SETTINGS, &args)
                 .unwrap_or_else(|e| e)
         });
+        let radio_result = self.request("airplane", if airplane { "1" } else { "0" });
+        dprintln!(
+            "neoui: modem ring volume {} silent {} vibrate {}, airplane {} ({}, {})",
+            ring.volume,
+            ring.silent,
+            ring.vibrate,
+            airplane,
+            ring_result,
+            radio_result
+        );
         if radio_result == 0 && ring_result == 0 {
             self.preferences = Some(desired);
         } else {

@@ -36,6 +36,10 @@ pub fn caller(key: &str, sid: u32) -> Caller<'_> {
     }
 }
 
+/// Shell keys only the shell writes, even for the Settings app: the sound profiles go through the shell's reducer
+/// (`ipc::ACTION_PROFILE`) so the profile, its blob and its live values change together.
+pub const SHELL_ONLY: &[&str] = &["sound.profile", "sound.profiles"];
+
 /// App-owned keys the Settings app shows and may change (Date & time's 24-hour time is Clock's key).
 pub const SETTINGS_ALSO: &[&str] = &["clock.24h"];
 
@@ -46,7 +50,10 @@ impl Caller<'_> {
         match *self {
             Caller::Shell => true,
             Caller::Settings => match registry::lookup(name) {
-                Some(spec) => spec.owner == Owner::Shell || SETTINGS_ALSO.contains(&name),
+                Some(spec) => {
+                    (spec.owner == Owner::Shell && !SHELL_ONLY.contains(&name))
+                        || SETTINGS_ALSO.contains(&name)
+                }
                 None => namespace(name) == "settings",
             },
             Caller::App(app) => match registry::lookup(name) {

@@ -66,7 +66,7 @@ export component RootPage inherits NeoList {
 
         SettingRow {
             title: "Sounds";
-            value: SetState.silent ? "Silent" : "Ringing";
+            value: SetState.active-profile-name;
             icon: @image-url("@neoui/icons/sys/volume.svg");
             tint: #e5484d;
             clicked => { SetState.act("open", "7"); }

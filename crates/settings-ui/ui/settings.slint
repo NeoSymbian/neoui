@@ -8,12 +8,12 @@ import "@neoui/fonts/NeoSans-SemiBold.ttf";
 import "@neoui/fonts/NeoSans-Bold.ttf";
 import "@neoui/fonts/DejaVuSans.ttf";
 import { Theme, Scroll, KeyboardFocus, Kit, Header, ChoiceSheet } from "@neoui/kit.slint";
-import { SetState, WifiNet, WifiLink, WifiDetail, WifiSaved, AppRow, SearchHit } from "state.slint";
+import { SetState, WifiNet, WifiLink, WifiDetail, WifiSaved, AppRow, ProfileRow, SearchHit } from "state.slint";
 import { RootPage, RootGridPage, SearchPage } from "pages/root.slint";
 import { LicencesPage } from "pages/licences.slint";
 import { WifiPage, WifiSavedPage, WifiJoinSheet, WifiDetailsSheet } from "pages/wifi.slint";
 import { ConnectivityPage, MobilePage, BluetoothPage } from "pages/connections.slint";
-import { DisplayPage, NavigationPage, SoundsPage, BatteryPage } from "pages/device.slint";
+import { DisplayPage, NavigationPage, SoundsPage, BatteryPage, ProfilePage, ProfileSheet, ProfileNameSheet } from "pages/device.slint";
 import { DateTimePage, ZoneSheet, KeyboardPage, PrivacyPage } from "pages/personal.slint";
 import { AppsPage, AppSheet, OldAppsPage, DeveloperPage, AboutPage } from "pages/system.slint";
 
@@ -81,6 +81,7 @@ export component SettingsApp inherits Window {
         if SetState.page == 15: PrivacyPage { }
         if SetState.page == 16: LicencesPage { }
         if SetState.page == 17: WifiSavedPage { }
+        if SetState.page == 18: ProfilePage { }
     }
 
     // the sheets: full size, last, so they cover the header and the page
@@ -88,6 +89,16 @@ export component SettingsApp inherits Window {
         kb: root.kb;
         open: true;
         dismissed => { SetState.sheet = ""; SetState.password = ""; KeyboardFocus.open = false; }
+    }
+    if SetState.sheet == "profile": ProfileSheet {
+        open: true;
+        dismissed => { SetState.sheet = ""; }
+    }
+    if SetState.sheet == "profile-add" || SetState.sheet == "profile-rename": ProfileNameSheet {
+        kb: root.kb;
+        rename: SetState.sheet == "profile-rename";
+        open: true;
+        dismissed => { SetState.sheet = ""; KeyboardFocus.open = false; }
     }
     if SetState.sheet == "app": AppSheet {
         open: true;

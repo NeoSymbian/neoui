@@ -13,7 +13,8 @@ use neoui_proto::clock::world::CATALOGUE;
 use neoui_proto::settings::registry::{self, DefaultValue, keys};
 use neoui_proto::settings::{Key, Setting, Value};
 use neoui_proto::settings_app::choices::{self, KEYBOARDS, TIMEOUTS};
-use settings_ui::{SetState, SettingsApp};
+use neoui_proto::sound_profile::{self, Mirrors, Profiles};
+use settings_ui::{ProfileRow, SetState, SettingsApp};
 use slint::{ComponentHandle, ModelRc, SharedString, VecModel};
 
 fn strings(v: impl IntoIterator<Item = impl Into<SharedString>>) -> ModelRc<SharedString> {
@@ -88,6 +89,63 @@ pub fn dates(app: &App, ui: &SettingsApp) {
 /// so a missing or retyped value is the list).
 pub const ROOT_GRID: &str = "settings.root_grid";
 
+/// The sound profiles as the shell's reducer keeps them (read the same way, `sound_profile::read`).
+/// The keys come one IPC each: a commit between them (the power menu, the shade) shows as the active id changing,
+/// and they are read again.
+pub fn read_profiles(app: &App) -> Profiles {
+    let mut tries = 0;
+    loop {
+        let active = get(app, keys::SOUND_PROFILE);
+        let blob = match app.setting_raw("sound.profiles") {
+            Ok(Value::Bytes(b)) => b,
+            _ => Vec::new(),
+        };
+        let mirrors = Mirrors {
+            silent: get(app, keys::SOUND_SILENT),
+            vibrate: get(app, keys::SOUND_VIBRATE),
+            volume: get(app, keys::SOUND_RING_VOLUME).clamp(0, 10) as u8,
+        };
+        tries += 1;
+        if get(app, keys::SOUND_PROFILE) == active || tries == 3 {
+            return sound_profile::read(active, &blob, mirrors);
+        }
+    }
+}
+
+/// The profiles into Sounds & profiles; the profile page's own follows its id.
+pub fn profiles(app: &App, ui: &SettingsApp) {
+    let s = ui.global::<SetState>();
+    let p = read_profiles(app);
+    let rows: Vec<ProfileRow> = p
+        .list
+        .iter()
+        .map(|x| ProfileRow {
+            id: i32::from(x.id),
+            name: x.name.as_str().into(),
+            summary: x.summary().into(),
+            ring: x.ring,
+            volume: i32::from(x.volume),
+            vibrate: x.vibrate,
+        })
+        .collect();
+    s.set_active_profile(i32::from(p.active));
+    s.set_active_profile_name(
+        p.get(p.active)
+            .map_or("General", |x| x.name.as_str())
+            .into(),
+    );
+    let current = s.get_profile_current().id;
+    let pick = rows
+        .iter()
+        .find(|r| r.id == current)
+        .or_else(|| rows.iter().find(|r| r.id == i32::from(p.active)))
+        .cloned();
+    if let Some(r) = pick {
+        s.set_profile_current(r);
+    }
+    s.set_profiles(ModelRc::new(VecModel::from(rows)));
+}
+
 /// Every setting a page shows.
 pub fn load(app: &App, ui: &SettingsApp) {
     let s = ui.global::<SetState>();
@@ -99,6 +157,7 @@ pub fn load(app: &App, ui: &SettingsApp) {
     s.set_silent(get(app, keys::SOUND_SILENT));
     s.set_vibrate(get(app, keys::SOUND_VIBRATE));
     s.set_ring_volume(get(app, keys::SOUND_RING_VOLUME));
+    profiles(app, ui);
     s.set_media_volume(get(app, keys::SOUND_MEDIA_VOLUME));
     s.set_media_route(get(app, keys::SOUND_MEDIA_ROUTE));
     s.set_mic(get(app, keys::SOUND_MIC));

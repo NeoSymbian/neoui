@@ -27,6 +27,7 @@ const COMPONENTS: &[(&str, Page)] = &[
     ("DeveloperPage", Page::Developer),
     ("AboutPage", Page::About),
     ("WifiSavedPage", Page::WifiSaved),
+    ("ProfilePage", Page::Profile),
 ];
 
 /// (page, title) of every row the pages draw.
@@ -66,6 +67,11 @@ fn page_rows() -> BTreeSet<(&'static str, String)> {
     }
     let system = std::fs::read_to_string(pages.join("system.slint")).unwrap();
     assert!(system.contains("for a in SetState.apps: ListRow"));
+    let device = std::fs::read_to_string(pages.join("device.slint")).unwrap();
+    assert!(device.contains("for p in SetState.profiles: ListRow"));
+    for p in neoui_proto::sound_profile::builtins() {
+        out.insert((Page::Sounds.name(), p.name));
+    }
     for a in neoui_proto::apps::listed() {
         out.insert((Page::Apps.name(), a.name.to_string()));
     }

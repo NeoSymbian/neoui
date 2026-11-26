@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Device: Display (set2-display, set2-timeout's choice sheet), Home & navigation (set2-navigation, the three modes),
-// Sounds (today's controls: ring and media, the test sound and record-and-play-back; profiles are SE2) and Battery
+// Sounds & profiles (set2-sounds, set2-profile: profiles SE2a; media, the test sound and record-and-play-back) and Battery
 // (set2-battery: the HAL's reading and the shell's 24-hour history).
-import { Theme, NeoList, SectionHeader, ListRow, Slider, Button } from "@neoui/kit.slint";
+import { Theme, NeoList, SectionHeader, ListRow, Slider, Button, Sheet, TextField } from "@neoui/kit.slint";
 import { ChoiceRow, Note, Pair } from "../parts.slint";
-import { SetState } from "../state.slint";
+import { SetState, ProfileRow } from "../state.slint";
 
 export component DisplayPage inherits NeoList {
     // the slider has no callback: a move changes `brightness`, stored as 0..255
@@ -66,47 +66,34 @@ export component NavigationPage inherits NeoList {
 export component SoundsPage inherits NeoList {
     VerticalLayout {
         alignment: start;
-        SectionHeader { text: "Incoming calls"; }
-        ListRow {
-            title: "Silent";
-            checked: SetState.found == "sounds.silent";
-            subtitle: "Mute the built-in ringtone";
-            has-switch: true;
-            switch-on <=> SetState.silent;
-            switch-toggled(v) => { SetState.act("sound.silent", v ? "1" : "0"); }
-        }
-
-        ListRow {
-            title: "Vibrate";
-            checked: SetState.found == "sounds.vibrate";
-            has-switch: true;
-            switch-on <=> SetState.vibrate;
-            switch-toggled(v) => { SetState.act("sound.vibrate", v ? "1" : "0"); }
-        }
-
-        ListRow {
-            title: "Ring volume";
-            checked: SetState.found == "sounds.ring";
-            value: SetState.ring-volume;
-            subtitle: "Built-in ringtone · 0 to 10";
-            divider: false;
-        }
-
-        Pair {
-            Button {
-                text: "Quieter";
-                primary: false;
-                clicked => { SetState.act("sound.ring_volume", max(0, SetState.ring-volume - 1)); }
+        // the profiles (set2-sounds, S05): a row's sheet activates it or opens its page
+        SectionHeader { text: "Profiles"; }
+        for p in SetState.profiles: ListRow {
+            title: p.name;
+            checked: SetState.found == "sounds.p" + p.id;
+            subtitle: p.summary;
+            value: p.id == SetState.active-profile ? "Active" : "";
+            chevron: true;
+            clicked => {
+                SetState.profile-current = p;
+                SetState.sheet = "profile";
             }
-
-            Button {
-                text: "Louder";
-                primary: false;
-                clicked => { SetState.act("sound.ring_volume", min(10, SetState.ring-volume + 1)); }
+        }
+        ListRow {
+            title: "Add profile";
+            checked: SetState.found == "sounds.add";
+            subtitle: "A copy of General you can change";
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/add.svg");
+            divider: false;
+            clicked => {
+                SetState.new-name = "";
+                SetState.sheet = "profile-add";
             }
         }
 
         if SetState.phone-feedback != "": Note { text: SetState.phone-feedback; }
+        Note { text: "The shade's Silent tile and the power menu switch profiles too."; }
 
         SectionHeader { text: "Media"; }
         ListRow {
@@ -237,6 +224,169 @@ export component BatteryPage inherits NeoList {
             font-size: Theme.font-status;
             color: Theme.text-dim;
             wrap: word-wrap;
+        }
+    }
+}
+
+// A profile (set2-profile): its ring, volume and vibration (Offline sounds like General); added ones can be renamed
+// and deleted. The ringtone and the message tone are today's built-ins until SE2b.
+export component ProfilePage inherits NeoList {
+    property <ProfileRow> p: SetState.profile-current;
+    property <bool> offline: p.id == 4;
+    property <bool> added: p.id >= 5;
+    VerticalLayout {
+        alignment: start;
+        if p.id != SetState.active-profile: HorizontalLayout {
+            padding: Theme.margin;
+            Button {
+                text: "Use " + p.name;
+                clicked => { SetState.act("profile-choose", p.id); }
+            }
+        }
+        if offline: Note { text: "Offline turns the mobile network, Wi-Fi and Bluetooth off, and sounds like General. Leaving it turns them back on."; }
+        if !offline: SectionHeader { text: "Calls"; }
+        if !offline: ListRow {
+            title: "Ringtone";
+            checked: SetState.found == "profile.tone";
+            value: p.ring ? "Built-in ringtone" : "None";
+        }
+        // Silent never rings (muting chooses it)
+        if !offline && p.id != 1: ListRow {
+            title: "Ring";
+            checked: SetState.found == "profile.ring";
+            subtitle: p.ring ? "The ringtone sounds" : "Silent: no ringing";
+            has-switch: true;
+            switch-on: p.ring;
+            switch-toggled(v) => { SetState.act("profile-set", (v ? "1" : "0") + "," + p.volume + "," + (p.vibrate ? "1" : "0")); }
+        }
+        if !offline && p.ring: ListRow {
+            title: "Ring volume";
+            checked: SetState.found == "profile.volume";
+            value: p.volume;
+            subtitle: "0 to 10";
+            divider: false;
+        }
+        if !offline && p.ring: Pair {
+            Button {
+                text: "Quieter";
+                primary: false;
+                clicked => { SetState.act("profile-set", "1," + max(0, p.volume - 1) + "," + (p.vibrate ? "1" : "0")); }
+            }
+
+            Button {
+                text: "Louder";
+                primary: false;
+                clicked => { SetState.act("profile-set", "1," + min(10, p.volume + 1) + "," + (p.vibrate ? "1" : "0")); }
+            }
+        }
+        if !offline: ListRow {
+            title: "Vibrate";
+            checked: SetState.found == "profile.vibrate";
+            has-switch: true;
+            switch-on: p.vibrate;
+            switch-toggled(v) => { SetState.act("profile-set", (p.ring ? "1" : "0") + "," + p.volume + "," + (v ? "1" : "0")); }
+        }
+        if !offline: SectionHeader { text: "Messages"; }
+        if !offline: ListRow {
+            title: "Message tone";
+            checked: SetState.found == "profile.message";
+            value: p.ring ? "Two buzzes + chime" : "Two buzzes";
+            divider: false;
+        }
+        if added: HorizontalLayout {
+            padding: Theme.margin;
+            spacing: 12 * Theme.dp;
+            Button {
+                text: "Rename";
+                primary: false;
+                clicked => {
+                    SetState.new-name = p.name;
+                    SetState.sheet = "profile-rename";
+                }
+            }
+
+            Button {
+                text: "Delete";
+                primary: false;
+                clicked => { SetState.act("profile-delete", ""); }
+            }
+        }
+    }
+}
+
+// A profile's sheet from the list: Activate, or its page.
+export component ProfileSheet inherits Sheet {
+    title: SetState.profile-current.name;
+    VerticalLayout {
+        padding-left: 20 * Theme.dp;
+        padding-right: 20 * Theme.dp;
+        spacing: 14 * Theme.dp;
+        Text {
+            text: SetState.profile-current.summary;
+            font-size: Theme.font-label;
+            color: Theme.text-secondary;
+            wrap: word-wrap;
+        }
+
+        if SetState.profile-current.id != SetState.active-profile: Button {
+            text: "Activate";
+            clicked => {
+                SetState.act("profile-choose", SetState.profile-current.id);
+                root.close();
+            }
+        }
+        Button {
+            text: "Change";
+            primary: SetState.profile-current.id == SetState.active-profile;
+            clicked => {
+                SetState.act("open", "18");
+                root.close();
+            }
+        }
+
+        Button {
+            text: "Cancel";
+            primary: false;
+            clicked => { root.close(); }
+        }
+    }
+}
+
+// Add profile / Rename: the name (at most 24 bytes).
+export component ProfileNameSheet inherits Sheet {
+    in property <length> kb;
+    in property <bool> rename;
+    title: rename ? "Rename profile" : "Add profile";
+    VerticalLayout {
+        padding-left: 20 * Theme.dp;
+        padding-right: 20 * Theme.dp;
+        spacing: 14 * Theme.dp;
+        TextField {
+            placeholder: "Name";
+            autofocus: true;
+            text <=> SetState.new-name;
+        }
+
+        HorizontalLayout {
+            spacing: 12 * Theme.dp;
+            Button {
+                text: "Cancel";
+                primary: false;
+                clicked => { root.close(); }
+            }
+
+            Button {
+                text: rename ? "Rename" : "Add";
+                enabled: SetState.new-name != "";
+                clicked => {
+                    SetState.act(rename ? "profile-rename" : "profile-add", SetState.new-name);
+                    root.close();
+                }
+            }
+        }
+
+        if root.kb > 0: Rectangle {
+            height: root.kb;
         }
     }
 }

@@ -1,15 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 // The Power menu (NeoSymbian H3a): the UI server opens it when Power is held for a second. Power off and Restart go
-// back to the server (`chosen`), which saves the clock, finalises the drives and asks the kernel.
-// Geometry (crates/neoui-render/tests/power.rs mirrors it): a 280 dp card in the middle of the screen, its three
-// buttons 60 dp apart, the middle one (Restart) on the screen's centre line.
+// back to the server (`chosen`), which saves the clock, finalises the drives and asks the kernel. Above them the sound
+// profiles (SE2a, S05: the Nokia power menu), the active one ticked; a tap chooses it (`chosen(100 + id)`).
+// Geometry (crates/neoui-render/tests/power.rs mirrors it): a 280 dp card, its three buttons 60 dp apart, the middle
+// one (Restart) on the screen's centre line; the profiles, 40 dp each, make the card grow upwards.
 import { Theme } from "../theme.slint";
 import { Button } from "controls.slint";
 
+export struct PowerProfile { id: int, name: string }
+
 export component PowerMenu inherits Rectangle {
     in property <bool> open;
-    // 2 = power off, 0 = restart, -1 = dismissed
+    in property <[PowerProfile]> profiles;
+    in property <int> active;
+    // 2 = power off, 0 = restart, -1 = dismissed, 100 + id = that sound profile
     callback chosen(int);
+    // only the rows that fit above the buttons (the server puts the active profile first)
+    property <int> fit: max(0, floor((root.height / 2 - 134 * Theme.dp) / (40 * Theme.dp)));
+    property <length> rows: min(root.profiles.length, root.fit) * 40 * Theme.dp;
     visible: open;
     background: #000000b0;
 
@@ -21,20 +29,53 @@ export component PowerMenu inherits Rectangle {
 
     Rectangle {
         width: 280 * Theme.dp;
-        height: 220 * Theme.dp;
+        height: 220 * Theme.dp + root.rows + (root.rows > 0 ? 12 * Theme.dp : 0);
         x: (root.width - self.width) / 2;
-        y: (root.height - self.height) / 2;
+        y: (root.height - 220 * Theme.dp) / 2 - (self.height - 220 * Theme.dp);
         background: Theme.bg-raised;
         border-radius: Theme.radius;
         // swallow taps between the buttons
         TouchArea { }
+
+        for p[i] in root.profiles: Rectangle {
+            visible: i < root.fit;
+            x: 8 * Theme.dp;
+            y: 12 * Theme.dp + i * 40 * Theme.dp;
+            width: parent.width - 16 * Theme.dp;
+            height: 40 * Theme.dp;
+            border-radius: 8 * Theme.dp;
+            background: pt.pressed ? Theme.pressed : transparent;
+            pt := TouchArea {
+                clicked => {
+                    root.chosen(100 + p.id);
+                }
+            }
+
+            Text {
+                x: 12 * Theme.dp;
+                text: p.name;
+                color: Theme.text;
+                font-size: Theme.font-label;
+                vertical-alignment: center;
+                height: parent.height;
+            }
+
+            if p.id == root.active: Text {
+                x: parent.width - self.width - 12 * Theme.dp;
+                text: "✓";
+                color: Theme.accent;
+                font-size: Theme.font-label;
+                vertical-alignment: center;
+                height: parent.height;
+            }
+        }
 
         Button {
             text: "Power off";
             tint: #c0392b;
             x: 20 * Theme.dp;
             width: parent.width - 40 * Theme.dp;
-            y: parent.height / 2 - 60 * Theme.dp - self.height / 2;
+            y: parent.height - 110 * Theme.dp - 60 * Theme.dp - self.height / 2;
             clicked => {
                 root.chosen(2);
             }
@@ -44,7 +85,7 @@ export component PowerMenu inherits Rectangle {
             text: "Restart";
             x: 20 * Theme.dp;
             width: parent.width - 40 * Theme.dp;
-            y: parent.height / 2 - self.height / 2;
+            y: parent.height - 110 * Theme.dp - self.height / 2;
             clicked => {
                 root.chosen(0);
             }
@@ -55,7 +96,7 @@ export component PowerMenu inherits Rectangle {
             primary: false;
             x: 20 * Theme.dp;
             width: parent.width - 40 * Theme.dp;
-            y: parent.height / 2 + 60 * Theme.dp - self.height / 2;
+            y: parent.height - 110 * Theme.dp + 60 * Theme.dp - self.height / 2;
             clicked => {
                 root.chosen(-1);
             }

@@ -36,14 +36,15 @@
 //! knows ([`SETTINGS_INFO`]: battery history, the Wi-Fi link's IP and captive portal, the clock's sync) and asks the
 //! shell to act ([`SETTINGS_ACTION`]); its writes to shell-owned settings are allowed by its secure ID.
 //! Since 1.14 (SE1d) it also lists the old apps the legacy bridge registered ([`INFO_APPS`]) and opens one
-//! ([`ACTION_OPEN_ENTRY`]).
+//! ([`ACTION_OPEN_ENTRY`]). Since 1.15 (SE2a) it changes the sound profiles through the shell's reducer
+//! ([`ACTION_PROFILE`]).
 
 use crate::{InputEvent, TouchPhase};
 
 /// The server's name (no leading `!`: that needs ProtServ).
 pub const SERVER: &str = "NeoUi";
 /// Protocol version (major, minor); a connect with another major is refused.
-pub const VERSION: (u8, u8) = (1, 14);
+pub const VERSION: (u8, u8) = (1, 15);
 
 /// `[Des8 out: GEOMETRY_LEN bytes = width, height, dp × 256 (u32 LE)]` → 0. `dp` is the shell's design unit in
 /// pixels (`min(screen w, h) / 360`), so apps size things like the shell does.
@@ -189,6 +190,10 @@ pub const INFO_APPS: i32 = 4;
 /// [`SETTINGS_ACTION`] kinds.
 pub const ACTION_SIGN_IN: i32 = 1;
 pub const ACTION_OPEN_ENTRY: i32 = 2;
+/// 1.15 (SE2a): a sound profile command ([`crate::sound_profile::Command`]: choose, set, add, rename, delete), Settings
+/// only (`KErrPermissionDenied`); `KErrNotFound` for a profile that isn't there (or can't be changed that way),
+/// `KErrOverflow` when there is no room for another, `KErrArgument` for a malformed request.
+pub const ACTION_PROFILE: i32 = 3;
 /// The longest launcher key, in bytes.
 pub const KEY_MAX: usize = 16;
 

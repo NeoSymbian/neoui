@@ -14,6 +14,7 @@ use slint::Model;
 
 /// The rows that show no value of their own (they open a page or act): search finds them by name only.
 pub const VALUELESS: &[&str] = &[
+    "sounds.add",
     "root.privacy",
     "root.about",
     "privacy.clip",
@@ -73,10 +74,31 @@ pub fn live_value(s: &SetState<'_>, id: &str) -> String {
         "display.timeout" => s.get_timeout_text().into(),
         "root.navigation" => pick(s.get_nav_modes(), s.get_nav_mode()),
         "nav.0" | "nav.1" | "nav.2" => on(id.ends_with(&format!("{}", s.get_nav_mode()))),
-        "root.sounds" => String::from(if s.get_silent() { "Silent" } else { "Ringing" }),
-        "sounds.silent" => on(s.get_silent()),
-        "sounds.vibrate" => on(s.get_vibrate()),
-        "sounds.ring" => format!("{}", s.get_ring_volume()),
+        "root.sounds" => s.get_active_profile_name().into(),
+        // a profile's row: its summary; a profile page's rows: the active profile's values
+        p if p.starts_with("sounds.p") => p[8..]
+            .parse::<i32>()
+            .ok()
+            .and_then(|id| s.get_profiles().iter().find(|r| r.id == id))
+            .map_or_else(String::new, |r| String::from(r.summary.as_str())),
+        row @ ("profile.tone" | "profile.ring" | "profile.volume" | "profile.vibrate"
+        | "profile.message") => {
+            let active = s.get_active_profile();
+            let Some(r) = s.get_profiles().iter().find(|r| r.id == active) else {
+                return String::new();
+            };
+            match row {
+                "profile.tone" => String::from(if r.ring { "Built-in ringtone" } else { "None" }),
+                "profile.ring" => on(r.ring),
+                "profile.volume" => format!("{}", r.volume),
+                "profile.vibrate" => on(r.vibrate),
+                _ => String::from(if r.ring {
+                    "Two buzzes + chime"
+                } else {
+                    "Two buzzes"
+                }),
+            }
+        }
         "sounds.media" => format!("{}", s.get_media_volume()),
         "sounds.route" => pick(s.get_media_routes(), s.get_media_route()),
         "sounds.mic" => pick(s.get_mics(), s.get_mic()),
