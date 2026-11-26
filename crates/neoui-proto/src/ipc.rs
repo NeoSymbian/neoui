@@ -228,8 +228,8 @@ pub const INFO_CHANNELS: i32 = 7;
 /// 1.20 (D4/D8), paged: one [`crate::settings_app::wire::AppDetail`] per app. No producer yet: an empty collection,
 /// not in [`INFO_FEATURES`].
 pub const INFO_APP_DETAIL: i32 = 8;
-/// 1.20 (D5), paged singleton: [`crate::settings_app::wire::BatteryCycle`]. No producer yet: an empty collection, not
-/// in [`INFO_FEATURES`].
+/// 1.20 (D5), paged singleton: [`crate::settings_app::wire::BatteryCycle`], from SYSSTART's recorder
+/// ([`crate::battery::cycle`]); an empty collection before the first valid battery reading.
 pub const INFO_BATTERY_CYCLE: i32 = 9;
 /// Reserved (D17): E:'s volume state.
 pub const INFO_VOLUME_STATE: i32 = 10;

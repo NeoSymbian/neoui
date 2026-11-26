@@ -64,6 +64,7 @@ const HAL_DISPLAY: i32 = 4;
 const DISPLAY_MAX_BRIGHTNESS: i32 = 12;
 const DISPLAY_SET_BRIGHTNESS: i32 = 13;
 const DISPLAY_SET_STATE: i32 = 20;
+const DISPLAY_STATE: i32 = 21;
 /// `EStdKeyDevice0` (`e32keys.h`): the Pixel's Power key (kernel `a64_keys.cpp`).
 const SCAN_POWER: i32 = 0xa4;
 /// `EStdKeyIncVolume` / `EStdKeyDecVolume`: during a call they set its volume (telephony C6)
@@ -192,7 +193,7 @@ fn main() -> i32 {
         0 => 1000,
         us => u64::from(us),
     };
-    let now_us = || u64::from(time::ticks()) * tick_us;
+    let now_us = || battery::ticks() * tick_us; // widened: a wrapped counter would stall the frames
 
     rt::block_on(async {
         // Both stay outstanding across wake-ups, so no input event or message is lost to a cancel.
@@ -290,7 +291,7 @@ fn main() -> i32 {
                                     scr.power_up(held, POWER_HOLD_MS)
                                 };
                                 if let Some(c) = change {
-                                    set_screen(c, &mut host.refresh);
+                                    battery.display(set_screen(c, &mut host.refresh));
                                     if c == screen::Change::Off
                                         && (core::mem::take(&mut to_app) | fingers.take())
                                     {
@@ -842,9 +843,10 @@ fn main() -> i32 {
                 battery.save();
                 clockwork.power(a);
             }
-            if battery.poll(&mut ui, time::millis()) {
+            if battery.poll(&mut ui, battery::mono_ms()) {
                 host.set_info(proto::INFO_BATTERY, battery.info());
                 host.set_info(proto::INFO_BATTERY_USAGE, battery.usage());
+                host.set_battery_cycle(battery.cycle());
             }
             wifi.poll(
                 &mut ui,
@@ -893,7 +895,7 @@ fn main() -> i32 {
             };
             let hold = phone.in_call() || power_menu || host.front_awake();
             if let Some(c) = woke.or_else(|| scr.tick(ms, timeout, hold)) {
-                set_screen(c, &mut host.refresh);
+                battery.display(set_screen(c, &mut host.refresh));
                 if c == screen::Change::Off && (core::mem::take(&mut to_app) | fingers.take()) {
                     host.send(AppEvent::InputReset);
                 }
@@ -1554,8 +1556,8 @@ fn set_brightness(level: i32) -> bool {
 }
 
 /// Screen on or off (EDisplayHalSetState): the kernel sleeps or wakes the panel and the touchscreen. On wake the
-/// app's surface is composed again whole.
-fn set_screen(c: screen::Change, refresh: &mut bool) {
+/// app's surface is composed again whole. What the HAL says afterwards (a failed set leaves the old state), for D5.
+fn set_screen(c: screen::Change, refresh: &mut bool) -> Option<bool> {
     let on = c == screen::Change::On;
     // SAFETY: the function takes the state by value in a1; a2 is unused.
     let r = unsafe {
@@ -1569,5 +1571,24 @@ fn set_screen(c: screen::Change, refresh: &mut bool) {
     dprintln!("neoui: screen {} ({})", if on { "on" } else { "off" }, r);
     if on {
         *refresh = true;
+    }
+    display_state()
+}
+
+/// The display HAL's on/off state (EDisplayHalState); `None` when it can't say.
+fn display_state() -> Option<bool> {
+    let mut state: i32 = -1;
+    // SAFETY: a1 is a valid i32 out-parameter for EDisplayHalState; a2 is unused.
+    let r = unsafe {
+        e32::sys::ui::hal_function(
+            HAL_DISPLAY,
+            DISPLAY_STATE,
+            (&mut state as *mut i32).cast(),
+            core::ptr::null_mut(),
+        )
+    };
+    match (r, state) {
+        (0, 0 | 1) => Some(state == 1),
+        _ => None,
     }
 }

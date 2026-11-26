@@ -446,8 +446,8 @@ impl AppDetail {
     }
 }
 
-/// INFO 9 (`ipc::INFO_BATTERY_CYCLE`), a singleton: the discharge since the last full charge. Producer: D5 (not
-/// built: an empty collection, not advertised).
+/// INFO 9 (`ipc::INFO_BATTERY_CYCLE`), a singleton: the discharge since the last full charge. Producer: D5's
+/// recorder ([`crate::battery::cycle`]); empty before the first valid battery reading.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct BatteryCycle {
     /// [`cycle`] bits.
@@ -607,8 +607,8 @@ const fn bits(list: &[i32]) -> u64 {
 impl Features {
     pub const LEN: usize = 28;
 
-    /// What this build of SYSSTART answers. INFO 8 and 9 answer an empty collection until their producers (D4, D5)
-    /// land, so they aren't here; neither are the reserved kinds, actions and opcodes.
+    /// What this build of SYSSTART answers. INFO 8 answers an empty collection until its producer (D4) lands, so it
+    /// isn't here; neither are the reserved kinds, actions and opcodes. INFO 9 since D5.
     pub const SHELL: Features = Features {
         major: ipc::VERSION.0,
         minor: ipc::VERSION.1,
@@ -619,6 +619,7 @@ impl Features {
             ipc::INFO_APPS,
             ipc::INFO_BATTERY_USAGE,
             ipc::INFO_RUNNING,
+            ipc::INFO_BATTERY_CYCLE,
             ipc::INFO_JOBS,
             ipc::INFO_FEATURES,
         ]),

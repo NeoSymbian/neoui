@@ -37,6 +37,8 @@ pub struct Shelf {
     /// The table changed and isn't saved yet: no owner is woken until it is.
     dirty: bool,
     tick_at: u64,
+    /// D5: INFO 9's record as last published (`None`: no valid battery reading yet).
+    cycle: Option<wire::BatteryCycle>,
 }
 
 fn unix_s() -> i64 {
@@ -77,6 +79,7 @@ impl Shelf {
             thumbs: Vec::new(),
             dirty: false,
             tick_at: 0,
+            cycle: None,
         }
     }
 
@@ -108,7 +111,10 @@ impl Shelf {
     fn records(&self, kind: i32) -> Option<Vec<Vec<u8>>> {
         Some(match kind {
             // their producers (D4, D5) aren't built: an empty collection, and FEATURES doesn't list them
-            proto::INFO_APP_DETAIL | proto::INFO_BATTERY_CYCLE => Vec::new(),
+            proto::INFO_APP_DETAIL => Vec::new(),
+            proto::INFO_BATTERY_CYCLE => {
+                self.cycle.iter().map(wire::BatteryCycle::encode).collect()
+            }
             proto::INFO_JOBS => self.jobs.records(),
             proto::INFO_FEATURES => vec![Features::SHELL.encode()],
             _ => return None,
@@ -407,6 +413,27 @@ impl Host {
         {
             dprintln!("neoui: starting {} for its owner work", key);
             self.launch(key);
+        }
+    }
+}
+
+// D5
+impl Host {
+    /// The battery recorder's cycle (every five seconds): INFO 9 changes, and Settings hears it, when what it shows
+    /// does (the minutes, the levels, the flags, the start), not at every sample.
+    pub fn set_battery_cycle(&mut self, c: Option<wire::BatteryCycle>) {
+        let shown = |c: Option<wire::BatteryCycle>| {
+            c.map(|c| wire::BatteryCycle {
+                last_utc: c.last_utc / 60,
+                on_battery_s: c.on_battery_s / 60,
+                screen_on_battery_s: c.screen_on_battery_s / 60,
+                gap_s: c.gap_s / 60,
+                ..c
+            })
+        };
+        if shown(c) != shown(self.shelf.cycle) {
+            self.shelf.cycle = c;
+            self.info_changed(proto::INFO_BATTERY_CYCLE);
         }
     }
 }
