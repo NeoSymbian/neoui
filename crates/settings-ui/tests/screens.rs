@@ -4,9 +4,15 @@
 mod common;
 
 use common::{BUTTONS, Shot, model, strings};
+use neoui_proto::settings_app::page::Page;
+use neoui_proto::settings_app::row_model::{
+    Destination, Epochs, InstanceId, Reading, RowKey, RowSnapshot, Sample, resolve_hit,
+};
+use neoui_proto::settings_app::rows::{ROOT_LIST, Search};
+use settings_ui::row_model as rm;
 use settings_ui::{
-    AppRow, DriveRow, PartRow, ProfileRow, SearchHit, SetState, WifiDetail, WifiLink, WifiNet,
-    WifiSaved, ZoneRow,
+    AppRow, DriveRow, PartRow, ProfileRow, SetState, WifiDetail, WifiLink, WifiNet, WifiSaved,
+    ZoneRow,
 };
 use slint::{ComponentHandle, Model, SharedString};
 
@@ -108,6 +114,7 @@ fn fill(sh: &Shot) {
     );
     // Storage (set2-storage, SE3b): the board's drives and parts
     let drive = |title: &str, used: &str, note: &str, fill: f32| DriveRow {
+        letter: title[..1].into(),
         title: title.into(),
         used: used.into(),
         note: note.into(),
@@ -310,6 +317,7 @@ fn fill(sh: &Shot) {
     s.set_wifi_link(WifiLink {
         shown: true,
         connected: true,
+        bssid: "02:00:00:00:00:01".into(),
         name: "Home-5G".into(),
         subtitle: "Connected · 5 GHz · Excellent".into(),
         bars: 4,
@@ -348,6 +356,28 @@ fn by_key(apps: &slint::ModelRc<AppRow>, key: &str) -> AppRow {
     apps.iter().find(|a| a.key == key).unwrap()
 }
 
+/// The production projection of the state now (D1), with the root's summaries published from it.
+fn project(sh: &Shot, epochs: Epochs) -> RowSnapshot {
+    let s = sh.ui.global::<SetState>();
+    let snap = rm::project(&s, Sample::default(), epochs);
+    rm::publish(&s, &snap);
+    snap
+}
+
+/// Search `query` through the projector into the screen; the hits its tokens stand for.
+fn searched(
+    sh: &Shot,
+    snap: &RowSnapshot,
+    query: &str,
+) -> Vec<neoui_proto::settings_app::row_model::Hit> {
+    let s = sh.ui.global::<SetState>();
+    let (shown, hits) = rm::results(snap, query);
+    s.set_results(model(shown));
+    s.set_query(query.into());
+    s.set_searching(true);
+    hits
+}
+
 fn page(sh: &Shot, id: i32, title: &str) {
     let s = sh.ui.global::<SetState>();
     s.set_page(id);
@@ -365,52 +395,113 @@ fn every_page() {
     fill(&sh);
     let s = sh.ui.global::<SetState>();
 
-    // the root, in both navigation modes
+    // the root, in both navigation modes, its values from the projection (D1)
+    let snap = project(&sh, Epochs::default());
     sh.shoot("set2-root-list");
     sh.shoot_at("set2-root-buttons", BUTTONS);
+    // each root value is its row's search value (the page binds summaries[i], tests/rows.rs)
+    let summaries: Vec<String> = s.get_summaries().iter().map(|v| v.to_string()).collect();
+    for (i, id) in ROOT_LIST.iter().enumerate() {
+        let row = snap.get(&RowKey::of(id)).unwrap();
+        assert_eq!(summaries[i], row.value_text, "{id}");
+        if row.search == Search::PublicValue {
+            let hits = neoui_proto::settings_app::row_model::search(&snap, &row.title);
+            let hit = hits.iter().find(|h| h.key == row.key).expect(id);
+            assert_eq!(snap.rows[hit.row].value_text, summaries[i], "{id}");
+        }
+    }
+    assert_eq!(summaries[8], "C: 3.1 GB free");
 
-    // the Nokia grid (S01, ⋮ → View as grid) and search (set2-search) with what it found for "time"
+    // the Nokia grid (S01, ⋮ → View as grid)
     s.set_root_grid(true);
     sh.shoot("set2-root-grid");
     s.set_root_grid(false);
-    let hit = |title: &str, path: &str, value: &str, page| {
-        let m = settings_ui::split_match(title, "time");
-        SearchHit {
-            id: "root.datetime".into(),
-            title: title.into(),
-            pre: m.pre.into(),
-            mark: m.mark.into(),
-            post: m.post.into(),
-            gap_before: m.gap_before,
-            gap_after: m.gap_after,
-            path: path.into(),
-            value: value.into(),
-            page,
-        }
-    };
-    s.set_results(model(vec![
-        hit("Date & time", "Settings", "", 9),
-        hit(
-            "Same height for all time zones and languages",
-            "Language & keyboard",
-            "On",
-            10,
-        ),
-        hit("Automatic time", "Date & time", "On", 9),
-        hit("Automatic time zone", "Date & time", "On", 9),
-        hit("Time zone", "Date & time", "UTC+04:00 · Yerevan", 9),
-        hit("24-hour time", "Date & time", "On", 9),
-        hit("Screen timeout", "Display", "30 seconds", 5),
-    ]));
-    s.set_query("time".into());
-    s.set_searching(true);
+
+    // search (set2-search) for "time" through the production projector: the actual results, their real tokens
+    let hits = searched(&sh, &snap, "time");
+    assert_eq!(s.get_results().row_count(), hits.len());
+    let first = &snap.rows[hits[0].row];
+    assert_eq!(
+        (first.title.as_str(), first.path.as_str()),
+        ("Automatic time", "Date & time")
+    );
     sh.shoot("set2-search");
     sh.tap(100.0, 48.0 + 36.0);
-    assert!(
-        sh.take_acts()
-            .contains(&("found".to_string(), "root.datetime".to_string()))
+    assert_eq!(sh.take_acts(), vec![("found".to_string(), "0".to_string())]);
+    let open = resolve_hit(0, &hits, &snap).unwrap();
+    assert_eq!(
+        open,
+        Destination {
+            page: Page::DateTime,
+            context: None,
+            sheet: None,
+            focus: Some(RowKey::of("time.auto"))
+        }
     );
+    // the second result is the second token
+    sh.tap(100.0, 48.0 + 36.0 + 72.0);
+    assert_eq!(sh.take_acts(), vec![("found".to_string(), "1".to_string())]);
+
+    // a value changed while its page is closed: the hit shows it, and its old token still opens the same row
+    s.set_timeout_text("1 minute".into());
+    let later = project(&sh, Epochs::default());
+    let timeout = hits
+        .iter()
+        .find(|h| h.key == RowKey::of("display.timeout"))
+        .unwrap();
+    assert_eq!(
+        resolve_hit(timeout.token, &hits, &later).map(|d| d.page),
+        Ok(Page::Display)
+    );
+    let now = searched(&sh, &later, "1 min");
+    assert_eq!(later.rows[now[0].row].title, "Screen timeout");
+    s.set_timeout_text("30 seconds".into());
+
+    // airplane mode over the last technology: Off on the root and in search alike
+    s.set_airplane(true);
+    let snap = project(&sh, Epochs::default());
+    assert_eq!(s.get_summaries().row_data(1).unwrap(), "Off");
+    let hits = searched(&sh, &snap, "mobile network");
+    assert_eq!(snap.rows[hits[0].row].value_text, "Off");
+    s.set_airplane(false);
+
+    // an inactive profile's row opens its own page, and two profiles' Ring volume are two rows
+    let snap = project(&sh, Epochs::default());
+    let hits = searched(&sh, &snap, "ring volume");
+    let meeting = RowKey::with("profile.volume", InstanceId::Profile(2));
+    let hit = hits.iter().find(|h| h.key == meeting).unwrap();
+    assert_eq!(snap.rows[hit.row].path, "Meeting");
+    assert_eq!(
+        resolve_hit(hit.token, &hits, &snap).unwrap().context,
+        Some(InstanceId::Profile(2))
+    );
+    assert!(hits.len() >= 3);
+    // a profile deleted (its id reusable): the profiles epoch moves on and the old token opens nothing
+    let gone = project(
+        &sh,
+        Epochs {
+            profiles: 1,
+            ..Epochs::default()
+        },
+    );
+    assert!(resolve_hit(hit.token, &hits, &gone).is_err());
+
+    // a producer that isn't there: no console row, and C: unread reads so on the root
+    s.set_console_ok(false);
+    s.set_storage_free("".into());
+    let snap = project(&sh, Epochs::default());
+    assert!(searched(&sh, &snap, "console overlay").is_empty());
+    assert_eq!(s.get_summaries().row_data(8).unwrap(), "C: can't be read");
+    s.set_console_ok(true);
+    s.set_storage_free("C: 3.1 GB free".into());
+    let snap = project(&sh, Epochs::default());
+    // Back to search: the query and the result stay, shown selected
+    let hits = searched(&sh, &snap, "time");
+    s.set_search_selected(hits[1].token as i32);
+    sh.shoot("set2-search-back");
+    s.set_search_selected(-1);
     s.set_searching(false);
+    s.set_query("".into());
 
     for (id, title, name) in [
         (1, "Wi-Fi", "set2-wifi"),
@@ -715,14 +806,15 @@ fn every_page() {
     sheet(&sh, "pad-b");
     sh.shoot("pad-settings-b");
 
-    // every row that shows a value has one for search (settings_ui::live_value), from the sample state above
-    let s = sh.ui.global::<SetState>();
-    for r in neoui_proto::settings_app::rows::ROWS {
-        if !settings_ui::VALUELESS.contains(&r.id) {
+    // every row that shows a value has one for search, from the sample state above (D1's projection)
+    let snap = project(&sh, Epochs::default());
+    for r in &snap.rows {
+        if r.search == Search::PublicValue {
             assert!(
-                !settings_ui::live_value(&s, r.id).is_empty(),
-                "{} shows a value but search has none",
-                r.id
+                matches!(&r.reading, Reading::Value(v) if !v.is_empty()),
+                "{:?} shows a value but search has {:?}",
+                r.key,
+                r.reading
             );
         }
     }

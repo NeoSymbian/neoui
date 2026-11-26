@@ -11,6 +11,8 @@ component DriveItem inherits Rectangle {
     // D3: the drive's Apps, Files and Other (C:'s, once counted) in the by-kind colours; empty: one used fill
     in property <[PartRow]> parts;
     in property <bool> divider: true;
+    // a search result opened it (D1)
+    in property <bool> found;
     property <string> letter: d.title;
     // by the whole "X:" (a "Drives" error row is no D:); any other drive gets a neutral folder, Z: the lock
     property <bool> is-e: letter.starts-with("E:");
@@ -21,6 +23,7 @@ component DriveItem inherits Rectangle {
     accessible-role: text;
     accessible-label: d.title + ", " + d.used + (d.note == "" ? "" : ", " + d.note);
     height: 76 * Theme.dp;
+    background: found ? Theme.selected : transparent;
     HorizontalLayout {
         padding-left: Theme.margin + 4 * Theme.dp;
         padding-right: Theme.margin + 4 * Theme.dp;
@@ -107,6 +110,7 @@ export component StoragePage inherits NeoList {
         for d[i] in SetState.drives: DriveItem {
             d: d;
             parts: d.title.starts-with("C:") ? SetState.storage-c-parts : [];
+            found: SetState.found == "storage.drive." + d.letter;
             divider: i < SetState.drives.length - 1;
         }
 
@@ -188,7 +192,7 @@ export component StoragePage inherits NeoList {
                 value-bright: true;
                 title: k.name;
                 value: k.size;
-                checked: SetState.found == "storage.kinds" && i == 0;
+                checked: (SetState.found == "storage.kinds" && i == 0) || SetState.found == "storage.kind." + i;
                 divider: i < SetState.storage-kinds.length - 1;
             }
         }

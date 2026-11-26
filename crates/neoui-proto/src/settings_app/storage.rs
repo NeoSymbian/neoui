@@ -8,7 +8,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 /// What a file is, by its extension (the families Files' viewers use).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Kind {
     Images = 0,
     Video = 1,

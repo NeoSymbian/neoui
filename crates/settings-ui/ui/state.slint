@@ -6,11 +6,10 @@
 export struct WifiNet { name: string, detail: string, bars: int, secured: bool, band: string, signal: string, channel: int, bssid: string }
 // the current link (neoui-proto wifi::LinkView, with the shell's IP rows)
 export struct WifiDetail { label: string, value: string }
-// a search result (set2-search): the row's title, where it is ("Date & time"), its live value, the page it opens
-// a search result: the row, its title split around the match (pre, mark, post; a space before/after the match) for the
-// highlight, the page it is on,
-// its value now, and the page it opens
-export struct SearchHit { id: string, title: string, pre: string, mark: string, post: string, gap-before: bool, gap-after: bool, path: string, value: string, page: int }
+// a search result (set2-search): its token (what a tap sends back: the app maps it to the row and checks it is still
+// there), its title split around the match (pre, mark, post; a space before/after the match) for the highlight, where
+// it is ("Date & time", a profile's name), its value now, and the page it opens (its tile)
+export struct SearchHit { token: int, title: string, pre: string, mark: string, post: string, gap-before: bool, gap-after: bool, path: string, value: string, page: int }
 // a network WIFID remembers (Saved networks): its name, "Connected · Secured" / "Secured · not in range"
 // a city on Time zone (set2-timezone): its name, its offset now ("UTC+04:00"), whether it is the phone's zone
 export struct ZoneRow { name: string, offset: string, current: bool }
@@ -18,12 +17,14 @@ export struct WifiSaved { name: string, detail: string, connected: bool }
 // an app on the Apps page: a ROM app by its screen key, or an old app (old: true) by its id in hex
 // a sound profile (neoui-proto sound_profile): its row's summary and what the profile page edits
 export struct ProfileRow { id: int, name: string, summary: string, ring: bool, volume: int, vibrate: bool, ringtone: int, message-tone: int }
-// a drive on the Storage page (SE3b): "E: Mass memory", "12.4 of 41.8 GB", what it holds, how full (0..1, -1 unknown)
-export struct DriveRow { title: string, used: string, note: string, fill: float }
+// a drive on the Storage page (SE3b): its letter ("E"; its identity, D1), "E: Mass memory", "12.4 of 41.8 GB", what it
+// holds, how full (0..1, -1 unknown)
+export struct DriveRow { letter: string, title: string, used: string, note: string, fill: float }
 // a part of the Storage bar or a kind: its name, size text, and for a bar part where it starts and its share (0..1)
 export struct PartRow { name: string, size: string, start: float, share: float }
 export struct AppRow { key: string, name: string, old: bool, settings: bool }
-export struct WifiLink { shown: bool, connected: bool, name: string, subtitle: string, bars: int, band: string, details: [WifiDetail], sign-in: bool }
+// bssid: the access point ("02:00:00:00:00:01"; the details' identity, D1)
+export struct WifiLink { shown: bool, connected: bool, bssid: string, name: string, subtitle: string, bars: int, band: string, details: [WifiDetail], sign-in: bool }
 
 export global SetState {
     // the page (neoui-proto settings_app::Page ids: 0 root, 1 Wi-Fi, 2 Mobile, 3 Bluetooth, 4 Connectivity, 5 Display,
@@ -37,8 +38,16 @@ export global SetState {
     in-out property <bool> searching;
     in property <[SearchHit]> results;
     in-out property <string> query;
-    // the row a search result opened (settings_app::rows id): it shows selected until the page changes
+    // the row a search result opened (row_model::RowKey::alias: "display.timeout", "sounds.p2", "storage.drive.E"): it
+    // shows selected until the page changes
     in property <string> found;
+
+    // D1 — row catalogue, projected values and navigation (neoui-proto settings_app::row_model, settings-ui row_model):
+    // the root list's values in rows::ROOT_LIST order (root row i shows summaries[i]; the grid reads them out), the
+    // result Back restored (its token, shown selected; -1 none), and the results' scroll, kept while a hit is open
+    in property <[string]> summaries;
+    in property <int> search-selected: -1;
+    in-out property <length> search-scroll;
 
     // the settings the pages show, as stored (the app reloads them on AppEvent::Settings)
     in-out property <bool> wifi;

@@ -96,6 +96,7 @@ impl Storage {
         let s = ui.global::<SetState>();
         let Ok(list) = Fs::connect().and_then(|fs| fs.drives().map(|l| (fs, l))) else {
             s.set_drives(ModelRc::new(VecModel::from(alloc::vec![row(
+                None,
                 "Drives".into(),
                 "Not available".into(),
                 "",
@@ -115,7 +116,13 @@ impl Storage {
             let (name, plain) = st::drive_names(letter);
             let title = format!("{letter}: {name}");
             let Ok(v) = fs.volume(i as i32) else {
-                rows.push(row(title, "Not available".into(), plain, -1.0));
+                rows.push(row(
+                    Some(letter),
+                    title,
+                    "Not available".into(),
+                    plain,
+                    -1.0,
+                ));
                 continue;
             };
             logged.push((letter, v.free));
@@ -127,7 +134,7 @@ impl Storage {
             // the ROM: its size (nothing is free on a read-only drive); the rest: used of total
             // a composite ROM file system can report no size at all: then only "Read-only"
             if letter == 'Z' && size == 0 {
-                rows.push(row(title, plain.into(), &note, -1.0));
+                rows.push(row(Some(letter), title, plain.into(), &note, -1.0));
                 continue;
             }
             let (shown, fill) = if letter == 'Z' {
@@ -142,7 +149,7 @@ impl Storage {
                     },
                 )
             };
-            rows.push(row(title, shown, &note, fill));
+            rows.push(row(Some(letter), title, shown, &note, fill));
             if let Some(k) = COUNTED.iter().position(|&(_, n)| n == i) {
                 vols[k] = vol;
             }
@@ -412,8 +419,9 @@ impl Storage {
     }
 }
 
-fn row(title: String, used: String, note: &str, fill: f32) -> DriveRow {
+fn row(letter: Option<char>, title: String, used: String, note: &str, fill: f32) -> DriveRow {
     DriveRow {
+        letter: letter.map_or_else(String::new, String::from).into(),
         title: title.into(),
         used: used.into(),
         note: note.into(),

@@ -210,10 +210,13 @@ jobs:
           wait_s 1; swipe 270 1075 270 900; expect "neoui: screen home"   # Clock is in front: home first
           tap 485 973; tap 270 805; expect "neoui: app settings resumed"; wait_s 2
           tap 270 551; wait_s 1; tap 297 566; expect "neoui: settings stops app clock"; expect "clock: quit"
-          # SE2a, Offline (virt is the only device it may run on): ← to Apps, ← to the root,
+          # SE2a, Offline (virt is the only device it may run on): ← to Apps, ← back to the search it came from (D1:
+          # the query and the result it opened are restored), its ✕ (336 dp) closes it and clears the query; then
           # search "offline" -> its row on Sounds (406 dp) -> the sheet's Activate (529 dp): airplane on, Wi-Fi and BT
           # off; then General (118 dp) -> Activate: everything as it was
           wait_s 1; tap 36 73; expect "settings: back"; wait_s 1; tap 36 73; expect "settings: back"
+          expect "selected root.apps)"; wait_s 1
+          tap 503 73; expect "settings: search closed"
           tap 426 73; wait_s 1; kb_type offline
           tap 270 214; expect "settings: page sounds"; wait_s 1
           tap 270 645; wait_s 1; tap 270 829; expect "neoui: sound profile 4: airplane true, wifi false, bt false"
@@ -250,7 +253,10 @@ jobs:
           grep -a 'neoui: app settings started' $s
           grep -a 'settings: set nav.mode = 0 (Ok' $s
           # SE1d: search found Apps, and its sheet opened Clock
+          grep -a 'settings: found root.apps' $s
           grep -a 'settings: page apps' $s
+          # D1: Back from the hit's page restored the search (by result count and row id, never the query)
+          grep -a 'settings: search restored ([0-9]* results, selected root.apps)' $s
           grep -a 'settings: open app clock (Ok' $s
           # SE4a: Clock's page stopped it through the shell
           grep -a 'neoui: settings stops app clock' $s

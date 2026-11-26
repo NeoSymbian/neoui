@@ -1,10 +1,20 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! The search table (`neoui_proto::settings_app::rows::ROWS`) and the pages can't drift: every (page, row title) the
-//! `.slint` pages draw, literal or from a model (`choices`), is in the table, and every table row is on its page.
+//! The row catalogue (`neoui_proto::settings_app::rows`, D1's row model) and the pages can't drift:
+//! - every (page, row title) the `.slint` pages draw, literal or from a model (`choices`), is in the catalogue, every
+//!   catalogue row is on its page, and every family is drawn by a repeater over the model its provider reads;
+//! - the root list shows `SetState.summaries[i]` for `ROOT_LIST[i]`, the grid's tiles are `ROOT_GRID`'s;
+//! - the manifest below: for each board's instanced row, its text, provider, destination and the gate without which
+//!   it isn't offered.
+//!
 //! Licences (not settings), sheets and the search results themselves are left out.
 use neoui_proto::settings_app::choices::{KEYBOARDS, NAV_MODES};
 use neoui_proto::settings_app::page::Page;
-use neoui_proto::settings_app::rows::ROWS;
+use neoui_proto::settings_app::row_model::{
+    AppFact, AppId, Availability, DriveFact, Facts, KindsState, LinkFact, Reading, Scalar,
+    WifiField, project_all, search,
+};
+use neoui_proto::settings_app::rows::{ProviderId, ROOT_GRID, ROOT_LIST, ROWS};
+use neoui_proto::settings_app::storage::Kind;
 use std::collections::BTreeSet;
 use std::path::Path;
 
@@ -32,6 +42,15 @@ const COMPONENTS: &[(&str, Page)] = &[
     ("ResetPage", Page::Reset),
 ];
 
+fn page_file(name: &str) -> String {
+    std::fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("ui/pages")
+            .join(name),
+    )
+    .unwrap()
+}
+
 /// (page, title) of every row the pages draw.
 fn page_rows() -> BTreeSet<(&'static str, String)> {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("ui/pages");
@@ -56,39 +75,30 @@ fn page_rows() -> BTreeSet<(&'static str, String)> {
         }
     }
     // rows drawn from a model: the repeaters must be there, bound to the models NEOSET fills from `choices`
-    let pages = Path::new(env!("CARGO_MANIFEST_DIR")).join("ui/pages");
-    let device = std::fs::read_to_string(pages.join("device.slint")).unwrap();
-    assert!(device.contains("for name[i] in SetState.nav-modes: ModeCard"));
-    let personal = std::fs::read_to_string(pages.join("personal.slint")).unwrap();
-    assert!(personal.contains("for name[i] in SetState.keyboard-names: ListRow"));
+    assert!(page_file("device.slint").contains("for name[i] in SetState.nav-modes: ModeCard"));
+    assert!(
+        page_file("personal.slint").contains("for name[i] in SetState.keyboard-names: ListRow")
+    );
     for (name, _) in NAV_MODES {
         out.insert((Page::Navigation.name(), name.to_string()));
     }
     for (_, name, _) in KEYBOARDS {
         out.insert((Page::Keyboard.name(), name.to_string()));
     }
-    let system = std::fs::read_to_string(pages.join("system.slint")).unwrap();
-    assert!(system.contains("for a in SetState.apps: ListRow"));
-    let device = std::fs::read_to_string(pages.join("device.slint")).unwrap();
-    assert!(device.contains("for p in SetState.profiles: ListRow"));
-    for p in neoui_proto::sound_profile::builtins() {
-        out.insert((Page::Sounds.name(), p.name));
-    }
-    for a in neoui_proto::apps::listed() {
-        out.insert((Page::Apps.name(), a.name.to_string()));
-    }
-    // Storage's by-kind section is a search target though not a list row
-    let storage = std::fs::read_to_string(pages.join("storage.slint")).unwrap();
-    assert!(storage.contains("SectionHeader { text: \"C: and E: by kind\"; }"));
+    // Storage's by-kind section is a search target though not a list row; About's slot is a key/value row (D2)
+    assert!(page_file("storage.slint").contains("SectionHeader { text: \"C: and E: by kind\"; }"));
     out.insert((Page::Storage.name(), "C: and E: by kind".to_string()));
+    assert!(page_file("system.slint").contains("key: \"Active slot\";"));
+    out.insert((Page::About.name(), "Active slot".to_string()));
     out
 }
 
 #[test]
-fn the_search_table_matches_the_pages() {
+fn the_catalogue_matches_the_pages() {
     let pages = page_rows();
     let table: BTreeSet<(&'static str, String)> = ROWS
         .iter()
+        .filter(|r| !r.title.is_empty())
         .map(|r| (r.on.name(), r.title.to_string()))
         .collect();
     let missing_in_table: Vec<_> = pages.difference(&table).collect();
@@ -101,6 +111,271 @@ fn the_search_table_matches_the_pages() {
         missing_on_pages.is_empty(),
         "(page, row) in settings_app::rows but not on that page: {missing_on_pages:?}"
     );
+}
+
+/// Each family's repeater: the file, the line that draws one instance per model row.
+const REPEATERS: &[(ProviderId, &str, &str)] = &[
+    (
+        ProviderId::Profiles,
+        "device.slint",
+        "for p in SetState.profiles: ListRow",
+    ),
+    (
+        ProviderId::Apps,
+        "system.slint",
+        "for a in SetState.apps: ListRow",
+    ),
+    (
+        ProviderId::Apps,
+        "system.slint",
+        "for a in SetState.old-apps: ListRow",
+    ),
+    (
+        ProviderId::Drives,
+        "storage.slint",
+        "for d[i] in SetState.drives: DriveItem",
+    ),
+    (
+        ProviderId::OverviewKinds,
+        "storage.slint",
+        "for k[i] in SetState.storage-kinds: ListRow",
+    ),
+    (
+        ProviderId::WifiFields,
+        "wifi.slint",
+        "for d in SetState.wifi-link.details: HorizontalLayout",
+    ),
+];
+
+#[test]
+fn every_family_is_drawn_by_its_repeater() {
+    for r in ROWS.iter().filter(|r| r.title.is_empty()) {
+        let mine: Vec<_> = REPEATERS.iter().filter(|x| x.0 == r.provider).collect();
+        assert!(!mine.is_empty(), "{} has no repeater", r.id);
+        for (_, file, line) in mine {
+            assert!(page_file(file).contains(line), "{file}: {line}");
+        }
+    }
+}
+
+/// RootPage's rows top to bottom: (title, the value it binds, if any).
+fn root_list() -> Vec<(String, Option<String>)> {
+    let root = page_file("root.slint");
+    let page = &root[root.find("export component RootPage").unwrap()..];
+    let page = &page[..page.find("\n}\n").unwrap()];
+    let mut out: Vec<(String, Option<String>)> = Vec::new();
+    for line in page.lines().map(str::trim) {
+        if let Some(t) = line.strip_prefix("title: \"") {
+            out.push((t.split('"').next().unwrap().into(), None));
+        } else if let Some(v) = line.strip_prefix("value: ") {
+            out.last_mut().unwrap().1 = Some(v.trim_end_matches(';').into());
+        }
+    }
+    out
+}
+
+#[test]
+fn the_root_list_shows_the_projection() {
+    let drawn = root_list();
+    let ids: Vec<_> = ROOT_LIST
+        .iter()
+        .map(|id| ROWS.iter().find(|r| r.id == *id).unwrap())
+        .collect();
+    assert_eq!(
+        drawn.iter().map(|(t, _)| t.as_str()).collect::<Vec<_>>(),
+        ids.iter().map(|r| r.title).collect::<Vec<_>>()
+    );
+    for (i, ((title, value), row)) in drawn.iter().zip(&ids).enumerate() {
+        // a row with a value shows its summary, never a formatter of its own; Airplane, Privacy and About show none
+        let want = (!matches!(row.id, "root.airplane" | "root.privacy" | "root.about"))
+            .then(|| format!("SetState.summaries[{i}]"));
+        assert_eq!(value, &want, "{title}");
+    }
+}
+
+#[test]
+fn the_grid_is_the_placements() {
+    let root = page_file("root.slint");
+    let tiles: Vec<(String, u16, i32)> = root
+        .lines()
+        .filter_map(|l| {
+            let l = l.trim().trim_start_matches('[').trim_start_matches('{');
+            let label = l.strip_prefix(" l: \"")?.split('"').next()?;
+            let p = l
+                .split("p: ")
+                .nth(1)?
+                .split(',')
+                .next()?
+                .trim()
+                .parse()
+                .ok()?;
+            let s = l.split("s: ").nth(1)?.split(' ').next()?.parse().ok()?;
+            Some((label.to_string(), p, s))
+        })
+        .collect();
+    let want: Vec<(String, u16, i32)> = ROOT_GRID
+        .iter()
+        .map(|(l, p, s)| {
+            let i = s.map_or(-1, |id| {
+                ROOT_LIST.iter().position(|x| *x == id).unwrap() as i32
+            });
+            (l.to_string(), p.id(), i)
+        })
+        .collect();
+    assert_eq!(tiles, want);
+}
+
+/// Facts with one of everything the manifest names.
+fn facts() -> Facts {
+    let mut f = Facts {
+        profiles: neoui_proto::sound_profile::builtins(),
+        drives: vec![DriveFact {
+            letter: 'C',
+            title: "C: Phone".into(),
+            used: "2.1 of 8 GB".into(),
+        }],
+        kinds: vec![(Kind::Images, "6.2 GB".into())],
+        kinds_state: KindsState::Counted("Last counted 06:50".into()),
+        apps: vec![
+            AppFact {
+                id: AppId::Native("clock"),
+                name: "Clock".into(),
+            },
+            AppFact {
+                id: AppId::Legacy(0x2000_9aa3),
+                name: "X-plore".into(),
+            },
+        ],
+        link: Some(LinkFact {
+            bssid: [2, 0, 0, 0, 0, 1],
+            fields: vec![(WifiField::AccessPoint, "02:00:00:00:00:01".into())],
+        }),
+        ..Facts::default()
+    };
+    f.scalars.insert("dev.console", Scalar::On(false));
+    f.scalars.insert("about.slot", Scalar::Text("a".into()));
+    f.scalars
+        .insert("storage.free", Scalar::Text("C: 5.9 GB free".into()));
+    f
+}
+
+/// (board, the row's text there, row id, provider, the page its hit opens, the gate: without it the row isn't
+/// offered, or reads unavailable)
+type Gate = fn(&mut Facts);
+const MANIFEST: &[(&str, &str, &str, ProviderId, Page, Gate)] = &[
+    (
+        "set2-sounds",
+        "Meeting",
+        "sounds.profile",
+        ProviderId::Profiles,
+        Page::Sounds,
+        |f| f.profiles.retain(|p| p.name != "Meeting"),
+    ),
+    (
+        "set2-profile",
+        "Ring volume",
+        "profile.volume",
+        ProviderId::ProfileFields,
+        Page::Profile,
+        |f| f.profiles.iter_mut().for_each(|p| p.ring = false),
+    ),
+    (
+        "set2-storage",
+        "C: Phone",
+        "storage.drive",
+        ProviderId::Drives,
+        Page::Storage,
+        |f| f.drives.clear(),
+    ),
+    (
+        "set2-storage",
+        "Images",
+        "storage.kind",
+        ProviderId::OverviewKinds,
+        Page::Storage,
+        |f| f.kinds_state = KindsState::NotCounted,
+    ),
+    (
+        "set2-apps",
+        "Clock",
+        "apps.app",
+        ProviderId::Apps,
+        Page::AppDetail,
+        |f| f.apps.retain(|a| a.name != "Clock"),
+    ),
+    (
+        "set2-apps",
+        "X-plore",
+        "apps.app",
+        ProviderId::Apps,
+        Page::Apps,
+        |f| f.apps.retain(|a| a.name != "X-plore"),
+    ),
+    (
+        "set2-wifi-details",
+        "Access point",
+        "wifi.field",
+        ProviderId::WifiFields,
+        Page::Wifi,
+        |f| f.link = None,
+    ),
+    (
+        "set2-developer",
+        "Console overlay",
+        "dev.console",
+        ProviderId::Builtin,
+        Page::Developer,
+        |f| {
+            f.scalars.remove("dev.console");
+        },
+    ),
+    (
+        "set2-about",
+        "Active slot",
+        "about.slot",
+        ProviderId::Builtin,
+        Page::About,
+        |f| {
+            f.scalars.remove("about.slot");
+        },
+    ),
+    (
+        "set2-root-list",
+        "Storage",
+        "root.storage",
+        ProviderId::Builtin,
+        Page::Storage,
+        |f| {
+            f.scalars.remove("storage.free");
+        },
+    ),
+];
+
+#[test]
+fn the_manifest_resolves_and_its_gates_hold() {
+    for (board, text, id, provider, page, gate) in MANIFEST {
+        let row = ROWS.iter().find(|r| r.id == *id).unwrap();
+        assert_eq!(row.provider, *provider, "{board} {text}");
+        let snap = project_all(&facts());
+        let hit = search(&snap, text)
+            .into_iter()
+            .find(|h| h.key.id.0 == *id && snap.rows[h.row].title == *text)
+            .unwrap_or_else(|| panic!("{board}: {text} not found"));
+        let r = &snap.rows[hit.row];
+        assert_eq!(r.destination.page, *page, "{board} {text}");
+        assert_eq!(r.availability, Availability::Readable, "{board} {text}");
+        // without its producer: not offered, or honestly unavailable
+        let mut f = facts();
+        gate(&mut f);
+        let snap = project_all(&f);
+        let offered = snap.get(&hit.key).filter(|r| {
+            r.availability != Availability::Hidden && !matches!(r.reading, Reading::Unavailable(_))
+        });
+        assert!(
+            offered.is_none(),
+            "{board} {text} without its producer: {offered:?}"
+        );
+    }
 }
 
 #[test]

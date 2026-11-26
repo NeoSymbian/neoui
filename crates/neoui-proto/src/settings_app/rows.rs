@@ -4,12 +4,46 @@
 //! a title here is missing from the `.slint` pages, or a page's row is missing here, so the two can't drift.
 
 use super::page::Page;
-use alloc::string::String;
-use alloc::vec::Vec;
 
+/// Where a row's value comes from (`row_model::Provider`): one provider per family, shared by the page, search and
+/// the root's summary. A later stream adds its variant, its provider module and its rows here (row_model's contract).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ProviderId {
+    /// a setting, a choice or a reading the device already formats (and the root summaries made of them)
+    Builtin,
+    /// a row that opens a page or acts: found by name only
+    Action,
+    /// one row per sound profile (its summary)
+    Profiles,
+    /// a profile page's rows, one per profile that shows them
+    ProfileFields,
+    /// Storage's drives, one per mounted letter
+    Drives,
+    /// Storage's "C: and E: by kind" kinds
+    OverviewKinds,
+    /// the ROM apps and the old apps
+    Apps,
+    /// the Wi-Fi link's detail fields, while there is a link
+    WifiFields,
+}
+
+/// What search may match a row by. Credentials, PINs, clipboard contents, message bodies and draft text are never
+/// rows' values at all.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Search {
+    /// title, other names, page and the value as shown
+    PublicValue,
+    /// title, other names and page only (an action, or a value that isn't public)
+    TitleOnly,
+    /// not searchable
+    Omit,
+}
+
+/// One row definition (D1's `RowSpec`): a family row (`provider` other than Builtin/Action) stands for every instance
+/// its provider enumerates, and its `title` is "" (each instance has its own).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Row {
-    /// Stable, unique: the app shows a live value for some (`neoset` `search`).
+    /// Stable, unique, never derived from the title.
     pub id: &'static str,
     /// The page the row is on.
     pub on: Page,
@@ -17,7 +51,11 @@ pub struct Row {
     pub opens: Page,
     pub title: &'static str,
     pub aliases: &'static [&'static str],
+    pub provider: ProviderId,
+    pub search: Search,
 }
+
+pub type RowSpec = Row;
 
 const fn row(
     id: &'static str,
@@ -32,6 +70,45 @@ const fn row(
         opens,
         title,
         aliases,
+        provider: ProviderId::Builtin,
+        search: Search::PublicValue,
+    }
+}
+
+/// A row with no value: it opens or acts.
+const fn action(
+    id: &'static str,
+    on: Page,
+    opens: Page,
+    title: &'static str,
+    aliases: &'static [&'static str],
+) -> Row {
+    Row {
+        provider: ProviderId::Action,
+        search: Search::TitleOnly,
+        ..row(id, on, opens, title, aliases)
+    }
+}
+
+/// A family: one row per instance, titled by its provider.
+const fn family(
+    id: &'static str,
+    on: Page,
+    opens: Page,
+    provider: ProviderId,
+    aliases: &'static [&'static str],
+) -> Row {
+    Row {
+        provider,
+        ..row(id, on, opens, "", aliases)
+    }
+}
+
+/// A profile page's row, once per profile that shows it.
+const fn field(id: &'static str, title: &'static str, aliases: &'static [&'static str]) -> Row {
+    Row {
+        provider: ProviderId::ProfileFields,
+        ..row(id, Page::Profile, Page::Profile, title, aliases)
     }
 }
 
@@ -104,7 +181,7 @@ pub const ROWS: &[Row] = &[
         "Language & keyboard",
         &["input", "typing"],
     ),
-    row("root.privacy", Root, Privacy, "Privacy", &[]),
+    action("root.privacy", Root, Privacy, "Privacy", &[]),
     row("root.apps", Root, Apps, "Apps", &["applications"]),
     row(
         "root.developer",
@@ -113,7 +190,7 @@ pub const ROWS: &[Row] = &[
         "Developer options",
         &["debug", "usb"],
     ),
-    row(
+    action(
         "root.about",
         Root,
         About,
@@ -128,6 +205,14 @@ pub const ROWS: &[Row] = &[
         WifiSaved,
         "Saved networks",
         &["forget", "remembered", "known networks"],
+    ),
+    // the current link's details sheet (set2-wifi-details), one row per field it shows
+    family(
+        "wifi.field",
+        Wifi,
+        Wifi,
+        ProviderId::WifiFields,
+        &["link", "network details"],
     ),
     // Connectivity
     row("conn.wifi", Connectivity, Connectivity, "Wi-Fi", &[]),
@@ -189,64 +274,32 @@ pub const ROWS: &[Row] = &[
         &["navigation"],
     ),
     // Sounds
-    // the profiles (sound_profile::builtins; tests/rows.rs keeps them in step) and Add profile
-    row(
-        "sounds.p0",
+    // the profiles, one row each (row_model::Profiles: built-in and added, by id; `sounds.p<id>` is the old id)
+    family(
+        "sounds.profile",
         Sounds,
         Sounds,
-        "General",
-        &["profile", "normal"],
+        ProviderId::Profiles,
+        &["profile"],
     ),
-    row(
-        "sounds.p1",
-        Sounds,
-        Sounds,
-        "Silent",
-        &["profile", "mute", "quiet"],
-    ),
-    row("sounds.p2", Sounds, Sounds, "Meeting", &["profile", "beep"]),
-    row("sounds.p3", Sounds, Sounds, "Outdoor", &["profile", "loud"]),
-    row(
-        "sounds.p4",
-        Sounds,
-        Sounds,
-        "Offline",
-        &["profile", "airplane", "flight"],
-    ),
-    row(
+    action(
         "sounds.add",
         Sounds,
         Sounds,
         "Add profile",
         &["new profile"],
     ),
-    // a profile's page (the active one when search opens it)
-    row("profile.tone", Profile, Profile, "Ringtone", &["ring tone"]),
-    row(
-        "profile.ring",
-        Profile,
-        Profile,
-        "Ring",
-        &["silent", "ringer"],
-    ),
-    row(
+    // a profile's page: one row per profile that shows it (row_model::ProfileFields)
+    field("profile.tone", "Ringtone", &["ring tone"]),
+    field("profile.ring", "Ring", &["silent", "ringer"]),
+    field(
         "profile.volume",
-        Profile,
-        Profile,
         "Ring volume",
         &["ringer volume", "loudness"],
     ),
-    row(
-        "profile.vibrate",
-        Profile,
-        Profile,
-        "Vibrate",
-        &["vibration", "buzz"],
-    ),
-    row(
+    field("profile.vibrate", "Vibrate", &["vibration", "buzz"]),
+    field(
         "profile.message",
-        Profile,
-        Profile,
         "Message tone",
         &["text tone", "notification sound"],
     ),
@@ -348,7 +401,7 @@ pub const ROWS: &[Row] = &[
         &["haptic", "vibrate", "keyboard"],
     ),
     // Privacy
-    row(
+    action(
         "privacy.clip",
         Privacy,
         Privacy,
@@ -356,18 +409,12 @@ pub const ROWS: &[Row] = &[
         &["copy", "paste"],
     ),
     // Apps
-    // the ROM apps (crate::apps, the ones Settings lists; tests/rows.rs keeps them in step)
-    row("apps.clock", Apps, Apps, "Clock", &["alarms", "timer"]),
-    row("apps.calendar", Apps, Apps, "Calendar", &["events"]),
-    row("apps.terminal", Apps, Apps, "Terminal", &["shell"]),
-    row("apps.files", Apps, Apps, "Files", &[]),
-    row("apps.devtools", Apps, Apps, "Dev tools", &["logs"]),
-    row("apps.kit", Apps, Apps, "UI kit", &["gallery"]),
-    row("apps.phone", Apps, Apps, "Phone", &["calls"]),
-    row("apps.contacts", Apps, Apps, "Contacts", &[]),
-    row("apps.messages", Apps, Apps, "Messages", &["sms"]),
-    row("apps.browser", Apps, Apps, "Browser", &["web"]),
-    row(
+    // every app, the ROM's and the old apps the legacy bridge registered (row_model::Apps; `apps.<key>` is the old id)
+    Row {
+        search: Search::TitleOnly,
+        ..family("apps.app", Apps, AppDetail, ProviderId::Apps, &["app"])
+    },
+    action(
         "apps.oldapps",
         Apps,
         OldApps,
@@ -410,7 +457,7 @@ pub const ROWS: &[Row] = &[
         "Show percentage",
         &["status bar", "percent"],
     ),
-    row(
+    action(
         "battery.usage",
         Battery,
         BatteryUsage,
@@ -425,19 +472,34 @@ pub const ROWS: &[Row] = &[
         "C: and E: by kind",
         &["images", "video", "audio", "documents", "apps"],
     ),
-    row(
+    action(
         "storage.files",
         Storage,
         Storage,
         "Open Files",
         &["file manager"],
     ),
-    row(
+    action(
         "storage.usb",
         Storage,
         Storage,
         "Share E: over USB",
         &["mass storage", "usb"],
+    ),
+    // D1: each drive, and C: and E: together by kind
+    family(
+        "storage.drive",
+        Storage,
+        Storage,
+        ProviderId::Drives,
+        &["drive"],
+    ),
+    family(
+        "storage.kind",
+        Storage,
+        Storage,
+        ProviderId::OverviewKinds,
+        &["by kind"],
     ),
     // Developer options
     row(
@@ -447,14 +509,14 @@ pub const ROWS: &[Row] = &[
         "USB debugging",
         &["adb", "shell"],
     ),
-    row(
+    action(
         "dev.log",
         Developer,
         Developer,
         "Kernel log",
         &["console", "logs"],
     ),
-    row("dev.save", Developer, Developer, "Save logs", &["logs"]),
+    action("dev.save", Developer, Developer, "Save logs", &["logs"]),
     // D2
     row(
         "dev.console",
@@ -470,7 +532,7 @@ pub const ROWS: &[Row] = &[
         "Show touches",
         &["pointer", "finger", "tap"],
     ),
-    row(
+    action(
         "dev.tools",
         Developer,
         Developer,
@@ -478,29 +540,37 @@ pub const ROWS: &[Row] = &[
         &["devices", "processes"],
     ),
     // About phone
-    row(
+    action(
         "about.licences",
         About,
         Licences,
         "Licences",
         &["licenses", "open source", "gpl", "apache"],
     ),
-    row(
+    action(
         "about.reset",
         About,
         Reset,
         "Reset",
         &["factory", "defaults", "restore", "erase"],
     ),
-    // Reset (SE4a)
+    // D2: the booted A/B slot, when the kernel read it
     row(
+        "about.slot",
+        About,
+        About,
+        "Active slot",
+        &["slot", "a/b", "boot slot"],
+    ),
+    // Reset (SE4a)
+    action(
         "reset.network",
         Reset,
         Reset,
         "Reset network settings",
         &["forget networks", "wifi", "wlan"],
     ),
-    row(
+    action(
         "reset.settings",
         Reset,
         Reset,
@@ -537,7 +607,7 @@ pub const ROWS: &[Row] = &[
         "Show when an app reads it",
         &["clipboard", "paste", "toast"],
     ),
-    row(
+    action(
         "privacy.diagnostics",
         Privacy,
         Privacy,
@@ -546,35 +616,47 @@ pub const ROWS: &[Row] = &[
     ),
 ];
 
-/// The rows matching `query` (case-insensitive, anywhere in the title, an alias, the page's title or the row's live
-/// value as `value` gives it), best first: title matches, then aliases, then the page's title, then the value. An empty
-/// query finds nothing.
+/// The root list's rows, top to bottom (set2-root-list, root.slint's `RootPage`): row `i` shows
+/// `SetState.summaries[i]`, the projection of `ROOT_LIST[i]` (tests/rows.rs checks the page against this).
+pub const ROOT_LIST: [&str; 15] = [
+    "root.wifi",
+    "root.mobile",
+    "root.bt",
+    "root.airplane",
+    "root.display",
+    "root.navigation",
+    "root.sounds",
+    "root.battery",
+    "root.storage",
+    "root.datetime",
+    "root.keyboard",
+    "root.privacy",
+    "root.apps",
+    "root.developer",
+    "root.about",
+];
+
+/// The root grid's tiles in order (set2-root-grid): label, the page it opens and the root row whose summary it reads
+/// out (accessibility only; the tiles stay label-only). Notifications and Security wait for their pages.
+pub const ROOT_GRID: [(&str, Page, Option<&str>); 12] = [
+    ("Connectivity", Connectivity, None),
+    ("Display", Display, Some("root.display")),
+    ("Sounds", Sounds, Some("root.sounds")),
+    ("Navigation", Navigation, Some("root.navigation")),
+    ("Battery", Battery, Some("root.battery")),
+    ("Storage", Storage, Some("root.storage")),
+    ("Privacy", Privacy, None),
+    ("Time", DateTime, Some("root.datetime")),
+    ("Language", Keyboard, Some("root.keyboard")),
+    ("Apps", Apps, Some("root.apps")),
+    ("Developer", Developer, Some("root.developer")),
+    ("About", About, None),
+];
+
+/// The definition with id `id`.
 #[must_use]
-pub fn search_with(query: &str, value: impl Fn(&Row) -> String) -> Vec<&'static Row> {
-    let q = query.trim().to_lowercase();
-    if q.is_empty() {
-        return Vec::new();
-    }
-    let rank = |r: &Row| {
-        if r.title.to_lowercase().contains(&q) {
-            Some(0)
-        } else if r.aliases.iter().any(|a| a.contains(&q)) {
-            Some(1)
-        } else if r.on != Page::Root && r.on.title().to_lowercase().contains(&q) {
-            Some(2)
-        } else if value(r).to_lowercase().contains(&q) {
-            Some(3)
-        } else {
-            None
-        }
-    };
-    let mut hits: Vec<(u8, usize)> = ROWS
-        .iter()
-        .enumerate()
-        .filter_map(|(i, r)| rank(r).map(|k| (k, i)))
-        .collect();
-    hits.sort_unstable();
-    hits.into_iter().map(|(_, i)| &ROWS[i]).collect()
+pub fn find(id: &str) -> Option<&'static Row> {
+    ROWS.iter().find(|r| r.id == id)
 }
 
 #[cfg(test)]
@@ -588,36 +670,29 @@ mod tests {
         }
     }
 
-    /// Search without live values.
-    fn search(query: &str) -> Vec<&'static Row> {
-        search_with(query, |_| String::new())
+    #[test]
+    fn families_have_no_title_and_rows_have_one() {
+        for r in ROWS {
+            let fixed = matches!(
+                r.provider,
+                ProviderId::Builtin | ProviderId::Action | ProviderId::ProfileFields
+            );
+            assert_eq!(r.title.is_empty(), !fixed, "{}", r.id);
+            // an action has no value to find; a value row is found by it (the apps have none)
+            let value = !matches!(r.provider, ProviderId::Action | ProviderId::Apps);
+            assert_eq!(value, r.search == Search::PublicValue, "{}", r.id);
+        }
     }
 
     #[test]
-    fn live_values_are_found_last() {
-        let hits = search_with("30 sec", |r| {
-            if r.id == "display.timeout" {
-                "30 seconds".into()
-            } else {
-                String::new()
+    fn placements_name_root_rows() {
+        for id in ROOT_LIST {
+            assert_eq!(find(id).map(|r| r.on), Some(Page::Root), "{id}");
+        }
+        for (label, page, summary) in ROOT_GRID {
+            if let Some(id) = summary {
+                assert_eq!(find(id).map(|r| r.opens), Some(page), "{label}");
             }
-        });
-        assert_eq!(hits.len(), 1);
-        assert_eq!(hits[0].id, "display.timeout");
-    }
-
-    #[test]
-    fn search_ranks_titles_first() {
-        let hits = search("time");
-        assert!(!hits.is_empty());
-        assert!(hits[0].title.to_lowercase().contains("time"));
-        assert!(hits.iter().any(|r| r.id == "time.zone"));
-        assert!(search("  ").is_empty());
-        assert_eq!(search("SMS")[0].id, "apps.messages");
-        // a root row opens its page
-        assert_eq!(search("about")[0].opens, Page::About);
-        // the languages' own names find their keyboards (the rows show them since V2 batch 4)
-        assert_eq!(search("Русский")[0].id, "kb.2");
-        assert_eq!(search("հայերեն")[0].id, "kb.1");
+        }
     }
 }

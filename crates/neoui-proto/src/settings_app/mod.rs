@@ -8,6 +8,7 @@ pub mod info;
 pub mod jobs;
 pub mod page;
 pub mod privacy;
+pub mod row_model;
 pub mod rows;
 pub mod slot;
 pub mod storage;
