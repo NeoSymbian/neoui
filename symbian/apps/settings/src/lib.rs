@@ -27,6 +27,7 @@ use neoapp::{App, AppEvent, Page as AppPage, Query};
 use neoui_proto::ipc as proto;
 use neoui_proto::settings::Value;
 use neoui_proto::settings::keys;
+use neoui_proto::settings_app::asks;
 use neoui_proto::settings_app::choices::{KEYBOARDS, TIMEOUTS};
 use neoui_proto::settings_app::info::OldApps;
 use neoui_proto::settings_app::info::{Battery, Clock};
@@ -58,6 +59,11 @@ enum Asked {
     PadReset,
     /// Saved networks' Forget, for this network (raw SSID)
     Forget(Vec<u8>),
+    /// Apps → an app → Stop / Clear data, for this app's key (SE4a)
+    Stop(&'static str),
+    Clear(&'static str),
+    /// Reset → network settings or settings (`proto::RESET_*`)
+    Reset(u8),
 }
 
 struct Ctx {
@@ -143,11 +149,11 @@ fn run() -> Result<(), i32> {
             AppEvent::Open { page } => {
                 let arg = app.arg().unwrap_or_default();
                 ctx.trail.borrow_mut().clear();
-                ctx.open(Page::opened(page, &arg));
+                ctx.open(Page::opened(page, &arg).from_outside());
             }
             AppEvent::Page { page } => {
                 ctx.trail.borrow_mut().clear();
-                ctx.open(Page::from_id(page).unwrap_or(Page::Root));
+                ctx.open(Page::from_id(page).unwrap_or(Page::Root).from_outside());
             }
             AppEvent::Settings { .. } => store::load(&app, &ui),
             // the shell's keyboard: its height (0 while a field keeps the focus: the user put it away)
@@ -179,6 +185,40 @@ fn run() -> Result<(), i32> {
                         let _ = app.note("Couldn't forget the network", "");
                     }
                     ctx.tick(true);
+                }
+                Some(Asked::Stop(key)) if i == 0 => {
+                    let r = app.settings_action_with(proto::ACTION_STOP, key.as_bytes());
+                    dprintln!("settings: stop {} ({:?})", key, r);
+                    if r.is_err() {
+                        let _ = app.note("Couldn't stop the app", "");
+                    }
+                    ctx.tick(true);
+                }
+                Some(Asked::Clear(key)) if i == 0 => {
+                    let r = match key {
+                        "messages" => ctx.modem.borrow_mut().clear(true),
+                        "phone" => ctx.modem.borrow_mut().clear(false),
+                        _ => app.settings_action_with(proto::ACTION_CLEAR, key.as_bytes()),
+                    };
+                    dprintln!("settings: clear data of {} ({:?})", key, r);
+                    let _ = app.note(
+                        match (&r, key) {
+                            // the app clears its own after it reads the event: it logs what it did
+                            (Ok(()), "clock") => "Clock is clearing its data",
+                            (Ok(()), _) => "Data cleared",
+                            (Err(-18), _) => "Busy; try again in a moment", // KErrNotReady
+                            _ => "Couldn't clear the data",
+                        },
+                        "",
+                    );
+                    ctx.tick(true);
+                }
+                Some(Asked::Reset(what)) if i == 0 => {
+                    let r = app.settings_action_with(proto::ACTION_RESET, &[what]);
+                    dprintln!("settings: reset {} ({:?})", what, r);
+                    if r.is_err() {
+                        let _ = app.note("Couldn't finish the reset; the phone didn't restart", "");
+                    }
                 }
                 _ => {}
             },
@@ -268,6 +308,10 @@ impl Ctx {
             store::profiles(&self.app, &ui);
             s.set_title(s.get_profile_current().name);
         }
+        if page == Page::AppDetail {
+            s.set_title(s.get_app_current().name);
+            s.set_app_clear(asks::clear_what(s.get_app_current().key.as_str()).into());
+        }
         self.tick(true);
     }
 
@@ -339,6 +383,9 @@ impl Ctx {
         }
         if page == Page::Apps && every(5) {
             self.old_apps(&ui);
+        }
+        if page == Page::AppDetail && every(2) {
+            self.running(&ui);
         }
         if page == Page::DateTime && every(5) {
             store::dates(&self.app, &ui);
@@ -436,6 +483,49 @@ impl Ctx {
                 .all(|(i, r)| s.get_old_apps().row_data(i).as_ref() == Some(r));
         if !same {
             s.set_old_apps(ModelRc::new(VecModel::from(rows)));
+        }
+    }
+
+    /// The app page's Stop row (SE4a): whether app-current runs now (`INFO_RUNNING`), and whether it can be stopped
+    /// (never a resident, never Settings; an older shell can't say, so no row).
+    fn running(&self, ui: &SettingsApp) {
+        let s = ui.global::<SetState>();
+        let key = s.get_app_current().key;
+        let list = self
+            .app
+            .settings_info(proto::INFO_RUNNING)
+            .ok()
+            .and_then(|b| neoui_proto::settings_app::info::decode_running(&b));
+        let me = list
+            .as_ref()
+            .and_then(|l| l.iter().find(|(k, _)| k.as_str() == key.as_str()));
+        s.set_app_running(me.is_some());
+        s.set_app_stoppable(
+            list.is_some()
+                && !me.is_some_and(|(_, resident)| *resident)
+                && !matches!(
+                    key.as_str(),
+                    "phone" | "messages" | neoui_proto::apps::SETTINGS
+                ),
+        );
+    }
+
+    /// Ask the shell's dialog first (`confirm` in red, then Cancel); its answer does `asked`. A dialog the shell
+    /// refuses shows as a note, never as nothing at all.
+    fn ask(&self, text: String, confirm: &str, asked: Asked) {
+        let q = Query {
+            text,
+            buttons: alloc::vec![String::from(confirm), String::from("Cancel")],
+            destructive: true,
+        };
+        match self.app.query(&q) {
+            Ok(()) => {
+                self.asked.replace(Some(asked));
+            }
+            Err(e) => {
+                dprintln!("settings: the question was refused ({})", e);
+                let _ = self.app.note("Couldn't ask; nothing changed", "");
+            }
         }
     }
 
@@ -714,6 +804,40 @@ impl Ctx {
             }
             // an app itself (Apps page)
             "storage-recount" => self.storage.recount(),
+            // a ROM app's page (SE4a)
+            "app-detail" => {
+                if let Some(a) = neoui_proto::apps::find(value) {
+                    s.set_app_current(AppRow {
+                        key: a.key.into(),
+                        name: a.name.into(),
+                        old: false,
+                        settings: a.settings.is_some(),
+                    });
+                    s.set_app_running(false);
+                    s.set_app_stoppable(false);
+                    self.go(Page::AppDetail);
+                }
+            }
+            "app-stop" => {
+                if let Some(a) = neoui_proto::apps::find(value) {
+                    self.ask(asks::stop(a.name), "Stop", Asked::Stop(a.key));
+                }
+            }
+            "app-clear" => {
+                if let Some(a) = neoui_proto::apps::find(value)
+                    && !asks::clear_what(a.key).is_empty()
+                {
+                    self.ask(asks::clear(a.name, a.key), "Delete", Asked::Clear(a.key));
+                }
+            }
+            "reset" => {
+                let what = match value {
+                    "network" => proto::RESET_NETWORK,
+                    "settings" => proto::RESET_SETTINGS,
+                    _ => return,
+                };
+                self.ask(asks::reset(what).into(), "Reset", Asked::Reset(what));
+            }
             "app-open" => {
                 let r = app.open(value, 0, "");
                 dprintln!("settings: open app {} ({:?})", value, r);

@@ -15,7 +15,29 @@ pub struct Modem {
 }
 
 impl Modem {
-    fn status(&mut self) -> Option<Status> {
+    /// Clear data (SE4a): Phone's call history (`CLEAR_LOG` of every entry) or Messages' texts (`SMS_EDIT`
+    /// `EDIT_DELETE_ALL`: blocked senders' messages stay until they expire). MODEMD owns both.
+    pub fn clear(&mut self, sms: bool) -> Result<(), i32> {
+        self.connect();
+        let mut args = TIpcArgs::new();
+        let function = if sms {
+            args.int(0, modem_ipc::sms::EDIT_DELETE_ALL).int(1, 0);
+            op::SMS_EDIT
+        } else {
+            args.int(0, 0).int(1, 0);
+            op::CLEAR_LOG
+        };
+        let r = self
+            .session
+            .as_ref()
+            .map_or(Err(-18), |s| s.send_receive(function, &args)); // KErrNotReady
+        if r.is_err() {
+            self.session = None;
+        }
+        r.map(drop)
+    }
+
+    fn connect(&mut self) {
         if self.session.is_none() {
             let (major, minor, build) = modem_ipc::VERSION;
             let v = TVersion {
@@ -25,6 +47,10 @@ impl Modem {
             };
             self.session = Session::connect(modem_ipc::NAME, v).ok();
         }
+    }
+
+    fn status(&mut self) -> Option<Status> {
+        self.connect();
         let mut b = [0u8; Status::SIZE];
         let mut des = TPtr8::new(&mut b);
         let mut args = TIpcArgs::new();

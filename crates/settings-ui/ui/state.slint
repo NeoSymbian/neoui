@@ -113,6 +113,11 @@ export global SetState {
     in property <int> old-total;
     in property <bool> old-ok: true;
     in-out property <AppRow> app-current;
+    // its page (SE4a): running now, whether it can be stopped (not Phone, Messages: they run all the time), and what
+    // its Clear data deletes ("" = no Clear data row: the app can't clear its own data yet)
+    in property <bool> app-running;
+    in property <bool> app-stoppable;
+    in property <string> app-clear;
 
     // Sounds & profiles (SE2a): every profile, the active one, the one a sheet or the profile page is about, and the
     // name typed for Add / Rename
@@ -179,6 +184,8 @@ export global SetState {
     //   "profile-tone" + "r,<id>" (ringtone) or "m,<id>" (message tone) for profile-current, previewed;
     //   "profile-add" / "profile-rename" (new-name); "profile-delete" (the app asks to confirm first);
     // - "app-open" + a ROM app's key; "old-open" + an old app's id (hex); "app" + an app's key (its own settings);
+    //   "app-detail" + a ROM app's key (its page); "app-stop", "app-clear" for app-current (the app asks first);
+    //   "reset" + "network" | "settings" (the app asks first; the phone restarts);
     // - "sound" + "test" | "record"; "keyboard" + an index to turn on or off ("+0"/"-0"); "keyboard-next";
     // - "city-query" + the search text; "pad-reset" (QUERY first); "clip-clear";
     // - "app" + "phone" | "messages" | "devtools" (another app's settings); "devtools" + a page ("console", "tools");

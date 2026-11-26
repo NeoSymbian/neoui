@@ -179,23 +179,27 @@ jobs:
           tap 270 1037; tap 485 913; tap 270 805; expect "neoui: app settings surface"; wait_s 2
           tap 270 672; expect "settings: page navigation"; tap 270 355; expect "neoui: settings saved"
           # SE1d: back to the root (←), search (🔍 426,73) "apps" on the keyboard (now in Gestures), the first result
-          # (app y 80 dp) -> Apps; its first row, Clock (118 dp), opens the app's sheet; Open (588 dp) opens Clock
+          # (app y 80 dp) -> Apps; its first row, Clock (118 dp), opens the app's page (SE4a); Open (84 dp) opens Clock
           NAV=gestures
           wait_s 1; tap 36 73; expect "settings: back"
           tap 426 73; wait_s 1; kb_globe; kb_type apps   # the keyboard is still Russian (Files): globe -> English
           tap 270 157; expect "settings: page apps"; wait_s 1
-          tap 270 214; wait_s 1; tap 270 917; expect "settings: open app clock (Ok"; expect "clock: visible true"
-          # SE2a, Offline (virt is the only device it may run on): Settings again (resumes on Apps), ← to the root,
+          tap 270 214; expect "settings: page app"; wait_s 1
+          tap 270 126; expect "settings: open app clock (Ok"; expect "clock: visible true"
+          # SE4a: Settings again (resumes on Clock's page); Stop (156 dp) -> the shell's dialog "Stop Clock?" -> its
+          # Stop (first of two buttons at the dialog's right, 297,566): the shell closes Clock
+          wait_s 1; swipe 270 1075 270 900; expect "neoui: screen home"   # Clock is in front: home first
+          tap 485 973; tap 270 805; expect "neoui: app settings resumed"; wait_s 2
+          tap 270 234; wait_s 1; tap 297 566; expect "neoui: settings stops app clock"; expect "clock: quit"
+          # SE2a, Offline (virt is the only device it may run on): ← to Apps, ← to the root,
           # search "offline" -> its row on Sounds (406 dp) -> the sheet's Activate (529 dp): airplane on, Wi-Fi and BT
           # off; then General (118 dp) -> Activate: everything as it was
-          wait_s 1; swipe 270 1075 270 900; expect "neoui: screen home"   # Clock is in front: home first
-          tap 485 973; tap 270 805; expect "neoui: app settings resumed"; wait_s 1
-          tap 36 73; expect "settings: back"
+          wait_s 1; tap 36 73; expect "settings: back"; wait_s 1; tap 36 73; expect "settings: back"
           tap 426 73; wait_s 1; kb_type offline
           tap 270 157; expect "settings: page sounds"; wait_s 1
           tap 270 645; wait_s 1; tap 270 829; expect "neoui: sound profile 4: airplane true, wifi false, bt false"
           wait_s 1; tap 270 214; wait_s 1; tap 270 829; expect "neoui: sound profile 0: airplane false, wifi true, bt false"
-          ui_run 380
+          ui_run 400
 
       - name: Check the output
         working-directory: build
@@ -211,6 +215,9 @@ jobs:
           # SE1d: search found Apps, and its sheet opened Clock
           grep -a 'settings: page apps' $s
           grep -a 'settings: open app clock (Ok' $s
+          # SE4a: Clock's page stopped it through the shell
+          grep -a 'neoui: settings stops app clock' $s
+          grep -a 'clock: quit' $s
           # SE2a: Offline turned the radios off, General gave them back
           grep -a 'neoui: sound profile 4: airplane true, wifi false, bt false' $s
           grep -a 'neoui: sound profile 0: airplane false, wifi true, bt false' $s

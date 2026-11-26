@@ -37,14 +37,16 @@
 //! shell to act ([`SETTINGS_ACTION`]); its writes to shell-owned settings are allowed by its secure ID.
 //! Since 1.14 (SE1d) it also lists the old apps the legacy bridge registered ([`INFO_APPS`]) and opens one
 //! ([`ACTION_OPEN_ENTRY`]). Since 1.15 (SE2a) it changes the sound profiles through the shell's reducer
-//! ([`ACTION_PROFILE`]). Since 1.16 (SE3a) it reads Battery usage ([`INFO_BATTERY_USAGE`]).
+//! ([`ACTION_PROFILE`]). Since 1.16 (SE3a) it reads Battery usage ([`INFO_BATTERY_USAGE`]). Since 1.17 (SE4a) it lists
+//! the running apps ([`INFO_RUNNING`]), stops one ([`ACTION_STOP`]), has an app clear its own data ([`ACTION_CLEAR`],
+//! [`AppEvent::ClearData`]) and resets the network settings or the settings ([`ACTION_RESET`]).
 
 use crate::{InputEvent, TouchPhase};
 
 /// The server's name (no leading `!`: that needs ProtServ).
 pub const SERVER: &str = "NeoUi";
 /// Protocol version (major, minor); a connect with another major is refused.
-pub const VERSION: (u8, u8) = (1, 16);
+pub const VERSION: (u8, u8) = (1, 17);
 
 /// `[Des8 out: GEOMETRY_LEN bytes = width, height, dp × 256 (u32 LE)]` → 0. `dp` is the shell's design unit in
 /// pixels (`min(screen w, h) / 360`), so apps size things like the shell does.
@@ -190,6 +192,9 @@ pub const INFO_CLOCK: i32 = 3;
 pub const INFO_APPS: i32 = 4;
 /// 1.16 (SE3a): Battery usage from the shell's history ([`crate::settings_app::info::encode_usage`]).
 pub const INFO_BATTERY_USAGE: i32 = 5;
+/// 1.17 (SE4a): the running apps ([`crate::settings_app::info::encode_running`]): each app's key and whether it is
+/// resident (started at boot and restarted, so it can't be stopped).
+pub const INFO_RUNNING: i32 = 6;
 /// [`SETTINGS_ACTION`] kinds.
 pub const ACTION_SIGN_IN: i32 = 1;
 pub const ACTION_OPEN_ENTRY: i32 = 2;
@@ -197,6 +202,22 @@ pub const ACTION_OPEN_ENTRY: i32 = 2;
 /// only (`KErrPermissionDenied`); `KErrNotFound` for a profile that isn't there (or can't be changed that way),
 /// `KErrOverflow` when there is no room for another, `KErrArgument` for a malformed request.
 pub const ACTION_PROFILE: i32 = 3;
+/// 1.17 (SE4a), Settings only (`KErrPermissionDenied`): request = an app's key. The shell closes it as Open apps'
+/// × does (Quit, then a kill after the grace). `KErrPermissionDenied` for a resident app or Settings itself,
+/// `KErrNotFound` when it isn't running.
+pub const ACTION_STOP: i32 = 4;
+/// 1.17 (SE4a), Settings only: request = one byte, [`RESET_NETWORK`] or [`RESET_SETTINGS`]. The shell runs the job,
+/// then restarts the phone; it answers before the restart (an error leaves everything as it was).
+pub const ACTION_RESET: i32 = 5;
+/// [`ACTION_RESET`]: forget every Wi-Fi network (WIFID's NeoWifi `RESET`).
+pub const RESET_NETWORK: u8 = 0;
+/// [`ACTION_RESET`]: every shell setting back to its default but the kept ones
+/// ([`crate::settings::registry::RESET_KEEPS`]); apps' own settings stay.
+pub const RESET_SETTINGS: u8 = 1;
+/// 1.17 (SE4a), Settings only: request = an app's key. The shell sends that app [`AppEvent::ClearData`], starting it
+/// hidden if it isn't running. `KErrNotSupported` for an app that doesn't clear its own data
+/// ([`crate::apps::clears_data`]).
+pub const ACTION_CLEAR: i32 = 6;
 /// The longest launcher key, in bytes.
 pub const KEY_MAX: usize = 16;
 
@@ -268,6 +289,8 @@ pub enum AppEvent {
     /// The fingers the app had are gone without their lifts (the screen went off, the app lost the front): whatever
     /// it holds for them (an on-screen key down) is released now.
     InputReset,
+    /// 1.17: Settings → Apps → Clear data: the app deletes its own data (its settings keys, its files) and quits.
+    ClearData,
 }
 
 const KIND_TOUCH: u32 = 1;
@@ -288,6 +311,8 @@ const KIND_AREA: u32 = 18;
 const KIND_OPEN: u32 = 19;
 const KIND_NOTIFIED: u32 = 20;
 const KIND_INPUT_RESET: u32 = 21;
+// 22–27 are reserved (docs neoui-shell/protocol.md: NotifyGone, Media, NotifyReply, ActivityTap, Tile, SettingsInfo)
+const KIND_CLEAR_DATA: u32 = 28;
 
 impl AppEvent {
     /// `[kind, a, b, c]` as little-endian u32s: touch = (phase | id << 8, x, y), key = (down, code, 0).
@@ -317,6 +342,7 @@ impl AppEvent {
             AppEvent::Open { page } => [KIND_OPEN, u32::from(page), 0, 0],
             AppEvent::Notified { id, action } => [KIND_NOTIFIED, id, u32::from(action), 0],
             AppEvent::InputReset => [KIND_INPUT_RESET, 0, 0, 0],
+            AppEvent::ClearData => [KIND_CLEAR_DATA, 0, 0, 0],
         };
         let mut out = [0u8; EVENT_LEN];
         for (i, v) in w.iter().enumerate() {
@@ -369,6 +395,7 @@ impl AppEvent {
                 action: u16::try_from(w(2)).ok()?,
             },
             KIND_INPUT_RESET => AppEvent::InputReset,
+            KIND_CLEAR_DATA => AppEvent::ClearData,
             _ => return None,
         })
     }
@@ -414,6 +441,7 @@ mod tests {
             AppEvent::Open { page: 3 },
             AppEvent::Notified { id: 7, action: 0 },
             AppEvent::InputReset,
+            AppEvent::ClearData,
             AppEvent::Notified {
                 id: u32::MAX,
                 action: 2,

@@ -469,6 +469,28 @@ pub const ROWS: &[Row] = &[
         "Licences",
         &["licenses", "open source", "gpl", "apache"],
     ),
+    row(
+        "about.reset",
+        About,
+        Reset,
+        "Reset",
+        &["factory", "defaults", "restore", "erase"],
+    ),
+    // Reset (SE4a)
+    row(
+        "reset.network",
+        Reset,
+        Reset,
+        "Reset network settings",
+        &["forget networks", "wifi", "wlan"],
+    ),
+    row(
+        "reset.settings",
+        Reset,
+        Reset,
+        "Reset settings",
+        &["defaults", "factory"],
+    ),
 ];
 
 /// The rows matching `query` (case-insensitive, anywhere in the title, an alias, the page's title or the row's live

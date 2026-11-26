@@ -29,6 +29,7 @@ const COMPONENTS: &[(&str, Page)] = &[
     ("WifiSavedPage", Page::WifiSaved),
     ("ProfilePage", Page::Profile),
     ("StoragePage", Page::Storage),
+    ("ResetPage", Page::Reset),
 ];
 
 /// (page, title) of every row the pages draw.

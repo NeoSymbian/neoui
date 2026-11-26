@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! What only the shell knows, as `ipc::SETTINGS_INFO` sends it to the Settings app: the battery's 24-hour history
 //! ([`Battery`]), the Wi-Fi link's IP side and captive portal ([`crate::wifi::Ip`]) and where the clock's time came
-//! from ([`Clock`]), and since 1.16 Battery usage ([`encode_usage`]). Each encoding is bounded; a short or damaged
+//! from ([`Clock`]), since 1.16 Battery usage ([`encode_usage`]) and since 1.17 the running apps ([`encode_running`]). Each encoding is bounded; a short or damaged
 //! buffer decodes to `None`.
 
 use crate::battery::Usage;
@@ -228,6 +228,44 @@ impl OldApps {
     }
 }
 
+/// The most apps [`encode_running`] lists (the shell runs at most `MAX_RUNNING` plus its residents and Settings).
+pub const RUNNING_MAX: usize = 16;
+
+/// The running apps (`ipc::INFO_RUNNING`, 1.17): `[count u8]` then `count` times `[resident u8][len u8][key]`, at most
+/// [`RUNNING_MAX`] apps (the rest are left out), each key at most `ipc::KEY_MAX` bytes.
+#[must_use]
+pub fn encode_running(apps: &[(&str, bool)]) -> Vec<u8> {
+    let apps = &apps[..apps.len().min(RUNNING_MAX)];
+    let mut b = alloc::vec![apps.len() as u8];
+    for (key, resident) in apps {
+        let k = clip(key, crate::ipc::KEY_MAX);
+        b.push(u8::from(*resident));
+        b.push(k.len() as u8);
+        b.extend_from_slice(k.as_bytes());
+    }
+    b
+}
+
+/// [`encode_running`]'s apps as (key, resident); `None` for a damaged record.
+#[must_use]
+pub fn decode_running(b: &[u8]) -> Option<Vec<(String, bool)>> {
+    let (&count, mut rest) = b.split_first()?;
+    if usize::from(count) > RUNNING_MAX {
+        return None;
+    }
+    let mut apps = Vec::new();
+    for _ in 0..count {
+        let (&resident, r) = rest.split_first()?;
+        let (key, r) = take_str(r)?;
+        if resident > 1 || key.is_empty() || key.len() > crate::ipc::KEY_MAX {
+            return None;
+        }
+        apps.push((key, resident == 1));
+        rest = r;
+    }
+    rest.is_empty().then_some(apps)
+}
+
 fn take_str(b: &[u8]) -> Option<(String, &[u8])> {
     let (&n, rest) = b.split_first()?;
     let n = usize::from(n);
@@ -285,6 +323,32 @@ mod tests {
         assert_eq!(OldApps::decode(&[1, 0, 0, 1, 0, 0, 0, 0]), None);
         assert_eq!(OldApps::decode(&[65, 65, 0]), None);
         assert_eq!(OldApps::decode(&[]), None);
+    }
+
+    #[test]
+    fn running_round_trips_and_is_bounded() {
+        let apps = [("clock", false), ("phone", true), ("messages", true)];
+        let b = encode_running(&apps);
+        let back = decode_running(&b).unwrap();
+        assert_eq!(
+            back,
+            apps.iter()
+                .map(|(k, r)| (String::from(*k), *r))
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(decode_running(&encode_running(&[])), Some(Vec::new()));
+        // more than RUNNING_MAX: the rest are left out, and the record still decodes
+        let many = [("clock", false); RUNNING_MAX + 3];
+        assert_eq!(
+            decode_running(&encode_running(&many)).unwrap().len(),
+            RUNNING_MAX
+        );
+        assert!(encode_running(&many).len() <= INFO_MAX);
+        // damaged: a short tail, a bad flag, an empty key, trailing bytes
+        assert_eq!(decode_running(&b[..b.len() - 1]), None);
+        assert_eq!(decode_running(&[1, 2, 1, b'x']), None);
+        assert_eq!(decode_running(&[1, 0, 0]), None);
+        assert_eq!(decode_running(&[0, 9]), None);
     }
 
     #[test]

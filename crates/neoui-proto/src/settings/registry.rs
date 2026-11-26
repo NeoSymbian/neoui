@@ -113,6 +113,46 @@ impl Spec {
     }
 }
 
+/// Shell keys that Settings → Reset settings (`ipc::RESET_SETTINGS`, 1.17) keeps:
+/// - the sound profiles with their live values: the profiles are the user's own, and resetting a mirror alone would
+///   be folded back into the active profile;
+/// - the radio switches (airplane mode, Wi-Fi, Bluetooth, data), which aren't preferences;
+/// - the old apps' pad epoch, a counter;
+/// - the apps chosen to open each file type (`open.always`), which belong with the apps.
+pub const RESET_KEEPS: &[&str] = &[
+    "sound.profile",
+    "sound.profiles",
+    "sound.tones",
+    "sound.silent",
+    "sound.vibrate",
+    "sound.ring_volume",
+    "sound.ringtone",
+    "sound.message_tone",
+    "radio.wifi",
+    "radio.bt",
+    "radio.data",
+    "radio.airplane",
+    "legacy.pad.epoch",
+    "open.always",
+];
+
+/// The keys Reset settings puts back to their defaults: every key no app owns, but [`RESET_KEEPS`]. Apps' keys
+/// (Clock's alarms, Phone's speed dial, `contacts.migrated`) are never in it.
+pub fn reset_by_default() -> impl Iterator<Item = &'static Spec> {
+    REGISTRY
+        .iter()
+        .filter(|s| matches!(s.owner, Owner::Shell | Owner::Any) && !RESET_KEEPS.contains(&s.name))
+}
+
+/// What an app's Clear data resets (`ipc::AppEvent::ClearData`, 1.17): every key that app alone owns, but the ones the
+/// Settings app shows as the phone's (`access::SETTINGS_ALSO`: Clock's 24-hour time is Date & time's).
+pub fn cleared_with(app: &str) -> impl Iterator<Item = &'static Spec> + '_ {
+    REGISTRY.iter().filter(move |s| {
+        matches!(s.owner, Owner::App(owner) if owner == app)
+            && !super::access::SETTINGS_ALSO.contains(&s.name)
+    })
+}
+
 /// The registered spec for `name`, if any.
 #[must_use]
 pub fn lookup(name: &str) -> Option<&'static Spec> {
@@ -345,6 +385,24 @@ registry! {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn clocks_clear_data_is_its_own_keys_but_24_hour_time() {
+        let names: alloc::vec::Vec<&str> = cleared_with("clock").map(|s| s.name).collect();
+        for k in [
+            "clock.alarms",
+            "clock.timer",
+            "clock.stopwatch",
+            "clock.cities",
+            "clock.face",
+        ] {
+            assert!(names.contains(&k), "{k}");
+        }
+        assert!(!names.contains(&"clock.24h"));
+        assert!(names.iter().all(|n| n.starts_with("clock.")));
+        // shared keys are no one app's to clear
+        assert!(cleared_with("contacts").next().is_none());
+    }
+
     use super::*;
     use crate::settings::key::is_valid_name;
 

@@ -337,3 +337,18 @@ fn set(failed: &Failed, why: i32) {
         *m.lock() = why;
     }
 }
+
+/// Settings → Reset network settings (SE4a): WIFID forgets every network (NeoWifi 1.2 `RESET`), on a session of its
+/// own (the shell's is for the link status). WIFID leaves the joined network first, which can take about 3 s.
+pub fn reset() -> Result<(), i32> {
+    let (major, minor, build) = wifi::ipc::VERSION;
+    let s = Session::connect(
+        wifi::ipc::NAME,
+        TVersion {
+            major: major as u8,
+            minor: minor as u8,
+            build: build as u16,
+        },
+    )?;
+    s.send_receive(op::RESET, &TIpcArgs::new()).map(drop)
+}
