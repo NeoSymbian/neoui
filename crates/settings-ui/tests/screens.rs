@@ -346,6 +346,12 @@ fn every_page() {
     };
     s.set_results(model(vec![
         hit("Date & time", "Settings", "", 9),
+        hit(
+            "Same height for all time zones and languages",
+            "Language & keyboard",
+            "On",
+            10,
+        ),
         hit("Automatic time", "Date & time", "On", 9),
         hit("Automatic time zone", "Date & time", "On", 9),
         hit("Time zone", "Date & time", "UTC+04:00 · Yerevan", 9),

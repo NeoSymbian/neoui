@@ -22,7 +22,16 @@ export component Avatar inherits Rectangle {
 
 export component Switch inherits Rectangle {
     in-out property <bool> on;
+    // what it switches, for a screen reader (the row's title)
+    in property <string> label;
     callback toggled(bool);
+    accessible-role: switch;
+    accessible-label: root.label;
+    accessible-checked: root.on;
+    accessible-action-default => {
+        root.on = !root.on;
+        root.toggled(root.on);
+    }
     width: 46 * Theme.dp;
     height: 28 * Theme.dp;
     border-radius: self.height / 2;
@@ -252,6 +261,7 @@ export component ListRow inherits Rectangle {
             alignment: center;
             Switch {
                 on <=> root.switch-on;
+                label: root.title;
                 toggled(on) => {
                     root.switch-toggled(on);
                 }

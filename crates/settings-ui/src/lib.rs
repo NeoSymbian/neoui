@@ -78,8 +78,9 @@ pub fn split_match(title: &str, query: &str) -> Split {
                         pre: pre.trim_end().into(),
                         mark: mark.trim().into(),
                         post: post.trim_start().into(),
-                        gap_before: pre.ends_with(' ') || mark.starts_with(' '),
-                        gap_after: post.starts_with(' ') || mark.ends_with(' '),
+                        // whatever whitespace the trims take is drawn as one gap
+                        gap_before: pre.trim_end() != pre || mark.trim_start() != mark,
+                        gap_after: post.trim_start() != post || mark.trim_end() != mark,
                     };
                 }
             }

@@ -99,6 +99,7 @@ export component SettingRow inherits Rectangle {
             alignment: center;
             Switch {
                 on <=> root.switch-on;
+                label: root.title;
                 toggled(v) => {
                     root.switch-toggled(v);
                 }

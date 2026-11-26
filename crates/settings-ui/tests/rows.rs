@@ -138,4 +138,9 @@ fn a_result_title_splits_around_the_query() {
     // a partial match that fails later doesn't swallow the title
     assert_eq!(split_match("aab", "ab"), s("a", "ab", "", false, false));
     assert_eq!(split_match("Ünits", "ün"), s("", "Ün", "its", false, false));
+    // any whitespace the trim removes is a gap
+    assert_eq!(
+        split_match("Wi\u{a0}Fi", "fi"),
+        s("Wi", "Fi", "", true, false)
+    );
 }

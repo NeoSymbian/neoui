@@ -860,6 +860,15 @@ impl Ctx {
                     let _ = app.note("Couldn't open the app", "");
                 }
             }
+            // airplane mode on also turns Wi-Fi and Bluetooth off, once; either can be turned back on while it stays
+            // on (set2-airplane's note). The Offline profile does the same through the shell's reducer.
+            "radio.airplane" => {
+                store::write(app, &ui, action, value);
+                if value == "1" {
+                    store::write(app, &ui, "radio.wifi", "0");
+                    store::write(app, &ui, "radio.bt", "0");
+                }
+            }
             // a setting: its key and value
             key if key.contains('.') => {
                 store::write(app, &ui, key, value);

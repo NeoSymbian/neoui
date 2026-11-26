@@ -156,6 +156,9 @@ component GridTile inherits Rectangle {
     height: 104 * Theme.dp;
     background: t.pressed ? Theme.pressed : transparent;
     border-radius: 12 * Theme.dp;
+    accessible-role: button;
+    accessible-label: root.label;
+    accessible-action-default => { SetState.act("open", root.page); }
     t := TouchArea {
         clicked => { SetState.act("open", root.page); }
     }
@@ -261,6 +264,12 @@ component PageTile inherits Rectangle {
 component ResultRow inherits Rectangle {
     in property <SearchHit> hit;
     callback clicked;
+    // the line's pieces measured, not drawn (whether the highlighted line fits)
+    m-path := Text { visible: false; text: hit.path; font-size: Theme.font-value; }
+    m-arrow := Text { visible: false; text: "›"; font-size: Theme.font-value; }
+    m-pre := Text { visible: false; text: hit.pre; font-size: Theme.font-body; font-weight: 500; }
+    m-mark := Text { visible: false; text: hit.mark; font-size: Theme.font-body; font-weight: 500; }
+    m-post := Text { visible: false; text: hit.post; font-size: Theme.font-body; font-weight: 500; }
     height: Theme.list-row-double-h;
     background: t.pressed ? Theme.pressed : transparent;
     accessible-role: button;
@@ -284,39 +293,66 @@ component ResultRow inherits Rectangle {
             alignment: center;
             spacing: 3 * Theme.dp;
             horizontal-stretch: 1;
-            HorizontalLayout {
-                // the pieces are separate texts, so the spaces between them are drawn as gaps
-                property <length> space: Theme.font-body * 0.28;
+            // the title with its match highlighted, when the whole line fits the text column (the row less its
+            // padding, tile, chevron and spacing); a longer one shows path and title plainly, each eliding
+            property <length> space: Theme.font-body * 0.28;
+            property <length> column: 360 * Theme.dp - 2 * Theme.margin - 4 * Theme.dp - Theme.row-tile - 20 * Theme.dp - 24 * Theme.dp;
+            property <bool> fits: m-path.preferred-width + m-arrow.preferred-width + m-pre.preferred-width + m-mark.preferred-width + m-post.preferred-width + 4 * self.space <= self.column;
+            if fits: HorizontalLayout {
                 Text {
                     text: hit.path;
                     color: Theme.text-dim;
                     font-size: Theme.font-value;
                     vertical-alignment: bottom;
                 }
-                Rectangle { width: parent.space; }
+                Rectangle { width: space; }
                 Text {
                     text: "›";
                     color: Theme.text-dim;
                     font-size: Theme.font-value;
                     vertical-alignment: bottom;
                 }
-                Rectangle { width: parent.space; }
+                Rectangle { width: space; }
                 Text {
                     text: hit.pre;
                     color: Theme.text;
                     font-size: Theme.font-body;
                     font-weight: 500;
                 }
-                Rectangle { width: hit.gap-before ? parent.space : 0; }
+                Rectangle { width: hit.gap-before ? space : 0; }
                 Text {
                     text: hit.mark;
                     color: Theme.accent;
                     font-size: Theme.font-body;
                     font-weight: 500;
                 }
-                Rectangle { width: hit.gap-after ? parent.space : 0; }
+                Rectangle { width: hit.gap-after ? space : 0; }
                 Text {
                     text: hit.post;
+                    color: Theme.text;
+                    font-size: Theme.font-body;
+                    font-weight: 500;
+                    horizontal-stretch: 1;
+                }
+            }
+            if !fits: HorizontalLayout {
+                spacing: space;
+                Text {
+                    text: hit.path;
+                    color: Theme.text-dim;
+                    font-size: Theme.font-value;
+                    vertical-alignment: bottom;
+                    overflow: elide;
+                    max-width: 100 * Theme.dp;
+                }
+                Text {
+                    text: "›";
+                    color: Theme.text-dim;
+                    font-size: Theme.font-value;
+                    vertical-alignment: bottom;
+                }
+                Text {
+                    text: hit.title;
                     color: Theme.text;
                     font-size: Theme.font-body;
                     font-weight: 500;
