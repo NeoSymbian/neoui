@@ -404,7 +404,7 @@ export component ProfilePage inherits NeoList {
             checked: SetState.found == "profile.tone";
             value: SetState.ring-tones.length > p.ringtone ? SetState.ring-tones[p.ringtone] : "";
             chevron: true;
-            clicked => { SetState.sheet = "ringtone"; }
+            clicked => { SetState.act("open", "23"); }
         }
         if !offline && p.ring && p.ringtone == 3: Note { text: "Calls vibrate only, so Vibrate stays on."; }
         if !offline: Note { text: "A tone you pick plays once, at the media volume; calls ring at the ring volume."; }
@@ -602,5 +602,91 @@ export component ProfileNameSheet inherits Sheet {
         if root.kb > 0: Rectangle {
             height: root.kb;
         }
+    }
+}
+
+// A profile's ringtone (set2-ringtone): the built-in tones, the chosen one's radio on; a tap chooses it (and plays it
+// once), ▶ only plays it. Leaving the page stops a preview. Your sounds from Files come with SE2c (D6).
+export component RingtonePage inherits NeoList {
+    property <ProfileRow> p: SetState.profile-current;
+    VerticalLayout {
+        alignment: start;
+        SectionHeader { text: "Built in"; }
+        for name[i] in SetState.ring-tones: Rectangle {
+            height: Theme.list-row-h + 8 * Theme.dp;
+            background: t.pressed ? Theme.pressed : transparent;
+            accessible-role: radio-button;
+            accessible-checkable: true;
+            accessible-checked: i == p.ringtone;
+            accessible-label: name;
+            accessible-action-default => { SetState.act("profile-tone", "r," + i); }
+            t := TouchArea {
+                clicked => { SetState.act("profile-tone", "r," + i); }
+            }
+
+            HorizontalLayout {
+                padding-left: Theme.margin + 4 * Theme.dp;
+                padding-right: Theme.margin;
+                spacing: 16 * Theme.dp;
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 22 * Theme.dp;
+                        height: self.width;
+                        border-radius: self.width / 2;
+                        border-width: 2 * Theme.dp;
+                        border-color: i == p.ringtone ? Theme.accent : Theme.text-dim;
+                        if i == p.ringtone: Rectangle {
+                            width: 10 * Theme.dp;
+                            height: self.width;
+                            border-radius: self.width / 2;
+                            background: Theme.accent;
+                        }
+                    }
+                }
+
+                Text {
+                    text: name;
+                    color: Theme.text;
+                    font-size: Theme.font-body;
+                    font-weight: 500;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+
+                // the last tone is silence (vibrate only): nothing to play
+                if i < SetState.ring-tones.length - 1: VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 40 * Theme.dp;
+                        height: self.width;
+                        border-radius: self.width / 2;
+                        background: play.pressed ? Theme.pressed : #2a2e35;
+                        accessible-role: button;
+                        accessible-label: "Play " + name;
+                        accessible-action-default => { SetState.act("tone-preview", i); }
+                        Image {
+                            width: 18 * Theme.dp;
+                            height: self.width;
+                            source: @image-url("@neoui/icons/sys/play.svg");
+                            colorize: white;
+                        }
+                        play := TouchArea {
+                            clicked => { SetState.act("tone-preview", i); }
+                        }
+                    }
+                }
+            }
+
+            Rectangle {
+                x: Theme.margin + 4 * Theme.dp + 22 * Theme.dp + 16 * Theme.dp;
+                y: parent.height - self.height;
+                width: parent.width - self.x;
+                height: max(1px, Theme.dp / 2);
+                background: Theme.hairline;
+            }
+        }
+        Note { text: "▶ plays a tone at the profile's ring volume (the media volume applies too); leaving the page stops it. A tap chooses it."; }
     }
 }

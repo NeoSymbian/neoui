@@ -35,7 +35,8 @@ use neoui_proto::settings_app::page::Page;
 use neoui_proto::settings_app::rows;
 use neoui_proto::sound_profile;
 use settings_ui::{
-    AppRow, KeyboardFocus, Kit, SearchHit, SetState, SettingsApp, Theme, live_value, split_match,
+    AppRow, KeyboardFocus, Kit, SearchHit, SetState, SettingsApp, Theme, ZoneRow, live_value,
+    split_match,
 };
 use slint::{ComponentHandle, Model, ModelRc, SharedString, Timer, TimerMode, VecModel};
 
@@ -657,9 +658,18 @@ impl Ctx {
                 }
             }
             "city-query" => {
-                let (names, rows) = store::cities(value);
+                let (names, offsets) = store::cities(value);
+                let here = store::zone(app);
+                let rows: Vec<ZoneRow> = names
+                    .iter()
+                    .zip(offsets)
+                    .map(|(n, o)| ZoneRow {
+                        name: (*n).into(),
+                        offset: o.into(),
+                        current: *n == here,
+                    })
+                    .collect();
                 *self.cities.borrow_mut() = names;
-                let rows: Vec<SharedString> = rows.into_iter().map(Into::into).collect();
                 s.set_cities(ModelRc::new(VecModel::from(rows)));
             }
             "zone-pick" => {
@@ -667,7 +677,10 @@ impl Ctx {
                     .parse::<usize>()
                     .ok()
                     .and_then(|i| self.cities.borrow().get(i).copied());
-                if let Some(name) = name {
+                // a city is the phone's zone only while the automatic zone is off
+                if let Some(name) = name
+                    && !s.get_time_auto_zone()
+                {
                     store::write(app, &ui, "time.zone", name);
                 }
             }
@@ -792,6 +805,13 @@ impl Ctx {
                     if self.profile(sound_profile::Command::SetTones { id, ring, message }) {
                         self.sound.preview(t, p.volume.clamp(0, 10) as u8);
                     }
+                }
+            }
+            // a tone's ▶ on Ringtone (set2-ringtone): hear it at the profile's ring volume, without choosing it
+            "tone-preview" => {
+                if let Ok(t) = value.parse::<u8>() {
+                    let p = s.get_profile_current();
+                    self.sound.preview(t, p.volume.clamp(0, 10) as u8);
                 }
             }
             "profile-add" => {

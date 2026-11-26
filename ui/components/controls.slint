@@ -237,15 +237,27 @@ export component SearchField inherits Rectangle {
 
         Rectangle {
             horizontal-stretch: 1;
+            // a query wider than the field slides left while it's edited, so its end and the caret stay in view
+            clip: true;
             if root.text == "": Text {
                 x: 0;
+                width: parent.width;
                 text: root.placeholder;
                 color: Theme.text-dim;
                 font-size: Theme.font-body;
                 vertical-alignment: center;
+                overflow: elide;
             }
-            FieldInput {
+            input := FieldInput {
+                x: self.has-focus ? min(0px, parent.width - self.width) : 0px;
+                width: max(parent.width, self.preferred-width + 2 * Theme.dp);
                 text <=> root.text;
+            }
+            // the keyboard was put away while this field kept the focus: a tap on it brings the keyboard back
+            if KeyboardFocus.dismissed && input.has-focus: TouchArea {
+                clicked => {
+                    input.reopen();
+                }
             }
         }
     }

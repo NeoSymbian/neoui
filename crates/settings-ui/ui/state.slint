@@ -12,6 +12,8 @@ export struct WifiDetail { label: string, value: string }
 // its value now, and the page it opens
 export struct SearchHit { id: string, title: string, pre: string, mark: string, post: string, gap-before: bool, gap-after: bool, path: string, value: string, page: int }
 // a network WIFID remembers (Saved networks): its name, "Connected · Secured" / "Secured · not in range"
+// a city on Time zone (set2-timezone): its name, its offset now ("UTC+04:00"), whether it is the phone's zone
+export struct ZoneRow { name: string, offset: string, current: bool }
 export struct WifiSaved { name: string, detail: string, connected: bool }
 // an app on the Apps page: a ROM app by its screen key, or an old app (old: true) by its id in hex
 // a sound profile (neoui-proto sound_profile): its row's summary and what the profile page edits
@@ -83,7 +85,7 @@ export global SetState {
     in property <int> date-format;
     in property <string> zone;
     in property <string> synced;
-    in property <[string]> cities;  // the city sheet's rows, filtered by its search ("Yerevan · UTC+04:00")
+    in property <[ZoneRow]> cities;  // Time zone's cities, filtered by its search
     in property <[string]> nav-modes;
     in property <[string]> nav-hints;
     in property <[string]> media-routes;
