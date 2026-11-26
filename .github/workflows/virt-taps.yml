@@ -188,6 +188,7 @@ jobs:
           # SE2a, Offline (virt is the only device it may run on): Settings again (resumes on Apps), ← to the root,
           # search "offline" -> its row on Sounds (406 dp) -> the sheet's Activate (529 dp): airplane on, Wi-Fi and BT
           # off; then General (118 dp) -> Activate: everything as it was
+          wait_s 1; swipe 270 1075 270 900; expect "neoui: screen home"   # Clock is in front: home first
           tap 485 973; tap 270 805; expect "neoui: app settings resumed"; wait_s 1
           tap 36 73; expect "settings: back"
           tap 426 73; wait_s 1; kb_type offline
