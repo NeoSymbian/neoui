@@ -495,10 +495,11 @@ fn main() -> i32 {
                                     continue;
                                 }
                                 // a swipe down on home opens the shade (top-panel TP1, `shell.swipehome`): a press
-                                // that first moves steeply downwards is a pull, Slint loses it (no widget click, no
-                                // page turn) and the shade opens once it is long enough; anything else stays the
-                                // page swipe it always was. Home must still be what the finger is on: a call may
-                                // have come to the front since the press.
+                                // that first moves steeply downwards is a pull. It never turns into a page slide, and
+                                // Slint loses it when the shade opens or the finger lifts short of it (no widget
+                                // click); until then Slint follows it as before (cancelling earlier left Slint's
+                                // next press dead). Anything else stays the page swipe it always was. Home must still
+                                // be what the finger is on: a call may have come to the front since the press.
                                 let dy = y - down_at.map_or(y, |d| d.1);
                                 let on_home = ui.screen() == "home"
                                     && host.front().is_none()
@@ -511,23 +512,31 @@ fn main() -> i32 {
                                     && dy > 2 * (x - x0).abs()
                                     && host.settings.get(keys::SHELL_SWIPEHOME).unwrap_or(true)
                                 {
-                                    ui.cancel_touch();
                                     home_pull = true;
                                 }
                                 if home_pull {
                                     if phase == TouchPhase::Move && dy >= pull && on_home {
+                                        ui.cancel_touch();
                                         ui.open_shade();
                                         home_pull = false;
                                         home_press = None;
                                         swallow = true; // the rest of this touch goes nowhere
                                         dprintln!("neoui: shade from home");
-                                    } else if phase == TouchPhase::Up || !on_home {
+                                        continue;
+                                    }
+                                    if phase == TouchPhase::Up {
+                                        ui.cancel_touch(); // short of the shade: no click on what it went down on
+                                        home_pull = false;
+                                        home_press = None;
+                                        continue;
+                                    }
+                                    if !on_home {
                                         home_pull = false;
                                         home_press = None;
                                     }
-                                    continue;
                                 }
                                 if let (TouchPhase::Move, Some(x0)) = (phase, home_press)
+                                    && !home_pull
                                     && (x - x0).abs() >= slop
                                 {
                                     let (dir, page) = ((x - x0).signum(), ui.home_page());
