@@ -753,6 +753,35 @@ fn every_page() {
     sh.shoot("set2-dateformat");
     sh.take_acts();
 
+    // D10: Home & navigation with 3 columns, Lanes and swipe down closes apps (the note follows it), the two sheets,
+    // and what its rows ask for
+    page(&sh, 6, "Home & navigation");
+    s.set_switcher_cols(3);
+    s.set_home_style(1);
+    s.set_swipe_close(true);
+    sh.shoot("set2-navigation-lanes");
+    let hints: Vec<SharedString> = neoui_proto::settings_app::choices::HOME_STYLES
+        .iter()
+        .map(|(_, h)| (*h).into())
+        .collect();
+    s.set_home_style_hints(model(hints));
+    sheet(&sh, "home-style");
+    sh.shoot("set2-homestyle");
+    sheet(&sh, "nav-cols");
+    sh.shoot("set2-navcols");
+    sh.draw();
+    sh.take_acts();
+    // the sheet's first choice (583 dp on the 679 dp body): 2 columns, and the sheet closes
+    sh.tap(100.0, 583.0);
+    assert_eq!(
+        sh.take_acts(),
+        vec![("nav.switcher_cols".to_string(), "2".to_string())]
+    );
+    assert_eq!(s.get_sheet(), "");
+    s.set_switcher_cols(2);
+    s.set_home_style(0);
+    s.set_swipe_close(false);
+
     // what taps ask for: a root row opens its page, its switch writes the setting (S02)
     let acts = |v: &[(&str, &str)]| {
         v.iter()

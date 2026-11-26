@@ -106,6 +106,15 @@ pub const FONT_SIZES: [(&str, &str); 4] = [
     ("Largest", "125 %"),
 ];
 
+/// (D10) Home & navigation → Home style (`home.style` 0..=1): the name and what it is.
+pub const HOME_STYLES: [(&str, &str); 2] = [
+    ("Pages", "Widget pages you swipe between"),
+    ("Lanes", "Events, Home and Open apps side by side"),
+];
+
+/// (D10) Home & navigation → Open apps columns (`nav.switcher_cols` 2..=3).
+pub const SWITCHER_COLS: [&str; 2] = ["2", "3"];
+
 #[cfg(test)]
 mod tests {
     #[test]

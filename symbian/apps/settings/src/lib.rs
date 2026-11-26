@@ -17,6 +17,7 @@ mod apps_detail;
 mod battery_cycle;
 mod d2;
 mod modem;
+mod navigation;
 mod notifications;
 mod profile_audio;
 mod row_model;
@@ -799,6 +800,7 @@ impl Ctx {
             // an app itself (Apps page)
             "storage-recount" => self.storage.recount(),
             "console" => d2::set_console(app, &ui, value == "1"),
+            "edit-home" => navigation::edit_home(app),
             // a ROM app's page (SE4a)
             "app-detail" => {
                 if row_model::app_current(&s, value) {

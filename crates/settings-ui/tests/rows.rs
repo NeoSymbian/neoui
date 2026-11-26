@@ -415,6 +415,16 @@ const MANIFEST: &[(&str, &str, &str, ProviderId, Page, Gate)] = &[
         },
     ),
     (
+        "set2-navigation",
+        "Open apps columns",
+        "nav.switcher_cols",
+        ProviderId::Builtin,
+        Page::Navigation,
+        |f| {
+            f.scalars.remove("nav.switcher_cols");
+        },
+    ),
+    (
         "set2-root-list",
         "Storage",
         "root.storage",

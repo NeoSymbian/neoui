@@ -239,4 +239,32 @@ export component SettingsApp inherits Window {
         chosen(i) => { SetState.act("legacy.pad.b", i); }
         dismissed => { SetState.sheet = ""; }
     }
+    // D10: Open apps' columns and home's style
+    if SetState.sheet == "nav-cols": ChoiceSheet {
+        open: true;
+        radio-left: true;
+        title-start: true;
+        title: "Open apps columns";
+        choices: SetState.switcher-col-names;
+        current: SetState.switcher-cols - 2;
+        chosen(i) => {
+            SetState.sheet = "";
+            SetState.act("nav.switcher_cols", i + 2);
+        }
+        dismissed => { SetState.sheet = ""; }
+    }
+    if SetState.sheet == "home-style": ChoiceSheet {
+        open: true;
+        radio-left: true;
+        title-start: true;
+        title: "Home style";
+        choices: SetState.home-styles;
+        descriptions: SetState.home-style-hints;
+        current: SetState.home-style;
+        chosen(i) => {
+            SetState.sheet = "";
+            SetState.act("home.style", i);
+        }
+        dismissed => { SetState.sheet = ""; }
+    }
 }

@@ -714,6 +714,34 @@ pub const ROWS: &[Row] = &[
         Privacy,
         "Usage & diagnostics",
         &["log", "telemetry", "crash"],
+    ), // D10: Home & navigation's gesture rows and the home editor (SETTINGS_ACTION 9)
+    row(
+        "nav.swipe_close",
+        Navigation,
+        Navigation,
+        "Swipe down closes apps",
+        &["close", "top edge", "status bar", "gesture"],
+    ),
+    row(
+        "nav.switcher_cols",
+        Navigation,
+        Navigation,
+        "Open apps columns",
+        &["switcher", "recent apps", "multitasking", "grid"],
+    ),
+    row(
+        "home.style",
+        Navigation,
+        Navigation,
+        "Home style",
+        &["lanes", "pages", "home screen", "n9"],
+    ),
+    action(
+        "home.edit",
+        Navigation,
+        Navigation,
+        "Edit home",
+        &["widgets", "dock", "shortcuts", "home screen"],
     ),
     // D5: the charge cycle's screen-on time (INFO 9)
     row(

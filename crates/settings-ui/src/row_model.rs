@@ -109,6 +109,13 @@ pub fn facts(s: &SetState<'_>, sample: Sample, epochs: Epochs) -> Facts {
         ("kb.display_language", Some(Scalar::Text("English".into()))),
         // D8: the clipboard toast
         ("privacy.clip_notice", on(s.get_clip_notice())),
+        // D10: Home & navigation
+        ("nav.swipe_close", on(s.get_swipe_close())),
+        (
+            "nav.switcher_cols",
+            Some(Scalar::Text(format!("{}", s.get_switcher_cols()))),
+        ),
+        ("home.style", pick(s.get_home_styles(), s.get_home_style())),
         ("battery.saver", on(s.get_battery_saver())),
         ("battery.percent", on(s.get_show_percent())),
         ("pads.vibrate", on(s.get_pad_vibrate())),

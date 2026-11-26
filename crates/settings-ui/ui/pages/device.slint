@@ -118,7 +118,51 @@ export component NavigationPage inherits NeoList {
                 clicked => { SetState.act("nav.mode", i); }
             }
         }
-        Note { text: "The top edge opens the shade in every mode. Switching may resize open apps once."; }
+
+        // D10: the gesture rows (set2-navigation) and the shell's home editor
+        SectionHeader { text: "Gestures"; }
+        ListRow {
+            value-bright: true;
+            title: "Swipe down closes apps";
+            checked: SetState.found == "nav.swipe_close";
+            subtitle: SetState.nav-mode == 0 ? "Gestures and N9 gestures only" : "Top edge on an app";
+            has-switch: true;
+            switch-on <=> SetState.swipe-close;
+            switch-toggled(v) => { SetState.act("nav.swipe_close", v ? "1" : "0"); }
+        }
+
+        ListRow {
+            value-bright: true;
+            title: "Open apps columns";
+            checked: SetState.found == "nav.switcher_cols";
+            value: SetState.switcher-cols;
+            chevron: true;
+            clicked => { SetState.sheet = "nav-cols"; }
+        }
+
+        ListRow {
+            value-bright: true;
+            title: "Home style";
+            checked: SetState.found == "home.style";
+            value: SetState.home-styles.length > SetState.home-style ? SetState.home-styles[SetState.home-style] : "";
+            chevron: true;
+            clicked => { SetState.sheet = "home-style"; }
+        }
+
+        ListRow {
+            title: "Edit home";
+            checked: SetState.found == "home.edit";
+            subtitle: "Or long-press home";
+            chevron: true;
+            divider: false;
+            clicked => { SetState.act("edit-home", ""); }
+        }
+
+        Note {
+            text: SetState.nav-mode != 0 && SetState.swipe-close
+                ? "The top edge over an app closes it; a tap on the status bar opens the shade. Switching may resize open apps once."
+                : "The top edge opens the shade in every mode. Switching may resize open apps once.";
+        }
     }
 }
 
