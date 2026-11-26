@@ -254,8 +254,8 @@ impl Ctx {
         s.set_found(SharedString::new());
         ui.global::<KeyboardFocus>().set_open(false);
         dprintln!("settings: page {}", page.name());
-        // Storage's scan runs only on its page (SE3b); a kept count isn't redone
-        if page == Page::Storage {
+        // Storage's scan runs only on its page, shown (SE3b); a kept count isn't redone
+        if page == Page::Storage && self.visible.get() {
             self.storage.ensure();
         } else {
             self.storage.stop();

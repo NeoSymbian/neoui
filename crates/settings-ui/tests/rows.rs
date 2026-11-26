@@ -76,18 +76,10 @@ fn page_rows() -> BTreeSet<(&'static str, String)> {
     for a in neoui_proto::apps::listed() {
         out.insert((Page::Apps.name(), a.name.to_string()));
     }
-    // Storage's search targets that aren't list rows: its by-kind section and its Recount button
+    // Storage's by-kind section is a search target though not a list row
     let storage = std::fs::read_to_string(pages.join("storage.slint")).unwrap();
-    for (found, title) in [
-        (
-            "SectionHeader { text: \"C: and E: by kind\"; }",
-            "C: and E: by kind",
-        ),
-        ("\"Counting…\" : \"Recount\"", "Recount"),
-    ] {
-        assert!(storage.contains(found), "storage.slint lost {title}");
-        out.insert((Page::Storage.name(), title.to_string()));
-    }
+    assert!(storage.contains("SectionHeader { text: \"C: and E: by kind\"; }"));
+    out.insert((Page::Storage.name(), "C: and E: by kind".to_string()));
     out
 }
 

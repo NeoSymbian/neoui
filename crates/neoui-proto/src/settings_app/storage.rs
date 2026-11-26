@@ -49,7 +49,7 @@ const AUDIO: &[&str] = &[
 ];
 const DOCUMENTS: &[&str] = &[
     "pdf", "txt", "md", "doc", "docx", "xls", "xlsx", "ppt", "pptx", "odt", "ods", "odp", "rtf",
-    "html", "htm", "csv", "epub",
+    "html", "htm", "csv", "tsv", "epub",
 ];
 
 /// The kind of a file named `name` (any case).
@@ -79,6 +79,9 @@ pub const SKIPPED: &[&str] = &["private", "sys", "resource", "system"];
 
 /// The deepest folder the scan enters (below a drive's root).
 pub const DEPTH_MAX: usize = 64;
+/// The most folders waiting to be listed at once (a very wide tree): more are counted in [`Tally::skipped`], so the
+/// walk's memory stays bounded.
+pub const PENDING_MAX: usize = 4096;
 
 /// The running count.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -91,8 +94,8 @@ pub struct Tally {
     pub folders: u32,
     /// Folders that couldn't be listed (access denied, the medium removed): skipped, counted.
     pub unreadable: u32,
-    /// Folders not entered because they were deeper than [`DEPTH_MAX`].
-    pub too_deep: u32,
+    /// Folders not entered: deeper than [`DEPTH_MAX`], or past [`PENDING_MAX`] waiting.
+    pub skipped: u32,
     /// The whole walk ran (not cancelled).
     pub done: bool,
 }
@@ -145,8 +148,8 @@ pub fn scan(
                     if depth == 0 && SKIPPED.iter().any(|s| s.eq_ignore_ascii_case(&name)) {
                         continue;
                     }
-                    if depth + 1 > DEPTH_MAX {
-                        t.too_deep += 1;
+                    if depth + 1 > DEPTH_MAX || stack.len() >= PENDING_MAX {
+                        t.skipped += 1;
                         continue;
                     }
                     stack.push((format!("{dir}{name}\\"), depth + 1));
@@ -332,8 +335,26 @@ mod tests {
             |_| {},
         );
         assert!(t.done);
-        assert_eq!(t.too_deep, 1);
+        assert_eq!(t.skipped, 1);
         assert_eq!(t.folders as usize, 1 + DEPTH_MAX + 1); // sys\bin, the root and 64 levels
+    }
+
+    #[test]
+    fn a_wide_tree_stays_bounded() {
+        // past PENDING_MAX waiting folders, the rest are skipped, counted
+        let wide: Vec<Listed> = (0..PENDING_MAX + 10)
+            .map(|i| (alloc::format!("d{i}"), true, 0))
+            .collect();
+        let t = scan(
+            &["C:\\"],
+            |p| Ok(if p == "C:\\" { wide.clone() } else { vec![] }),
+            || false,
+            |_| {},
+        );
+        assert!(t.done);
+        assert_eq!(t.skipped, 10);
+        assert_eq!(t.folders as usize, 2 + PENDING_MAX);
+        assert_eq!(kind_of("budget.TSV"), Kind::Documents);
     }
 
     #[test]

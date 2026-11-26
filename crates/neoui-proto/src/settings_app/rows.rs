@@ -424,7 +424,6 @@ pub const ROWS: &[Row] = &[
         "C: and E: by kind",
         &["images", "video", "audio", "documents", "apps"],
     ),
-    row("storage.recount", Storage, Storage, "Recount", &["scan"]),
     row(
         "storage.files",
         Storage,

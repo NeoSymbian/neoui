@@ -1,22 +1,22 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //! Settings → Storage (SE3b): the drives from the file server at once, and C: and E: by kind from a scan on a
 //! low-priority thread of its own (`neoui_proto::settings_app::storage::scan`: it lists folders, never opens or
-//! writes a file). The scan runs only while the page is open and the app shown; its last result is kept with the
-//! time it finished, and Recount runs it again.
+//! writes a file). The scan runs only while the page is open and the app shown; its last whole result is kept with
+//! the time it finished and the drives' totals then, and Recount runs it again.
+//!
+//! Every change to the scan's state happens under one lock, and a scan only writes while its generation is the
+//! current one: stopping or starting another moves the generation on, so a superseded scan can't land over a newer
+//! one, and stopping clears "Counting…" at once.
 use alloc::boxed::Box;
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
-use core::sync::atomic::{AtomicU32, Ordering};
 use e32::dprintln;
 use e32::fs::Fs;
 use e32::sync::Mutex;
 use neoui_proto::settings_app::storage::{self as st, KINDS, Tally};
 use settings_ui::{DriveRow, PartRow, SetState, SettingsApp};
 use slint::{ComponentHandle, ModelRc, VecModel};
-
-/// Bumped to stop the scan that runs (leaving the page, the app hidden, Recount): it ends at its next folder.
-static RUN: AtomicU32 = AtomicU32::new(0);
 
 /// `EPriorityMuchLess` (`TThreadPriority`): below the UI thread, so a long walk never slows a frame.
 const PRIORITY_MUCH_LESS: i32 = -20;
@@ -25,22 +25,28 @@ const CURRENT_THREAD: u32 = 0xFFFF_8001;
 
 #[derive(Default)]
 struct Shared {
-    /// The running count.
-    tally: Tally,
-    /// The last whole count (kept through a stopped or a new scan).
-    last: Tally,
-    /// A scan is running.
+    /// The scan allowed to write: bumped by every start and stop.
+    generation: u32,
+    /// A scan is running (the current generation's).
     running: bool,
+    /// Its running count.
+    tally: Tally,
+    /// The last whole count, with C: and E:'s (used, free) when it was made (kept through a stopped or a new scan).
+    last: Tally,
+    last_totals: (u64, u64),
     /// When the last whole scan ended (local "HH:MM"); `None` before the first.
     at: Option<String>,
-    /// What it took, for the log and the run's notes.
-    ms: u64,
+    /// Why the last scan couldn't count (a file server error), shown until the next one.
+    error: Option<i32>,
 }
 
 pub struct Storage {
     shared: Option<&'static Mutex<Shared>>,
     /// C: and E: together (used, free), from the drive rows.
     totals: core::cell::Cell<(u64, u64)>,
+    /// The (letter, free) pairs last logged: the free bytes go to the log when they change (a phone run's proof that
+    /// nothing was written).
+    logged: core::cell::RefCell<Vec<(char, i64)>>,
 }
 
 impl Storage {
@@ -50,15 +56,26 @@ impl Storage {
                 .ok()
                 .map(|m| &*Box::leak(Box::new(m))),
             totals: core::cell::Cell::new((0, 0)),
+            logged: core::cell::RefCell::new(Vec::new()),
         }
     }
 
-    /// The drive rows and the root's "N free" (E:'s free space, else C:'s).
+    /// The drive rows and the root's "N free" (E:'s free space, else C:'s); emptied when the file server can't say.
     pub fn drives(&self, ui: &SettingsApp) {
         let s = ui.global::<SetState>();
-        let Ok(fs) = Fs::connect() else { return };
-        let Ok(list) = fs.drives() else { return };
+        let Ok(list) = Fs::connect().and_then(|fs| fs.drives().map(|l| (fs, l))) else {
+            s.set_drives(ModelRc::new(VecModel::from(alloc::vec![row(
+                "Drives".into(),
+                "Not available".into(),
+                "",
+                -1.0
+            )])));
+            s.set_storage_free(String::new().into());
+            return;
+        };
+        let (fs, list) = list;
         let mut rows = Vec::new();
+        let mut logged = Vec::new();
         let (mut used_ce, mut free_ce, mut root_free) = (0u64, 0u64, None);
         // E: first (the board's order: the big drive), then the rest from C:
         let order = core::iter::once(4).chain((0..26).filter(|&i| i != 4));
@@ -70,17 +87,21 @@ impl Storage {
                 rows.push(row(title, "Not available".into(), note, -1.0));
                 continue;
             };
+            logged.push((letter, v.free));
             let (size, free) = (v.size.max(0) as u64, v.free.clamp(0, v.size.max(0)) as u64);
             let used = size - free;
-            let shown = match letter {
-                // RAM and ROM: what they hold; a read-only drive has no free space to speak of
-                'D' | 'Z' => st::size_text(used),
-                _ => st::used_text(used, size),
-            };
-            let fill = if size > 0 && !matches!(letter, 'D' | 'Z') {
-                used as f32 / size as f32
+            // the ROM: its size (nothing is free on a read-only drive); the rest: used of total
+            let (shown, fill) = if letter == 'Z' {
+                (st::size_text(size), -1.0)
             } else {
-                -1.0
+                (
+                    st::used_text(used, size),
+                    if size > 0 {
+                        used as f32 / size as f32
+                    } else {
+                        -1.0
+                    },
+                )
             };
             rows.push(row(title, shown, note, fill));
             if matches!(letter, 'C' | 'E') {
@@ -91,6 +112,12 @@ impl Storage {
                 }
             }
         }
+        if *self.logged.borrow() != logged {
+            for (letter, free) in &logged {
+                dprintln!("settings: drive {}: free {} bytes", letter, free);
+            }
+            *self.logged.borrow_mut() = logged;
+        }
         self.totals.set((used_ce, free_ce));
         s.set_drives(ModelRc::new(VecModel::from(rows)));
         s.set_storage_free(
@@ -100,42 +127,52 @@ impl Storage {
         );
     }
 
-    /// The page opened or the app came back: count once if nothing is counted yet (a kept result isn't redone).
+    /// The page opened, shown: count once if nothing is counted yet (a kept result isn't redone).
     pub fn ensure(&self) {
         let Some(shared) = self.shared else { return };
-        let (running, counted) = {
+        let idle = {
             let g = shared.lock();
-            (g.running, g.at.is_some())
+            !g.running && g.at.is_none()
         };
-        if !running && !counted {
+        if idle {
             self.start();
         }
     }
 
     /// Recount: stop what runs and count again.
     pub fn recount(&self) {
-        self.stop();
         self.start();
     }
 
-    /// Leave the page or hide the app: the scan stops at its next folder (a kept result stays).
+    /// Leave the page or hide the app: the scan stops at its next folder, and the page stops saying "Counting…" now.
     pub fn stop(&self) {
-        RUN.fetch_add(1, Ordering::SeqCst);
+        let Some(shared) = self.shared else { return };
+        let mut g = shared.lock();
+        g.generation = g.generation.wrapping_add(1);
+        g.running = false;
     }
 
     fn start(&self) {
         let Some(shared) = self.shared else { return };
-        let mine = RUN.fetch_add(1, Ordering::SeqCst) + 1;
-        {
+        let totals = self.totals.get();
+        let mine = {
             let mut g = shared.lock();
+            g.generation = g.generation.wrapping_add(1);
             g.running = true;
             g.tally = Tally::default();
-        }
-        let roots: Vec<&'static str> = match Fs::connect().and_then(|fs| fs.drives()) {
-            Ok(list) if list[4] != 0 => alloc::vec!["C:\\", "E:\\"],
-            _ => alloc::vec!["C:\\"],
+            g.error = None;
+            g.generation
         };
-        if let Err(e) = e32::thread::spawn(move || {
+        // every write below is the current generation's only
+        let finish = move |f: &mut dyn FnMut(&mut Shared)| {
+            let mut g = shared.lock();
+            if g.generation == mine {
+                f(&mut g);
+            }
+        };
+        // shortcut: the JoinHandle is dropped, which leaks e32's small boxed logon status per scan (e32 keeps it
+        // alive by design); a Recount now and then costs a few bytes until e32 frees it on drop.
+        let spawned = e32::thread::spawn(move || {
             // SAFETY: ThreadSetPriority on the current thread's pseudo-handle with a valid TThreadPriority.
             let p = unsafe {
                 e32::sys::swi::exec4::<{ e32::sys::execs::slow::THREAD_SET_PRIORITY }>(
@@ -146,52 +183,66 @@ impl Storage {
                 )
             };
             let started = e32::time::millis();
-            let t = match Fs::connect() {
-                Ok(fs) => st::scan(
-                    &roots,
-                    |dir| {
-                        fs.read_dir(dir).map(|v| {
-                            v.into_iter()
-                                .map(|e| (e.name.clone(), e.is_dir(), e.size))
-                                .collect()
-                        })
-                    },
-                    || RUN.load(Ordering::SeqCst) != mine,
-                    // a stopped scan's last folder mustn't land over a newer one's count
-                    |t| {
-                        if RUN.load(Ordering::SeqCst) == mine {
-                            shared.lock().tally = *t;
-                        }
-                    },
-                ),
-                Err(_) => Tally::default(),
+            // C:, and E: when the file server lists it; a file server that can't answer is an error, not a count
+            let fs = Fs::connect().and_then(|fs| fs.drives().map(|l| (fs, l)));
+            let (fs, list) = match fs {
+                Ok(v) => v,
+                Err(e) => {
+                    dprintln!("settings: storage scan can't reach the file server ({})", e);
+                    finish(&mut |g| {
+                        g.running = false;
+                        g.error = Some(e);
+                    });
+                    return 0;
+                }
             };
+            let roots: Vec<&str> = if list[4] != 0 {
+                alloc::vec!["C:\\", "E:\\"]
+            } else {
+                alloc::vec!["C:\\"]
+            };
+            let t = st::scan(
+                &roots,
+                |dir| {
+                    fs.read_dir(dir).map(|v| {
+                        v.into_iter()
+                            .map(|e| (e.name.clone(), e.is_dir(), e.size))
+                            .collect()
+                    })
+                },
+                || shared.lock().generation != mine,
+                |t| finish(&mut |g| g.tally = *t),
+            );
             let ms = e32::time::millis() - started;
             dprintln!(
-                "settings: storage scan {} in {} ms: {} folders, {} unreadable, {} too deep, files {} apps {} (priority {})",
+                "settings: storage scan {} in {} ms: {} folders, {} unreadable, {} skipped, files {} apps {} (priority {})",
                 if t.done { "done" } else { "stopped" },
                 ms,
                 t.folders,
                 t.unreadable,
-                t.too_deep,
+                t.skipped,
                 t.files_total(),
                 t.apps,
                 p as i32
             );
-            let mut g = shared.lock();
-            if RUN.load(Ordering::SeqCst) == mine {
+            finish(&mut |g| {
                 g.running = false;
-            }
-            if t.done {
-                let now = e32::time::now();
-                g.at = Some(format!("{:02}:{:02}", now.hour, now.minute));
-                g.ms = ms;
-                g.last = t;
-            }
+                if t.done {
+                    let now = e32::time::now();
+                    g.at = Some(format!("{:02}:{:02}", now.hour, now.minute));
+                    g.last = t;
+                    g.last_totals = totals;
+                }
+            });
             0
-        }) {
+        });
+        if let Err(e) = spawned {
             dprintln!("settings: storage scan didn't start ({})", e);
-            shared.lock().running = false;
+            let mut g = shared.lock();
+            if g.generation == mine {
+                g.running = false;
+                g.error = Some(e);
+            }
         }
     }
 
@@ -199,16 +250,16 @@ impl Storage {
     pub fn show(&self, ui: &SettingsApp) {
         let Some(shared) = self.shared else { return };
         let s = ui.global::<SetState>();
-        let (t, running, at) = {
+        let (t, totals, running, at, error) = {
             let g = shared.lock();
-            // while counting, the running totals; else the last whole count
-            (
-                if g.running { g.tally } else { g.last },
-                g.running,
-                g.at.clone(),
-            )
+            // while counting, the running totals against the drives now; else the last whole count with its own
+            if g.running {
+                (g.tally, self.totals.get(), true, g.at.clone(), g.error)
+            } else {
+                (g.last, g.last_totals, false, g.at.clone(), g.error)
+            }
         };
-        let (used, free) = self.totals.get();
+        let (used, free) = totals;
         let other = st::other(used, &t);
         let total = (t.apps + t.files_total() + other + free).max(1) as f32;
         let mut start = 0.0;
@@ -244,6 +295,8 @@ impl Storage {
         s.set_storage_status(
             if running {
                 format!("Counting… {} folders", t.folders)
+            } else if let Some(e) = error {
+                format!("Couldn't count ({e}); Recount tries again")
             } else if let Some(at) = &at {
                 format!("Last counted {at}")
             } else {
@@ -252,10 +305,13 @@ impl Storage {
             .into(),
         );
         s.set_storage_unreadable(
-            match t.unreadable {
-                0 => String::new(),
-                1 => String::from("1 folder couldn't be read"),
-                n => format!("{n} folders couldn't be read"),
+            match (t.unreadable, t.skipped) {
+                (0, 0) => String::new(),
+                (1, 0) => String::from("1 folder couldn't be read"),
+                (n, 0) => format!("{n} folders couldn't be read"),
+                (n, k) => format!(
+                    "{n} folders couldn't be read, {k} weren't entered (too many or too deep)"
+                ),
             }
             .into(),
         );

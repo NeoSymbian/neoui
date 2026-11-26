@@ -16,7 +16,6 @@ use slint::Model;
 pub const VALUELESS: &[&str] = &[
     "sounds.add",
     "battery.usage",
-    "storage.recount",
     "storage.files",
     "root.privacy",
     "root.about",

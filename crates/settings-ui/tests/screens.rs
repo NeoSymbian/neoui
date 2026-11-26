@@ -373,11 +373,24 @@ fn every_page() {
     sh.shoot("set2-storage-counting");
     s.set_storage_counting(false);
     s.set_storage_status("Last counted 06:50".into());
-    let drives = s.get_drives();
+    let (drives, parts) = (s.get_drives(), s.get_storage_parts());
+    let bar = |name: &str, size: &str, start: f32, share: f32| PartRow {
+        name: name.into(),
+        size: size.into(),
+        start,
+        share,
+    };
     s.set_drives(model(drives.iter().skip(1).collect()));
+    s.set_storage_parts(model(vec![
+        bar("Apps", "320 MB", 0.0, 0.04),
+        bar("Files", "1.2 GB", 0.04, 0.15),
+        bar("Other (system and app data)", "580 MB", 0.19, 0.07),
+        bar("Free", "5.9 GB", 0.26, 0.74),
+    ]));
     s.set_storage_unreadable("2 folders couldn't be read".into());
     sh.shoot("set2-storage-no-e");
     s.set_drives(drives);
+    s.set_storage_parts(parts);
     s.set_storage_unreadable("".into());
 
     // Battery usage (SE3a): what the history holds, then before its first reading
