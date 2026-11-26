@@ -95,6 +95,10 @@ pub fn decode_usage(b: &[u8]) -> Option<Option<Usage>> {
     };
     let i64_at = |i: usize| i64::from_le_bytes(b[i..i + 8].try_into().unwrap_or_default());
     let u32_at = |i: usize| u32::from_le_bytes(b[i..i + 4].try_into().unwrap_or_default());
+    // the window can't end before it starts
+    if i64_at(10) < i64_at(2) {
+        return None;
+    }
     Some(Some(Usage {
         since_full: b[1] == 1,
         start_utc: i64_at(2),
@@ -328,6 +332,12 @@ mod tests {
         let mut bad = b.clone();
         bad[18] = 101;
         assert_eq!(decode_usage(&bad), None);
+        let reversed = Usage {
+            start_utc: 60,
+            end_utc: 0,
+            ..most
+        };
+        assert_eq!(decode_usage(&encode_usage(Some(&reversed))), None);
         assert_eq!(decode_usage(&[0, 0]), None);
         assert_eq!(decode_usage(&[]), None);
     }

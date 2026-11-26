@@ -181,6 +181,9 @@ pub struct Renderer {
     window: Rc<MinimalSoftwareWindow>,
     ui: Shell,
     typed: Rc<RefCell<Vec<u32>>>,
+    /// Presses of the system keyboard's keys since the last [`Renderer::take_key_presses`] (one per key, whatever it
+    /// types and wherever it goes: Keypress vibration, SE3a).
+    presses: Rc<core::cell::Cell<u32>>,
     nav: Rc<RefCell<Vec<Nav>>>,
     entries: Rc<RefCell<Vec<u32>>>,
     notes_opened: Rc<RefCell<Vec<(usize, u16)>>>,
@@ -248,7 +251,12 @@ impl Renderer {
         ui.show()?;
         let typed: Rc<RefCell<Vec<u32>>> = Rc::default();
         let sink = typed.clone();
-        ui.on_typed(move |s| sink.borrow_mut().extend(s.chars().map(u32::from)));
+        let presses: Rc<core::cell::Cell<u32>> = Rc::default();
+        let pressed = presses.clone();
+        ui.on_typed(move |s| {
+            pressed.set(pressed.get().saturating_add(1));
+            sink.borrow_mut().extend(s.chars().map(u32::from));
+        });
         let nav: Rc<RefCell<Vec<Nav>>> = Rc::default();
         let sink = nav.clone();
         ui.on_app_nav(move |kind, i| {
@@ -295,6 +303,7 @@ impl Renderer {
             window,
             ui,
             typed,
+            presses,
             nav,
             entries,
             notes_opened,
@@ -464,6 +473,11 @@ impl Renderer {
     /// what it types into a shell field goes there instead.
     pub fn take_typed(&mut self) -> Vec<u32> {
         core::mem::take(&mut *self.typed.borrow_mut())
+    }
+
+    /// How many keys of the system keyboard were pressed since the last call (for its vibration).
+    pub fn take_key_presses(&mut self) -> u32 {
+        self.presses.replace(0)
     }
 
     /// An app process is in front (the shell hides its own mock of the screen; the strip shows the app's page).

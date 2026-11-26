@@ -116,7 +116,7 @@ export component RootPage inherits NeoList {
         SectionHeader { text: "System"; }
         SettingRow {
             title: "Developer options";
-            value: SetState.usb-debugging ? "USB debugging" : "Off";
+            value: SetState.usb-debugging ? "USB debugging" : SetState.show-touches ? "Show touches" : "Off";
             icon: @image-url("@neoui/icons/sys/usb.svg");
             tint: #5b6472;
             clicked => { SetState.act("open", "11"); }

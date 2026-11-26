@@ -178,6 +178,7 @@ fn main() -> i32 {
     let mut scr = screen::Screen::new(time::millis());
     let panel_max = display_max_brightness();
     let mut brightness_sent = -1;
+    let mut brightness_retry_at = 0u64;
     // the Power menu covers the whole screen: no app surface over it, every touch to the shell
     let mut power_menu = false;
     // the store's change counter the sound profiles last looked at (u32::MAX: not yet, so the upgrade runs once)
@@ -320,10 +321,13 @@ fn main() -> i32 {
                         .get(keys::DEVELOPER_SHOW_TOUCHES)
                         .unwrap_or(false)
                     {
+                        // a finger from its press to its lift (a pointer moving unpressed starts nothing)
                         for ev in &evs {
                             if let InputEvent::Touch { id, x, y, phase } = *ev {
+                                let known = touches.iter().any(|t| t.0 == id);
                                 touches.retain(|t| t.0 != id);
-                                if phase != TouchPhase::Up {
+                                if phase == TouchPhase::Down || (phase == TouchPhase::Move && known)
+                                {
                                     touches.push((id, x, y));
                                 }
                             }
@@ -520,14 +524,6 @@ fn main() -> i32 {
                                     ui.dispatch(event);
                                     // the system keyboard types into the app like a hardware key
                                     for code in ui.take_typed() {
-                                        // Keypress vibration (SE3a): the pads' tick, off by default
-                                        if let Some((ms, amp)) = neoui_proto::effects::key_pulse(
-                                            host.settings
-                                                .get(keys::KEYBOARD_VIBRATE)
-                                                .unwrap_or(false),
-                                        ) {
-                                            haptic(ms, amp);
-                                        }
                                         host.send(AppEvent::Input(InputEvent::Key {
                                             code,
                                             down: true,
@@ -835,10 +831,23 @@ fn main() -> i32 {
                     panel_max,
                     host.settings.get(keys::BATTERY_SAVER).unwrap_or(false),
                 );
-                if want != brightness_sent {
-                    set_brightness(want);
-                    brightness_sent = want;
+                // a refused write (the saver lifting too) is tried again a second later, not taken as done
+                if want != brightness_sent && ms >= brightness_retry_at {
+                    if set_brightness(want) {
+                        brightness_sent = want;
+                    } else {
+                        brightness_retry_at = ms + 1000;
+                    }
                 }
+            }
+            // Keypress vibration (SE3a): one pulse per press of the system keyboard, whatever it typed and wherever
+            let presses = ui.take_key_presses();
+            if presses > 0
+                && let Some((ms, amp)) = neoui_proto::effects::key_pulse(
+                    host.settings.get(keys::KEYBOARD_VIBRATE).unwrap_or(false),
+                )
+            {
+                haptic(ms, amp);
             }
             if !scr.is_on() {
                 touches.clear(); // a sleeping touchscreen sends no lifts; the rings go at the next frame
@@ -891,18 +900,8 @@ fn main() -> i32 {
                     perf.frame(render_us, 0, 0, px);
                     let m = perf.mark();
                     hint_drawn = None; // the fade writes the whole screen
-                    touches_drawn.clear();
+                    touches_drawn.clear(); // and the rings with it: none while it runs
                     fade(&old, &frame, &host, e, (w, h), &mut rows, &display);
-                    draw_touches(
-                        &touches,
-                        &mut touches_drawn,
-                        &frame,
-                        &host,
-                        (w, h),
-                        dp256,
-                        &mut rows.1,
-                        &display,
-                    );
                     perf.layer(perf.since(&m));
                 }
                 None => {
@@ -918,7 +917,8 @@ fn main() -> i32 {
                         copy_us += perf.since(&m);
                     }
                     let m = perf.mark();
-                    let app_px = if power_menu || phone_modal || ui.overlay_open() {
+                    let covered = power_menu || phone_modal || ui.overlay_open();
+                    let app_px = if covered {
                         host.blits.clear(); // the overlay covers the app; it is copied whole when it closes
                         0
                     } else {
@@ -926,12 +926,21 @@ fn main() -> i32 {
                     };
                     // Show touches: put back what the rings covered before the hint (which may lie under them) is
                     // drawn, then the rings over everything; their cost counts in the perf line's app time
+                    if !host
+                        .settings
+                        .get(keys::DEVELOPER_SHOW_TOUCHES)
+                        .unwrap_or(false)
+                    {
+                        touches.clear(); // switched off with a finger still down
+                    }
                     let rings = !touches.is_empty() || !touches_drawn.is_empty();
+                    // under the shade or a dialog the app isn't on screen: its pixels mustn't show through
+                    let under = if covered { None } else { front_surface(&host) };
                     if rings {
                         restore_touches(
                             &mut touches_drawn,
                             &frame,
-                            &host,
+                            under,
                             w,
                             &mut rows.1,
                             &display,
@@ -951,7 +960,7 @@ fn main() -> i32 {
                             &touches,
                             &mut touches_drawn,
                             &frame,
-                            &host,
+                            under,
                             (w, h),
                             dp256,
                             &mut rows.1,
@@ -1187,69 +1196,86 @@ fn draw_hint(
     *drawn = Some(r);
 }
 
-/// Show touches (SE3a): put back what the rings covered (the frame with the front app over it).
+/// Show touches (SE3a): what the screen shows in columns `x0..x1` of row `y` (the frame, with the front app's surface
+/// over it when it is composed), into the same columns of `row`.
+fn screen_span(
+    frame: &[u32],
+    app: Option<(&[u32], usize, Rect)>,
+    w: usize,
+    y: usize,
+    (x0, x1): (usize, usize),
+    row: &mut [u32],
+) {
+    row[x0..x1].copy_from_slice(&frame[y * w + x0..y * w + x1]);
+    let Some((src, stride, area)) = app else {
+        return;
+    };
+    let (ax, ay) = (area.x.max(0) as usize, area.y.max(0) as usize);
+    if y >= ay && y < ay + area.h as usize {
+        let (s0, s1) = (x0.max(ax), x1.min(ax + area.w as usize));
+        if s0 < s1 {
+            row[s0..s1].copy_from_slice(&src[(y - ay) * stride + (s0 - ax)..][..s1 - s0]);
+        }
+    }
+}
+
+/// Show touches (SE3a): put back what the rings covered.
 fn restore_touches(
     drawn: &mut Vec<Rect>,
     frame: &[u32],
-    host: &Host,
+    app: Option<(&[u32], usize, Rect)>,
     w: usize,
     row: &mut [u32],
     display: &Display,
 ) {
-    let app = front_surface(host);
     for r in drawn.drain(..) {
-        let x = r.x as usize;
+        let (x0, x1) = (r.x as usize, r.x as usize + r.w as usize);
         for y in r.y as usize..r.y as usize + r.h as usize {
-            row.copy_from_slice(&frame[y * w..][..w]);
-            app_row(app, y, row);
-            display.blit_to(row, w, (x, 0, r.w as usize, 1), (x, y));
+            screen_span(frame, app, w, y, (x0, x1), row);
+            display.blit_to(row, w, (x0, 0, x1 - x0, 1), (x0, y));
         }
     }
 }
 
 /// Show touches (SE3a): a 24 dp ring under each finger, straight to the screen over what is there (drawing only: the
-/// touches were routed already). `drawn` gets the rectangles for [`restore_touches`].
+/// touches were routed already). Only the circle's pixels are written, so a ring leaves its neighbours and the Back
+/// hint around it alone. `drawn` gets the squares for [`restore_touches`].
 #[allow(clippy::too_many_arguments)]
 fn draw_touches(
     touches: &[(u8, i32, i32)],
     drawn: &mut Vec<Rect>,
     frame: &[u32],
-    host: &Host,
+    app: Option<(&[u32], usize, Rect)>,
     (w, h): (usize, usize),
     dp256: u32,
     row: &mut [u32],
     display: &Display,
 ) {
     let d = (24 * dp256 / 256) as i32;
-    let app = front_surface(host);
     for &(_, cx, cy) in touches {
+        let (left, top) = (cx - d / 2, cy - d / 2);
         // the ring's square, cut to the screen
-        let (x0, y0) = ((cx - d / 2).max(0), (cy - d / 2).max(0));
-        let (x1, y1) = (
-            (cx - d / 2 + d).min(w as i32),
-            (cy - d / 2 + d).min(h as i32),
-        );
+        let (x0, y0) = (left.max(0), top.max(0));
+        let (x1, y1) = ((left + d).min(w as i32), (top + d).min(h as i32));
         if x1 <= x0 || y1 <= y0 {
             continue;
         }
         for y in y0..y1 {
             let yu = y as usize;
-            row.copy_from_slice(&frame[yu * w..][..w]);
-            app_row(app, yu, row);
+            screen_span(frame, app, w, yu, (x0 as usize, x1 as usize), row);
+            let (mut first, mut last) = (i32::MAX, i32::MIN);
             for x in x0..x1 {
                 let px = &mut row[x as usize];
-                if let Some(c) =
-                    neoui_render::touch_ring_pixel(x - (cx - d / 2), y - (cy - d / 2), d, *px)
-                {
+                if let Some(c) = neoui_render::touch_ring_pixel(x - left, y - top, d, *px) {
                     *px = c;
+                    first = first.min(x);
+                    last = last.max(x);
                 }
             }
-            display.blit_to(
-                row,
-                w,
-                (x0 as usize, 0, (x1 - x0) as usize, 1),
-                (x0 as usize, yu),
-            );
+            if first <= last {
+                let span = (last - first + 1) as usize;
+                display.blit_to(row, w, (first as usize, 0, span, 1), (first as usize, yu));
+            }
         }
         drawn.push(Rect::new(x0, y0, (x1 - x0) as u32, (y1 - y0) as u32));
     }
@@ -1408,7 +1434,8 @@ fn display_max_brightness() -> i32 {
 }
 
 /// The panel's brightness, 0..=display_max_brightness() (EDisplayHalSetDisplayBrightness).
-fn set_brightness(level: i32) {
+/// Whether the panel took it.
+fn set_brightness(level: i32) -> bool {
     // SAFETY: the function takes the level by value in a1; a2 is unused.
     let r = unsafe {
         e32::sys::ui::hal_function(
@@ -1421,6 +1448,7 @@ fn set_brightness(level: i32) {
     if r != 0 {
         dprintln!("neoui: brightness {} failed ({})", level, r);
     }
+    r == 0
 }
 
 /// Screen on or off (EDisplayHalSetState): the kernel sleeps or wakes the panel and the touchscreen. On wake the

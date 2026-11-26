@@ -41,8 +41,11 @@ pub fn fill_fixed(ui: &SettingsApp) {
     s.set_build(strings(neoapp::build::lines()));
 }
 
+/// The shell's value, else the registry's default (a shell older than the key refuses it).
 fn get<T: Setting + Default>(app: &App, key: Key<T>) -> T {
-    app.setting(key).unwrap_or_default()
+    app.setting(key)
+        .or_else(|_| neoui_proto::settings::Store::new().get(key))
+        .unwrap_or_default()
 }
 
 /// Which keyboard languages are on (`keyboard.en/hy/ru`).

@@ -254,7 +254,7 @@ export component BatteryPage inherits NeoList {
     ListRow {
         title: "Battery usage";
         checked: SetState.found == "battery.usage";
-        subtitle: "Since the last full charge";
+        subtitle: "Level and time on battery";
         chevron: true;
         divider: false;
         clicked => { SetState.act("open", "19"); }

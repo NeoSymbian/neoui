@@ -15,6 +15,7 @@ use slint::Model;
 /// The rows that show no value of their own (they open a page or act): search finds them by name only.
 pub const VALUELESS: &[&str] = &[
     "sounds.add",
+    "battery.usage",
     "root.privacy",
     "root.about",
     "privacy.clip",
@@ -124,6 +125,8 @@ pub fn live_value(s: &SetState<'_>, id: &str) -> String {
         "root.apps" => "Phone, old apps".into(),
         "root.developer" => String::from(if s.get_usb_debugging() {
             "USB debugging"
+        } else if s.get_show_touches() {
+            "Show touches"
         } else {
             "Off"
         }),
@@ -132,7 +135,6 @@ pub fn live_value(s: &SetState<'_>, id: &str) -> String {
         "kb.vibrate" => on(s.get_key_vibrate()),
         "battery.saver" => on(s.get_battery_saver()),
         "battery.percent" => on(s.get_show_percent()),
-        "battery.usage" => s.get_usage_levels().into(),
         "pads.vibrate" => on(s.get_pad_vibrate()),
         "pads.strength" => pick(s.get_pad_strengths(), s.get_pad_strength()),
         "pads.default" => pick(s.get_pad_defaults(), s.get_pad_default()),
