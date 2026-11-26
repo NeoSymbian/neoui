@@ -10,6 +10,8 @@ import { Kit } from "layers.slint";
 // The sheet itself: scrim, top radius 18, a 36 x 4 handle, a title, then the children.
 export component Sheet inherits Rectangle {
     in property <string> title;
+    // the title at the start, under the handle (Settings' sheets), not centred
+    in property <bool> title-start;
     in-out property <bool> open;
     callback dismissed();
     visible: self.opacity > 0.01;
@@ -70,7 +72,7 @@ export component Sheet inherits Rectangle {
                 }
             }
 
-            if root.title != "": Text {
+            if root.title != "" && !root.title-start: Text {
                 x: 0;
                 height: 44 * Theme.dp;
                 text: root.title;
@@ -79,6 +81,18 @@ export component Sheet inherits Rectangle {
                 font-weight: 600;
                 horizontal-alignment: center;
                 vertical-alignment: center;
+            }
+            if root.title != "" && root.title-start: HorizontalLayout {
+                padding-left: 20 * Theme.dp;
+                padding-right: 20 * Theme.dp;
+                padding-top: 10 * Theme.dp;
+                padding-bottom: 4 * Theme.dp;
+                Text {
+                    text: root.title;
+                    color: Theme.text;
+                    font-size: Theme.font-body;
+                    font-weight: 600;
+                }
             }
             @children
         }
@@ -109,9 +123,11 @@ export component ChoiceSheet inherits Sheet {
     in-out property <int> current;
     // the radio before the text (the phone's pickers: caller ID, keep call log, number type)
     in property <bool> radio-left;
+    // a line under each choice saying what it means ("Weekday, day and month"); empty = none
+    in property <[string]> descriptions;
     callback chosen(int);
     for c[i] in root.choices: Rectangle {
-        height: Theme.list-row-h;
+        height: root.descriptions[i] != "" ? Theme.list-row-h + 8 * Theme.dp : Theme.list-row-h;
         background: t.pressed ? Theme.pressed : transparent;
         accessible-role: radio-button;
         accessible-checked: i == root.current;
@@ -123,12 +139,22 @@ export component ChoiceSheet inherits Sheet {
             if root.radio-left: Radio {
                 on: i == root.current;
             }
-            Text {
-                text: c;
-                color: Theme.text;
-                font-size: Theme.font-body;
-                vertical-alignment: center;
+            VerticalLayout {
+                alignment: center;
+                spacing: 2 * Theme.dp;
                 horizontal-stretch: 1;
+                Text {
+                    text: c;
+                    color: Theme.text;
+                    font-size: Theme.font-body;
+                    font-weight: root.descriptions[i] != "" ? 500 : 400;
+                }
+
+                if root.descriptions[i] != "": Text {
+                    text: root.descriptions[i];
+                    color: Theme.text-dim;
+                    font-size: Theme.font-label;
+                }
             }
 
             if !root.radio-left: Radio {

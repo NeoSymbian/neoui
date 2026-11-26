@@ -6,7 +6,7 @@ import { Theme, Switch } from "@neoui/kit.slint";
 component Tile inherits Rectangle {
     in property <image> icon;
     in property <color> tint;
-    width: 30 * Theme.dp;
+    width: Theme.row-tile;
     height: self.width;
     border-radius: 8 * Theme.dp;
     background: tint;
@@ -19,7 +19,7 @@ component Tile inherits Rectangle {
 }
 
 // A root row: the tile, the title, then a value and › or a switch (S02: the switch toggles, the rest of the row opens
-// the page).
+// the page). A row with a switch shows its value under the title, set off from the switch by a short rule.
 export component SettingRow inherits Rectangle {
     in property <string> title;
     in property <string> value;
@@ -29,7 +29,8 @@ export component SettingRow inherits Rectangle {
     in-out property <bool> switch-on;
     callback clicked;
     callback switch-toggled(bool);
-    height: Theme.list-row-h;
+    property <bool> value-under: root.has-switch && root.value != "";
+    height: root.value-under ? Theme.list-row-double-h : Theme.list-row-h;
     background: t.pressed ? Theme.pressed : transparent;
     t := TouchArea {
         clicked => {
@@ -39,8 +40,8 @@ export component SettingRow inherits Rectangle {
 
     HorizontalLayout {
         padding-left: Theme.margin + 4 * Theme.dp;
-        padding-right: Theme.margin + 4 * Theme.dp;
-        spacing: 14 * Theme.dp;
+        padding-right: Theme.margin;
+        spacing: 12 * Theme.dp;
         VerticalLayout {
             alignment: center;
             Tile {
@@ -49,18 +50,30 @@ export component SettingRow inherits Rectangle {
             }
         }
 
-        Text {
-            text: root.title;
-            color: Theme.text;
-            font-size: Theme.font-body;
-            vertical-alignment: center;
+        VerticalLayout {
+            alignment: center;
+            spacing: 3 * Theme.dp;
             horizontal-stretch: 1;
+            Text {
+                text: root.title;
+                color: Theme.text;
+                font-size: Theme.font-body;
+                font-weight: 500;
+                overflow: elide;
+            }
+
+            if root.value-under: Text {
+                text: root.value;
+                color: Theme.text-dim;
+                font-size: Theme.font-label;
+                overflow: elide;
+            }
         }
 
-        Text {
+        if !root.value-under: Text {
             text: root.value;
-            color: Theme.text-dim;
-            font-size: Theme.font-label;
+            color: Theme.text-secondary;
+            font-size: Theme.font-value;
             vertical-alignment: center;
         }
 
@@ -71,6 +84,14 @@ export component SettingRow inherits Rectangle {
                 height: self.width;
                 source: @image-url("@neoui/icons/sys/chevron_right.svg");
                 colorize: Theme.text-dim;
+            }
+        }
+        if root.has-switch: VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: max(1px, Theme.dp / 2);
+                height: 32 * Theme.dp;
+                background: Theme.hairline;
             }
         }
         if root.has-switch: VerticalLayout {

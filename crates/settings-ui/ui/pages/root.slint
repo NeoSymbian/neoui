@@ -222,6 +222,7 @@ export component SearchPage inherits NeoList {
     VerticalLayout {
         alignment: start;
         for hit in SetState.results: ListRow {
+            value-bright: true;
             title: hit.title;
             subtitle: hit.path;
             value: hit.value;

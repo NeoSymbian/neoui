@@ -10,6 +10,7 @@ export component WifiPage inherits NeoList {
     VerticalLayout {
         alignment: start;
         ListRow {
+            value-bright: true;
             title: "Wi-Fi";
             checked: SetState.found == "wifi.switch";
             subtitle: !SetState.wifi ? "Off" : SetState.wifi-link.connected ? "Connected to " + SetState.wifi-link.name : "Not connected";
@@ -22,6 +23,7 @@ export component WifiPage inherits NeoList {
 
         if SetState.wifi && SetState.wifi-link.shown: SectionHeader { text: "Current network"; }
         if SetState.wifi && SetState.wifi-link.shown: ListRow {
+            value-bright: true;
             title: SetState.wifi-link.name;
             subtitle: SetState.wifi-link.subtitle;
             has-icon: true;
@@ -75,6 +77,8 @@ export component WifiPage inherits NeoList {
         }
 
         for net in (SetState.wifi ? SetState.wifi-networks : []): ListRow {
+
+            value-bright: true;
             title: net.name;
             subtitle: net.detail;
             has-icon: true;
@@ -97,6 +101,7 @@ export component WifiPage inherits NeoList {
             text: "Turn on Wi-Fi to see available networks.";
         }
         if SetState.wifi-saved-ok: ListRow {
+            value-bright: true;
             title: "Saved networks";
             checked: SetState.found == "wifi.saved";
             value: SetState.wifi-saved.length;
@@ -114,11 +119,13 @@ export component WifiSavedPage inherits NeoList {
         alignment: start;
         Note { text: "The phone rejoins these networks when it sees them. It keeps each network's key, never the password."; }
         for net[i] in SetState.wifi-saved: ListRow {
+            value-bright: true;
             title: net.name;
             subtitle: net.detail;
             has-icon: true;
             icon: @image-url("@neoui/icons/sys/wifi.svg");
-            value: "Forget";
+            pill: "Forget";
+            pill-clicked => { SetState.act("wifi-saved-forget", i); }
             clicked => { SetState.act("wifi-saved-forget", i); }
         }
         if SetState.wifi-saved-ok && SetState.wifi-saved.length == 0: Note { text: "No saved networks. A network is saved once the phone joins it with its password."; }
@@ -129,6 +136,7 @@ export component WifiSavedPage inherits NeoList {
 
 // A tapped network: what the phone knows about it, the password, Connect (set2-wifi-join).
 export component WifiJoinSheet inherits Sheet {
+    title-start: true;
     // the shell's keyboard over the surface's bottom: the card grows by it, so its field and buttons stay above
     in property <length> kb;
     property <bool> tried;
@@ -190,6 +198,7 @@ export component WifiJoinSheet inherits Sheet {
 
 // The current network's details (set2-wifi-details): what the link is, Forget, Sign in, Disconnect.
 export component WifiDetailsSheet inherits Sheet {
+    title-start: true;
     title: SetState.wifi-link.name;
     VerticalLayout {
         padding-left: 20 * Theme.dp;

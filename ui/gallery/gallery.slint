@@ -232,6 +232,34 @@ component ListsPage inherits Rectangle {
             }
 
             SectionHeader {
+                text: "Settings rows";
+                action-text: "Searching…";
+            }
+
+            ListRow {
+                title: "E: Mass memory";
+                subtitle: "Media and documents";
+                has-icon: true;
+                icon: @image-url("../icons/sys/folder.svg");
+                tile: #e2a92a;
+                value: "12.4 GB";
+                value-bright: true;
+            }
+
+            ListRow {
+                title: "Home-5G";
+                subtitle: "Connected · Secured";
+                has-icon: true;
+                icon: @image-url("../icons/sys/wifi.svg");
+                pill: "Forget";
+            }
+
+            ListRow {
+                title: "Clear data";
+                danger: true;
+            }
+
+            SectionHeader {
                 text: "Selection";
             }
 
