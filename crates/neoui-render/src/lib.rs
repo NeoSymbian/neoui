@@ -14,7 +14,7 @@ use alloc::boxed::Box;
 use alloc::rc::Rc;
 use alloc::string::String;
 use alloc::vec::Vec;
-use core::cell::RefCell;
+use core::cell::{Cell, RefCell};
 use core::time::Duration;
 
 use neoui_proto::clock::face::Face;
@@ -152,6 +152,61 @@ pub fn touch_ring_pixel(x: i32, y: i32, d: i32, under: u32) -> Option<u32> {
     })
 }
 
+/// At most this many app glyphs in the status bar; more apps show as "+n" (tp-statusbar).
+pub const STATUS_APPS_MAX: usize = 3;
+
+/// The status bar's app glyphs (tp-statusbar, TP1): one per app with cards in the shade, `keys` newest first, then
+/// the shell's own rows (missed calls for Phone, unread SMS for Messages) for an app that posts none. Gives at most
+/// [`STATUS_APPS_MAX`] glyph ids (0 bell, 1 message, 2 missed call, 3 folder, 4 alarm; `StatusBar` draws them) and
+/// how many more apps there are.
+#[must_use]
+pub fn status_apps(keys: &[&str], missed: bool, unread: bool) -> (Vec<i32>, i32) {
+    let mut apps: Vec<&str> = Vec::new();
+    let shell = [("phone", missed), ("messages", unread)];
+    let rows = shell.iter().filter(|(_, on)| *on).map(|(k, _)| *k);
+    for k in keys.iter().copied().chain(rows) {
+        if !apps.contains(&k) {
+            apps.push(k);
+        }
+    }
+    let glyph = |k: &str| match k {
+        "messages" => 1,
+        "phone" => 2,
+        "files" => 3,
+        "clock" => 4,
+        _ => 0,
+    };
+    let shown = apps
+        .iter()
+        .take(STATUS_APPS_MAX)
+        .map(|k| glyph(k))
+        .collect();
+    let more = apps.len().saturating_sub(STATUS_APPS_MAX);
+    (shown, i32::try_from(more).unwrap_or(i32::MAX))
+}
+
+#[cfg(test)]
+mod status_apps_tests {
+    use super::status_apps;
+    use alloc::vec;
+
+    #[test]
+    fn one_glyph_per_app_newest_first_then_plus_n() {
+        assert_eq!(status_apps(&[], false, false), (vec![], 0));
+        // Messages twice (two conversations) is one app; the shell's unread row adds nothing while it posts
+        assert_eq!(
+            status_apps(&["messages", "files", "messages"], false, true),
+            (vec![1, 3], 0)
+        );
+        // the shell's rows count for apps that post nothing, after the apps' own cards
+        assert_eq!(status_apps(&["browser"], true, true), (vec![0, 2, 1], 0));
+        assert_eq!(
+            status_apps(&["clock", "files", "store", "kit"], true, false),
+            (vec![4, 3, 0], 2)
+        );
+    }
+}
+
 #[cfg(test)]
 mod touch_ring_tests {
     use super::touch_ring_pixel;
@@ -189,11 +244,14 @@ pub struct Renderer {
     notes_opened: Rc<RefCell<Vec<(usize, u16)>>>,
     closed: Rc<RefCell<Vec<alloc::string::String>>>,
     power: Rc<RefCell<Vec<i32>>>,
+    power_asked: Rc<Cell<bool>>,
     phone: Rc<RefCell<Vec<(String, String)>>>,
     /// keys of settings edited in the UI since the last `take_setting_edits` (`SystemSettings.edited`)
     edited: Rc<RefCell<Vec<String>>>,
     /// the apps' badge counts (BADGE) as last given, merged with what the shell knows itself
     app_badges: Vec<(String, u32)>,
+    /// The apps with cards in the shade, newest first (the status bar's glyphs, TP1).
+    status_keys: Vec<String>,
     /// lists scrolled by shifting pixels (smooth-ui S2d), and how many frames did so
     scrolling: Scrolling,
     shifts: u32,
@@ -289,6 +347,9 @@ impl Renderer {
         let power: Rc<RefCell<Vec<i32>>> = Rc::default();
         let sink = power.clone();
         ui.on_power(move |a| sink.borrow_mut().push(a));
+        let power_asked: Rc<Cell<bool>> = Rc::default();
+        let sink = power_asked.clone();
+        ui.on_power_asked(move || sink.set(true));
         let phone: Rc<RefCell<Vec<(String, String)>>> = Rc::default();
         let sink = phone.clone();
         ui.on_phone_action(move |a, n| {
@@ -309,9 +370,11 @@ impl Renderer {
             notes_opened,
             closed,
             power,
+            power_asked,
             phone,
             edited,
             app_badges: Vec::new(),
+            status_keys: Vec::new(),
             scrolling: Scrolling::default(),
             shifts: 0,
         })
@@ -326,6 +389,11 @@ impl Renderer {
         self.ui.set_screen(screen.into());
         self.ui.set_view(view.into());
         self.ui.set_shade_open(false);
+    }
+
+    /// Opens the shade (a swipe down on home, `shell.swipehome`).
+    pub fn open_shade(&mut self) {
+        self.ui.set_shade_open(true);
     }
 
     /// Shows app `screen` opened by app `from` (ipc `OPEN`): Back at its root returns to `from`.
@@ -549,6 +617,24 @@ impl Renderer {
         self.ui.set_app_unread(on);
     }
 
+    /// The apps with cards in the shade, newest first (app keys, repeats allowed): the status bar's app glyphs.
+    pub fn set_status_apps(&mut self, keys: &[&str]) {
+        self.status_keys = keys.iter().map(|k| (*k).into()).collect();
+        self.update_status_apps();
+    }
+
+    fn update_status_apps(&mut self) {
+        let keys: Vec<&str> = self.status_keys.iter().map(String::as_str).collect();
+        let (glyphs, more) = status_apps(
+            &keys,
+            self.ui.get_missed_calls() > 0,
+            self.ui.get_unread_messages() > 0,
+        );
+        self.ui
+            .set_status_glyphs(slint::ModelRc::from(Rc::new(slint::VecModel::from(glyphs))));
+        self.ui.set_status_more(more);
+    }
+
     /// The launcher's badge counts (`neoui_proto::ipc::BADGE`) by app key; apps not named have none. Phone and
     /// Messages fall back to the missed calls and unread messages the shell knows from MODEMD while their app posts
     /// no count of its own.
@@ -680,6 +766,11 @@ impl Renderer {
         self.ui.set_power_profile(i32::from(active));
     }
 
+    /// The shade's ⏻ was tapped since the last call (tp-shade): open the Power menu as for a held Power key.
+    pub fn take_power_asked(&mut self) -> bool {
+        self.power_asked.replace(false)
+    }
+
     /// What the Power menu chose since the last call: 2 = power off, 0 = restart, -1 = dismissed, 100 + id = that
     /// sound profile.
     pub fn take_power(&mut self) -> Vec<i32> {
@@ -779,6 +870,13 @@ impl Renderer {
         self.ui.set_rat(rat.into());
     }
 
+    /// What the status bar says about the network instead of the operator's name (tp-statusbar): "" while
+    /// registered, else "No SIM", "SOS", "No service"…; `roaming` adds the R.
+    pub fn set_network_state(&mut self, note: &str, roaming: bool) {
+        self.ui.set_network_note(note.into());
+        self.ui.set_roaming(roaming);
+    }
+
     /// A call is up (ringing, dialling or connected): the shade offers to return to it.
     pub fn set_in_call(&mut self, on: bool) {
         self.ui.set_in_call(on);
@@ -799,6 +897,7 @@ impl Renderer {
         self.ui.set_modem_failed(failed);
         self.ui.set_missed_calls(missed.min(i32::MAX as u32) as i32);
         self.update_badges();
+        self.update_status_apps();
     }
 
     /// Unread messages (C9): the status bar's envelope and the shade's row with the newest one's `line`.
@@ -807,6 +906,7 @@ impl Renderer {
             .set_unread_messages(count.min(i32::MAX as u32) as i32);
         self.ui.set_unread_line(line.into());
         self.update_badges();
+        self.update_status_apps();
     }
 
     /// What the SIM prompt and the modem banner asked since the last call: "pin" + PIN, "sim-dismiss", "dial" +

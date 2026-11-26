@@ -272,6 +272,7 @@ impl Phone {
             self.shown = None;
             ui.set_in_call(false);
             ui.set_network(0, "No service", "");
+            ui.set_network_state("No service", false);
             ui.set_phone_feedback(false, "Modem connection lost");
         }
         if let Some(s) = self.update.take() {
@@ -334,6 +335,18 @@ impl Phone {
             network,
             technology,
         );
+        // the status bar names only what's wrong (tp-statusbar): airplane mode shows its plane instead
+        let note = match s.modem {
+            modem::FAILED => "No service",
+            modem::RECOVERING => "Recovering…",
+            modem::BOOTING => "",
+            _ if s.airplane && !s.radio_online => "",
+            _ if registered => "",
+            _ if s.sim == sim::ABSENT => "No SIM",
+            _ if s.reg == reg::DENIED => "SOS",
+            _ => "No service",
+        };
+        ui.set_network_state(note, registered && s.reg == reg::ROAMING);
         let feedback = if s.result < 0 {
             format!("Action failed ({})", s.result)
         } else {

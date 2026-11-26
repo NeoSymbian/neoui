@@ -219,6 +219,7 @@ fn main() -> i32 {
         let mut swallow = false;
         let mut phone_modal = false;
         let (slop, turn) = ((8 * dp256 / 256) as i32, (60 * dp256 / 256) as i32);
+        let pull = (48 * dp256 / 256) as i32; // a swipe down on home this long opens the shade
         // gesture navigation (docs neoui-shell/navigation.md G1): the edge recognizer, the touches it holds back (the press and the
         // latest move), the hint it asks for (edge, progress, the finger across the edge) and where it was drawn
         let mut gest = Recognizer::new(w as u32, h as u32, dp256);
@@ -490,8 +491,24 @@ fn main() -> i32 {
                                     }
                                     continue;
                                 }
+                                // a swipe down on home opens the shade (top-panel TP1, `shell.swipehome`): mostly
+                                // downwards, so a sideways page swipe that sags a little stays a page swipe
+                                let dy = y - down_at.map_or(y, |d| d.1);
+                                if let (TouchPhase::Move, Some(x0)) = (phase, home_press)
+                                    && dy >= pull
+                                    && dy > 2 * (x - x0).abs()
+                                    && host.settings.get(keys::SHELL_SWIPEHOME).unwrap_or(true)
+                                {
+                                    ui.cancel_touch();
+                                    ui.open_shade();
+                                    home_press = None;
+                                    swallow = true; // the rest of this touch goes nowhere
+                                    dprintln!("neoui: shade from home");
+                                    continue;
+                                }
                                 if let (TouchPhase::Move, Some(x0)) = (phase, home_press)
                                     && (x - x0).abs() >= slop
+                                    && (x - x0).abs() >= dy.abs()
                                 {
                                     let (dir, page) = ((x - x0).signum(), ui.home_page());
                                     let to = page - dir;
@@ -713,6 +730,8 @@ fn main() -> i32 {
                     host.notifications.iter().map(|(_, n)| n).collect();
                 ui.set_notes(&notes);
                 ui.set_app_unread(host.notifications.iter().any(|(k, _)| *k == "messages"));
+                let keys: Vec<&str> = host.notifications.iter().map(|(k, _)| *k).collect();
+                ui.set_status_apps(&keys);
             }
             for (i, action) in ui.take_notes_opened() {
                 host.open_notification(i, action, ms);
@@ -738,6 +757,9 @@ fn main() -> i32 {
                 host.refresh = true; // the app's surface again, whole
             }
             overlay_shown = overlay;
+            if ui.take_power_asked() {
+                power_down_at = Some(0); // the shade's ⏻: as if Power had been held
+            }
             if power_down_at.is_some_and(|t| ms.saturating_sub(t) >= POWER_HOLD_MS) {
                 power_down_at = None;
                 dprintln!("neoui: power menu");

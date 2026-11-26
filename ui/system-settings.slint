@@ -39,6 +39,8 @@ export global SystemSettings {
     in-out property <bool> usb-debugging: false;
     // Settings -> Battery -> Show percentage (SE3a): the status bar's battery shows its percent
     in-out property <bool> battery-show-percent: true;
+    // Settings -> Battery -> Battery saver (SE3a): the status bar's battery fill turns amber
+    in-out property <bool> battery-saver: false;
     // the system keyboard (Settings -> Language & keyboard): the languages on, the current one (an index into
     // keyboard/layouts.slint's list) and whether all are as tall as the tallest
     in-out property <bool> keyboard-en: true;
@@ -82,6 +84,7 @@ export global SystemSettings {
     changed nav-mode => { edited("nav.mode"); }
     changed usb-debugging => { edited("developer.usb_debugging"); }
     changed battery-show-percent => { edited("battery.show_percent"); }
+    changed battery-saver => { edited("battery.saver"); }
     changed keyboard-en => { edited("keyboard.en"); }
     changed keyboard-hy => { edited("keyboard.hy"); }
     changed keyboard-ru => { edited("keyboard.ru"); }

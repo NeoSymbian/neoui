@@ -17,6 +17,7 @@ import { Theme } from "theme.slint";
 import { SystemSettings } from "system-settings.slint";
 export { SystemSettings } from "system-settings.slint";
 export { Now } from "now.slint";
+import { Now } from "now.slint";
 export { Scroll } from "components/scroll.slint";
 import { StatusBar, KeyRow, Band } from "components/frame.slint";
 import { QueryDialog, Button, TextField } from "components/controls.slint";
@@ -159,6 +160,8 @@ export component Shell inherits Window {
     in property <[PowerProfile]> power-profiles;
     in property <int> power-profile;
     callback power(int);
+    // the shade's ⏻ (tp-shade): the UI server opens the Power menu
+    callback power-asked();
     // in: the status bar's time, from the system clock (the default is the design's mock time)
     in property <string> clock: "10:24";
     in property <int> battery-percent: -1;
@@ -174,6 +177,13 @@ export component Shell inherits Window {
     in property <string> operator;
     in property <string> rat;
     in property <bool> roaming;
+    // the status bar's word about the network instead of the operator's name: "" while registered, else "No SIM",
+    // "SOS", "No service"… (tp-statusbar)
+    in property <string> network-note;
+    // the status bar's app glyphs (neoui_render::status_apps: 0 bell, 1 message, 2 missed call, 3 folder, 4 alarm)
+    // and how many apps more
+    in property <[int]> status-glyphs;
+    in property <int> status-more;
     in property <bool> in-call;
     in property <bool> phone-pending;
     in property <string> phone-feedback;
@@ -419,12 +429,18 @@ export component Shell inherits Window {
         y: 0;
         time: clock;
         bars: root.bars;
-        operator: root.operator;
+        note: root.network-note;
         rat: root.rat;
         wifi-bars: root.wifi-link.connected ? root.wifi-link.bars : -1;
         wifi-band: root.wifi-link.band;
         roaming: root.roaming;
-        unread: root.unread-messages > 0;
+        glyphs: root.status-glyphs;
+        more: root.status-more;
+        airplane: SystemSettings.airplane;
+        ring-off: SystemSettings.silent;
+        vibrate: SystemSettings.vibrate;
+        alarm: Now.next-alarm != "";
+        battery-saver: SystemSettings.battery-saver;
         visible: !root.full;
         tapped => {
             root.shade-open = !root.shade-open;
@@ -498,6 +514,7 @@ export component Shell inherits Window {
         open-view(a, v) => { root.open(a); root.view = v; }
         dismissed => { root.shade-open = false; }
         open-app(a) => { root.open(a); }
+        power-asked => { root.shade-open = false; root.power-asked(); }
     }
 
     PowerMenu {

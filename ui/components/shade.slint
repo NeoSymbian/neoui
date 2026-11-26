@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
-// The notification shade: tap the status bar. Quick toggles, then notifications (Belle's pull-down, modernized).
+// The notification shade: tap or pull the status bar. Its first stop (tp-shade, TP1): the time and date with ⚙ and
+// ⏻, the quick tiles, brightness, then the notifications.
 import { Theme } from "../theme.slint";
 import { Glyph } from "frame.slint";
 import { ListRow } from "lists.slint";
@@ -79,6 +80,24 @@ component Toggle inherits Rectangle {
     }
 }
 
+// a round 36 dp button in the shade's header (tp-shade)
+component HeaderButton inherits Rectangle {
+    in property <image> icon;
+    callback clicked;
+    width: 36 * Theme.dp;
+    height: 36 * Theme.dp;
+    border-radius: self.width / 2;
+    background: ta.pressed ? Theme.dialog-button : Theme.field;
+    Glyph {
+        source: icon;
+        size: 20 * Theme.dp;
+        colorize: Theme.text;
+    }
+    ta := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
 export component Shade inherits Rectangle {
     in property <bool> open;
     callback dismissed;
@@ -97,6 +116,8 @@ export component Shade inherits Rectangle {
     in property <bool> app-unread;
     // an app on one of its pages (app key, view: host::PAGES)
     callback open-view(string, string);
+    // the header's ⏻: the Power menu (the UI server opens it, as for a held Power key)
+    callback power-asked();
     visible: self.opacity > 0.01;
     opacity: open ? 1 : 0;
     animate opacity { duration: Theme.popup; easing: ease-out-quad; }
@@ -115,7 +136,9 @@ export component Shade inherits Rectangle {
         animate y { duration: Theme.popup; easing: ease-out-quad; }
         height: min(root.height, col.preferred-height);
         background: #0f1115;
-        border-radius: 0;
+        border-bottom-left-radius: 22 * Theme.dp;
+        border-bottom-right-radius: 22 * Theme.dp;
+        clip: true;
         TouchArea { }
 
         col := VerticalLayout {
@@ -134,13 +157,23 @@ export component Shade inherits Rectangle {
                     font-weight: 300;
                     vertical-alignment: center;
                 }
-                if SystemSettings.shade-date: Text {
-                    text: Now.date-text;
+                Text {
+                    text: SystemSettings.shade-date ? Now.date-text : "";
                     color: Theme.text-secondary;
                     font-size: Theme.font-status;
                     vertical-alignment: center;
                     horizontal-stretch: 1;
+                    min-width: 0px;
                     overflow: elide;
+                }
+                // ⚙ Settings (Panel & notifications once TP4 adds it), ⏻ the Power menu; ✎ comes with TP7
+                HeaderButton {
+                    icon: @image-url("../icons/sys/gear.svg");
+                    clicked => { root.open-app("settings"); }
+                }
+                HeaderButton {
+                    icon: @image-url("../icons/sys/power.svg");
+                    clicked => { root.power-asked(); }
                 }
             }
 
