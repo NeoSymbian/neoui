@@ -215,6 +215,8 @@ fn main() -> i32 {
         // smooth-ui S2c: a press on the home pages (where it went down), the server's page slide once it moves
         // sideways (with the page it started from), and a touch that comes while the slide settles (ignored)
         let mut home_press: Option<i32> = None;
+        // the minute the shade's card times were written in
+        let mut notes_minute = 0i64;
         // the press on the home pages became a pull downwards (top-panel TP1): Slint lost it, the shade may open
         let mut home_pull = false;
         let mut swipe: Option<(Slide, i32)> = None;
@@ -754,17 +756,31 @@ fn main() -> i32 {
             host.set_body(ui.app_body());
             // the toast, the shade's app entries and the launcher's badges (NOTE, NOTIFY, BADGE)
             host.expire_note(ms);
+            // the cards' times ("2 min") move on with the minute
+            let (unix, offset) = time::utc_now();
+            if notes_minute != unix / 60 {
+                notes_minute = unix / 60;
+                host.notes_changed = true;
+            }
             if core::mem::take(&mut host.notes_changed) {
                 ui.set_note(host.note.as_ref().map(|(_, n, _)| n));
-                let notes: Vec<&neoui_render::Notification> =
-                    host.notifications.iter().map(|(_, n)| n).collect();
-                ui.set_notes(&notes);
+                let notes: Vec<(&str, &neoui_render::Notification)> =
+                    host.notifications.iter().map(|(k, n)| (*k, n)).collect();
+                let h24 = host.settings.get(keys::CLOCK_24H).unwrap_or(true);
+                ui.set_notes(&notes, u64::try_from(unix).unwrap_or(0) * 1000, offset, h24);
                 ui.set_app_unread(host.notifications.iter().any(|(k, _)| *k == "messages"));
                 let keys: Vec<&str> = host.notifications.iter().map(|(k, _)| *k).collect();
                 ui.set_status_apps(&keys);
             }
-            for (i, action) in ui.take_notes_opened() {
-                host.open_notification(i, action, ms);
+            // by (app, id): whatever moved in the list since, the card the user touched (or nothing, if it went)
+            for (key, id, action) in ui.take_notes_opened() {
+                host.open_notification(&key, id, action, ms);
+            }
+            for (key, id) in ui.take_notes_dismissed() {
+                host.dismiss_notification(&key, id);
+            }
+            if ui.take_notes_cleared() {
+                host.clear_notifications();
             }
             if core::mem::take(&mut host.badges_changed) {
                 ui.set_badges(&host.badges());

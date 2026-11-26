@@ -14,15 +14,28 @@ import { Now } from "../now.slint";
 // (`earlier` dim over `text`). Only the newest entry is `expanded`; the others are one-line rows (p2-msg-notify).
 // Since 1.11: `progress` 0..1 draws a bar under the text (-1: none), and its actions are plain pills (files2-progress).
 export struct ShadeNote {
+    // the app (its key for the glyph, its name), the card's group and when ("now", "2 min", "10:24")
+    app-key: string,
+    app: string,
+    group: string,
     title: string,
     earlier: string,
     text: string,
     actions: [string],
+    // each action's kind (1.18): 0 button, 1 reply (the main one), 2 danger (red), 3 in place (the shade stays)
+    kinds: [int],
     initials: string,
     tint: color,
     time: string,
     expanded: bool,
     progress: float,
+    // TP2a: the section's label over its first card ("" for the rest), the group's count (1: on its own), the group
+    // open, a member under an open group's head, an ongoing card (no swipe, no Clear all)
+    section: string,
+    count: int,
+    open: bool,
+    member: bool,
+    ongoing: bool,
 }
 
 component NoteAvatar inherits Rectangle {
@@ -80,6 +93,203 @@ component Toggle inherits Rectangle {
     }
 }
 
+// One card (nt-anatomy): the app's glyph and name with when, the group's count and ▾; the avatar, title and two lines;
+// the progress; up to 3 actions. A swipe sideways past a third of its width removes it (not an ongoing one).
+component Card inherits Rectangle {
+    in property <ShadeNote> note;
+    callback opened(int);
+    callback dismissed();
+    callback toggled();
+    // a vertical drag on the card scrolls the list by this much (the list's Flickable would take sideways drags
+    // too, so the cards decide: the first 8 dp of movement pick sideways (swipe) or up and down (scroll))
+    callback scrolled(length);
+    property <length> drag;
+    property <int> axis; // 0 undecided, 1 sideways, 2 up and down
+    property <length> last-y;
+    height: body.preferred-height;
+    background: note.member ? #121519 : #15181c;
+    border-radius: 16 * Theme.dp;
+    border-width: 1px;
+    border-color: #ffffff14;
+    clip: true;
+    swipe := TouchArea {
+        moved => {
+            // the first 8 dp pick the axis by whichever way moved more
+            if root.axis == 0 {
+                let dx = abs(self.mouse-x - self.pressed-x);
+                let dy = abs(self.mouse-y - self.pressed-y);
+                if dx > 8 * Theme.dp || dy > 8 * Theme.dp {
+                    root.axis = dx > dy ? 1 : 2;
+                    // on the screen, not in the card: the card moves with the list it scrolls
+                    root.last-y = root.absolute-position.y + self.pressed-y;
+                }
+            }
+            if root.axis == 1 && !root.note.ongoing {
+                root.drag = self.mouse-x - self.pressed-x;
+            }
+            if root.axis == 2 {
+                let y = root.absolute-position.y + self.mouse-y;
+                root.scrolled(y - root.last-y);
+                root.last-y = y;
+            }
+        }
+        pointer-event(e) => {
+            if e.kind == PointerEventKind.down {
+                root.axis = 0;
+            }
+            // only a lift dismisses: an interrupted swipe (cancel) springs back
+            if e.kind == PointerEventKind.up && abs(root.drag) > root.width / 3 {
+                root.dismissed();
+            }
+            if e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel {
+                root.drag = 0;
+            }
+        }
+        clicked => {
+            if root.axis == 0 {
+                root.opened(0);
+            }
+        }
+    }
+    body := VerticalLayout {
+        x: root.drag;
+        padding-left: 14 * Theme.dp;
+        padding-right: 14 * Theme.dp;
+        padding-top: 12 * Theme.dp;
+        padding-bottom: 12 * Theme.dp;
+        spacing: 8 * Theme.dp;
+        // the header: glyph, app · when, then the group's count and ▾
+        HorizontalLayout {
+            spacing: 6 * Theme.dp;
+            Glyph {
+                source: note.app-key == "messages" ? @image-url("../icons/sys/message.svg")
+                    : note.app-key == "phone" ? @image-url("../icons/sys/call.svg")
+                    : note.app-key == "files" ? @image-url("../icons/sys/folder.svg")
+                    : note.app-key == "clock" ? @image-url("../icons/sys/alarm.svg")
+                    : note.app-key == "browser" ? @image-url("../icons/sys/world.svg")
+                    : @image-url("../icons/sys/bell.svg");
+                size: 16 * Theme.dp;
+                colorize: Theme.text-dim;
+            }
+            Text {
+                text: note.app;
+                color: Theme.text-secondary;
+                font-size: 12 * Theme.dp;
+                font-weight: 500;
+                vertical-alignment: center;
+            }
+            Text {
+                text: note.time != "" ? "· " + note.time : "";
+                color: Theme.text-dim;
+                font-size: 12 * Theme.dp;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+                overflow: elide;
+            }
+            if note.count > 1: Rectangle {
+                width: group-row.preferred-width + 12 * Theme.dp;
+                height: 22 * Theme.dp;
+                border-radius: self.height / 2;
+                background: group-touch.pressed ? Theme.pressed : #2a2e35;
+                group-row := HorizontalLayout {
+                    alignment: center;
+                    spacing: 2 * Theme.dp;
+                    Text {
+                        text: note.count;
+                        color: Theme.text-secondary;
+                        font-size: 11.5 * Theme.dp;
+                        font-weight: 600;
+                        vertical-alignment: center;
+                    }
+                    Glyph {
+                        source: note.open ? @image-url("../icons/sys/chevron_up.svg")
+                            : @image-url("../icons/sys/chevron_down.svg");
+                        size: 14 * Theme.dp;
+                        colorize: Theme.text-secondary;
+                    }
+                }
+                // a tap, not a drag that started here
+                group-touch := TouchArea {
+                    clicked => {
+                        if abs(self.mouse-x - self.pressed-x) < 10 * Theme.dp
+                            && abs(self.mouse-y - self.pressed-y) < 10 * Theme.dp {
+                            root.toggled();
+                        }
+                    }
+                }
+            }
+        }
+        HorizontalLayout {
+            spacing: 10 * Theme.dp;
+            VerticalLayout {
+                alignment: start;
+                NoteAvatar {
+                    initials: note.initials;
+                    tint: note.tint;
+                    message: note.app-key == "messages";
+                }
+            }
+            VerticalLayout {
+                spacing: 2 * Theme.dp;
+                Text {
+                    text: note.title;
+                    color: Theme.text;
+                    font-size: 15 * Theme.dp;
+                    font-weight: 600;
+                    overflow: elide;
+                }
+                if note.earlier != "": Text {
+                    text: note.earlier;
+                    color: Theme.text-dim;
+                    font-size: 13.5 * Theme.dp;
+                    overflow: elide;
+                }
+                if note.text != "": Text {
+                    text: note.text;
+                    color: Theme.text-secondary;
+                    font-size: 13.5 * Theme.dp;
+                    overflow: elide;
+                }
+            }
+        }
+        if note.progress >= 0: ProgressBar {
+            value: note.progress;
+        }
+        if note.actions.length > 0: HorizontalLayout {
+            spacing: 20 * Theme.dp;
+            padding-left: 2 * Theme.dp;
+            alignment: start;
+            // three long labels share the row: each at most a third of it, elided
+            for a[j] in note.actions: Rectangle {
+                height: 32 * Theme.dp;
+                width: min(act-text.preferred-width, (root.width - 68 * Theme.dp) / 3);
+                act-text := Text {
+                    width: parent.width;
+                    overflow: elide;
+                    text: a;
+                    // the reply (or, on an old card, the first action) leads in blue; a danger action is red
+                    color: (j < note.kinds.length && note.kinds[j] == 2) ? Theme.danger
+                        : ((j < note.kinds.length && note.kinds[j] == 1) || (note.kinds.length == 0 && j == 0 && note.progress < 0))
+                            ? Theme.accent : Theme.text-secondary;
+                    font-size: 13.5 * Theme.dp;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                    opacity: act-touch.pressed ? 0.6 : 1;
+                }
+                // a tap, not a drag that started on it
+                act-touch := TouchArea {
+                    clicked => {
+                        if abs(self.mouse-x - self.pressed-x) < 10 * Theme.dp
+                            && abs(self.mouse-y - self.pressed-y) < 10 * Theme.dp {
+                            root.opened(j + 1);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 // a round 36 dp button in the shade's header (tp-shade)
 component HeaderButton inherits Rectangle {
     in property <image> icon;
@@ -118,6 +328,23 @@ export component Shade inherits Rectangle {
     callback open-view(string, string);
     // the header's ⏻: the Power menu (the UI server opens it, as for a held Power key)
     callback power-asked();
+    // TP2a: the list of every card (See all) instead of the first stop; how many cards there are
+    in-out property <bool> all;
+    in property <int> cards;
+    // a card swiped away, Clear all, a group's ▾ (row indexes into `notes`)
+    callback note-dismissed(int);
+    callback notes-cleared();
+    callback group-toggled(int);
+    // the list's scroll, from a card or a gap, kept inside the list
+    function scroll-by(d: length) {
+        list.content-y = max(min(0px, list.height - list.content-height), min(0px, list.content-y + d));
+    }
+    changed open => {
+        if !self.open {
+            self.all = false;
+            list.content-y = 0;
+        }
+    }
     visible: self.opacity > 0.01;
     opacity: open ? 1 : 0;
     animate opacity { duration: Theme.popup; easing: ease-out-quad; }
@@ -177,7 +404,7 @@ export component Shade inherits Rectangle {
                 }
             }
 
-            HorizontalLayout {
+            if !root.all: HorizontalLayout {
                 spacing: 8 * Theme.dp;
                 Toggle {
                     icon: @image-url("../icons/sys/wifi.svg");
@@ -204,7 +431,7 @@ export component Shade inherits Rectangle {
                 }
             }
 
-            HorizontalLayout {
+            if !root.all: HorizontalLayout {
                 spacing: 12 * Theme.dp;
                 padding-left: 4 * Theme.dp;
                 padding-right: 4 * Theme.dp;
@@ -222,176 +449,131 @@ export component Shade inherits Rectangle {
                 }
             }
 
-            Text {
-                text: "NOTIFICATIONS";
-                color: Theme.text-dim;
-                font-size: Theme.font-status * 0.9;
-                font-weight: 600;
-                letter-spacing: 0.06 * Theme.font-status;
+            // the first stop: its first 2 cards and See all; the list: every card in its section, then Clear all
+            if !root.all && root.notes.length > 0: HorizontalLayout {
+                padding-left: 4 * Theme.dp;
+                padding-right: 4 * Theme.dp;
+                Text {
+                    text: "NOTIFICATIONS";
+                    color: Theme.text-dim;
+                    font-size: Theme.font-status * 0.9;
+                    font-weight: 600;
+                    letter-spacing: 0.06 * Theme.font-status;
+                    horizontal-stretch: 1;
+                    vertical-alignment: center;
+                }
+                // always: the list is where Clear all is
+                Text {
+                    text: "See all " + root.cards;
+                    color: Theme.accent;
+                    font-size: Theme.font-status * 0.95;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                    TouchArea {
+                        clicked => { root.all = true; }
+                    }
+                }
             }
 
-            for n[i] in root.notes: Rectangle {
-                height: inner.preferred-height;
-                background: tap.pressed ? Theme.pressed : transparent;
-                tap := TouchArea {
-                    clicked => { root.note-opened(i, 0); }
-                }
-                inner := VerticalLayout {
-                if n.expanded: HorizontalLayout {
-                    padding-top: 12 * Theme.dp;
-                    padding-bottom: 12 * Theme.dp;
-                    padding-left: 4 * Theme.dp;
-                    spacing: 14 * Theme.dp;
-                    VerticalLayout {
-                        alignment: start;
-                        NoteAvatar {
-                            initials: n.initials;
-                            tint: n.tint;
-                            message: n.actions.length > 0 && n.progress < 0;
+            // scrolled by the cards themselves (Card.scrolled): a Flickable of its own would take their swipes
+            list := Flickable {
+                height: min(cards.preferred-height, root.all ? root.height - 150 * Theme.dp : 100000px);
+                content-height: cards.preferred-height;
+                interactive: false;
+                // under the cards: a drag in the gaps between them (or on a section label) scrolls too
+                gaps := TouchArea {
+                    height: cards.preferred-height;
+                    property <length> last-y;
+                    pointer-event(e) => {
+                        if e.kind == PointerEventKind.down {
+                            self.last-y = self.absolute-position.y + self.mouse-y;
                         }
                     }
-                    VerticalLayout {
-                        spacing: 3 * Theme.dp;
-                        HorizontalLayout {
-                            spacing: 8 * Theme.dp;
-                            Text {
-                                text: n.title;
-                                color: Theme.text;
-                                font-size: 16 * Theme.dp;
-                                font-weight: 600;
-                                overflow: elide;
-                                horizontal-stretch: 1;
-                            }
-                            Text {
-                                text: n.time;
+                    moved => {
+                        let y = self.absolute-position.y + self.mouse-y;
+                        root.scroll-by(y - self.last-y);
+                        self.last-y = y;
+                    }
+                }
+                // rows the first stop doesn't show take no room: each shown row carries its own gap
+                cards := VerticalLayout {
+                    for n[i] in root.notes: VerticalLayout {
+                        if root.all || i < 2: VerticalLayout {
+                            spacing: 6 * Theme.dp;
+                            padding-bottom: 8 * Theme.dp;
+                            if root.all && n.section != "": Text {
+                                text: n.section;
                                 color: Theme.text-dim;
-                                font-size: 12.5 * Theme.dp;
-                                vertical-alignment: center;
+                                font-size: Theme.font-status * 0.9;
+                                font-weight: 600;
+                                letter-spacing: 0.06 * Theme.font-status;
+                                x: 4 * Theme.dp;
                             }
-                        }
-                        if n.earlier != "": Text {
-                            text: n.earlier;
-                            color: Theme.text-secondary;
-                            font-size: 14 * Theme.dp;
-                            overflow: elide;
-                        }
-                        Text {
-                            text: n.text;
-                            color: Theme.text;
-                            font-size: 14 * Theme.dp;
-                            overflow: elide;
-                        }
-                        if n.progress >= 0: VerticalLayout {
-                            padding-top: 6 * Theme.dp;
-                            ProgressBar {
-                                value: n.progress;
-                            }
-                        }
-                        if n.actions.length > 0: HorizontalLayout {
-                            padding-top: 8 * Theme.dp;
-                            spacing: 8 * Theme.dp;
-                            alignment: start;
-                            for a[j] in n.actions: Rectangle {
-                                height: 36 * Theme.dp;
-                                width: act-row.preferred-width + 32 * Theme.dp;
-                                border-radius: self.height / 2;
-                                // the first action is the main one (Reply): blue, with its glyph
-                                background: j == 0 && n.progress < 0 ? (act-touch.pressed ? Theme.accent.darker(20%) : Theme.accent)
-                                    : (act-touch.pressed ? Theme.pressed : #2a2e35);
-                                act-row := HorizontalLayout {
-                                    alignment: center;
-                                    spacing: 6 * Theme.dp;
-                                    if j == 0 && n.progress < 0: VerticalLayout {
-                                        alignment: center;
-                                        Glyph {
-                                            source: @image-url("../icons/sys/message.svg");
-                                            size: 18 * Theme.dp;
-                                            colorize: white;
-                                        }
-                                    }
-                                    Text {
-                                        text: a;
-                                        color: white;
-                                        font-size: 14 * Theme.dp;
-                                        font-weight: 600;
-                                        vertical-alignment: center;
-                                    }
+                            Card {
+                                note: n;
+                                opened(a) => { root.note-opened(i, a); }
+                                dismissed => { root.note-dismissed(i); }
+                                // the first stop shows 2 rows: an opened group shows in the list
+                                toggled => {
+                                    root.group-toggled(i);
+                                    root.all = true;
                                 }
-                                act-touch := TouchArea {
-                                    clicked => { root.note-opened(i, j + 1); }
-                                }
+                                scrolled(d) => { root.scroll-by(d); }
                             }
                         }
                     }
-                }
-                if !n.expanded: HorizontalLayout {
-                    height: 72 * Theme.dp;
-                    padding-left: 4 * Theme.dp;
-                    spacing: 14 * Theme.dp;
-                    VerticalLayout {
-                        alignment: center;
-                        NoteAvatar {
-                            initials: n.initials;
-                            tint: n.tint;
-                            message: n.actions.length > 0 && n.progress < 0;
-                        }
+                    // the shell's own rows (until Phone and Messages post cards, TP2b), in the list so they scroll
+                    // with it
+                    if active-call: ListRow {
+                        title: "Call in progress";
+                        subtitle: "Return to call controls";
+                        icon: @image-url("../icons/sys/call.svg");
+                        has-icon: true;
+                        clicked => { root.return-call(); }
                     }
-                    VerticalLayout {
-                        alignment: center;
-                        spacing: 3 * Theme.dp;
-                        Text {
-                            text: n.title;
-                            color: Theme.text;
-                            font-size: 16 * Theme.dp;
-                            font-weight: 500;
-                            overflow: elide;
-                        }
-                        Text {
-                            text: n.text;
-                            color: Theme.text-dim;
-                            font-size: 13.5 * Theme.dp;
-                            overflow: elide;
-                        }
-                        if n.progress >= 0: ProgressBar {
-                            value: n.progress;
-                        }
+
+                    if missed > 0: ListRow {
+                        title: missed == 1 ? "Missed call" : missed + " missed calls";
+                        subtitle: "Since this phone session started";
+                        icon: @image-url("../icons/sys/missed_call.svg");
+                        has-icon: true;
+                        icon-tint: Theme.danger;
+                        clicked => { root.open-view("phone", "recents"); }
+                    }
+
+                    if unread > 0 && !root.app-unread: ListRow {
+                        title: unread == 1 ? "New message" : unread + " new messages";
+                        subtitle: unread-line;
+                        icon: @image-url("../icons/sys/message.svg");
+                        has-icon: true;
+                        icon-tint: Theme.accent;
+                        clicked => { root.open-app("messages"); }
                     }
                 }
-                }
+            }
+
+            if root.all: HorizontalLayout {
+                alignment: center;
                 Rectangle {
-                    x: 54 * Theme.dp;
-                    y: parent.height - self.height;
-                    width: parent.width - self.x;
-                    height: max(1px, Theme.dp / 2);
-                    background: #ffffff12;
+                    height: 40 * Theme.dp;
+                    width: clear-text.preferred-width + 36 * Theme.dp;
+                    border-radius: self.height / 2;
+                    background: clear-touch.pressed ? Theme.pressed : Theme.field;
+                    clear-text := Text {
+                        text: "Clear all";
+                        color: Theme.text;
+                        font-size: 14 * Theme.dp;
+                        font-weight: 600;
+                    }
+                    clear-touch := TouchArea {
+                        clicked => {
+                            root.notes-cleared();
+                            root.all = false;
+                        }
+                    }
                 }
             }
 
-            if active-call: ListRow {
-                title: "Call in progress";
-                subtitle: "Return to call controls";
-                icon: @image-url("../icons/sys/call.svg");
-                has-icon: true;
-                clicked => { root.return-call(); }
-            }
-
-            if missed > 0: ListRow {
-                title: missed == 1 ? "Missed call" : missed + " missed calls";
-                subtitle: "Since this phone session started";
-                icon: @image-url("../icons/sys/missed_call.svg");
-                has-icon: true;
-                icon-tint: Theme.danger;
-                clicked => { root.open-view("phone", "recents"); }
-            }
-
-            if unread > 0 && !root.app-unread: ListRow {
-                title: unread == 1 ? "New message" : unread + " new messages";
-                subtitle: unread-line;
-                icon: @image-url("../icons/sys/message.svg");
-                has-icon: true;
-                icon-tint: Theme.accent;
-                clicked => { root.open-app("messages"); }
-            }
 
         }
     }

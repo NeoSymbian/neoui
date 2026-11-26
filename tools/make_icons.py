@@ -203,6 +203,8 @@ GLYPHS = {
     # navigation and lists
     "chevron_right": [("p", "M9.5 5.5 16 12l-6.5 6.5")],
     "chevron_down": [("p", "M5.5 9.5 12 16l6.5-6.5")],
+    # an open group in the shade (TP2a): the software renderer doesn't rotate images
+    "chevron_up": [("p", "M5.5 14.5 12 8l6.5 6.5")],
     "chevron_left": [("p", "M14.5 5.5 8 12l6.5 6.5")],
     "more": [("d", (12, 5.5, 1.6)), ("d", (12, 12, 1.6)), ("d", (12, 18.5, 1.6))],
     "star": [("p", "M12 3.6l2.6 5.3 5.8.8-4.2 4.1 1 5.8L12 16.9l-5.2 2.7 1-5.8-4.2-4.1 5.8-.8z")],

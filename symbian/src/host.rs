@@ -27,7 +27,7 @@ use neoui_proto::Rect;
 // the screen keys that are separate processes, their EXEs and command lines: shared with Settings' Apps page
 use neoui_proto::apps::{self, APPS, LEGACY};
 use neoui_proto::ipc::{self as proto, AppEvent};
-use neoui_proto::page::{NOTE_MAX, NOTIFICATION_MAX, PAGE_MAX, QUERY_MAX};
+use neoui_proto::page::{NOTE_MAX, NOTIFICATION_MAX, PAGE_MAX, QUERY_MAX, action};
 use neoui_proto::recents::Recents;
 use neoui_proto::settings::value::ENCODED_MAX;
 use neoui_proto::settings::{Caller, KEY_MAX, Value, access, kerr, keys};
@@ -85,8 +85,10 @@ const QUIT_GRACE_MS: u64 = 3000;
 
 pub struct App {
     pub key: &'static str,
-    /// Its `NeoUi` session, once it connected.
+    /// Its `NeoUi` session, once it connected, and the protocol minor version it connected with (1.18's
+    /// `NotifyGone` would end an older app: its decoder refuses unknown events).
     session: Option<u32>,
+    minor: u8,
     pub process: Process,
     pub surface: Option<Chunk>,
     /// The app's outstanding `NEXT_EVENT`, if any.
@@ -340,20 +342,99 @@ impl Host {
         }
     }
 
-    /// The user tapped the shade's entry `i` (`action` 0) or one of its actions (`i + 1`): its app comes to the
-    /// front on the entry's page and is told which; the entry goes.
-    pub fn open_notification(&mut self, i: usize, action: u16, now_ms: u64) {
-        if i >= self.notifications.len() {
-            return;
+    /// The shell's own card under an app's key (the Wi-Fi login's, under Browser): the app didn't post it, so it
+    /// isn't the app's to clear and the app isn't told when it goes.
+    fn shell_card(key: &str, n: &Notification) -> bool {
+        key == BROWSER && n.id == PORTAL_ENTRY
+    }
+
+    /// `NotifyGone` to app `key`, if it runs and speaks 1.18: an older decoder refuses the event and its app ends.
+    fn post_gone(&mut self, key: &'static str, id: u32, why: u8) {
+        let speaks = self
+            .apps
+            .find(|a| a.key == key && a.quit_at.is_none())
+            .is_some_and(|a| a.session.is_some() && a.minor >= 18);
+        if speaks {
+            self.post(key, AppEvent::NotifyGone { id, why });
         }
+    }
+
+    /// The user swiped app `key`'s card `id` away (gone already: nothing): it goes, and its app hears why. Ongoing
+    /// cards stay.
+    pub fn dismiss_notification(&mut self, key: &str, id: u32) {
+        let Some(i) = self
+            .notifications
+            .iter()
+            .position(|(k, n)| *k == key && n.id == id && !n.ongoing())
+        else {
+            return;
+        };
         let (key, n) = self.notifications.remove(i);
         self.notes_changed = true;
+        dprintln!("neoui: notification {} of {} dismissed", n.id, key);
+        if !Self::shell_card(key, &n) {
+            self.post_gone(key, n.id, proto::GONE_SWIPED);
+        }
+    }
+
+    /// Clear all: every card but the ongoing ones goes, and each running app hears it.
+    pub fn clear_notifications(&mut self) {
+        let (keep, gone): (Vec<_>, Vec<_>) = core::mem::take(&mut self.notifications)
+            .into_iter()
+            .partition(|(_, n)| n.ongoing());
+        self.notifications = keep;
+        self.notes_changed = true;
+        dprintln!("neoui: {} notifications cleared", gone.len());
+        for (key, n) in gone {
+            if !Self::shell_card(key, &n) {
+                self.post_gone(key, n.id, proto::GONE_CLEARED);
+            }
+        }
+    }
+
+    /// The user tapped app `key`'s card `id` (`action` 0) or one of its actions (`i + 1`): its app comes to the
+    /// front on the card's page and is told which; the card goes, unless it is ongoing (its app ends it). A card
+    /// already gone does nothing.
+    pub fn open_notification(&mut self, key: &str, id: u32, action: u16, now_ms: u64) {
+        let Some(i) = self
+            .notifications
+            .iter()
+            .position(|(k, n)| *k == key && n.id == id)
+        else {
+            return;
+        };
+        let (key, n) = if self.notifications[i].1.ongoing() {
+            (self.notifications[i].0, self.notifications[i].1.clone())
+        } else {
+            self.notes_changed = true;
+            self.notifications.remove(i)
+        };
         dprintln!(
             "neoui: notification {} of {} opened ({})",
             n.id,
             key,
             action
         );
+        // an in-place action (Mark read): the app hears it where it is, started hidden if it isn't running
+        let in_place = action > 0 && n.action_kind(usize::from(action - 1)) == action::IN_PLACE;
+        if in_place {
+            let running = self
+                .apps
+                .find(|a| a.key == key && a.quit_at.is_none())
+                .is_some();
+            // `connect` binds the newest app without a session: no hidden start while another app connects
+            let connecting = self
+                .apps
+                .find(|a| a.session.is_none() && a.quit_at.is_none())
+                .is_some();
+            if !running && !connecting {
+                self.launch(key);
+            }
+            if !self.post(key, AppEvent::Notified { id: n.id, action }) {
+                dprintln!("neoui: in-place action for {} not delivered", key);
+            }
+            return;
+        }
         // the shell's own entry for a Wi-Fi login: the browser opens on the login page
         if key == BROWSER && n.id == PORTAL_ENTRY {
             self.open_portal(now_ms);
@@ -389,7 +470,7 @@ impl Host {
             page: PORTAL_PAGE,
             ..Notification::default()
         };
-        let _ = notify(&mut self.notifications, BROWSER, n);
+        let _ = notify(&mut self.notifications, BROWSER, n, unix_ms());
         self.notes_changed = true;
         self.portal = arg;
     }
@@ -640,6 +721,7 @@ impl Host {
                 self.apps.push(App {
                     key,
                     session: None,
+                    minor: 0,
                     process,
                     surface: None,
                     waiting: None,
@@ -992,24 +1074,42 @@ fn entry(
     Ok(0)
 }
 
-/// Adds, replaces or (empty title) removes app `key`'s shade entry; the newest goes first.
+/// Adds, replaces or (empty title) removes app `key`'s shade entry. A new card goes first; a card posted again keeps
+/// its place (top-panel TP2a: an update doesn't jump). `when` 0 becomes `now_ms` (unix ms); a 25th card of one app
+/// pushes out its oldest.
 fn notify(
     list: &mut Vec<(&'static str, Notification)>,
     key: &'static str,
-    n: Notification,
+    mut n: Notification,
+    now_ms: u64,
 ) -> Result<i32, i32> {
     let old = list.iter().position(|(k, o)| *k == key && o.id == n.id);
-    if let Some(i) = old {
-        list.remove(i);
-    }
     if n.title.is_empty() {
+        if let Some(i) = old {
+            list.remove(i);
+        }
         return Ok(0);
     }
-    if list.iter().filter(|(k, _)| *k == key).count() >= proto::NOTIFICATIONS_MAX {
-        return Err(kerr::OVERFLOW);
+    if n.when == 0 {
+        // an update keeps the time the card first came, unless the app gives one
+        n.when = old.map_or(now_ms, |i| list[i].1.when);
+    }
+    if let Some(i) = old {
+        list[i].1 = n;
+        return Ok(0);
+    }
+    if list.iter().filter(|(k, _)| *k == key).count() >= proto::NOTIFICATIONS_MAX
+        && let Some(oldest) = list.iter().rposition(|(k, _)| *k == key)
+    {
+        list.remove(oldest);
     }
     list.insert(0, (key, n));
     Ok(0)
+}
+
+/// Now as unix milliseconds (a card's `when`).
+fn unix_ms() -> u64 {
+    u64::try_from(e32::time::utc_now().0).unwrap_or(0) * 1000
 }
 
 /// `CLIP_GET [out text]` → the text's length.
@@ -1099,6 +1199,7 @@ impl Service for Host {
             return Err(err::KERR_NOT_SUPPORTED);
         };
         app.session = Some(id);
+        app.minor = version.minor;
         self.next_session += 1;
         Ok(id)
     }
@@ -1217,15 +1318,35 @@ impl Service for Host {
                 }
                 Err(e) => m.complete(e),
             },
+            // cards and badges only from the app's own EXE (1.18, top-panel TP2a "Step 0"): the session binding
+            // ("the newest app without a session") is checked against the caller's secure ID
+            proto::NOTIFY | proto::NOTIFY_CLEAR | proto::BADGE
+                if apps::sid(app.key).is_some_and(|sid| sid != m.client_sid()) =>
+            {
+                dprintln!(
+                    "neoui: {} refused for {}: SID {:#x}",
+                    m.function(),
+                    app.key,
+                    m.client_sid()
+                );
+                m.complete(kerr::PERMISSION_DENIED);
+            }
             proto::NOTIFY => {
                 let key = app.key;
                 let r = read_bytes(&m, 0, NOTIFICATION_MAX)
                     .and_then(|b| Notification::decode(&b).map_err(|_| kerr::ARGUMENT))
-                    .and_then(|n| notify(&mut self.notifications, key, n));
+                    .and_then(|n| notify(&mut self.notifications, key, n, unix_ms()));
                 if r.is_ok() {
                     self.notes_changed = true;
                 }
                 m.complete(r.unwrap_or_else(|e| e));
+            }
+            proto::NOTIFY_CLEAR => {
+                let key = app.key;
+                self.notifications
+                    .retain(|(k, n)| *k != key || Self::shell_card(k, n));
+                self.notes_changed = true;
+                m.complete(0);
             }
             proto::BADGE => {
                 let (key, id, count) = (app.key, m.int(0) as u32, m.int(1) as u32);

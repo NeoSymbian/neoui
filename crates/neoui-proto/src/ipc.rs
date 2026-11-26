@@ -40,13 +40,16 @@
 //! ([`ACTION_PROFILE`]). Since 1.16 (SE3a) it reads Battery usage ([`INFO_BATTERY_USAGE`]). Since 1.17 (SE4a) it lists
 //! the running apps ([`INFO_RUNNING`]), stops one ([`ACTION_STOP`]), has an app clear its own data ([`ACTION_CLEAR`],
 //! [`AppEvent::ClearData`]) and resets the network settings or the settings ([`ACTION_RESET`]).
+//! Since 1.18 (top-panel TP2a) a card carries flags, a style, a group, its time and action kinds
+//! ([`crate::page::Notification`]), an app clears all of its cards ([`NOTIFY_CLEAR`]) and hears when the user swipes
+//! or clears one ([`AppEvent::NotifyGone`]); NOTIFY, NOTIFY_CLEAR and BADGE come only from the app's own EXE.
 
 use crate::{InputEvent, TouchPhase};
 
 /// The server's name (no leading `!`: that needs ProtServ).
 pub const SERVER: &str = "NeoUi";
 /// Protocol version (major, minor); a connect with another major is refused.
-pub const VERSION: (u8, u8) = (1, 17);
+pub const VERSION: (u8, u8) = (1, 18);
 
 /// `[Des8 out: GEOMETRY_LEN bytes = width, height, dp × 256 (u32 LE)]` → 0. `dp` is the shell's design unit in
 /// pixels (`min(screen w, h) / 360`), so apps size things like the shell does.
@@ -122,10 +125,11 @@ pub const QUERY: i32 = 16;
 pub const NOTE: i32 = 17;
 pub const NOTE_MS: u64 = 3000;
 /// `[Des8 notification]` ([`crate::page::Notification`], at most [`crate::page::NOTIFICATION_MAX`] bytes) → 0: add or
-/// replace the app's entry `id` in the shade (an empty title removes it). At most [`NOTIFICATIONS_MAX`] per app
-/// (`KErrOverflow`). A tap brings the app to the front with [`AppEvent::Page`].
+/// replace the app's entry `id` in the shade, in place (an empty title removes it). At most [`NOTIFICATIONS_MAX`] per
+/// app: a newer one pushes the app's oldest out (1.18; before, `KErrOverflow`). A tap brings the app to the front
+/// with [`AppEvent::Page`]. Since 1.18 `KErrPermissionDenied` when the caller isn't the app's own EXE.
 pub const NOTIFY: i32 = 18;
-pub const NOTIFICATIONS_MAX: usize = 16;
+pub const NOTIFICATIONS_MAX: usize = 24;
 /// `[id: u32, count: u32]` → 0: a red count on the app's launcher icon (missed calls, unread messages); `id` names
 /// the counter (the app sums them), 0 removes it. Shown as 99+ past 99.
 pub const BADGE: i32 = 19;
@@ -218,6 +222,14 @@ pub const RESET_SETTINGS: u8 = 1;
 /// hidden if it isn't running. `KErrNotSupported` for an app that doesn't clear its own data
 /// ([`crate::apps::clears_data`]).
 pub const ACTION_CLEAR: i32 = 6;
+/// 1.18 (TP2a): no arguments → 0: every card of the calling app goes, ongoing ones too (as an empty NOTIFY each).
+pub const NOTIFY_CLEAR: i32 = 32;
+/// [`AppEvent::NotifyGone`]'s `why`: the user swiped the card away.
+pub const GONE_SWIPED: u8 = 0;
+/// [`AppEvent::NotifyGone`]'s `why`: the user cleared the shade (Clear all).
+pub const GONE_CLEARED: u8 = 1;
+/// [`AppEvent::NotifyGone`]'s `why`: the user turned the app's notifications off (TP4).
+pub const GONE_OFF: u8 = 2;
 /// The longest launcher key, in bytes.
 pub const KEY_MAX: usize = 16;
 
@@ -291,6 +303,9 @@ pub enum AppEvent {
     InputReset,
     /// 1.17: Settings → Apps → Clear data: the app deletes its own data (its settings keys, its files) and quits.
     ClearData,
+    /// 1.18: the user removed the app's card `id` ([`GONE_SWIPED`], [`GONE_CLEARED`], [`GONE_OFF`]). Only a running
+    /// app hears it: the shell doesn't start one for this.
+    NotifyGone { id: u32, why: u8 },
 }
 
 const KIND_TOUCH: u32 = 1;
@@ -311,7 +326,8 @@ const KIND_AREA: u32 = 18;
 const KIND_OPEN: u32 = 19;
 const KIND_NOTIFIED: u32 = 20;
 const KIND_INPUT_RESET: u32 = 21;
-// 22–27 are reserved (docs neoui-shell/protocol.md: NotifyGone, Media, NotifyReply, ActivityTap, Tile, SettingsInfo)
+const KIND_NOTIFY_GONE: u32 = 22;
+// 23–27 are reserved (docs neoui-shell/protocol.md: Media, NotifyReply, ActivityTap, Tile, SettingsInfo)
 const KIND_CLEAR_DATA: u32 = 28;
 
 impl AppEvent {
@@ -343,6 +359,7 @@ impl AppEvent {
             AppEvent::Notified { id, action } => [KIND_NOTIFIED, id, u32::from(action), 0],
             AppEvent::InputReset => [KIND_INPUT_RESET, 0, 0, 0],
             AppEvent::ClearData => [KIND_CLEAR_DATA, 0, 0, 0],
+            AppEvent::NotifyGone { id, why } => [KIND_NOTIFY_GONE, id, u32::from(why), 0],
         };
         let mut out = [0u8; EVENT_LEN];
         for (i, v) in w.iter().enumerate() {
@@ -396,6 +413,10 @@ impl AppEvent {
             },
             KIND_INPUT_RESET => AppEvent::InputReset,
             KIND_CLEAR_DATA => AppEvent::ClearData,
+            KIND_NOTIFY_GONE => AppEvent::NotifyGone {
+                id: w(1),
+                why: u8::try_from(w(2)).ok()?,
+            },
             _ => return None,
         })
     }
@@ -442,6 +463,14 @@ mod tests {
             AppEvent::Notified { id: 7, action: 0 },
             AppEvent::InputReset,
             AppEvent::ClearData,
+            AppEvent::NotifyGone {
+                id: 3,
+                why: GONE_SWIPED,
+            },
+            AppEvent::NotifyGone {
+                id: u32::MAX,
+                why: GONE_OFF,
+            },
             AppEvent::Notified {
                 id: u32::MAX,
                 action: 2,

@@ -204,7 +204,20 @@ jobs:
           wait_s 1; swipe 270 1075 270 900; expect "neoui: screen home"; wait_s 1
           swipe 270 300 270 600; expect "neoui: shade from home"; wait_s 1
           tap 425 82; expect "neoui: app settings resumed"
-          ui_run 430
+          # TP2a: home, Apps, UI kit (its tile ends the grid's 5th row), ⋮ → Notifications, Post sample cards (6, one
+          # ongoing, a group of 3); the shade from the status bar, See all, a swipe on the reminder (Alerts) dismisses
+          # it, Clear all takes the other 4 and leaves the ongoing one
+          wait_s 1; swipe 270 1075 270 900; expect "neoui: screen home"; wait_s 1
+          tap 485 973; wait_s 2; tap 448 1000; expect "neoui: app kit surface"; wait_s 2
+          tap 497 72; wait_s 2; tap 298 874; wait_s 2
+          tap 270 160; expect "kit: sample cards posted (Ok"; wait_s 1
+          tap 270 12; wait_s 2; tap 476 340; wait_s 2
+          swipe 60 650 520 650; expect "kit: card 4 gone (0)"; wait_s 2
+          tap 270 840; expect "neoui: 4 notifications cleared"
+          # Mark read (an in-place action) on the group's head: the kit hears it without coming forward
+          wait_s 1; tap 270 12; wait_s 1; tap 270 160; expect "kit: sample cards posted (Ok"; wait_s 1
+          tap 270 12; wait_s 2; tap 174 670; expect "kit: card 5 opened (2)"
+          ui_run 560
 
       - name: Check the output
         working-directory: build
@@ -229,6 +242,14 @@ jobs:
           # TP1: the shade from home, then Settings from its ⚙
           grep -a 'neoui: shade from home' $s
           grep -a 'neoui: app settings resumed' $s
+          # TP2a: the kit's cards passed the SID check, a swipe and Clear all reached it, the ongoing card stayed
+          grep -a 'kit: sample cards posted (Ok' $s
+          ! grep -aq 'refused for kit' $s
+          grep -a 'kit: card 4 gone (0)' $s
+          grep -a 'neoui: 4 notifications cleared' $s
+          grep -a 'kit: card 5 gone (1)' $s
+          ! grep -aq 'kit: card 6 gone' $s
+          grep -a 'kit: card 5 opened (2)' $s
           ! grep -aq 'settings: set nav.mode = [0-9] (Err' $s
           grep -aE 'neoui: clock [0-9]{2}:[0-9]{2}' $s
           # R9: frame timing (one summary per second of activity) on the fast counter

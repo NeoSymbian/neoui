@@ -76,6 +76,26 @@ pub fn clears_data(key: &str) -> bool {
     key == "clock"
 }
 
+/// The secure ID of app `key`'s EXE (its UID3 in the `exes.txt` that builds it), or `None` for one the shell doesn't
+/// know by SID (the old apps' bridge). Since 1.18 the shell takes cards and badges (`ipc::NOTIFY`,
+/// `ipc::NOTIFY_CLEAR`, `ipc::BADGE`) for an app only from this process (top-panel TP2a "Step 0").
+#[must_use]
+pub fn sid(key: &str) -> Option<u32> {
+    Some(match key {
+        "clock" => 0xE000_2002,
+        "terminal" => 0xE000_2003,
+        "devtools" => 0xE000_2005,
+        "kit" => 0xE000_2006,
+        SETTINGS => crate::settings::access::SETTINGS_SID,
+        "phone" => 0xE000_5001,
+        "contacts" => 0xE000_5002,
+        "messages" => 0xE000_5003,
+        "files" => 0xE000_6001,
+        "browser" => 0xE000_7001,
+        _ => return None,
+    })
+}
+
 /// The app with screen key `key`.
 #[must_use]
 pub fn find(key: &str) -> Option<&'static App> {
@@ -85,6 +105,17 @@ pub fn find(key: &str) -> Option<&'static App> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_app_but_the_bridge_has_its_sid() {
+        for a in APPS {
+            assert_eq!(sid(a.key).is_some(), a.key != LEGACY, "{}", a.key);
+        }
+        let mut sids: alloc::vec::Vec<u32> = APPS.iter().filter_map(|a| sid(a.key)).collect();
+        sids.sort_unstable();
+        sids.dedup();
+        assert_eq!(sids.len(), APPS.len() - 1, "one SID per app");
+    }
 
     #[test]
     fn keys_are_unique_and_short() {

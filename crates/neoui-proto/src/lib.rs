@@ -16,6 +16,7 @@ pub mod page;
 pub mod recents;
 pub mod settings;
 pub mod settings_app;
+pub mod shade;
 pub mod sound_profile;
 pub mod wifi;
 

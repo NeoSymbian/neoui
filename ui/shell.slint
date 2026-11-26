@@ -147,6 +147,11 @@ export component Shell inherits Window {
     // in: the apps' entries in the shade (ipc NOTIFY), newest first; out: the one tapped (its index)
     in property <[ShadeNote]> notes;
     callback note-opened(int, int);
+    // TP2a: how many cards, a card swiped away (its row), Clear all, a group's ▾ (its row)
+    in property <int> cards;
+    callback note-dismissed(int);
+    callback notes-cleared();
+    callback group-toggled(int);
     in property <bool> app-unread;
     // in: the apps the UI server keeps running, most recent first (R10); out: the switcher's close button
     in property <[string]> running;
@@ -511,8 +516,15 @@ export component Shell inherits Window {
         height: root.height - Theme.status-h - (root.buttons && !root.full ? Theme.key-row-h : 0);
         open: shade-open;
         notes: root.notes;
+        cards: root.cards;
+        note-dismissed(i) => { root.note-dismissed(i); }
+        notes-cleared => { root.notes-cleared(); }
+        group-toggled(i) => { root.group-toggled(i); }
         note-opened(i, a) => {
-            root.shade-open = false;
+            // an in-place action (kind 3, Mark read) leaves the shade open: its app isn't coming to the front
+            if !(a > 0 && root.notes[i].kinds.length >= a && root.notes[i].kinds[a - 1] == 3) {
+                root.shade-open = false;
+            }
             root.note-opened(i, a);
         }
         app-unread: root.app-unread;
