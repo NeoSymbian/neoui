@@ -27,6 +27,7 @@ use neoapp::{App, AppEvent, Page as AppPage, Query};
 use neoui_proto::ipc as proto;
 use neoui_proto::settings::Value;
 use neoui_proto::settings::keys;
+use neoui_proto::settings_app::asks;
 use neoui_proto::settings_app::choices::{KEYBOARDS, TIMEOUTS};
 use neoui_proto::settings_app::info::OldApps;
 use neoui_proto::settings_app::info::{Battery, Clock};
@@ -148,11 +149,11 @@ fn run() -> Result<(), i32> {
             AppEvent::Open { page } => {
                 let arg = app.arg().unwrap_or_default();
                 ctx.trail.borrow_mut().clear();
-                ctx.open(Page::opened(page, &arg));
+                ctx.open(Page::opened(page, &arg).from_outside());
             }
             AppEvent::Page { page } => {
                 ctx.trail.borrow_mut().clear();
-                ctx.open(Page::from_id(page).unwrap_or(Page::Root));
+                ctx.open(Page::from_id(page).unwrap_or(Page::Root).from_outside());
             }
             AppEvent::Settings { .. } => store::load(&app, &ui),
             // the shell's keyboard: its height (0 while a field keeps the focus: the user put it away)
@@ -201,10 +202,12 @@ fn run() -> Result<(), i32> {
                     };
                     dprintln!("settings: clear data of {} ({:?})", key, r);
                     let _ = app.note(
-                        if r.is_ok() {
-                            "Data cleared"
-                        } else {
-                            "Couldn't clear the data"
+                        match (&r, key) {
+                            // the app clears its own after it reads the event: it logs what it did
+                            (Ok(()), "clock") => "Clock is clearing its data",
+                            (Ok(()), _) => "Data cleared",
+                            (Err(-18), _) => "Busy; try again in a moment", // KErrNotReady
+                            _ => "Couldn't clear the data",
                         },
                         "",
                     );
@@ -214,7 +217,7 @@ fn run() -> Result<(), i32> {
                     let r = app.settings_action_with(proto::ACTION_RESET, &[what]);
                     dprintln!("settings: reset {} ({:?})", what, r);
                     if r.is_err() {
-                        let _ = app.note("Couldn't reset; nothing changed", "");
+                        let _ = app.note("Couldn't finish the reset; the phone didn't restart", "");
                     }
                 }
                 _ => {}
@@ -307,7 +310,7 @@ impl Ctx {
         }
         if page == Page::AppDetail {
             s.set_title(s.get_app_current().name);
-            s.set_app_clear(clear_text(s.get_app_current().key.as_str()).into());
+            s.set_app_clear(asks::clear_what(s.get_app_current().key.as_str()).into());
         }
         self.tick(true);
     }
@@ -505,6 +508,25 @@ impl Ctx {
                     "phone" | "messages" | neoui_proto::apps::SETTINGS
                 ),
         );
+    }
+
+    /// Ask the shell's dialog first (`confirm` in red, then Cancel); its answer does `asked`. A dialog the shell
+    /// refuses shows as a note, never as nothing at all.
+    fn ask(&self, text: String, confirm: &str, asked: Asked) {
+        let q = Query {
+            text,
+            buttons: alloc::vec![String::from(confirm), String::from("Cancel")],
+            destructive: true,
+        };
+        match self.app.query(&q) {
+            Ok(()) => {
+                self.asked.replace(Some(asked));
+            }
+            Err(e) => {
+                dprintln!("settings: the question was refused ({})", e);
+                let _ = self.app.note("Couldn't ask; nothing changed", "");
+            }
+        }
     }
 
     /// A page opened from this app's own pages: Back comes back here.
@@ -798,57 +820,23 @@ impl Ctx {
             }
             "app-stop" => {
                 if let Some(a) = neoui_proto::apps::find(value) {
-                    let q = Query {
-                        text: alloc::format!("Stop {}?", a.name), // the row says what is lost
-                        buttons: alloc::vec![String::from("Stop"), String::from("Cancel")],
-                        destructive: true,
-                    };
-                    if app.query(&q).is_ok() {
-                        self.asked.replace(Some(Asked::Stop(a.key)));
-                    }
+                    self.ask(asks::stop(a.name), "Stop", Asked::Stop(a.key));
                 }
             }
             "app-clear" => {
                 if let Some(a) = neoui_proto::apps::find(value)
-                    && !clear_text(a.key).is_empty()
+                    && !asks::clear_what(a.key).is_empty()
                 {
-                    let q = Query {
-                        text: alloc::format!(
-                            "Delete {}'s data? {}. This can't be undone.",
-                            a.name,
-                            clear_text(a.key)
-                        ),
-                        buttons: alloc::vec![String::from("Delete"), String::from("Cancel")],
-                        destructive: true,
-                    };
-                    if app.query(&q).is_ok() {
-                        self.asked.replace(Some(Asked::Clear(a.key)));
-                    }
+                    self.ask(asks::clear(a.name, a.key), "Delete", Asked::Clear(a.key));
                 }
             }
             "reset" => {
-                let (what, text) = match value {
-                    "network" => (
-                        proto::RESET_NETWORK,
-                        "Reset network settings? Every saved Wi-Fi network and its password is forgotten. \
-                         Contacts, messages, alarms, files and apps stay. The phone restarts.",
-                    ),
-                    "settings" => (
-                        proto::RESET_SETTINGS,
-                        "Reset settings? Display, navigation, keyboard, time, media sound, developer and old-app pad \
-                         settings go back to their defaults. Sound profiles, Wi-Fi networks, contacts, messages, \
-                         alarms, files and apps stay. The phone restarts.",
-                    ),
+                let what = match value {
+                    "network" => proto::RESET_NETWORK,
+                    "settings" => proto::RESET_SETTINGS,
                     _ => return,
                 };
-                let q = Query {
-                    text: text.into(),
-                    buttons: alloc::vec![String::from("Reset"), String::from("Cancel")],
-                    destructive: true,
-                };
-                if app.query(&q).is_ok() {
-                    self.asked.replace(Some(Asked::Reset(what)));
-                }
+                self.ask(asks::reset(what).into(), "Reset", Asked::Reset(what));
             }
             "app-open" => {
                 let r = app.open(value, 0, "");
@@ -879,17 +867,5 @@ impl Ctx {
             self.keyboard();
             let _ = self.describe();
         }
-    }
-}
-
-/// What an app's Clear data deletes (SE4a), "" when it has no such row: the app clears its own
-/// (`apps::clears_data`), or MODEMD clears Phone's call history and Messages' texts, which it owns.
-fn clear_text(key: &str) -> &'static str {
-    match key {
-        "clock" => "Alarms, timers, stopwatch, world clocks, its settings",
-        "phone" => "The call history (contacts stay)",
-        "messages" => "Every message (blocked senders' messages stay until they expire)",
-        k if neoui_proto::apps::clears_data(k) => "Its data and its own settings",
-        _ => "",
     }
 }

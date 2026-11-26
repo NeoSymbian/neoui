@@ -325,9 +325,10 @@ mod tests {
         let _ = s
             .set(Caller::Shell, keys::OPEN_ALWAYS, Bytes(vec![9]), 0)
             .unwrap();
-        assert_eq!(s.reset_settings(5), Ok(3));
+        assert_eq!(s.reset_settings(5), Ok(2));
+        assert_eq!(s.get(keys::OPEN_ALWAYS), Ok(Bytes(vec![9])));
         let def = |k: &str| registry::lookup(k).unwrap().default.to_value();
-        for k in ["display.dark", "nav.mode", "open.always"] {
+        for k in ["display.dark", "nav.mode"] {
             assert_eq!(s.get_raw(k), Ok(def(k)), "{k}");
         }
         assert_eq!(s.get(keys::RADIO_AIRPLANE), Ok(true));
@@ -357,9 +358,11 @@ mod tests {
             );
         }
         for k in registry::RESET_KEEPS {
-            assert_eq!(
-                registry::lookup(k).map(|s| s.owner),
-                Some(registry::Owner::Shell),
+            assert!(
+                matches!(
+                    registry::lookup(k).map(|s| s.owner),
+                    Some(registry::Owner::Shell | registry::Owner::Any)
+                ),
                 "{k}"
             );
         }

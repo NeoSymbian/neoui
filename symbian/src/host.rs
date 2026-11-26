@@ -698,6 +698,15 @@ impl Host {
             .find(|a| a.key == key && a.quit_at.is_none())
             .is_none()
         {
+            // `connect` binds the newest app without a session: while another is still connecting (a resident
+            // starting), a hidden start could hand ClearData to the wrong process; Settings asks again later
+            if self
+                .apps
+                .find(|a| a.session.is_none() && a.quit_at.is_none())
+                .is_some()
+            {
+                return err::KERR_NOT_READY;
+            }
             self.launch(key);
         }
         match self.apps.find_mut(|a| a.key == key && a.quit_at.is_none()) {
@@ -726,13 +735,21 @@ impl Host {
                 }
                 dprintln!("neoui: reset network settings: every Wi-Fi network forgotten");
             }
-            proto::RESET_SETTINGS => match self.settings.reset_settings(e32::time::millis()) {
-                Ok(n) => dprintln!("neoui: reset settings: {} back to their defaults", n),
-                Err(e) => {
-                    dprintln!("neoui: reset settings failed ({:?})", e);
-                    return e.to_symbian();
+            proto::RESET_SETTINGS => {
+                match self.settings.reset_settings(e32::time::millis()) {
+                    Ok(n) => dprintln!("neoui: reset settings: {} back to their defaults", n),
+                    Err(e) => {
+                        dprintln!("neoui: reset settings failed ({:?})", e);
+                        return e.to_symbian();
+                    }
                 }
-            },
+                // saved now, or no restart: the old file would bring the settings back
+                let saved = self.settings.flush();
+                settings::log_save(saved);
+                if let Some(Err(_)) = saved {
+                    return err::KERR_GENERAL;
+                }
+            }
             _ => return kerr::ARGUMENT,
         }
         dprintln!("neoui: restarting after the reset");
@@ -1257,6 +1274,12 @@ impl Service for Host {
             proto::SETTINGS_INFO if m.int(0) == proto::INFO_APPS => {
                 let r = write_info(&m, &self.old_apps().encode());
                 m.complete(r.unwrap_or_else(|e| e));
+            }
+            proto::SETTINGS_INFO
+                if m.int(0) == proto::INFO_RUNNING
+                    && access::caller(app.key, m.client_sid()) != Caller::Settings =>
+            {
+                m.complete(kerr::PERMISSION_DENIED);
             }
             proto::SETTINGS_INFO if m.int(0) == proto::INFO_RUNNING => {
                 let running: Vec<(&str, bool)> = self

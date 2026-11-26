@@ -114,6 +114,16 @@ impl Page {
             .unwrap_or(Page::Root)
     }
 
+    /// The page an open from outside the app shows: an app's page needs the app chosen on Apps, so Apps.
+    #[must_use]
+    pub fn from_outside(self) -> Self {
+        if self == Page::AppDetail {
+            Page::Apps
+        } else {
+            self
+        }
+    }
+
     /// The header's title.
     #[must_use]
     pub fn title(self) -> &'static str {
@@ -175,6 +185,9 @@ mod tests {
         assert_eq!(Page::from_id(23), None);
         assert_eq!(Page::AppDetail.parent(), Some(Page::Apps));
         assert_eq!(Page::Reset.parent(), Some(Page::About));
+        assert_eq!(Page::opened(21, "").from_outside(), Page::Apps);
+        assert_eq!(Page::opened(0, "app").from_outside(), Page::Apps);
+        assert_eq!(Page::Reset.from_outside(), Page::Reset);
         assert_eq!(Page::BatteryUsage.parent(), Some(Page::Battery));
     }
 

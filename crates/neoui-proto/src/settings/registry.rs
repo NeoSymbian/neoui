@@ -117,7 +117,8 @@ impl Spec {
 /// - the sound profiles with their live values: the profiles are the user's own, and resetting a mirror alone would
 ///   be folded back into the active profile;
 /// - the radio switches (airplane mode, Wi-Fi, Bluetooth, data), which aren't preferences;
-/// - the old apps' pad epoch, a counter.
+/// - the old apps' pad epoch, a counter;
+/// - the apps chosen to open each file type (`open.always`), which belong with the apps.
 pub const RESET_KEEPS: &[&str] = &[
     "sound.profile",
     "sound.profiles",
@@ -132,6 +133,7 @@ pub const RESET_KEEPS: &[&str] = &[
     "radio.data",
     "radio.airplane",
     "legacy.pad.epoch",
+    "open.always",
 ];
 
 /// The keys Reset settings puts back to their defaults: every key no app owns, but [`RESET_KEEPS`]. Apps' keys
