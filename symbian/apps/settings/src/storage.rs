@@ -1,0 +1,272 @@
+// SPDX-License-Identifier: GPL-3.0-only
+//! Settings → Storage (SE3b): the drives from the file server at once, and C: and E: by kind from a scan on a
+//! low-priority thread of its own (`neoui_proto::settings_app::storage::scan`: it lists folders, never opens or
+//! writes a file). The scan runs only while the page is open and the app shown; its last result is kept with the
+//! time it finished, and Recount runs it again.
+use alloc::boxed::Box;
+use alloc::format;
+use alloc::string::String;
+use alloc::vec::Vec;
+use core::sync::atomic::{AtomicU32, Ordering};
+use e32::dprintln;
+use e32::fs::Fs;
+use e32::sync::Mutex;
+use neoui_proto::settings_app::storage::{self as st, KINDS, Tally};
+use settings_ui::{DriveRow, PartRow, SetState, SettingsApp};
+use slint::{ComponentHandle, ModelRc, VecModel};
+
+/// Bumped to stop the scan that runs (leaving the page, the app hidden, Recount): it ends at its next folder.
+static RUN: AtomicU32 = AtomicU32::new(0);
+
+/// `EPriorityMuchLess` (`TThreadPriority`): below the UI thread, so a long walk never slows a frame.
+const PRIORITY_MUCH_LESS: i32 = -20;
+/// `KCurrentThreadHandle`.
+const CURRENT_THREAD: u32 = 0xFFFF_8001;
+
+#[derive(Default)]
+struct Shared {
+    /// The running count.
+    tally: Tally,
+    /// The last whole count (kept through a stopped or a new scan).
+    last: Tally,
+    /// A scan is running.
+    running: bool,
+    /// When the last whole scan ended (local "HH:MM"); `None` before the first.
+    at: Option<String>,
+    /// What it took, for the log and the run's notes.
+    ms: u64,
+}
+
+pub struct Storage {
+    shared: Option<&'static Mutex<Shared>>,
+    /// C: and E: together (used, free), from the drive rows.
+    totals: core::cell::Cell<(u64, u64)>,
+}
+
+impl Storage {
+    pub fn new() -> Self {
+        Storage {
+            shared: Mutex::new(Shared::default())
+                .ok()
+                .map(|m| &*Box::leak(Box::new(m))),
+            totals: core::cell::Cell::new((0, 0)),
+        }
+    }
+
+    /// The drive rows and the root's "N free" (E:'s free space, else C:'s).
+    pub fn drives(&self, ui: &SettingsApp) {
+        let s = ui.global::<SetState>();
+        let Ok(fs) = Fs::connect() else { return };
+        let Ok(list) = fs.drives() else { return };
+        let mut rows = Vec::new();
+        let (mut used_ce, mut free_ce, mut root_free) = (0u64, 0u64, None);
+        // E: first (the board's order: the big drive), then the rest from C:
+        let order = core::iter::once(4).chain((0..26).filter(|&i| i != 4));
+        for i in order.filter(|&i| list[i] != 0) {
+            let letter = char::from(b'A' + i as u8);
+            let (name, note) = st::drive_names(letter);
+            let title = format!("{letter}: {name}");
+            let Ok(v) = fs.volume(i as i32) else {
+                rows.push(row(title, "Not available".into(), note, -1.0));
+                continue;
+            };
+            let (size, free) = (v.size.max(0) as u64, v.free.clamp(0, v.size.max(0)) as u64);
+            let used = size - free;
+            let shown = match letter {
+                // RAM and ROM: what they hold; a read-only drive has no free space to speak of
+                'D' | 'Z' => st::size_text(used),
+                _ => st::used_text(used, size),
+            };
+            let fill = if size > 0 && !matches!(letter, 'D' | 'Z') {
+                used as f32 / size as f32
+            } else {
+                -1.0
+            };
+            rows.push(row(title, shown, note, fill));
+            if matches!(letter, 'C' | 'E') {
+                used_ce += used;
+                free_ce += free;
+                if letter == 'E' || root_free.is_none() {
+                    root_free = Some(free);
+                }
+            }
+        }
+        self.totals.set((used_ce, free_ce));
+        s.set_drives(ModelRc::new(VecModel::from(rows)));
+        s.set_storage_free(
+            root_free
+                .map_or_else(String::new, |f| format!("{} free", st::size_text(f)))
+                .into(),
+        );
+    }
+
+    /// The page opened or the app came back: count once if nothing is counted yet (a kept result isn't redone).
+    pub fn ensure(&self) {
+        let Some(shared) = self.shared else { return };
+        let (running, counted) = {
+            let g = shared.lock();
+            (g.running, g.at.is_some())
+        };
+        if !running && !counted {
+            self.start();
+        }
+    }
+
+    /// Recount: stop what runs and count again.
+    pub fn recount(&self) {
+        self.stop();
+        self.start();
+    }
+
+    /// Leave the page or hide the app: the scan stops at its next folder (a kept result stays).
+    pub fn stop(&self) {
+        RUN.fetch_add(1, Ordering::SeqCst);
+    }
+
+    fn start(&self) {
+        let Some(shared) = self.shared else { return };
+        let mine = RUN.fetch_add(1, Ordering::SeqCst) + 1;
+        {
+            let mut g = shared.lock();
+            g.running = true;
+            g.tally = Tally::default();
+        }
+        let roots: Vec<&'static str> = match Fs::connect().and_then(|fs| fs.drives()) {
+            Ok(list) if list[4] != 0 => alloc::vec!["C:\\", "E:\\"],
+            _ => alloc::vec!["C:\\"],
+        };
+        if let Err(e) = e32::thread::spawn(move || {
+            // SAFETY: ThreadSetPriority on the current thread's pseudo-handle with a valid TThreadPriority.
+            let p = unsafe {
+                e32::sys::swi::exec4::<{ e32::sys::execs::slow::THREAD_SET_PRIORITY }>(
+                    CURRENT_THREAD,
+                    PRIORITY_MUCH_LESS as u32,
+                    0,
+                    0,
+                )
+            };
+            let started = e32::time::millis();
+            let t = match Fs::connect() {
+                Ok(fs) => st::scan(
+                    &roots,
+                    |dir| {
+                        fs.read_dir(dir).map(|v| {
+                            v.into_iter()
+                                .map(|e| (e.name.clone(), e.is_dir(), e.size))
+                                .collect()
+                        })
+                    },
+                    || RUN.load(Ordering::SeqCst) != mine,
+                    // a stopped scan's last folder mustn't land over a newer one's count
+                    |t| {
+                        if RUN.load(Ordering::SeqCst) == mine {
+                            shared.lock().tally = *t;
+                        }
+                    },
+                ),
+                Err(_) => Tally::default(),
+            };
+            let ms = e32::time::millis() - started;
+            dprintln!(
+                "settings: storage scan {} in {} ms: {} folders, {} unreadable, {} too deep, files {} apps {} (priority {})",
+                if t.done { "done" } else { "stopped" },
+                ms,
+                t.folders,
+                t.unreadable,
+                t.too_deep,
+                t.files_total(),
+                t.apps,
+                p as i32
+            );
+            let mut g = shared.lock();
+            if RUN.load(Ordering::SeqCst) == mine {
+                g.running = false;
+            }
+            if t.done {
+                let now = e32::time::now();
+                g.at = Some(format!("{:02}:{:02}", now.hour, now.minute));
+                g.ms = ms;
+                g.last = t;
+            }
+            0
+        }) {
+            dprintln!("settings: storage scan didn't start ({})", e);
+            shared.lock().running = false;
+        }
+    }
+
+    /// The scan's state on the page: the bar, its parts, the kinds, "Counting…" or "Last counted HH:MM".
+    pub fn show(&self, ui: &SettingsApp) {
+        let Some(shared) = self.shared else { return };
+        let s = ui.global::<SetState>();
+        let (t, running, at) = {
+            let g = shared.lock();
+            // while counting, the running totals; else the last whole count
+            (
+                if g.running { g.tally } else { g.last },
+                g.running,
+                g.at.clone(),
+            )
+        };
+        let (used, free) = self.totals.get();
+        let other = st::other(used, &t);
+        let total = (t.apps + t.files_total() + other + free).max(1) as f32;
+        let mut start = 0.0;
+        let mut parts = Vec::new();
+        for (name, bytes) in [
+            ("Apps", t.apps),
+            ("Files", t.files_total()),
+            ("Other (system and app data)", other),
+            ("Free", free),
+        ] {
+            let share = bytes as f32 / total;
+            parts.push(PartRow {
+                name: name.into(),
+                size: st::size_text(bytes).into(),
+                start,
+                share,
+            });
+            start += share;
+        }
+        let kinds: Vec<PartRow> = KINDS
+            .iter()
+            .map(|&k| PartRow {
+                name: k.name().into(),
+                size: st::size_text(t.files[k as usize]).into(),
+                start: 0.0,
+                share: 0.0,
+            })
+            .collect();
+        s.set_storage_parts(ModelRc::new(VecModel::from(parts)));
+        s.set_storage_kinds(ModelRc::new(VecModel::from(kinds)));
+        s.set_storage_counting(running);
+        s.set_storage_counted(at.is_some() && !running);
+        s.set_storage_status(
+            if running {
+                format!("Counting… {} folders", t.folders)
+            } else if let Some(at) = &at {
+                format!("Last counted {at}")
+            } else {
+                String::from("Not counted yet")
+            }
+            .into(),
+        );
+        s.set_storage_unreadable(
+            match t.unreadable {
+                0 => String::new(),
+                1 => String::from("1 folder couldn't be read"),
+                n => format!("{n} folders couldn't be read"),
+            }
+            .into(),
+        );
+    }
+}
+
+fn row(title: String, used: String, note: &str, fill: f32) -> DriveRow {
+    DriveRow {
+        title: title.into(),
+        used: used.into(),
+        note: note.into(),
+        fill,
+    }
+}

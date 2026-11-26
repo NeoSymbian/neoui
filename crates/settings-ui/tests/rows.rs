@@ -28,6 +28,7 @@ const COMPONENTS: &[(&str, Page)] = &[
     ("AboutPage", Page::About),
     ("WifiSavedPage", Page::WifiSaved),
     ("ProfilePage", Page::Profile),
+    ("StoragePage", Page::Storage),
 ];
 
 /// (page, title) of every row the pages draw.
@@ -74,6 +75,18 @@ fn page_rows() -> BTreeSet<(&'static str, String)> {
     }
     for a in neoui_proto::apps::listed() {
         out.insert((Page::Apps.name(), a.name.to_string()));
+    }
+    // Storage's search targets that aren't list rows: its by-kind section and its Recount button
+    let storage = std::fs::read_to_string(pages.join("storage.slint")).unwrap();
+    for (found, title) in [
+        (
+            "SectionHeader { text: \"C: and E: by kind\"; }",
+            "C: and E: by kind",
+        ),
+        ("\"Counting…\" : \"Recount\"", "Recount"),
+    ] {
+        assert!(storage.contains(found), "storage.slint lost {title}");
+        out.insert((Page::Storage.name(), title.to_string()));
     }
     out
 }
