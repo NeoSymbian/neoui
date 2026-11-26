@@ -91,6 +91,11 @@ impl Storage {
             let (size, free) = (v.size.max(0) as u64, v.free.clamp(0, v.size.max(0)) as u64);
             let used = size - free;
             // the ROM: its size (nothing is free on a read-only drive); the rest: used of total
+            // a composite ROM file system can report no size at all: then only "Read-only"
+            if letter == 'Z' && size == 0 {
+                rows.push(row(title, note.into(), "", -1.0));
+                continue;
+            }
             let (shown, fill) = if letter == 'Z' {
                 (st::size_text(size), -1.0)
             } else {

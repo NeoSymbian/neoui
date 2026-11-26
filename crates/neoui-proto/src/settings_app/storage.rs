@@ -77,6 +77,10 @@ pub fn kind_of(name: &str) -> Kind {
 /// (`\sys` is counted as Apps through `\sys\bin`, separately).
 pub const SKIPPED: &[&str] = &["private", "sys", "resource", "system"];
 
+/// `KErrNotFound`, `KErrPathNotFound`: a folder that isn't there.
+const NOT_FOUND: i32 = -1;
+const PATH_NOT_FOUND: i32 = -12;
+
 /// The deepest folder the scan enters (below a drive's root).
 pub const DEPTH_MAX: usize = 64;
 /// The most folders waiting to be listed at once (a very wide tree): more are counted in [`Tally::skipped`], so the
@@ -130,6 +134,8 @@ pub fn scan(
                 t.folders += 1;
                 t.apps += entries.iter().filter(|e| !e.1).map(|e| e.2).sum::<u64>();
             }
+            // no \sys\bin on this drive (E: often has none): no apps there, nothing unread
+            Err(NOT_FOUND | PATH_NOT_FOUND) => {}
             Err(_) => t.unreadable += 1,
         }
         let mut stack: Vec<(String, usize)> = alloc::vec![(String::from(*root), 0)];
@@ -300,7 +306,7 @@ mod tests {
         let mut seen = 0;
         let t = scan(
             &["C:\\", "E:\\"],
-            |p| f.get(p).cloned().ok_or(-1),
+            |p| f.get(p).cloned().ok_or(-12),
             || false,
             |_| seen += 1,
         );
@@ -309,8 +315,9 @@ mod tests {
         assert_eq!(t.files[Kind::Audio as usize], 200);
         assert_eq!(t.files[Kind::Documents as usize], 5);
         assert_eq!(t.apps, 1024);
-        // C:\Data\Gone, E:\sys\bin and E:\ itself couldn't be listed; private and SYS were skipped, not listed
-        assert_eq!(t.unreadable, 3);
+        // C:\Data\Gone and E:\ itself couldn't be listed (E:\sys\bin not being there is no apps, not unread);
+        // private and SYS were skipped, not listed
+        assert_eq!(t.unreadable, 2);
         assert_eq!(t.folders, 4);
         assert!(seen >= 4);
     }
