@@ -6,3 +6,4 @@ pub mod choices;
 pub mod info;
 pub mod page;
 pub mod rows;
+pub mod storage;

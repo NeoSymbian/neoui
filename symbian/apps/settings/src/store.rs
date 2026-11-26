@@ -47,8 +47,11 @@ pub fn fill_fixed(ui: &SettingsApp) {
     s.set_build(strings(neoapp::build::lines()));
 }
 
+/// The shell's value, else the registry's default (a shell older than the key refuses it).
 fn get<T: Setting + Default>(app: &App, key: Key<T>) -> T {
-    app.setting(key).unwrap_or_default()
+    app.setting(key)
+        .or_else(|_| neoui_proto::settings::Store::new().get(key))
+        .unwrap_or_default()
 }
 
 /// Which keyboard languages are on (`keyboard.en/hy/ru`).
@@ -184,6 +187,10 @@ pub fn load(app: &App, ui: &SettingsApp) {
     s.set_shade_date(get(app, keys::SHADE_DATE));
     dates(app, ui);
     s.set_usb_debugging(get(app, keys::DEVELOPER_USB_DEBUGGING));
+    s.set_show_touches(get(app, keys::DEVELOPER_SHOW_TOUCHES));
+    s.set_key_vibrate(get(app, keys::KEYBOARD_VIBRATE));
+    s.set_battery_saver(get(app, keys::BATTERY_SAVER));
+    s.set_show_percent(get(app, keys::BATTERY_SHOW_PERCENT));
     let on = keyboards(app);
     s.set_keyboard(pick(&on, get(app, keys::KEYBOARD_LAYOUT)));
     s.set_keyboards(ModelRc::new(VecModel::from(on)));

@@ -13,6 +13,7 @@ extern crate alloc;
 
 mod modem;
 mod sound;
+mod storage;
 mod store;
 mod wifi;
 
@@ -69,6 +70,7 @@ struct Ctx {
     wifi: RefCell<wifi::Wifi>,
     modem: RefCell<modem::Modem>,
     sound: sound::Sound,
+    storage: storage::Storage,
     /// the city sheet's cities, as listed (a pick is an index into them)
     cities: RefCell<Vec<&'static str>>,
     /// What the open QUERY asks (the shell keeps one per app, the latest replaces it): its answer does that
@@ -97,6 +99,7 @@ fn run() -> Result<(), i32> {
         wifi: RefCell::default(),
         modem: RefCell::default(),
         sound: sound::Sound::new(),
+        storage: storage::Storage::new(),
         cities: RefCell::default(),
         asked: RefCell::default(),
         kb: Cell::new((false, 0, 0)),
@@ -181,11 +184,14 @@ fn run() -> Result<(), i32> {
             },
             AppEvent::Visible(v) => {
                 ctx.visible.set(v);
-                if !v {
-                    ctx.sound.stop(); // a tone's preview ends with the app hidden
-                }
                 if v {
+                    if ctx.page.get() == Page::Storage {
+                        ctx.storage.ensure();
+                    }
                     ctx.tick(true);
+                } else {
+                    ctx.sound.stop(); // a tone's preview ends with the app hidden
+                    ctx.storage.stop(); // hidden: no scan in the background
                 }
             }
             _ => {}
@@ -251,6 +257,12 @@ impl Ctx {
         dprintln!("settings: page {}", page.name());
         // a tone's preview stops when the page changes (Back included)
         self.sound.stop();
+        // Storage's scan runs only on its page, shown (SE3b); a kept count isn't redone
+        if page == Page::Storage && self.visible.get() {
+            self.storage.ensure();
+        } else {
+            self.storage.stop();
+        }
         if page == Page::Profile {
             // the profile a sheet chose, or (from search) the active one
             store::profiles(&self.app, &ui);
@@ -315,6 +327,15 @@ impl Ctx {
         }
         if matches!(page, Page::Root | Page::Battery) && every(5) {
             self.battery(&ui);
+        }
+        if matches!(page, Page::Root | Page::Storage) && every(5) {
+            self.storage.drives(&ui);
+        }
+        if page == Page::Storage {
+            self.storage.show(&ui);
+        }
+        if page == Page::BatteryUsage && every(5) {
+            self.battery_usage(&ui);
         }
         if page == Page::Apps && every(5) {
             self.old_apps(&ui);
@@ -451,6 +472,25 @@ impl Ctx {
         s.set_battery_storage(storage.into());
         let bars = history.map(|h| h.bars).unwrap_or_default();
         s.set_battery_history(ModelRc::new(VecModel::from(bars)));
+    }
+
+    /// Battery usage (SE3a): the shell's `INFO_BATTERY_USAGE` as text; "No data yet" before the first reading or when
+    /// the shell can't say (an older shell, a damaged record).
+    fn battery_usage(&self, ui: &SettingsApp) {
+        let s = ui.global::<SetState>();
+        let usage = self
+            .app
+            .settings_info(proto::INFO_BATTERY_USAGE)
+            .ok()
+            .and_then(|b| neoui_proto::settings_app::info::decode_usage(&b))
+            .flatten();
+        s.set_usage_known(usage.is_some());
+        if let Some(t) = usage.map(|u| u.text()) {
+            s.set_usage_title(t.title.into());
+            s.set_usage_levels(t.levels.into());
+            s.set_usage_on_battery(t.on_battery.into());
+            s.set_usage_gaps(t.gaps.into());
+        }
     }
 
     /// What a page asked for (`SetState.act`; the list is in settings-ui's state.slint).
@@ -673,6 +713,7 @@ impl Ctx {
                 }
             }
             // an app itself (Apps page)
+            "storage-recount" => self.storage.recount(),
             "app-open" => {
                 let r = app.open(value, 0, "");
                 dprintln!("settings: open app {} ({:?})", value, r);

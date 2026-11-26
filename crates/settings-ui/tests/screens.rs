@@ -5,7 +5,8 @@ mod common;
 
 use common::{BUTTONS, Shot, model, strings};
 use settings_ui::{
-    AppRow, ProfileRow, SearchHit, SetState, WifiDetail, WifiLink, WifiNet, WifiSaved,
+    AppRow, DriveRow, PartRow, ProfileRow, SearchHit, SetState, WifiDetail, WifiLink, WifiNet,
+    WifiSaved,
 };
 use slint::{ComponentHandle, Model, SharedString};
 
@@ -93,6 +94,52 @@ fn fill(sh: &Shot) {
     s.set_battery_storage(
         "History is saved every five minutes and before normal restart or shutdown".into(),
     );
+    // Storage (set2-storage, SE3b): the board's drives and parts
+    let drive = |title: &str, used: &str, note: &str, fill: f32| DriveRow {
+        title: title.into(),
+        used: used.into(),
+        note: note.into(),
+        fill,
+    };
+    s.set_drives(model(vec![
+        drive(
+            "E: Mass memory",
+            "12.4 of 41.8 GB",
+            "Media and documents",
+            0.3,
+        ),
+        drive(
+            "C: Phone",
+            "2.1 of 8 GB",
+            "Settings, installed apps, app data",
+            0.26,
+        ),
+        drive("D: RAM", "18 MB", "Temporary files", -1.0),
+        drive("Z: System", "1.2 GB", "Read-only", -1.0),
+    ]));
+    let bar = |name: &str, size: &str, start: f32, share: f32| PartRow {
+        name: name.into(),
+        size: size.into(),
+        start,
+        share,
+    };
+    let part = |name: &str, size: &str| bar(name, size, 0.0, 0.0);
+    s.set_storage_parts(model(vec![
+        bar("Apps", "1.4 GB", 0.0, 0.028),
+        bar("Files", "11.8 GB", 0.028, 0.237),
+        bar("Other (system and app data)", "1.3 GB", 0.265, 0.026),
+        bar("Free", "35.3 GB", 0.291, 0.709),
+    ]));
+    s.set_storage_kinds(model(vec![
+        part("Images", "6.2 GB"),
+        part("Video", "3.9 GB"),
+        part("Audio", "1.1 GB"),
+        part("Documents", "210 MB"),
+        part("Other files", "400 MB"),
+    ]));
+    s.set_storage_counted(true);
+    s.set_storage_status("Last counted 06:50".into());
+    s.set_storage_free("35.3 GB free".into());
     s.set_build(strings(&[
         "kernel 1885e2c 2026-11-16T09:46Z bonito",
         "rom 2026-11-16T09:59Z build 269cf8d",
@@ -325,6 +372,45 @@ fn every_page() {
         sh.shoot(name);
     }
 
+    // Storage (SE3b): counted, counting, and a phone without E: whose scan couldn't read two folders
+    page(&sh, 20, "Storage");
+    sh.shoot("set2-storage");
+    s.set_storage_counting(true);
+    s.set_storage_status("Counting… 120 folders".into());
+    sh.shoot("set2-storage-counting");
+    s.set_storage_counting(false);
+    s.set_storage_status("Last counted 06:50".into());
+    let (drives, parts) = (s.get_drives(), s.get_storage_parts());
+    let bar = |name: &str, size: &str, start: f32, share: f32| PartRow {
+        name: name.into(),
+        size: size.into(),
+        start,
+        share,
+    };
+    s.set_drives(model(drives.iter().skip(1).collect()));
+    s.set_storage_parts(model(vec![
+        bar("Apps", "320 MB", 0.0, 0.04),
+        bar("Files", "1.2 GB", 0.04, 0.15),
+        bar("Other (system and app data)", "580 MB", 0.19, 0.07),
+        bar("Free", "5.9 GB", 0.26, 0.74),
+    ]));
+    s.set_storage_unreadable("2 folders couldn't be read".into());
+    sh.shoot("set2-storage-no-e");
+    s.set_drives(drives);
+    s.set_storage_parts(parts);
+    s.set_storage_unreadable("".into());
+
+    // Battery usage (SE3a): what the history holds, then before its first reading
+    s.set_usage_known(true);
+    s.set_usage_title("Since full charge".into());
+    s.set_usage_levels("From 100% to 72% over 9 h 40 min".into());
+    s.set_usage_on_battery("On battery 3 h 34 min".into());
+    s.set_usage_gaps("Off or not recorded for 6 h, not counted".into());
+    page(&sh, 19, "Battery usage");
+    sh.shoot("set2-battery-usage");
+    s.set_usage_known(false);
+    sh.shoot("set2-battery-usage-empty");
+
     // the sheets
     page(&sh, 1, "Wi-Fi");
     s.set_wifi_current(s.get_wifi_networks().row_data(0).unwrap());
@@ -448,6 +534,18 @@ fn every_page() {
     sh.take_acts();
     sh.tap(100.0, 231.0);
     assert_eq!(sh.take_acts(), acts(&[("wifi-saved-forget", "1")]));
+
+    // SE3a: Show touches and Keypress vibration write their keys (off by default)
+    page(&sh, 11, "Developer options");
+    sh.draw();
+    sh.take_acts();
+    sh.tap(321.0, 402.0);
+    assert_eq!(sh.take_acts(), acts(&[("developer.show_touches", "1")]));
+    page(&sh, 10, "Language & keyboard");
+    sh.draw();
+    sh.take_acts();
+    sh.tap(321.0, 496.0);
+    assert_eq!(sh.take_acts(), acts(&[("keyboard.vibrate", "1")]));
 
     // the pad sheets (pad-settings: the B button the board leaves out, D5)
     page(&sh, 14, "Old apps");

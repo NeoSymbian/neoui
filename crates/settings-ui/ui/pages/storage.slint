@@ -1,0 +1,102 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Storage (set2-storage, SE3b): the drives at once, then C: and E: by kind from a scan that only lists folders. Share
+// E: over USB waits for FS6, app data by owner for SE4, "Open in Files" at a drive for Files' own page.
+import { Theme, NeoList, SectionHeader, ListRow, Button } from "@neoui/kit.slint";
+import { SetState, DriveRow, PartRow } from "../state.slint";
+
+export component StoragePage inherits NeoList {
+    // the bar's colours: Apps, Files, Other, Free
+    property <[color]> part-colours: [#8656e8, #2f80ed, #e2a92a, #2a2e35];
+    VerticalLayout {
+        alignment: start;
+        SectionHeader { text: "Drives"; }
+        for d[i] in SetState.drives: ListRow {
+            title: d.title;
+            subtitle: d.note == "" ? d.used : d.used + " · " + d.note;
+            divider: i < SetState.drives.length - 1;
+        }
+
+        SectionHeader { text: "C: and E: by kind"; }
+        VerticalLayout {
+            padding-left: Theme.margin;
+            padding-right: Theme.margin;
+            spacing: 10 * Theme.dp;
+            if SetState.storage-counted || SetState.storage-counting: bar := Rectangle {
+                height: 14 * Theme.dp;
+                border-radius: 7 * Theme.dp;
+                background: #2a2e35;
+                clip: true;
+                for p[i] in SetState.storage-parts: Rectangle {
+                    x: p.start * bar.width;
+                    width: p.share * bar.width;
+                    background: part-colours[i];
+                }
+            }
+            for p[i] in SetState.storage-parts: HorizontalLayout {
+                spacing: 10 * Theme.dp;
+                Rectangle {
+                    width: 10 * Theme.dp;
+                    height: 10 * Theme.dp;
+                    y: (parent.height - self.height) / 2;
+                    border-radius: 5 * Theme.dp;
+                    background: part-colours[i];
+                }
+                Text {
+                    text: p.name;
+                    font-size: Theme.font-label;
+                    color: Theme.text;
+                    horizontal-stretch: 1;
+                }
+                Text {
+                    text: p.size;
+                    font-size: Theme.font-label;
+                    color: Theme.text-secondary;
+                }
+            }
+        }
+
+        VerticalLayout {
+            padding: Theme.margin;
+            spacing: 10 * Theme.dp;
+            Text {
+                text: SetState.storage-status;
+                font-size: Theme.font-status;
+                color: Theme.text-dim;
+                wrap: word-wrap;
+            }
+            if SetState.storage-unreadable != "": Text {
+                text: SetState.storage-unreadable;
+                font-size: Theme.font-status;
+                color: Theme.text-dim;
+                wrap: word-wrap;
+            }
+            Button {
+                text: SetState.storage-counting ? "Counting…" : "Recount";
+                primary: false;
+                enabled: !SetState.storage-counting;
+                clicked => { SetState.act("storage-recount", ""); }
+            }
+        }
+
+        if SetState.storage-counted: VerticalLayout {
+            padding-top: 6 * Theme.dp;
+            for k[i] in SetState.storage-kinds: ListRow {
+                title: k.name;
+                value: k.size;
+                checked: SetState.found == "storage.kinds" && i == 0;
+                divider: i < SetState.storage-kinds.length - 1;
+            }
+        }
+
+        ListRow {
+            title: "Open Files";
+            checked: SetState.found == "storage.files";
+            subtitle: "Browse C:, E: and the rest";
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/folder.svg");
+            chevron: true;
+            divider: false;
+            clicked => { SetState.act("app-open", "files"); }
+        }
+    }
+}

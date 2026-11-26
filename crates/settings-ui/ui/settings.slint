@@ -8,16 +8,17 @@ import "@neoui/fonts/NeoSans-SemiBold.ttf";
 import "@neoui/fonts/NeoSans-Bold.ttf";
 import "@neoui/fonts/DejaVuSans.ttf";
 import { Theme, Scroll, KeyboardFocus, Kit, Header, ChoiceSheet } from "@neoui/kit.slint";
-import { SetState, WifiNet, WifiLink, WifiDetail, WifiSaved, AppRow, ProfileRow, SearchHit } from "state.slint";
+import { SetState, WifiNet, WifiLink, WifiDetail, WifiSaved, AppRow, ProfileRow, SearchHit, DriveRow, PartRow } from "state.slint";
+import { StoragePage } from "pages/storage.slint";
 import { RootPage, RootGridPage, SearchPage } from "pages/root.slint";
 import { LicencesPage } from "pages/licences.slint";
 import { WifiPage, WifiSavedPage, WifiJoinSheet, WifiDetailsSheet } from "pages/wifi.slint";
 import { ConnectivityPage, MobilePage, BluetoothPage } from "pages/connections.slint";
-import { DisplayPage, NavigationPage, SoundsPage, BatteryPage, ProfilePage, ProfileSheet, ProfileNameSheet } from "pages/device.slint";
+import { DisplayPage, NavigationPage, SoundsPage, BatteryPage, BatteryUsagePage, ProfilePage, ProfileSheet, ProfileNameSheet } from "pages/device.slint";
 import { DateTimePage, ZoneSheet, KeyboardPage, PrivacyPage } from "pages/personal.slint";
 import { AppsPage, AppSheet, OldAppsPage, DeveloperPage, AboutPage } from "pages/system.slint";
 
-export { Theme, Scroll, KeyboardFocus, Kit, SetState, WifiNet, WifiLink, WifiDetail, SearchHit }
+export { Theme, Scroll, KeyboardFocus, Kit, SetState, WifiNet, WifiLink, WifiDetail, SearchHit, DriveRow, PartRow }
 
 export component SettingsApp inherits Window {
     default-font-family: "NeoSans";
@@ -82,6 +83,8 @@ export component SettingsApp inherits Window {
         if SetState.page == 16: LicencesPage { }
         if SetState.page == 17: WifiSavedPage { }
         if SetState.page == 18: ProfilePage { }
+        if SetState.page == 19: BatteryUsagePage { }
+        if SetState.page == 20: StoragePage { }
     }
 
     // the sheets: full size, last, so they cover the header and the page

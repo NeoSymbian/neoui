@@ -86,11 +86,6 @@ impl Screen {
     }
 }
 
-/// `display.brightness` (0..=255) to the panel's level (0..=`max`).
-pub fn panel_level(setting: i32, max: i32) -> i32 {
-    setting.clamp(0, 255) * max / 255
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -141,13 +136,5 @@ mod tests {
         assert_eq!(s.wake(70_000), Some(Change::On));
         assert_eq!(s.tick(129_999, 60, false), None);
         assert_eq!(s.tick(130_000, 60, false), Some(Change::Off));
-    }
-
-    #[test]
-    fn brightness_scales_to_the_panel() {
-        assert_eq!(panel_level(0, 1023), 0);
-        assert_eq!(panel_level(255, 1023), 1023);
-        assert_eq!(panel_level(160, 1023), 641);
-        assert_eq!(panel_level(300, 1023), 1023);
     }
 }

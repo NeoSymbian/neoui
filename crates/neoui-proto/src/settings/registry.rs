@@ -204,6 +204,12 @@ registry! {
     /// Seconds without a touch before the screen turns off; 0 = never.
     DISPLAY_TIMEOUT: i32 = "display.timeout", default DefaultValue::Int(60),
         limit Limit::Range { min: 0, max: 600 }, owner Owner::Shell;
+    /// Settings -> Battery (SE3a): the status bar's battery shows its percent (off: the level's fill only).
+    BATTERY_SHOW_PERCENT: bool = "battery.show_percent", default DefaultValue::Bool(true), limit Limit::None,
+        owner Owner::Shell;
+    /// Settings -> Battery (SE3a): Battery saver caps the panel's brightness (`effects::SAVER_CAP_PERCENT`) without
+    /// moving the brightness setting (`effects::panel_level`). Switched by hand only.
+    BATTERY_SAVER: bool = "battery.saver", default DefaultValue::Bool(false), limit Limit::None, owner Owner::Shell;
     /// Settings -> Home screen & navigation (Navigation v2, D12 and D19): 0 Buttons (the key row ← ⌂ ▢, no edge
     /// gestures), 1 Gestures (the Thumb map: Back from either side, up for Home, up and pause for Open apps, along the
     /// band for the previous / next app), 2 N9 gestures (left Back, right Open apps, a right flick for the last app).
@@ -229,6 +235,10 @@ registry! {
     /// Android's adb. The UI server turns the port on (kernel HAL 0x4e04) and supervises fshell.
     DEVELOPER_USB_DEBUGGING: bool = "developer.usb_debugging", default DefaultValue::Bool(false), limit Limit::None,
         owner Owner::Shell;
+    /// Developer options -> Show touches (SE3a): the shell draws a ring under each finger, over everything; drawing
+    /// only, input goes where it went.
+    DEVELOPER_SHOW_TOUCHES: bool = "developer.show_touches", default DefaultValue::Bool(false), limit Limit::None,
+        owner Owner::Shell;
     /// The system keyboard has English (Settings -> Language & keyboard; the globe key cycles the languages on).
     KEYBOARD_EN: bool = "keyboard.en", default DefaultValue::Bool(true), limit Limit::None, owner Owner::Shell;
     /// The system keyboard has Armenian (phonetic).
@@ -240,6 +250,10 @@ registry! {
         limit Limit::Range { min: 0, max: 15 }, owner Owner::Shell;
     /// Every keyboard language as tall as the tallest one on (shorter ones get a digit row); else each its own height.
     KEYBOARD_SAME_HEIGHT: bool = "keyboard.same_height", default DefaultValue::Bool(true), limit Limit::None,
+        owner Owner::Shell;
+    /// Keypress vibration (SE3a): a short pulse on each key of the system keyboard (`effects::key_pulse`), as the old
+    /// apps' pads give.
+    KEYBOARD_VIBRATE: bool = "keyboard.vibrate", default DefaultValue::Bool(false), limit Limit::None,
         owner Owner::Shell;
     /// Settings -> Old apps (the key pads LEGACY draws under an old app; NeoSymbian/legacy host/pad.cpp): a short
     /// vibration on each key.

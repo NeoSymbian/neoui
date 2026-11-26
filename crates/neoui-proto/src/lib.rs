@@ -8,6 +8,7 @@ pub mod apps;
 pub mod battery;
 pub mod clock;
 pub mod devtools;
+pub mod effects;
 pub mod gesture;
 pub mod ipc;
 pub mod open;

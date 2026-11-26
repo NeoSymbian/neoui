@@ -13,6 +13,10 @@ export struct WifiSaved { name: string, detail: string }
 // an app on the Apps page: a ROM app by its screen key, or an old app (old: true) by its id in hex
 // a sound profile (neoui-proto sound_profile): its row's summary and what the profile page edits
 export struct ProfileRow { id: int, name: string, summary: string, ring: bool, volume: int, vibrate: bool, ringtone: int, message-tone: int }
+// a drive on the Storage page (SE3b): "E: Mass memory", "12.4 of 41.8 GB", what it holds, how full (0..1, -1 unknown)
+export struct DriveRow { title: string, used: string, note: string, fill: float }
+// a part of the Storage bar or a kind: its name, size text, and for a bar part where it starts and its share (0..1)
+export struct PartRow { name: string, size: string, start: float, share: float }
 export struct AppRow { key: string, name: string, old: bool, settings: bool }
 export struct WifiLink { shown: bool, connected: bool, name: string, subtitle: string, bars: int, band: string, details: [WifiDetail], sign-in: bool }
 
@@ -52,6 +56,9 @@ export global SetState {
     in-out property <bool> status-seconds;
     in-out property <bool> shade-date;
     in-out property <bool> usb-debugging;
+    // SE3a: a ring under each finger (developer.show_touches), a pulse per key (keyboard.vibrate)
+    in-out property <bool> show-touches;
+    in-out property <bool> key-vibrate;
     in property <[bool]> keyboards;  // English, Armenian, Russian on
     in property <int> keyboard;  // the current one
     in-out property <bool> same-height;
@@ -133,6 +140,24 @@ export global SetState {
     in property <string> battery-voltage: "unknown";
     in property <[float]> battery-history;
     in property <string> battery-storage;
+    // SE3a: Battery saver, the status bar's percent, and Battery usage (the shell's INFO_BATTERY_USAGE as text)
+    in-out property <bool> battery-saver;
+    in-out property <bool> show-percent: true;
+    in property <bool> usage-known;
+    in property <string> usage-title;
+    in property <string> usage-levels;
+    in property <string> usage-on-battery;
+    in property <string> usage-gaps;
+    // SE3b: Storage. The drives at once; the scan's parts (Apps, Files, Other, Free: sizes and their bar), the kinds,
+    // its state ("Counting… 120 folders", "Last counted 06:50") and the folders it couldn't read
+    in property <[DriveRow]> drives;
+    in property <[PartRow]> storage-parts;
+    in property <[PartRow]> storage-kinds;
+    in property <bool> storage-counting;
+    in property <bool> storage-counted;
+    in property <string> storage-status;
+    in property <string> storage-unreadable;
+    in property <string> storage-free;
 
     // About phone: the kernel's, the ROM's and neoui's build lines; Sounds: the test's progress
     in property <[string]> build;

@@ -84,6 +84,13 @@ pub const ROWS: &[Row] = &[
         &["power", "charge"],
     ),
     row(
+        "root.storage",
+        Root,
+        Storage,
+        "Storage",
+        &["space", "memory", "disk", "free"],
+    ),
+    row(
         "root.datetime",
         Root,
         DateTime,
@@ -333,6 +340,13 @@ pub const ROWS: &[Row] = &[
         "Same height for all languages",
         &[],
     ),
+    row(
+        "kb.vibrate",
+        Keyboard,
+        Keyboard,
+        "Keypress vibration",
+        &["haptic", "vibrate", "keyboard"],
+    ),
     // Privacy
     row(
         "privacy.clip",
@@ -380,6 +394,43 @@ pub const ROWS: &[Row] = &[
         "Open games in the console",
         &["landscape"],
     ),
+    // Battery (SE3a)
+    row(
+        "battery.saver",
+        Battery,
+        Battery,
+        "Battery saver",
+        &["dim", "power saving", "brightness"],
+    ),
+    row(
+        "battery.percent",
+        Battery,
+        Battery,
+        "Show percentage",
+        &["status bar", "percent"],
+    ),
+    row(
+        "battery.usage",
+        Battery,
+        BatteryUsage,
+        "Battery usage",
+        &["since full charge", "power"],
+    ),
+    // Storage (SE3b)
+    row(
+        "storage.kinds",
+        Storage,
+        Storage,
+        "C: and E: by kind",
+        &["images", "video", "audio", "documents", "apps"],
+    ),
+    row(
+        "storage.files",
+        Storage,
+        Storage,
+        "Open Files",
+        &["file manager"],
+    ),
     // Developer options
     row(
         "dev.usb",
@@ -396,6 +447,13 @@ pub const ROWS: &[Row] = &[
         &["console", "logs"],
     ),
     row("dev.save", Developer, Developer, "Save logs", &["logs"]),
+    row(
+        "dev.touches",
+        Developer,
+        Developer,
+        "Show touches",
+        &["pointer", "finger", "tap"],
+    ),
     row(
         "dev.tools",
         Developer,

@@ -126,6 +126,10 @@ impl Battery {
         }
         .encode()
     }
+    /// Battery usage for the Settings app (`SETTINGS_INFO` `INFO_BATTERY_USAGE`, SE3a).
+    pub fn usage(&self) -> Vec<u8> {
+        neoui_proto::settings_app::info::encode_usage(self.history.usage().as_ref())
+    }
     pub fn save(&mut self) {
         let result = || -> Result<u64, i32> {
             let fs = Fs::connect()?;
