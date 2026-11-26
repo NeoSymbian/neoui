@@ -151,6 +151,11 @@ pub(crate) static BINDINGS: &[Binding] = &[
     bool_binding!(keys::TIME_AUTO, get_time_auto, set_time_auto),
     bool_binding!(keys::TIME_AUTO_ZONE, get_time_auto_zone, set_time_auto_zone),
     bool_binding!(keys::STATUS_SECONDS, get_status_seconds, set_status_seconds),
+    bool_binding!(
+        keys::BATTERY_SHOW_PERCENT,
+        get_battery_show_percent,
+        set_battery_show_percent
+    ),
     bool_binding!(keys::SHADE_DATE, get_shade_date, set_shade_date),
     Binding {
         key: key_name::<i32>(keys::TIME_DATE_FORMAT),

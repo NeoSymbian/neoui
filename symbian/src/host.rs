@@ -204,9 +204,10 @@ pub struct Host {
     pub requested_screen: Option<&'static str>,
     /// With [`Self::requested_screen`] from `OPEN`: the app that opened it (Back at its root returns there).
     pub requested_from: Option<&'static str>,
-    /// What the Settings app reads with `SETTINGS_INFO` (kinds `INFO_BATTERY`, `INFO_NET`, `INFO_CLOCK` at 0..=2),
+    /// What the Settings app reads with `SETTINGS_INFO` (kinds `INFO_BATTERY`, `INFO_NET`, `INFO_CLOCK` at 0..=2,
+    /// `INFO_BATTERY_USAGE` at 4; `INFO_APPS` is answered from the bridge's entries),
     /// kept fresh by the main loop ([`Self::set_info`]).
-    info: [Vec<u8>; 3],
+    info: [Vec<u8>; 5],
     /// The joined network wants its login page: the browser's argument for it (`<url>\n<network>`, UI5)
     portal: Option<String>,
     /// The front app said `DONE`: the main loop takes the shell's Back past it.
@@ -393,7 +394,7 @@ impl Host {
         self.portal = arg;
     }
 
-    /// The Settings app's `SETTINGS_INFO` of `kind` (1..=3) is now `bytes` (`neoui_proto::settings_app::info`).
+    /// The Settings app's `SETTINGS_INFO` of `kind` (1..=3, 5; 4 is answered from the bridge's entries) is now `bytes` (`neoui_proto::settings_app::info`).
     pub fn set_info(&mut self, kind: i32, bytes: Vec<u8>) {
         if let Some(slot) = usize::try_from(kind - 1)
             .ok()
@@ -937,7 +938,7 @@ fn setting_get(settings: &Settings, m: &Message) -> Result<i32, i32> {
 }
 
 /// `SETTINGS_INFO [kind, cursor, out]` → the snapshot's length.
-fn settings_info(info: &[Vec<u8>; 3], m: &Message) -> Result<i32, i32> {
+fn settings_info(info: &[Vec<u8>; 5], m: &Message) -> Result<i32, i32> {
     let bytes = m
         .int(0)
         .checked_sub(1)

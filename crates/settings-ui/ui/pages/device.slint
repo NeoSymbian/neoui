@@ -152,6 +152,8 @@ export component SoundsPage inherits NeoList {
 
 export component BatteryPage inherits NeoList {
     VerticalLayout {
+    alignment: start;
+    VerticalLayout {
         alignment: start;
         spacing: 14 * Theme.dp;
         padding: Theme.margin;
@@ -224,6 +226,84 @@ export component BatteryPage inherits NeoList {
             font-size: Theme.font-status;
             color: Theme.text-dim;
             wrap: word-wrap;
+        }
+    }
+
+    // SE3a: the saver (by hand only), the status bar's percent, and Battery usage
+    SectionHeader { text: "Saving"; }
+    ListRow {
+        title: "Battery saver";
+        checked: SetState.found == "battery.saver";
+        subtitle: "Dims the screen";
+        has-icon: true;
+        icon: @image-url("@neoui/icons/sys/battery_saver.svg");
+        has-switch: true;
+        switch-on <=> SetState.battery-saver;
+        switch-toggled(v) => { SetState.act("battery.saver", v ? "1" : "0"); }
+    }
+
+    ListRow {
+        title: "Show percentage";
+        checked: SetState.found == "battery.percent";
+        subtitle: "In the status bar";
+        has-switch: true;
+        switch-on <=> SetState.show-percent;
+        switch-toggled(v) => { SetState.act("battery.show_percent", v ? "1" : "0"); }
+    }
+
+    ListRow {
+        title: "Battery usage";
+        checked: SetState.found == "battery.usage";
+        subtitle: "Since the last full charge";
+        chevron: true;
+        divider: false;
+        clicked => { SetState.act("open", "19"); }
+    }
+    }
+}
+
+// Battery usage (set2-battery-usage, SE3a): only what the shell's history holds, the level and the charge state once
+// a minute. No per-app shares (D4): nothing accounts for them yet.
+export component BatteryUsagePage inherits NeoList {
+    VerticalLayout {
+        alignment: start;
+        SectionHeader { text: SetState.usage-known ? SetState.usage-title : "Battery usage"; }
+        VerticalLayout {
+            alignment: start;
+            spacing: 10 * Theme.dp;
+            padding-left: Theme.margin;
+            padding-right: Theme.margin;
+            padding-bottom: Theme.margin;
+            if !SetState.usage-known: Text {
+                text: "No data yet. The history starts with the first readings after the phone starts.";
+                font-size: Theme.font-body;
+                color: Theme.text-secondary;
+                wrap: word-wrap;
+            }
+            if SetState.usage-known: Text {
+                text: SetState.usage-levels;
+                font-size: Theme.font-title;
+                font-weight: 700;
+                color: Theme.text;
+                wrap: word-wrap;
+            }
+            if SetState.usage-known: Text {
+                text: SetState.usage-on-battery;
+                font-size: Theme.font-body;
+                color: Theme.text;
+            }
+            if SetState.usage-known && SetState.usage-gaps != "": Text {
+                text: SetState.usage-gaps;
+                font-size: Theme.font-label;
+                color: Theme.text-secondary;
+                wrap: word-wrap;
+            }
+            Text {
+                text: "Per-app use needs accounting that doesn't exist yet; screen time isn't recorded.";
+                font-size: Theme.font-status;
+                color: Theme.text-dim;
+                wrap: word-wrap;
+            }
         }
     }
 }

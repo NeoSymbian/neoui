@@ -128,6 +128,11 @@ pub fn live_value(s: &SetState<'_>, id: &str) -> String {
             "Off"
         }),
         "dev.usb" => on(s.get_usb_debugging()),
+        "dev.touches" => on(s.get_show_touches()),
+        "kb.vibrate" => on(s.get_key_vibrate()),
+        "battery.saver" => on(s.get_battery_saver()),
+        "battery.percent" => on(s.get_show_percent()),
+        "battery.usage" => s.get_usage_levels().into(),
         "pads.vibrate" => on(s.get_pad_vibrate()),
         "pads.strength" => pick(s.get_pad_strengths(), s.get_pad_strength()),
         "pads.default" => pick(s.get_pad_defaults(), s.get_pad_default()),

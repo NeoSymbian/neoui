@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 //! What only the shell knows, as `ipc::SETTINGS_INFO` sends it to the Settings app: the battery's 24-hour history
 //! ([`Battery`]), the Wi-Fi link's IP side and captive portal ([`crate::wifi::Ip`]) and where the clock's time came
-//! from ([`Clock`]). Each encoding is bounded; a short or damaged buffer decodes to `None`.
+//! from ([`Clock`]), and since 1.16 Battery usage ([`encode_usage`]). Each encoding is bounded; a short or damaged
+//! buffer decodes to `None`.
 
+use crate::battery::Usage;
 use crate::wifi::{Internet, Ip};
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -53,6 +55,55 @@ impl Battery {
             bars,
         })
     }
+}
+
+/// The longest Battery usage record (1.16, `ipc::INFO_BATTERY_USAGE`).
+pub const USAGE_MAX: usize = 28;
+
+/// Battery usage: `[0]` before the history's first reading ("No data yet"), else `[1][since_full][start_utc i64 LE]
+/// [end_utc i64 LE][start % or 255][end % or 255][on_battery_s u32 LE][gap_s u32 LE]` ([`USAGE_MAX`] bytes).
+#[must_use]
+pub fn encode_usage(u: Option<&Usage>) -> Vec<u8> {
+    let Some(u) = u else {
+        return alloc::vec![0];
+    };
+    let mut b = Vec::with_capacity(USAGE_MAX);
+    b.push(1);
+    b.push(u8::from(u.since_full));
+    b.extend_from_slice(&u.start_utc.to_le_bytes());
+    b.extend_from_slice(&u.end_utc.to_le_bytes());
+    b.push(u.start_percent.map_or(255, |p| p.min(100)));
+    b.push(u.end_percent.map_or(255, |p| p.min(100)));
+    b.extend_from_slice(&u.on_battery_s.to_le_bytes());
+    b.extend_from_slice(&u.gap_s.to_le_bytes());
+    b
+}
+
+/// The other way: `Some(None)` = no data yet, `None` = damaged.
+#[must_use]
+pub fn decode_usage(b: &[u8]) -> Option<Option<Usage>> {
+    if b == [0] {
+        return Some(None);
+    }
+    if b.len() != USAGE_MAX || b[0] != 1 || b[1] > 1 {
+        return None;
+    }
+    let level = |v: u8| match v {
+        0..=100 => Some(Some(v)),
+        255 => Some(None),
+        _ => None,
+    };
+    let i64_at = |i: usize| i64::from_le_bytes(b[i..i + 8].try_into().unwrap_or_default());
+    let u32_at = |i: usize| u32::from_le_bytes(b[i..i + 4].try_into().unwrap_or_default());
+    Some(Some(Usage {
+        since_full: b[1] == 1,
+        start_utc: i64_at(2),
+        end_utc: i64_at(10),
+        start_percent: level(b[18])?,
+        end_percent: level(b[19])?,
+        on_battery_s: u32_at(20),
+        gap_s: u32_at(24),
+    }))
 }
 
 /// The IP side of the link: `[has_address][address × 4][prefix][gateway × 4][dns × 4][internet]`.
@@ -249,6 +300,36 @@ mod tests {
         assert_eq!(d.bars[1], -1.0);
         assert_eq!(d.bars[BATTERY_SLOTS - 1], 1.0);
         assert_eq!(Battery::decode(&e[..10]), None);
+    }
+
+    #[test]
+    fn usage_round_trips_at_its_limits() {
+        assert_eq!(encode_usage(None), vec![0]);
+        assert_eq!(decode_usage(&[0]), Some(None));
+        let most = Usage {
+            since_full: true,
+            start_utc: i64::MIN,
+            end_utc: i64::MAX,
+            start_percent: Some(100),
+            end_percent: None,
+            on_battery_s: u32::MAX,
+            gap_s: u32::MAX,
+        };
+        let b = encode_usage(Some(&most));
+        assert_eq!(b.len(), USAGE_MAX);
+        const { assert!(USAGE_MAX <= INFO_MAX) }; // the out buffer the app passes takes it
+        assert_eq!(decode_usage(&b), Some(Some(most)));
+        // damaged: short, long, a bad flag, a level over 100 (not 255), the empty marker with more after it
+        assert_eq!(decode_usage(&b[..USAGE_MAX - 1]), None);
+        assert_eq!(decode_usage(&[b.clone(), vec![0]].concat()), None);
+        let mut bad = b.clone();
+        bad[1] = 2;
+        assert_eq!(decode_usage(&bad), None);
+        let mut bad = b.clone();
+        bad[18] = 101;
+        assert_eq!(decode_usage(&bad), None);
+        assert_eq!(decode_usage(&[0, 0]), None);
+        assert_eq!(decode_usage(&[]), None);
     }
 
     #[test]

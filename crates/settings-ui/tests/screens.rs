@@ -318,6 +318,17 @@ fn every_page() {
         sh.shoot(name);
     }
 
+    // Battery usage (SE3a): what the history holds, then before its first reading
+    s.set_usage_known(true);
+    s.set_usage_title("Since full charge".into());
+    s.set_usage_levels("From 100% to 72% over 9 h 40 min".into());
+    s.set_usage_on_battery("On battery 3 h 34 min".into());
+    s.set_usage_gaps("Off or not recorded for 6 h, not counted".into());
+    page(&sh, 19, "Battery usage");
+    sh.shoot("set2-battery-usage");
+    s.set_usage_known(false);
+    sh.shoot("set2-battery-usage-empty");
+
     // the sheets
     page(&sh, 1, "Wi-Fi");
     s.set_wifi_current(s.get_wifi_networks().row_data(0).unwrap());
@@ -435,6 +446,18 @@ fn every_page() {
     sh.take_acts();
     sh.tap(100.0, 231.0);
     assert_eq!(sh.take_acts(), acts(&[("wifi-saved-forget", "1")]));
+
+    // SE3a: Show touches and Keypress vibration write their keys (off by default)
+    page(&sh, 11, "Developer options");
+    sh.draw();
+    sh.take_acts();
+    sh.tap(321.0, 402.0);
+    assert_eq!(sh.take_acts(), acts(&[("developer.show_touches", "1")]));
+    page(&sh, 10, "Language & keyboard");
+    sh.draw();
+    sh.take_acts();
+    sh.tap(321.0, 496.0);
+    assert_eq!(sh.take_acts(), acts(&[("keyboard.vibrate", "1")]));
 
     // the pad sheets (pad-settings: the B button the board leaves out, D5)
     page(&sh, 14, "Old apps");

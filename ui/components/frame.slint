@@ -19,6 +19,8 @@ export component StatusBar inherits Rectangle {
     in property <bool> battery-charging;
     in property <bool> battery-connected;
     in property <bool> battery-full;
+    // Settings -> Battery -> Show percentage (SE3a); off, the fill alone shows the level
+    in property <bool> battery-show-percent: true;
     in property <bool> shade-open;
     in property <string> time: "10:24";
     // the modem (telephony C5): bars 0..4, -1 = no modem (the plain signal icon); the network's name; the radio
@@ -167,7 +169,7 @@ export component StatusBar inherits Rectangle {
                         source: @image-url("../icons/sys/check.svg");
                         size: 11 * Theme.dp;
                     }
-                    if !battery-charging && !battery-connected && !battery-full: Text {
+                    if battery-show-percent && !battery-charging && !battery-connected && !battery-full: Text {
                         width: parent.width;
                         height: parent.height;
                         text: battery-percent < 0 ? "--" : "\{battery-percent}";

@@ -222,6 +222,9 @@ fn main() -> i32 {
         let mut held: Vec<InputEvent> = Vec::new();
         let mut hint: Option<(Edge, u32, i32)> = None;
         let mut hint_drawn: Option<Rect> = None;
+        // Show touches (SE3a): the fingers down (id, x, y) and the rings drawn for them
+        let mut touches: Vec<(u8, i32, i32)> = Vec::new();
+        let mut touches_drawn: Vec<Rect> = Vec::new();
         loop {
             // a dark screen draws nothing: no frame pacing for animations or a pending draw
             let wait = if scr.is_on()
@@ -311,6 +314,23 @@ fn main() -> i32 {
                     }
                     // Edge gestures see every move (before they are merged: a merged move could hide the
                     // direction); what they don't take is routed as usual below.
+                    // Show touches (SE3a) only watches the fingers: the events are routed below as they would be
+                    if host
+                        .settings
+                        .get(keys::DEVELOPER_SHOW_TOUCHES)
+                        .unwrap_or(false)
+                    {
+                        for ev in &evs {
+                            if let InputEvent::Touch { id, x, y, phase } = *ev {
+                                touches.retain(|t| t.0 != id);
+                                if phase != TouchPhase::Up {
+                                    touches.push((id, x, y));
+                                }
+                            }
+                        }
+                    } else {
+                        touches.clear();
+                    }
                     // Gestures (the Thumb map) and N9 gestures; Buttons has no edge gestures (D18)
                     let mode = host.settings.get(keys::NAV_MODE).unwrap_or(1);
                     gest.set_map(if mode == 2 { Map::N9 } else { Map::Thumb });
@@ -500,6 +520,14 @@ fn main() -> i32 {
                                     ui.dispatch(event);
                                     // the system keyboard types into the app like a hardware key
                                     for code in ui.take_typed() {
+                                        // Keypress vibration (SE3a): the pads' tick, off by default
+                                        if let Some((ms, amp)) = neoui_proto::effects::key_pulse(
+                                            host.settings
+                                                .get(keys::KEYBOARD_VIBRATE)
+                                                .unwrap_or(false),
+                                        ) {
+                                            haptic(ms, amp);
+                                        }
                                         host.send(AppEvent::Input(InputEvent::Key {
                                             code,
                                             down: true,
@@ -748,6 +776,7 @@ fn main() -> i32 {
             }
             if battery.poll(&mut ui, time::millis()) {
                 host.set_info(proto::INFO_BATTERY, battery.info());
+                host.set_info(proto::INFO_BATTERY_USAGE, battery.usage());
             }
             wifi.poll(
                 &mut ui,
@@ -800,9 +829,11 @@ fn main() -> i32 {
                 }
             }
             if panel_max > 0 && scr.is_on() {
-                let want = screen::panel_level(
+                // Battery saver caps the level without moving the setting (SE3a); off, the setting's level at once
+                let want = neoui_proto::effects::panel_level(
                     host.settings.get(keys::DISPLAY_BRIGHTNESS).unwrap_or(160),
                     panel_max,
+                    host.settings.get(keys::BATTERY_SAVER).unwrap_or(false),
                 );
                 if want != brightness_sent {
                     set_brightness(want);
@@ -810,6 +841,7 @@ fn main() -> i32 {
                 }
             }
             if !scr.is_on() {
+                touches.clear(); // a sleeping touchscreen sends no lifts; the rings go at the next frame
                 host.release_frames(); // apps go on (their frames aren't shown)
                 continue; // nothing drawn while dark; the pollers above keep running
             }
@@ -859,7 +891,18 @@ fn main() -> i32 {
                     perf.frame(render_us, 0, 0, px);
                     let m = perf.mark();
                     hint_drawn = None; // the fade writes the whole screen
+                    touches_drawn.clear();
                     fade(&old, &frame, &host, e, (w, h), &mut rows, &display);
+                    draw_touches(
+                        &touches,
+                        &mut touches_drawn,
+                        &frame,
+                        &host,
+                        (w, h),
+                        dp256,
+                        &mut rows.1,
+                        &display,
+                    );
                     perf.layer(perf.since(&m));
                 }
                 None => {
@@ -881,6 +924,19 @@ fn main() -> i32 {
                     } else {
                         compose(&mut host, &damage, &display)
                     };
+                    // Show touches: put back what the rings covered before the hint (which may lie under them) is
+                    // drawn, then the rings over everything; their cost counts in the perf line's app time
+                    let rings = !touches.is_empty() || !touches_drawn.is_empty();
+                    if rings {
+                        restore_touches(
+                            &mut touches_drawn,
+                            &frame,
+                            &host,
+                            w,
+                            &mut rows.1,
+                            &display,
+                        );
+                    }
                     if hint.is_some() || hint_drawn.is_some() {
                         // Back: the left edge, and the right one in the Thumb map (N9's right edge is Open apps)
                         let thumb = host.settings.get(keys::NAV_MODE).unwrap_or(1) == 1;
@@ -889,6 +945,18 @@ fn main() -> i32 {
                             hint_rect(e, p, at, back, (w, h), dp256)
                         });
                         draw_hint(r, &mut hint_drawn, &frame, &host, w, &mut rows.1, &display);
+                    }
+                    if rings {
+                        draw_touches(
+                            &touches,
+                            &mut touches_drawn,
+                            &frame,
+                            &host,
+                            (w, h),
+                            dp256,
+                            &mut rows.1,
+                            &display,
+                        );
                     }
                     perf.frame(render_us, copy_us, perf.since(&m), px + app_px);
                 }
@@ -1117,6 +1185,74 @@ fn draw_hint(
         }
     }
     *drawn = Some(r);
+}
+
+/// Show touches (SE3a): put back what the rings covered (the frame with the front app over it).
+fn restore_touches(
+    drawn: &mut Vec<Rect>,
+    frame: &[u32],
+    host: &Host,
+    w: usize,
+    row: &mut [u32],
+    display: &Display,
+) {
+    let app = front_surface(host);
+    for r in drawn.drain(..) {
+        let x = r.x as usize;
+        for y in r.y as usize..r.y as usize + r.h as usize {
+            row.copy_from_slice(&frame[y * w..][..w]);
+            app_row(app, y, row);
+            display.blit_to(row, w, (x, 0, r.w as usize, 1), (x, y));
+        }
+    }
+}
+
+/// Show touches (SE3a): a 24 dp ring under each finger, straight to the screen over what is there (drawing only: the
+/// touches were routed already). `drawn` gets the rectangles for [`restore_touches`].
+#[allow(clippy::too_many_arguments)]
+fn draw_touches(
+    touches: &[(u8, i32, i32)],
+    drawn: &mut Vec<Rect>,
+    frame: &[u32],
+    host: &Host,
+    (w, h): (usize, usize),
+    dp256: u32,
+    row: &mut [u32],
+    display: &Display,
+) {
+    let d = (24 * dp256 / 256) as i32;
+    let app = front_surface(host);
+    for &(_, cx, cy) in touches {
+        // the ring's square, cut to the screen
+        let (x0, y0) = ((cx - d / 2).max(0), (cy - d / 2).max(0));
+        let (x1, y1) = (
+            (cx - d / 2 + d).min(w as i32),
+            (cy - d / 2 + d).min(h as i32),
+        );
+        if x1 <= x0 || y1 <= y0 {
+            continue;
+        }
+        for y in y0..y1 {
+            let yu = y as usize;
+            row.copy_from_slice(&frame[yu * w..][..w]);
+            app_row(app, yu, row);
+            for x in x0..x1 {
+                let px = &mut row[x as usize];
+                if let Some(c) =
+                    neoui_render::touch_ring_pixel(x - (cx - d / 2), y - (cy - d / 2), d, *px)
+                {
+                    *px = c;
+                }
+            }
+            display.blit_to(
+                row,
+                w,
+                (x0 as usize, 0, (x1 - x0) as usize, 1),
+                (x0 as usize, yu),
+            );
+        }
+        drawn.push(Rect::new(x0, y0, (x1 - x0) as u32, (y1 - y0) as u32));
+    }
 }
 
 fn contains(r: &Rect, x: i32, y: i32) -> bool {
