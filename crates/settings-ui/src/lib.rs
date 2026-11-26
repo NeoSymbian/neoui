@@ -161,6 +161,8 @@ pub fn live_value(s: &SetState<'_>, id: &str) -> String {
         "root.battery" => s.get_battery_text().into(),
         "root.storage" => s.get_storage_free().into(),
         "storage.kinds" => s.get_storage_status().into(),
+        // what the page says too: the row is there so search finds it, the feature waits for FS6
+        "storage.usb" => "Not yet (FS6)".into(),
         "root.datetime" => String::from(if s.get_time_auto() {
             "Automatic"
         } else {

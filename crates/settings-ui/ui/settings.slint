@@ -7,7 +7,7 @@ import "@neoui/fonts/NeoSans-Medium.ttf";
 import "@neoui/fonts/NeoSans-SemiBold.ttf";
 import "@neoui/fonts/NeoSans-Bold.ttf";
 import "@neoui/fonts/DejaVuSans.ttf";
-import { Theme, Scroll, KeyboardFocus, Kit, Header, ChoiceSheet } from "@neoui/kit.slint";
+import { Theme, Scroll, KeyboardFocus, Kit, Header, ChoiceSheet, Alphabets } from "@neoui/kit.slint";
 import { SetState, WifiNet, WifiLink, WifiDetail, WifiSaved, AppRow, ProfileRow, SearchHit, DriveRow, PartRow } from "state.slint";
 import { StoragePage } from "pages/storage.slint";
 import { RootPage, RootGridPage, SearchPage } from "pages/root.slint";
@@ -26,6 +26,8 @@ export component SettingsApp inherits Window {
     // the shell's keyboard covers the surface's bottom: a sheet with a field ends above it
     property <length> kb: KeyboardFocus.open && !KeyboardFocus.dismissed ? KeyboardFocus.text-h : 0;
 
+    // every letter the keyboard types gets baked in: the native names (Հայերեն, Русский), typed searches and names
+    Alphabets { }
     // a tap no row or button takes lands here: the focused field lets go and the keyboard closes
     sink := FocusScope { }
     TouchArea {

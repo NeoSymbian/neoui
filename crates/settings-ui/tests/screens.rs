@@ -71,7 +71,11 @@ fn fill(sh: &Shot) {
     ]));
     s.set_keyboards(model(vec![true, true, true]));
     s.set_keyboard_names(strings(&["English", "Armenian", "Russian"]));
-    s.set_keyboard_hints(strings(&["QWERTY", "Phonetic", "ЙЦУКЕН"]));
+    s.set_keyboard_hints(strings(&[
+        "QWERTY",
+        "Հայերեն · Phonetic",
+        "Русский · ЙЦУКЕН",
+    ]));
     s.set_same_height(true);
     s.set_pad_vibrate(true);
     s.set_pad_strength(1);
@@ -311,10 +315,10 @@ fn fill(sh: &Shot) {
     });
 }
 
-/// The centres of a plain list's first three rows (dp, the header included): for taps.
-const ROW1: f32 = 84.0;
-const ROW2: f32 = 156.0;
-const ROW3: f32 = 228.0;
+/// The app row with this key (the catalogue's order changes as apps come and go).
+fn by_key(apps: &slint::ModelRc<AppRow>, key: &str) -> AppRow {
+    apps.iter().find(|a| a.key == key).unwrap()
+}
 
 fn page(sh: &Shot, id: i32, title: &str) {
     let s = sh.ui.global::<SetState>();
@@ -556,13 +560,11 @@ fn every_page() {
     sheet(&sh, "app");
     sh.shoot("set2-app-sheet");
     sheet(&sh, "");
+    sh.shoot("set2-apps"); // every ROM app, as the board lists them
     // the old apps (a short ROM list so they are in view): two, more than the grid keeps, and none yet
     let rom = s.get_apps();
-    s.set_apps(model(vec![
-        rom.row_data(0).unwrap(),
-        rom.row_data(5).unwrap(),
-    ]));
-    sh.shoot("set2-apps");
+    s.set_apps(model(vec![rom.row_data(0).unwrap(), by_key(&rom, "phone")]));
+    sh.shoot("set2-apps-old");
     s.set_old_total(70);
     sh.shoot("set2-apps-many");
     let old = s.get_old_apps();
@@ -584,16 +586,21 @@ fn every_page() {
     s.set_app_clear("Alarms, timers, stopwatch, world clocks, its settings".into());
     page(&sh, 21, "Clock");
     sh.shoot("set2-app-detail");
-    for (y, act) in [(ROW1, "app-open"), (ROW2, "app-stop"), (ROW3, "app-clear")] {
+    // the header, Storage (Clear data), App (Open, Stop app)
+    for (y, act) in [
+        (180.0, "app-clear"),
+        (278.0, "app-open"),
+        (343.0, "app-stop"),
+    ] {
         sh.tap(100.0, y);
         assert_eq!(sh.take_acts(), acts(&[(act, "clock")]), "{act}");
     }
     // not running: Stop does nothing; a resident (Phone) has no Stop, an app without an owner path no Clear data
     s.set_app_running(false);
     sh.draw();
-    sh.tap(100.0, ROW2);
+    sh.tap(100.0, 343.0);
     assert!(sh.take_acts().is_empty());
-    s.set_app_current(s.get_apps().row_data(5).unwrap());
+    s.set_app_current(by_key(&s.get_apps(), "phone"));
     s.set_app_stoppable(false);
     s.set_app_clear("The call history (contacts stay)".into());
     page(&sh, 21, "Phone");
@@ -604,9 +611,9 @@ fn every_page() {
     sh.shoot("set2-reset");
     sh.draw();
     sh.take_acts();
-    sh.tap(100.0, ROW1);
+    sh.tap(100.0, 175.0); // under the note and the Reset header
     assert_eq!(sh.take_acts(), acts(&[("reset", "network")]));
-    sh.tap(100.0, ROW2);
+    sh.tap(100.0, 246.0);
     assert_eq!(sh.take_acts(), acts(&[("reset", "settings")]));
 
     // Saved networks: a row asks to forget that network (the app confirms first)
