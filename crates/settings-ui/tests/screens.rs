@@ -349,6 +349,27 @@ fn fill(sh: &Shot) {
     s.set_clip_notice(true);
 }
 
+/// D4: the Apps list's subtitles for `apps` (as NEOSET sets them from INFO 8: what the shell and the owners here
+/// measure today; Clock and Calendar until DTSRV reports, Messages while MODEMD doesn't count its texts).
+fn subs(apps: &slint::ModelRc<AppRow>) -> slint::ModelRc<SharedString> {
+    model(
+        apps.iter()
+            .map(|a| {
+                SharedString::from(match a.key.as_str() {
+                    "terminal" => "ROM · no data",
+                    "files" => "ROM · at least 1.2 MB data on C:",
+                    "devtools" => "ROM · 1.1 MB logs on E:",
+                    "phone" => "ROM · at least 2.4 MB data on C:",
+                    "messages" => "ROM · SMS kept by the modem server",
+                    "browser" => "ROM · at least 12.6 MB data on C:",
+                    "contacts" => "ROM · size unavailable",
+                    _ => "ROM · not measured yet",
+                })
+            })
+            .collect(),
+    )
+}
+
 /// The app row with this key (the catalogue's order changes as apps come and go).
 fn by_key(apps: &slint::ModelRc<AppRow>, key: &str) -> AppRow {
     apps.iter().find(|a| a.key == key).unwrap()
@@ -794,10 +815,12 @@ fn every_page() {
     sheet(&sh, "app");
     sh.shoot("set2-app-sheet");
     sheet(&sh, "");
-    sh.shoot("set2-apps"); // every ROM app, as the board lists them
+    s.set_app_subs(subs(&s.get_apps()));
+    sh.shoot("set2-apps"); // every ROM app, as the board lists them; D4: where each is and what it stores
     // the old apps (a short ROM list so they are in view): two, more than the grid keeps, and none yet
     let rom = s.get_apps();
     s.set_apps(model(vec![rom.row_data(0).unwrap(), by_key(&rom, "phone")]));
+    s.set_app_subs(subs(&s.get_apps()));
     sh.shoot("set2-apps-old");
     s.set_old_total(70);
     sh.shoot("set2-apps-many");
@@ -808,37 +831,79 @@ fn every_page() {
     s.set_old_apps(old);
     s.set_old_total(2);
     s.set_apps(rom);
+    s.set_app_subs(subs(&s.get_apps()));
     // a ROM app's row opens its page (SE4a)
     sh.draw();
     sh.take_acts();
     sh.tap(100.0, 118.0);
     assert_eq!(sh.take_acts(), acts(&[("app-detail", "clock")]));
-    // the app's page: Open, Stop while it runs, Clear data; each asks the app (which confirms first)
-    s.set_app_current(s.get_apps().row_data(0).unwrap());
+    // the board's Browser, as its owner (a later run in NeoSymbian/browser) will report it: identity, data and cache,
+    // a clear scope, its own settings
+    s.set_app_current(AppRow {
+        key: "browser".into(),
+        name: "Browser".into(),
+        old: false,
+        settings: true,
+    });
     s.set_app_running(true);
     s.set_app_stoppable(true);
-    s.set_app_clear("Alarms, timers, stopwatch, world clocks, its settings".into());
-    page(&sh, 21, "Clock");
+    s.set_app_clear("History, cookies and site data".into());
+    s.set_app_identity("NEOWEB.EXE · Servo 0.8.0".into());
+    s.set_app_size_shown(true);
+    s.set_app_size_sub("Data 12.6 MB · cache 35.6 MB".into());
+    s.set_app_size("48.2 MB".into());
+    page(&sh, 21, "Browser");
     sh.shoot("set2-app-detail");
-    // the header, Storage (Clear data), App (Open, Stop app)
+    // the identity opens it; Storage (Storage used, Clear data), App (its settings, Stop app); each asks the app
+    // (which confirms first)
     for (y, act) in [
-        (180.0, "app-clear"),
-        (278.0, "app-open"),
-        (343.0, "app-stop"),
+        (84.0, "app-open"),
+        (254.0, "app-clear"),
+        (352.0, "app"),
+        (416.0, "app-stop"),
+    ] {
+        sh.tap(100.0, y);
+        assert_eq!(sh.take_acts(), acts(&[(act, "browser")]), "{act}");
+    }
+    sh.tap(100.0, 190.0); // Storage used is only a reading
+    assert!(sh.take_acts().is_empty());
+    // Clock today: the shell's own count (its data are DTSRV's), the 1.17 Clear data; the virt-taps run taps the
+    // identity (84) and Stop app (344)
+    s.set_app_current(s.get_apps().row_data(0).unwrap());
+    s.set_app_clear("Alarms, timers, stopwatch, world clocks, its settings".into());
+    s.set_app_identity("NEOCLOCK.EXE".into());
+    s.set_app_size_sub("Size unavailable".into());
+    s.set_app_size("".into());
+    page(&sh, 21, "Clock");
+    sh.shoot("set2-app-detail-clock");
+    for (y, act) in [
+        (84.0, "app-open"),
+        (254.0, "app-clear"),
+        (344.0, "app-stop"),
     ] {
         sh.tap(100.0, y);
         assert_eq!(sh.take_acts(), acts(&[(act, "clock")]), "{act}");
     }
-    // not running: Stop does nothing; a resident (Phone) has no Stop, an app without an owner path no Clear data
+    // not running: Stop does nothing; a resident (Phone) has no Stop
     s.set_app_running(false);
     sh.draw();
-    sh.tap(100.0, 343.0);
+    sh.tap(100.0, 344.0);
     assert!(sh.take_acts().is_empty());
+    // measuring, then Phone's private folder counted (a lower bound: its call log is MODEMD's)
+    s.set_app_size_sub("Counting…".into());
+    sh.shoot("set2-app-detail-counting");
     s.set_app_current(by_key(&s.get_apps(), "phone"));
     s.set_app_stoppable(false);
     s.set_app_clear("The call history (contacts stay)".into());
+    s.set_app_identity("NEOPHONE.EXE".into());
+    s.set_app_size_sub("Data 2.4 MB".into());
+    s.set_app_size("At least 2.4 MB".into());
     page(&sh, 21, "Phone");
     sh.shoot("set2-app-detail-phone");
+    // a shell older than 1.20: no Storage used, the plain identity
+    s.set_app_size_shown(false);
+    s.set_app_identity("".into());
+    s.set_app_subs(model(Vec::new()));
 
     // Reset (SE4a): each row asks the app, which confirms first
     page(&sh, 22, "Reset");

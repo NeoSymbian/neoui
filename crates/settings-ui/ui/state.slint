@@ -134,6 +134,14 @@ export global SetState {
     in property <bool> app-running;
     in property <bool> app-stoppable;
     in property <string> app-clear;
+    // D4: INFO 8 (symbian/apps/settings/src/apps_detail.rs). Each listed app's subtitle in `apps`' order ("ROM · 2.4 MB
+    // data on C:"; "" = the shell can't say: the plain one); the app page's identity line ("NEOWEB.EXE · Servo 0.8.0";
+    // "" = "In the phone's ROM") and its Storage used row (shown when the shell measures apps: subtitle and value)
+    in property <[string]> app-subs;
+    in property <string> app-identity;
+    in property <bool> app-size-shown;
+    in property <string> app-size-sub;
+    in property <string> app-size;
 
     // Sounds & profiles (SE2a): every profile, the active one, the one a sheet or the profile page is about, and the
     // name typed for Add / Rename

@@ -13,6 +13,7 @@
 extern crate alloc;
 
 mod appearance;
+mod apps_detail;
 mod battery_cycle;
 mod d2;
 mod modem;
@@ -66,6 +67,8 @@ enum Asked {
     /// Apps → an app → Stop / Clear data, for this app's key (SE4a)
     Stop(&'static str),
     Clear(&'static str),
+    /// D4: the confirmed clear of this app's owner's scope, as the question named it
+    ClearScope(&'static str, u32),
     /// Reset → network settings or settings (`proto::RESET_*`)
     Reset(u8),
 }
@@ -89,6 +92,7 @@ struct Ctx {
     rows: row_model::Rows,
     /// the keyboard as last asked of the shell (KeyboardFocus open, seq, mode)
     kb: Cell<(bool, i32, i32)>,
+    d4: apps_detail::D4,
 }
 
 fn run() -> Result<(), i32> {
@@ -110,6 +114,7 @@ fn run() -> Result<(), i32> {
         asked: RefCell::default(),
         kb: Cell::new((false, 0, 0)),
         rows: row_model::Rows::default(),
+        d4: apps_detail::D4::default(),
     });
     // watch first: a change between the first read and the watch would be missed
     if let Err(e) = app.watch_settings("") {
@@ -154,6 +159,7 @@ fn run() -> Result<(), i32> {
                 ctx.open(Page::from_id(page).unwrap_or(Page::Root).from_outside());
             }
             AppEvent::Settings { .. } => store::load(&app, &ui),
+            AppEvent::SettingsInfo { .. } => apps_detail::tick(&ctx, &ui, ctx.page.get(), true),
             // the shell's keyboard: its height (0 while a field keeps the focus: the user put it away)
             AppEvent::Keyboard { h } => {
                 let kf = ui.global::<KeyboardFocus>();
@@ -210,6 +216,9 @@ fn run() -> Result<(), i32> {
                         "",
                     );
                     ctx.tick(true);
+                }
+                Some(Asked::ClearScope(key, scope)) if i == 0 => {
+                    apps_detail::clear(&ctx, key, scope)
                 }
                 Some(Asked::Reset(what)) if i == 0 => {
                     let r = app.settings_action_with(proto::ACTION_RESET, &[what]);
@@ -313,6 +322,7 @@ impl Ctx {
         if page == Page::AppDetail {
             s.set_title(s.get_app_current().name);
             s.set_app_clear(asks::clear_what(s.get_app_current().key.as_str()).into());
+            apps_detail::opened(self, s.get_app_current().key.as_str());
         }
         self.tick(true);
     }
@@ -394,6 +404,7 @@ impl Ctx {
         if page == Page::AppDetail && every(2) {
             self.running(&ui);
         }
+        apps_detail::tick(self, &ui, page, every(2));
         if page == Page::DateTime && every(5) {
             store::dates(&self.app, &ui);
         }
@@ -797,6 +808,7 @@ impl Ctx {
             }
             "app-clear" => {
                 if let Some(a) = neoui_proto::apps::find(value)
+                    && !apps_detail::ask_clear(self, a.key, a.name)
                     && !asks::clear_what(a.key).is_empty()
                 {
                     self.ask(asks::clear(a.name, a.key), "Delete", Asked::Clear(a.key));
