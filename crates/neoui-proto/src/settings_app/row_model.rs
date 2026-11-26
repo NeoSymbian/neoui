@@ -366,6 +366,9 @@ pub enum KindsState {
 pub struct AppFact {
     pub id: AppId,
     pub name: String,
+    /// D4: what the Apps list says of it ("ROM · 2.4 MB data on C:", `settings_app::app_detail::list_subtitle`); ""
+    /// when the shell can't say (older than 1.20, an old app)
+    pub size: String,
 }
 
 /// The current link (Wi-Fi's "Current network"): its BSSID and the fields its details show.
@@ -802,8 +805,12 @@ impl Provider for Apps {
         }
     }
 
-    fn read(&self, _f: &Facts, _key: &RowKey) -> Reading {
-        Reading::NoValue
+    fn read(&self, f: &Facts, key: &RowKey) -> Reading {
+        // D4: its subtitle (it says itself when it is partial, counting or not measured)
+        match Self::app(f, key) {
+            Some(a) if !a.size.is_empty() => Reading::Value(a.size.clone()),
+            _ => Reading::NoValue,
+        }
     }
 
     fn label(&self, f: &Facts, key: &RowKey) -> Label {
@@ -1188,6 +1195,7 @@ mod tests {
             .map(|a| AppFact {
                 id: AppId::Native(a.key),
                 name: a.name.into(),
+                size: String::new(),
             })
             .collect();
         f.link = Some(LinkFact {
@@ -1512,6 +1520,7 @@ mod tests {
         f.apps.push(AppFact {
             id: AppId::Legacy(0x2000_9aa3),
             name: "Clock".into(),
+            size: String::new(),
         });
         let snap = project_all(&f);
         let clocks = search(&snap, "clock");

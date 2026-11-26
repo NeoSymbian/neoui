@@ -124,7 +124,7 @@ const REPEATERS: &[(ProviderId, &str, &str)] = &[
     (
         ProviderId::Apps,
         "system.slint",
-        "for a in SetState.apps: ListRow",
+        "for a[i] in SetState.apps: ListRow",
     ),
     (
         ProviderId::Apps,
@@ -241,10 +241,12 @@ fn facts() -> Facts {
             AppFact {
                 id: AppId::Native("clock"),
                 name: "Clock".into(),
+                size: String::new(),
             },
             AppFact {
                 id: AppId::Legacy(0x2000_9aa3),
                 name: "X-plore".into(),
+                size: String::new(),
             },
         ],
         link: Some(LinkFact {

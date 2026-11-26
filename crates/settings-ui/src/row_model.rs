@@ -176,18 +176,24 @@ pub fn facts(s: &SetState<'_>, sample: Sample, epochs: Epochs) -> Facts {
     } else {
         KindsState::NotCounted
     };
-    let (rom, old) = (s.get_apps(), s.get_old_apps());
-    let native = rom.iter().filter_map(|a| {
+    let (rom, old, subs) = (s.get_apps(), s.get_old_apps(), s.get_app_subs());
+    let native = rom.iter().enumerate().filter_map(|(i, a)| {
         let app = neoui_proto::apps::find(a.key.as_str())?;
         Some(AppFact {
             id: AppId::Native(app.key),
             name: String::from(a.name.as_str()),
+            // D4: its subtitle, in `apps`' order
+            size: subs
+                .row_data(i)
+                .map(|t| String::from(t.as_str()))
+                .unwrap_or_default(),
         })
     });
     let old = old.iter().filter_map(|a| {
         Some(AppFact {
             id: AppId::Legacy(u32::from_str_radix(a.key.as_str(), 16).ok()?),
             name: String::from(a.name.as_str()),
+            size: String::new(),
         })
     });
     f.apps = native.chain(old.filter(|_| s.get_old_ok())).collect();

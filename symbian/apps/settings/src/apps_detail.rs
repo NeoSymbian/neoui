@@ -122,12 +122,7 @@ fn outcome(ctx: &Ctx, ticket: u32, name: &str) {
 fn show(ctx: &Ctx, ui: &SettingsApp) {
     let s = ui.global::<SetState>();
     let details = ctx.d4.details.borrow();
-    let find = |key: &str| {
-        details
-            .iter()
-            .flatten()
-            .find(|d| is(d, key))
-    };
+    let find = |key: &str| details.iter().flatten().find(|d| is(d, key));
     let found_any = details.iter().flatten().any(|d| d.identity_source >= 2);
     let rows: Vec<AppRow> = apps::listed()
         .filter(|a| !found_any || find(a.key).is_some_and(|d| d.identity_source >= 2))
