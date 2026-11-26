@@ -752,6 +752,14 @@ impl Ctx {
                     .map(|(key, page, arg)| app.open(key, page, arg));
                 dprintln!("settings: open {} settings ({:?})", value, r);
             }
+            // the active profile's ✎ (set2-sounds' card): its page
+            "profile-open" => {
+                let id: i32 = value.parse().unwrap_or(-1);
+                if let Some(p) = s.get_profiles().iter().find(|p| p.id == id) {
+                    s.set_profile_current(p);
+                    self.go(Page::Profile);
+                }
+            }
             // sound profiles (SE2a): the shell's reducer does them (ACTION_PROFILE)
             "profile-choose" => {
                 if let Ok(id) = value.parse::<u8>() {
