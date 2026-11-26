@@ -153,6 +153,14 @@ impl Store {
         })
     }
 
+    /// `name` is known to have changed after `seq`. False when it didn't, and when the journal no longer reaches back
+    /// that far: a caller that drops a stale edit on true lets it through then, as before the journal could tell.
+    #[must_use]
+    pub fn known_changed_since(&self, seq: u32, name: &str) -> bool {
+        self.changes_since(seq)
+            .is_some_and(|mut c| c.any(|k| k == name))
+    }
+
     /// The stored (non-default) values, in key order.
     pub fn iter(&self) -> impl Iterator<Item = (&str, &Value)> {
         self.values.iter().map(|(k, v)| (k.as_str(), v))
@@ -173,6 +181,25 @@ impl Store {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The shell's UI mirror drops a queued edit for a key the store changed since the UI last showed it
+    /// (`UiMirror::sync`): both branches.
+    #[test]
+    fn known_changed_since_says_which_edits_are_stale() {
+        let mut s = Store::new();
+        let shown = s.seq();
+        s.set_raw("radio.wifi", Value::Bool(false)).unwrap();
+        assert!(s.known_changed_since(shown, "radio.wifi"));
+        assert!(!s.known_changed_since(shown, "radio.bt"));
+        assert!(!s.known_changed_since(s.seq(), "radio.wifi"));
+        // more changes than the journal keeps: it can't tell, so nothing is called stale (edits go through)
+        for i in 0..=JOURNAL_LEN {
+            s.set_raw("sound.ring_volume", Value::Int((i % 10) as i32))
+                .unwrap();
+        }
+        assert!(s.changes_since(shown).is_none());
+        assert!(!s.known_changed_since(shown, "radio.wifi"));
+    }
     use crate::settings::keys;
     use alloc::vec::Vec;
 

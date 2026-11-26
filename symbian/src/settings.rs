@@ -3,7 +3,6 @@
 //! The logic (validation, save delay, access, subscriptions) is the host-tested service; this module only adds the
 //! file and the log lines CI checks.
 
-use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 use e32::dprintln;
@@ -147,12 +146,8 @@ impl UiMirror {
         // an edit the UI queued for a key the store changed since it was last shown is stale (the UI reports what it
         // was shown too): the store's newer value wins and is shown below, it isn't written back over (when the
         // store can't say what changed, the edits go through as before)
-        let newer: Option<Vec<String>> = settings
-            .store()
-            .changes_since(self.seq)
-            .map(|c| c.map(String::from).collect());
         for (key, value) in ui.take_setting_edits() {
-            if newer.as_ref().is_some_and(|n| n.iter().any(|k| k == key)) {
+            if settings.store().known_changed_since(self.seq, key) {
                 continue;
             }
             // a refused edit (logged by `set`) must not stay on screen: show the stored value again
