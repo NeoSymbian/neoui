@@ -92,6 +92,7 @@ export component Sheet inherits Rectangle {
                     color: Theme.text;
                     font-size: Theme.font-body;
                     font-weight: 600;
+                    wrap: word-wrap;
                 }
             }
             @children
@@ -126,8 +127,10 @@ export component ChoiceSheet inherits Sheet {
     // a line under each choice saying what it means ("Weekday, day and month"); empty = none
     in property <[string]> descriptions;
     callback chosen(int);
-    for c[i] in root.choices: Rectangle {
-        height: root.descriptions[i] != "" ? Theme.list-row-h + 8 * Theme.dp : Theme.list-row-h;
+    for c[i] in root.choices: choice := Rectangle {
+        property <string> description: i < root.descriptions.length ? root.descriptions[i] : "";
+        height: self.description != "" ? Theme.list-row-h + 8 * Theme.dp : Theme.list-row-h;
+        accessible-description: self.description;
         background: t.pressed ? Theme.pressed : transparent;
         accessible-role: radio-button;
         accessible-checked: i == root.current;
@@ -147,11 +150,10 @@ export component ChoiceSheet inherits Sheet {
                     text: c;
                     color: Theme.text;
                     font-size: Theme.font-body;
-                    font-weight: root.descriptions[i] != "" ? 500 : 400;
                 }
 
-                if root.descriptions[i] != "": Text {
-                    text: root.descriptions[i];
+                if choice.description != "": Text {
+                    text: choice.description;
                     color: Theme.text-dim;
                     font-size: Theme.font-label;
                 }

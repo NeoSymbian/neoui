@@ -12,7 +12,7 @@ export component RootPage inherits NeoList {
         SectionHeader { text: "Connections"; }
         SettingRow {
             title: "Wi-Fi";
-            value: !SetState.wifi ? "" : SetState.wifi-link.connected ? SetState.wifi-link.name : "Not connected";
+            value: !SetState.wifi ? "Off" : SetState.wifi-link.connected ? SetState.wifi-link.name : "Not connected";
             icon: @image-url("@neoui/icons/sys/wifi.svg");
             tint: #2f80ed;
             has-switch: true;
@@ -31,6 +31,7 @@ export component RootPage inherits NeoList {
 
         SettingRow {
             title: "Bluetooth";
+            value: SetState.bluetooth ? "On" : "Off";
             icon: @image-url("@neoui/icons/sys/bluetooth.svg");
             tint: #2f80ed;
             has-switch: true;

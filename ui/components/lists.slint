@@ -52,7 +52,8 @@ export component SectionHeader inherits Rectangle {
     // room kept free at the right for that action (an icon button the page draws)
     in property <length> action-room;
     height: Theme.section-h;
-    if root.action-text != "": Text {
+    action := Text {
+        visible: root.action-text != "";
         x: parent.width - self.width - Theme.margin - 4 * Theme.dp - root.action-room;
         y: parent.height - self.height - 6 * Theme.dp;
         text: root.action-text;
@@ -62,6 +63,9 @@ export component SectionHeader inherits Rectangle {
     Text {
         x: Theme.margin + 4 * Theme.dp;
         y: parent.height - self.height - 6 * Theme.dp;
+        // beside an action the title keeps clear of it
+        width: root.action-text != "" ? action.x - self.x - 8 * Theme.dp : parent.width - self.x - Theme.margin;
+        overflow: elide;
         text: root.text.to-uppercase();
         color: Theme.text-dim;
         font-size: Theme.font-status * 0.92;
@@ -215,6 +219,9 @@ export component ListRow inherits Rectangle {
         if root.pill != "": VerticalLayout {
             alignment: center;
             Rectangle {
+                accessible-role: button;
+                accessible-label: root.pill + " " + root.title;
+                accessible-action-default => { root.pill-clicked(); }
                 height: 36 * Theme.dp;
                 width: pill-text.preferred-width + 28 * Theme.dp;
                 border-radius: self.height / 2;
