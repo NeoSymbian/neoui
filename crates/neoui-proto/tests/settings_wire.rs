@@ -496,7 +496,7 @@ fn features_golden_and_what_is_advertised() {
         &[1u8, 20, 0, 0][..],
         &[0x7E, 0x62, 0, 0, 0, 0, 0, 0], // INFO 1–6, 9, 13, 14
         &[0xFE, 0, 0, 0, 0, 0, 0, 0],    // actions 1–7
-        &[0xFE, 0xE7, 0xFF, 0x7F, 0x01, 0x1F, 0, 0], // opcodes 1–10, 13–30, 32, 40–44
+        &[0xFE, 0xE7, 0xFF, 0x7F, 0x01, 0x3F, 0, 0], // opcodes 1–10, 13–30, 32, 40–45
     ]
     .concat();
     assert_eq!(Features::SHELL.encode(), want);
