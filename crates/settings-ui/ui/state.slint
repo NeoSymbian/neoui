@@ -13,6 +13,10 @@ export struct WifiSaved { name: string, detail: string }
 // an app on the Apps page: a ROM app by its screen key, or an old app (old: true) by its id in hex
 // a sound profile (neoui-proto sound_profile): its row's summary and what the profile page edits
 export struct ProfileRow { id: int, name: string, summary: string, ring: bool, volume: int, vibrate: bool }
+// a drive on the Storage page (SE3b): "E: Mass memory", "12.4 of 41.8 GB", what it holds, how full (0..1, -1 unknown)
+export struct DriveRow { title: string, used: string, note: string, fill: float }
+// a part of the Storage bar or a kind: its name, size text, and for a bar part where it starts and its share (0..1)
+export struct PartRow { name: string, size: string, start: float, share: float }
 export struct AppRow { key: string, name: string, old: bool, settings: bool }
 export struct WifiLink { shown: bool, connected: bool, name: string, subtitle: string, bars: int, band: string, details: [WifiDetail], sign-in: bool }
 
@@ -141,6 +145,16 @@ export global SetState {
     in property <string> usage-levels;
     in property <string> usage-on-battery;
     in property <string> usage-gaps;
+    // SE3b: Storage. The drives at once; the scan's parts (Apps, Files, Other, Free: sizes and their bar), the kinds,
+    // its state ("Counting… 120 folders", "Last counted 06:50") and the folders it couldn't read
+    in property <[DriveRow]> drives;
+    in property <[PartRow]> storage-parts;
+    in property <[PartRow]> storage-kinds;
+    in property <bool> storage-counting;
+    in property <bool> storage-counted;
+    in property <string> storage-status;
+    in property <string> storage-unreadable;
+    in property <string> storage-free;
 
     // About phone: the kernel's, the ROM's and neoui's build lines; Sounds: the test's progress
     in property <[string]> build;

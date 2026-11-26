@@ -13,6 +13,7 @@ extern crate alloc;
 
 mod modem;
 mod sound;
+mod storage;
 mod store;
 mod wifi;
 
@@ -69,6 +70,7 @@ struct Ctx {
     wifi: RefCell<wifi::Wifi>,
     modem: RefCell<modem::Modem>,
     sound: sound::Sound,
+    storage: storage::Storage,
     /// the city sheet's cities, as listed (a pick is an index into them)
     cities: RefCell<Vec<&'static str>>,
     /// What the open QUERY asks (the shell keeps one per app, the latest replaces it): its answer does that
@@ -97,6 +99,7 @@ fn run() -> Result<(), i32> {
         wifi: RefCell::default(),
         modem: RefCell::default(),
         sound: sound::Sound::new(),
+        storage: storage::Storage::new(),
         cities: RefCell::default(),
         asked: RefCell::default(),
         kb: Cell::new((false, 0, 0)),
@@ -182,7 +185,12 @@ fn run() -> Result<(), i32> {
             AppEvent::Visible(v) => {
                 ctx.visible.set(v);
                 if v {
+                    if ctx.page.get() == Page::Storage {
+                        ctx.storage.ensure();
+                    }
                     ctx.tick(true);
+                } else {
+                    ctx.storage.stop(); // hidden: no scan in the background
                 }
             }
             _ => {}
@@ -246,6 +254,12 @@ impl Ctx {
         s.set_found(SharedString::new());
         ui.global::<KeyboardFocus>().set_open(false);
         dprintln!("settings: page {}", page.name());
+        // Storage's scan runs only on its page, shown (SE3b); a kept count isn't redone
+        if page == Page::Storage && self.visible.get() {
+            self.storage.ensure();
+        } else {
+            self.storage.stop();
+        }
         if page == Page::Profile {
             // the profile a sheet chose, or (from search) the active one
             store::profiles(&self.app, &ui);
@@ -310,6 +324,12 @@ impl Ctx {
         }
         if matches!(page, Page::Root | Page::Battery) && every(5) {
             self.battery(&ui);
+        }
+        if matches!(page, Page::Root | Page::Storage) && every(5) {
+            self.storage.drives(&ui);
+        }
+        if page == Page::Storage {
+            self.storage.show(&ui);
         }
         if page == Page::BatteryUsage && every(5) {
             self.battery_usage(&ui);
@@ -674,6 +694,7 @@ impl Ctx {
                 }
             }
             // an app itself (Apps page)
+            "storage-recount" => self.storage.recount(),
             "app-open" => {
                 let r = app.open(value, 0, "");
                 dprintln!("settings: open app {} ({:?})", value, r);

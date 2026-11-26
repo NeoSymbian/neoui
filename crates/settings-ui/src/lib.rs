@@ -16,6 +16,7 @@ use slint::Model;
 pub const VALUELESS: &[&str] = &[
     "sounds.add",
     "battery.usage",
+    "storage.files",
     "root.privacy",
     "root.about",
     "privacy.clip",
@@ -104,6 +105,8 @@ pub fn live_value(s: &SetState<'_>, id: &str) -> String {
         "sounds.route" => pick(s.get_media_routes(), s.get_media_route()),
         "sounds.mic" => pick(s.get_mics(), s.get_mic()),
         "root.battery" => s.get_battery_text().into(),
+        "root.storage" => s.get_storage_free().into(),
+        "storage.kinds" => s.get_storage_status().into(),
         "root.datetime" => String::from(if s.get_time_auto() {
             "Automatic"
         } else {

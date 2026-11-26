@@ -28,6 +28,7 @@ const COMPONENTS: &[(&str, Page)] = &[
     ("AboutPage", Page::About),
     ("WifiSavedPage", Page::WifiSaved),
     ("ProfilePage", Page::Profile),
+    ("StoragePage", Page::Storage),
 ];
 
 /// (page, title) of every row the pages draw.
@@ -75,6 +76,10 @@ fn page_rows() -> BTreeSet<(&'static str, String)> {
     for a in neoui_proto::apps::listed() {
         out.insert((Page::Apps.name(), a.name.to_string()));
     }
+    // Storage's by-kind section is a search target though not a list row
+    let storage = std::fs::read_to_string(pages.join("storage.slint")).unwrap();
+    assert!(storage.contains("SectionHeader { text: \"C: and E: by kind\"; }"));
+    out.insert((Page::Storage.name(), "C: and E: by kind".to_string()));
     out
 }
 

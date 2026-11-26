@@ -80,6 +80,14 @@ export component RootPage inherits NeoList {
             clicked => { SetState.act("open", "8"); }
         }
 
+        SettingRow {
+            title: "Storage";
+            value: SetState.storage-free;
+            icon: @image-url("@neoui/icons/sys/phone_storage.svg");
+            tint: #8656e8;
+            clicked => { SetState.act("open", "20"); }
+        }
+
         SectionHeader { text: "Personal"; }
         SettingRow {
             title: "Date & time";

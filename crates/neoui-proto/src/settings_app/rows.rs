@@ -84,6 +84,13 @@ pub const ROWS: &[Row] = &[
         &["power", "charge"],
     ),
     row(
+        "root.storage",
+        Root,
+        Storage,
+        "Storage",
+        &["space", "memory", "disk", "free"],
+    ),
+    row(
         "root.datetime",
         Root,
         DateTime,
@@ -408,6 +415,21 @@ pub const ROWS: &[Row] = &[
         BatteryUsage,
         "Battery usage",
         &["since full charge", "power"],
+    ),
+    // Storage (SE3b)
+    row(
+        "storage.kinds",
+        Storage,
+        Storage,
+        "C: and E: by kind",
+        &["images", "video", "audio", "documents", "apps"],
+    ),
+    row(
+        "storage.files",
+        Storage,
+        Storage,
+        "Open Files",
+        &["file manager"],
     ),
     // Developer options
     row(
