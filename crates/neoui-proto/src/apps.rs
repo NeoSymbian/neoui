@@ -117,6 +117,19 @@ pub fn sid(key: &str) -> Option<u32> {
     })
 }
 
+/// The legacy bridge's secure ID: LEGACY.EXE's UID3, which the kit's EXE shares (docs neoui-shell/top-panel.md).
+pub const LEGACY_SID: u32 = 0xE000_2006;
+
+/// Can a process whose kernel secure ID is `sid` be app `key`'s? Its EXE's SID ([`sid`]), or the shared one for the
+/// legacy bridge. The shell binds a new connection to a started app only when it fits.
+#[must_use]
+pub fn sid_fits(key: &str, sid: u32) -> bool {
+    match self::sid(key) {
+        Some(s) => s == sid,
+        None => key == LEGACY && sid == LEGACY_SID,
+    }
+}
+
 /// The app with screen key `key`.
 #[must_use]
 pub fn find(key: &str) -> Option<&'static App> {
@@ -126,6 +139,21 @@ pub fn find(key: &str) -> Option<&'static App> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_connection_fits_only_its_own_exe() {
+        assert!(sid_fits("files", 0xE000_6001));
+        assert!(!sid_fits("files", 0xE000_7001), "the browser isn't Files");
+        assert!(!sid_fits("files", LEGACY_SID));
+        assert!(sid_fits(LEGACY, LEGACY_SID));
+        assert!(!sid_fits(LEGACY, 0xE000_6001));
+        assert_eq!(
+            sid("kit"),
+            Some(LEGACY_SID),
+            "the shared SID the kit and the bridge can't be told apart by"
+        );
+        assert!(!sid_fits("nosuchapp", 0));
+    }
 
     #[test]
     fn every_app_but_the_bridge_has_its_sid() {

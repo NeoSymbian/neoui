@@ -250,6 +250,8 @@ pub struct Host {
     /// Entries refused for want of room (`ENTRIES_MAX`), by app key and id: Settings says "64 of N".
     refused: Vec<(&'static str, u32)>,
     next_session: u32,
+    /// Sessions connected but not yet bound to their app, with their protocol minor ([`Host::bind`]).
+    unbound: Vec<(u32, u8)>,
     /// The foreground app's damage not yet shown (surface coordinates).
     pub blits: Vec<Rect>,
     /// Show the foreground app's whole surface on the next compose (it just came back).
@@ -319,6 +321,7 @@ impl Host {
             entries_changed: false,
             refused: Vec::new(),
             next_session: 1,
+            unbound: Vec::new(),
             blits: Vec::new(),
             refresh: false,
             repaint: false,
@@ -337,6 +340,31 @@ impl Host {
             clip_notices: ClipNotices::default(),
             clip_unseen: false,
         }
+    }
+
+    /// Session `id`'s first message binds it to its app: the newest started app without a session whose EXE the
+    /// sending process is (`apps::sid_fits`, the kernel's secure ID), whatever order the starts connect in. False
+    /// when it fits none (it stays unbound and everything it sends is refused).
+    // shortcut: the kit and the legacy bridge share a SID, so the newer of the two takes a connection when both are
+    // starting; separate their UIDs (docs top-panel.md) to close it.
+    fn bind(&mut self, id: u32, m: &Message) -> bool {
+        let Some(i) = self.unbound.iter().position(|(s, _)| *s == id) else {
+            return true;
+        };
+        let (sid, minor) = (m.client_sid(), self.unbound[i].1);
+        let Some(app) = self
+            .apps
+            .iter_mut()
+            .rev()
+            .find(|a| a.session.is_none() && apps::sid_fits(a.key, sid))
+        else {
+            dprintln!("neoui: session {} (SID {:#x}) is no started app", id, sid);
+            return false;
+        };
+        app.session = Some(id);
+        app.minor = minor;
+        self.unbound.remove(i);
+        true
     }
 
     /// The header the shell draws over the legacy bridge, in pixels (48 dp).
@@ -1300,20 +1328,20 @@ impl Service for Host {
         if version.major != proto::VERSION.0 {
             return Err(err::KERR_NOT_SUPPORTED);
         }
-        // The newest app without a session is the one connecting: apps start one at a time.
-        // shortcut: identify the client's process (MessageClient) if two launches ever overlap.
-        let id = self.next_session;
-        let app = self.apps.iter_mut().rev().find(|a| a.session.is_none());
-        let Some(app) = app else {
+        if self.apps.find(|a| a.session.is_none()).is_none() {
             return Err(err::KERR_NOT_SUPPORTED);
-        };
-        app.session = Some(id);
-        app.minor = version.minor;
+        }
+        // bound to its app at its first message, by the secure ID the kernel gives that message ([`Host::bind`])
+        let id = self.next_session;
+        self.unbound.push((id, version.minor));
         self.next_session += 1;
         Ok(id)
     }
 
     fn message(&mut self, id: &mut u32, m: Message) {
+        if !self.bind(*id, &m) {
+            return m.complete(err::KERR_NOT_SUPPORTED);
+        }
         let (body, dp256, keyboard_h, front) = (self.body, self.dp256, self.keyboard_h, self.front);
         let header = self.compat_header();
         let screen_h = self.screen_h;
@@ -1772,6 +1800,7 @@ impl Service for Host {
     }
 
     fn disconnect(&mut self, id: u32) -> ControlFlow<()> {
+        self.unbound.retain(|(s, _)| *s != id);
         self.settings.drop_session(id);
         self.settings_session_gone(id);
         // Complete what the session still has outstanding before its disconnect completes.

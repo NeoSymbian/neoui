@@ -132,12 +132,17 @@ pub fn parse_page(
         first: r.w()?,
         next: r.w()?,
     };
+    // every record has its 2-byte length: a count the bytes can't hold is refused before anything is reserved
     let progress = first.checked_add(u32::from(h.count));
     if h.kind != kind
         || h.rev == 0
         || (expected_rev != 0 && h.rev != expected_rev)
         || h.first != first
+        || usize::from(h.count) > (b.len() - HEADER_LEN) / 2
+        || progress.is_none_or(|p| p == TERMINAL)
         || (h.next != TERMINAL && (h.count == 0 || progress != Some(h.next)))
+        // no records: only the whole of an empty collection, never a continuation
+        || (h.count == 0 && first != 0)
     {
         return None;
     }
@@ -578,8 +583,24 @@ impl Job {
             finished_utc: r.t()?,
         };
         r.end()?;
-        (ticket != 0 && ticket <= i32::MAX as u32 && j.committed_scope & !j.requested_scope == 0)
-            .then_some(j)
+        (ticket != 0 && ticket <= i32::MAX as u32 && j.consistent()).then_some(j)
+    }
+
+    /// Its state, result, scopes and time agree: unfinished with no outcome yet, committed with all that was asked
+    /// and no error, failed with one, partial or interrupted with none or one; never more committed than asked.
+    #[must_use]
+    pub fn consistent(&self) -> bool {
+        self.committed_scope & !self.requested_scope == 0
+            && match self.state {
+                state::QUEUED | state::RUNNING => {
+                    self.result == 0 && self.committed_scope == 0 && self.finished_utc == 0
+                }
+                state::COMMITTED => {
+                    self.result == 0 && self.committed_scope == self.requested_scope
+                }
+                state::FAILED => self.result < 0,
+                _ => self.result <= 0,
+            }
     }
 }
 

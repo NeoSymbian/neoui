@@ -530,15 +530,24 @@ impl AppEvent {
                 action: u16::try_from(w(2)).ok()?,
             },
             KIND_INPUT_RESET => AppEvent::InputReset,
+            // 1.20's words are exact: a reserved word that isn't 0, a zero revision or a ticket outside
+            // 1..=i32::MAX is no event; [28, 0, 0, 0] is the only 1.17 clear
+            KIND_CLEAR_DATA if w(2) != 0 || w(3) != 0 => return None,
             KIND_CLEAR_DATA => match w(1) {
                 0 => AppEvent::ClearData,
-                ticket => AppEvent::ClearTicket { ticket },
+                ticket => AppEvent::ClearTicket {
+                    ticket: valid_ticket(ticket)?,
+                },
             },
+            KIND_SETTINGS_INFO if w(2) == 0 || w(3) != 0 => return None,
             KIND_SETTINGS_INFO => AppEvent::SettingsInfo {
                 kind: u8::try_from(w(1)).ok()?,
                 rev: w(2),
             },
-            KIND_OWNER_WORK => AppEvent::OwnerWork { ticket: w(1) },
+            KIND_OWNER_WORK if w(2) != 0 || w(3) != 0 => return None,
+            KIND_OWNER_WORK => AppEvent::OwnerWork {
+                ticket: valid_ticket(w(1))?,
+            },
             KIND_NOTIFY_GONE => AppEvent::NotifyGone {
                 id: w(1),
                 why: u8::try_from(w(2)).ok()?,
@@ -546,6 +555,11 @@ impl AppEvent {
             _ => return None,
         })
     }
+}
+
+/// A 1.20 ticket: `1..=i32::MAX` (it travels as a positive completion).
+fn valid_ticket(t: u32) -> Option<u32> {
+    (1..=i32::MAX as u32).contains(&t).then_some(t)
 }
 
 #[cfg(test)]

@@ -4,6 +4,10 @@
 //! `SETTINGS_INFO` kinds 8, 9, 13 and 14, `ACTION_MEASURE_APP` and `ACTION_CLEAR`'s confirmed form with their nonces,
 //! `OWNER_REPORT` over [`neoui_proto::settings_app::jobs`] (saved to [`JOBS_PATH`] before a wake and before an
 //! acknowledgement), and `ENTRY_THUMB`. A child of `host`: it works on the host's apps.
+//!
+//! A change a request makes to the jobs table stands only once it is saved: otherwise the table goes back and the
+//! request fails (no ticket, no claim, no acknowledged report). INFO 13 shows the table as last saved. A change
+//! nobody asked for (an owner gone, a job expired) is kept and saved again every second until it is.
 
 use super::{App, Host, read_bytes};
 use alloc::vec;
@@ -20,8 +24,9 @@ use neoui_proto::settings_app::wire::{
     self, AppRef, ClearRequest, Dedup, Features, MeasureRequest, OwnerReport, Revisions,
 };
 
-/// The owner-work table across restarts.
+/// The owner-work table across restarts, and the file a save writes first (then replaces the table with it).
 const JOBS_PATH: &str = "C:\\private\\e0002001\\jobs.dat";
+const JOBS_STAGING: &str = "C:\\private\\e0002001\\jobs.tmp";
 /// The most a saved table can be (16 unfinished + 32 receipts).
 const JOBS_FILE_MAX: usize = 7 + 48 * (2 + wire::Job::MAX);
 
@@ -36,6 +41,10 @@ pub struct Shelf {
     thumbs: Vec<(u32, Vec<u8>)>,
     /// The table changed and isn't saved yet: no owner is woken until it is.
     dirty: bool,
+    /// The saved table was read (or there is none): until then nothing changes it, and nothing overwrites it.
+    loaded: bool,
+    /// INFO 13 as last saved.
+    published: Vec<Vec<u8>>,
     tick_at: u64,
     /// D5: INFO 9's record as last published (`None`: no valid battery reading yet).
     cycle: Option<wire::BatteryCycle>,
@@ -46,8 +55,25 @@ fn unix_s() -> i64 {
 }
 
 impl Shelf {
-    /// The saved table, every unfinished job in it interrupted.
+    /// The saved table, every unfinished job in it interrupted; read again every second if that failed.
     pub fn boot() -> Self {
+        let mut s = Self {
+            revs: Revisions::default(),
+            jobs: Jobs::default(),
+            dedup: Dedup::default(),
+            watch: None,
+            thumbs: Vec::new(),
+            dirty: false,
+            loaded: false,
+            published: Vec::new(),
+            tick_at: 0,
+            cycle: None,
+        };
+        s.load();
+        s
+    }
+
+    fn load(&mut self) {
         let read = || -> Result<Vec<u8>, i32> {
             let fs = Fs::connect()?;
             let f = File::open(&fs, JOBS_PATH, mode::READ | mode::SHARE_READERS_ONLY)?;
@@ -56,37 +82,43 @@ impl Shelf {
                 return Err(kerr::CORRUPT);
             }
             let mut b = vec![0; size];
-            let n = f.read_at(0, &mut b)?;
-            b.truncate(n);
+            // a short read is a failed one: it is tried again, never taken as the table
+            if f.read_at(0, &mut b)? != size {
+                return Err(kerr::CORRUPT);
+            }
             Ok(b)
         };
-        let jobs = match read() {
-            Ok(b) => Jobs::restore(&b, unix_s()).unwrap_or_else(|| {
-                dprintln!("neoui: jobs file damaged, receipts lost");
-                Jobs::default()
-            }),
-            Err(err::KERR_NOT_FOUND | err::KERR_PATH_NOT_FOUND) => Jobs::default(),
+        let (jobs, saved) = match read() {
+            Ok(b) => match Jobs::restore(&b, unix_s()) {
+                Some(j) => (j, b),
+                None => {
+                    dprintln!("neoui: jobs file damaged, receipts lost");
+                    (Jobs::default(), b)
+                }
+            },
+            Err(err::KERR_NOT_FOUND | err::KERR_PATH_NOT_FOUND) => {
+                (Jobs::default(), Jobs::default().encode())
+            }
             Err(e) => {
-                dprintln!("neoui: jobs file unreadable ({})", e);
-                Jobs::default()
+                if self.tick_at == 0 {
+                    dprintln!("neoui: jobs file unreadable ({}), trying again", e);
+                }
+                return;
             }
         };
-        Self {
-            revs: Revisions::default(),
-            jobs,
-            dedup: Dedup::default(),
-            watch: None,
-            thumbs: Vec::new(),
-            dirty: false,
-            tick_at: 0,
-            cycle: None,
-        }
+        // the interrupted jobs are saved so (and a damaged file replaced) at the next tick
+        self.dirty = jobs.encode() != saved;
+        self.jobs = jobs;
+        self.published = self.jobs.records();
+        self.loaded = true;
     }
 
-    /// Write the table if it changed.
-    // shortcut: one file replaced in place (a torn write loses the receipts, never resumes a job); A/B files like the
-    // battery history if receipts ever must survive that.
+    /// Write the table if it changed: to [`JOBS_STAGING`], flushed and closed, which then replaces [`JOBS_PATH`] in
+    /// one file-server operation, so a failed save leaves the last table whole. Never before the last one was read.
     fn save(&mut self) -> Result<(), i32> {
+        if !self.loaded {
+            return Err(wire::KERR_NOT_READY);
+        }
         if !self.dirty {
             return Ok(());
         }
@@ -98,7 +130,12 @@ impl Shelf {
                     Err(e) => return Err(e),
                 }
             }
-            File::replace(&fs, JOBS_PATH, mode::SHARE_EXCLUSIVE)?.write(&self.jobs.encode())
+            {
+                let f = File::replace(&fs, JOBS_STAGING, mode::SHARE_EXCLUSIVE)?;
+                f.write(&self.jobs.encode())?;
+                f.flush()?;
+            }
+            fs.replace_file(JOBS_STAGING, JOBS_PATH)
         }();
         match r {
             Ok(()) => self.dirty = false,
@@ -115,7 +152,7 @@ impl Shelf {
             proto::INFO_BATTERY_CYCLE => {
                 self.cycle.iter().map(wire::BatteryCycle::encode).collect()
             }
-            proto::INFO_JOBS => self.jobs.records(),
+            proto::INFO_JOBS => self.published.clone(),
             proto::INFO_FEATURES => vec![Features::SHELL.encode()],
             _ => return None,
         })
@@ -185,15 +222,41 @@ impl Host {
         self.info_changed(proto::INFO_APP_DETAIL);
     }
 
-    /// The table changed: save it, then INFO 13 moves on and the owners due are woken (not before the save).
-    fn jobs_changed(&mut self) -> Result<(), i32> {
-        self.shelf.dirty = true;
-        let saved = self.shelf.save();
-        self.info_changed(proto::INFO_JOBS);
-        if saved.is_ok() {
-            self.wake_owners();
+    /// A request changed the table (it was `before`): it stands only once saved, else it goes back and the request
+    /// fails. Then INFO 13 moves on and the owners due are woken.
+    fn commit(&mut self, before: Jobs) -> Result<(), i32> {
+        if self.shelf.jobs.encode() != before.encode() {
+            let was_dirty = self.shelf.dirty;
+            self.shelf.dirty = true;
+            if let Err(e) = self.shelf.save() {
+                self.shelf.jobs = before;
+                self.shelf.dirty = was_dirty;
+                return Err(e);
+            }
         }
-        saved
+        self.saved();
+        Ok(())
+    }
+
+    /// A change nobody asked for (an owner gone, a job expired): kept, and saved now or by a later tick.
+    fn pending(&mut self) {
+        self.shelf.dirty = true;
+        if self.shelf.save().is_ok() {
+            self.saved();
+        }
+    }
+
+    /// After a save (or with nothing to save): INFO 13 shows the table, and the owners due are woken.
+    fn saved(&mut self) {
+        if self.shelf.dirty {
+            return;
+        }
+        let records = self.shelf.jobs.records();
+        if records != self.shelf.published {
+            self.shelf.published = records;
+            self.info_changed(proto::INFO_JOBS);
+        }
+        self.wake_owners();
     }
 
     fn wake_owners(&mut self) {
@@ -219,6 +282,9 @@ impl Host {
         app: AppRef,
         scope: u32,
     ) -> i32 {
+        if !self.shelf.loaded {
+            return wire::KERR_NOT_READY;
+        }
         match self.shelf.dedup.check(sid, nonce, request) {
             Ok(Some(ticket)) => return ticket as i32,
             Ok(None) => {}
@@ -231,6 +297,7 @@ impl Host {
         if key == SETTINGS || key == LEGACY || apps::is_service(key) {
             return kerr::NOT_SUPPORTED;
         }
+        let before = self.shelf.jobs.clone();
         let ticket = match self
             .shelf
             .jobs
@@ -239,6 +306,10 @@ impl Host {
             Ok(t) => t,
             Err(e) => return e,
         };
+        // the ticket exists once it is saved: a failed save answers its error and remembers nothing
+        if let Err(e) = self.commit(before) {
+            return e;
+        }
         self.shelf.dedup.record(sid, nonce, request, ticket);
         dprintln!(
             "neoui: settings action {} for {}: ticket {}",
@@ -246,8 +317,6 @@ impl Host {
             key,
             ticket
         );
-        // unsaved, it is queued but no owner is woken: the tick saves and wakes
-        let _ = self.jobs_changed();
         ticket as i32
     }
 
@@ -296,47 +365,15 @@ impl Host {
         m: &Message,
     ) -> i32 {
         let (sid, ticket) = (m.client_sid(), m.int(1) as u32);
-        let r = match m.int(0) {
-            wire::OWNER_REGISTER => read_bytes(m, 2, 2)
-                .and_then(|b| self.shelf.jobs.register(key, sid, session, minor, &b))
-                .map(|()| {
-                    dprintln!("neoui: {} registered as an owner", key);
-                    if !self.shelf.dirty {
-                        self.wake_owners();
-                    }
-                    0
-                }),
-            wire::OWNER_CLAIM => m
-                .des_max_len(2)
-                .and_then(|max| {
-                    // room first: a claim that can't be answered must not take the job
-                    if max < wire::OWNER_WORK_MAX {
-                        return Err(kerr::OVERFLOW);
-                    }
-                    self.shelf.jobs.claim(key, sid, session, ticket)
-                })
-                .and_then(|work| {
-                    let _ = self.jobs_changed();
-                    let b = work.encode();
-                    m.write8(2, &b, 0).map(|()| b.len() as i32)
-                }),
-            wire::OWNER_FINISH => read_bytes(m, 2, wire::OWNER_REPORT_MAX)
-                .and_then(|b| OwnerReport::decode(&b).ok_or(kerr::ARGUMENT))
-                .and_then(|report| {
-                    self.shelf
-                        .jobs
-                        .finish(key, sid, session, ticket, report, unix_s())
-                })
-                // the receipt is saved before the owner hears 0 (the same report again retries the save)
-                .and_then(|changed| {
-                    if changed {
-                        self.jobs_changed()
-                    } else {
-                        self.shelf.save()
-                    }
-                })
-                .map(|()| 0),
-            _ => Err(kerr::ARGUMENT),
+        let r = if self.shelf.loaded {
+            match m.int(0) {
+                wire::OWNER_REGISTER => self.owner_register(key, sid, session, minor, m),
+                wire::OWNER_CLAIM => self.owner_claim(key, sid, session, ticket, m),
+                wire::OWNER_FINISH => self.owner_finish(key, sid, session, ticket, m),
+                _ => Err(kerr::ARGUMENT),
+            }
+        } else {
+            Err(wire::KERR_NOT_READY)
         };
         if let Err(e) = r {
             dprintln!(
@@ -347,6 +384,75 @@ impl Host {
             );
         }
         r.unwrap_or_else(|e| e)
+    }
+
+    fn owner_register(
+        &mut self,
+        key: &'static str,
+        sid: u32,
+        session: u32,
+        minor: u8,
+        m: &Message,
+    ) -> Result<i32, i32> {
+        let b = read_bytes(m, 2, 2)?;
+        let before = self.shelf.jobs.clone();
+        let (now_ms, now_utc) = (e32::time::millis(), unix_s());
+        self.shelf
+            .jobs
+            .register(key, sid, session, minor, &b, (now_ms, now_utc))?;
+        self.commit(before)?;
+        dprintln!("neoui: {} registered as an owner", key);
+        Ok(0)
+    }
+
+    /// The reply is copied to the owner first; only then is the job taken (and saved).
+    fn owner_claim(
+        &mut self,
+        key: &'static str,
+        sid: u32,
+        session: u32,
+        ticket: u32,
+        m: &Message,
+    ) -> Result<i32, i32> {
+        let b = self
+            .shelf
+            .jobs
+            .claimable(key, sid, session, ticket)?
+            .encode();
+        if m.des_max_len(2)? < b.len() {
+            return Err(kerr::OVERFLOW);
+        }
+        m.write8(2, &b, 0)?;
+        let before = self.shelf.jobs.clone();
+        self.shelf.jobs.claim(key, sid, session, ticket)?;
+        // a claim that didn't save fails: the owner was given the work but hears an error, and does nothing
+        self.commit(before)?;
+        Ok(b.len() as i32)
+    }
+
+    /// The receipt is saved before the owner hears 0; the same report again retries a save still due.
+    fn owner_finish(
+        &mut self,
+        key: &'static str,
+        sid: u32,
+        session: u32,
+        ticket: u32,
+        m: &Message,
+    ) -> Result<i32, i32> {
+        let report = OwnerReport::decode(&read_bytes(m, 2, wire::OWNER_REPORT_MAX)?)
+            .ok_or(kerr::ARGUMENT)?;
+        let before = self.shelf.jobs.clone();
+        if self
+            .shelf
+            .jobs
+            .finish(key, sid, session, ticket, report, unix_s())?
+        {
+            self.commit(before)?;
+        } else {
+            self.shelf.save()?;
+            self.saved();
+        }
+        Ok(0)
     }
 
     /// `ENTRY_THUMB` from app `key`: Settings only.
@@ -386,31 +492,35 @@ impl Host {
             .jobs
             .session_gone(id, e32::time::millis(), unix_s())
         {
-            let _ = self.jobs_changed();
+            self.pending();
         }
     }
 
-    /// Once a second from the main loop: jobs whose owner never came fail, an unsaved table is saved (then its
-    /// owners are woken), and the owner of a queued job is started hidden, one at a time.
+    /// Once a second from the main loop: the saved table is read if that failed at boot, jobs whose owner never came
+    /// fail, an unsaved table is saved (then its owners are woken), and the first app of a queued job that isn't
+    /// running is started hidden (one start a tick; connections are bound by SID, `Host::bind`).
     pub fn tick_jobs(&mut self, now_ms: u64) {
-        if now_ms < self.shelf.tick_at {
+        // the millisecond counter wraps: a time far before the next tick is a new lap
+        if now_ms < self.shelf.tick_at && self.shelf.tick_at - now_ms <= 1000 {
             return;
         }
         self.shelf.tick_at = now_ms + 1000;
-        if self.shelf.jobs.expire(now_ms, unix_s()) {
-            let _ = self.jobs_changed();
-        } else if self.shelf.dirty && self.shelf.save().is_ok() {
-            self.wake_owners();
+        if !self.shelf.loaded {
+            self.shelf.load();
+            if !self.shelf.loaded {
+                return;
+            }
+            self.saved();
         }
-        let Some(key) = self.shelf.jobs.waiting_owner() else {
-            return;
-        };
-        // `connect` binds the newest app without a session: one hidden start at a time
-        if self
-            .apps
-            .find(|a| (a.key == key || a.session.is_none()) && a.quit_at.is_none())
-            .is_none()
-        {
+        if self.shelf.jobs.expire(now_ms, unix_s()) || self.shelf.dirty {
+            self.pending();
+        }
+        let start = self.shelf.jobs.waiting_owners().into_iter().find(|&key| {
+            self.apps
+                .find(|a| a.key == key && a.quit_at.is_none())
+                .is_none()
+        });
+        if let Some(key) = start {
             dprintln!("neoui: starting {} for its owner work", key);
             self.launch(key);
         }

@@ -8,7 +8,8 @@
 //! pending ticket. A wake alone authorises nothing: an owner deletes only what it claimed. A claimed job whose owner
 //! goes away, and every unfinished job across a restart ([`Jobs::restore`]), ends interrupted: a new confirmation is
 //! needed before anything more is deleted. SYSSTART saves [`Jobs::encode`] before it wakes an owner and before it
-//! acknowledges a report.
+//! acknowledges a report. Receipts are kept in the order the jobs finished, with a fingerprint of the accepted report,
+//! so the same report again (even after a restart) is recognised.
 
 use super::wire::{
     self, AppRef, Job, KERR_ALREADY_EXISTS, KERR_DIED, OwnerReport, OwnerWork, capability, state,
@@ -28,6 +29,8 @@ pub const OWNER_WAIT_MS: u64 = 20_000;
 pub const KERR_TIMED_OUT: i32 = -33;
 /// The first protocol minor whose apps can be owners.
 pub const OWNER_MINOR: u8 = 20;
+/// [`Jobs::encode`]'s version (2: with the reports' fingerprints).
+const FILE_VERSION: u8 = 2;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct Owner {
@@ -46,7 +49,8 @@ struct Entry {
     claimed: Option<u32>,
     /// When it was queued (or its woken owner went away), ms.
     since_ms: u64,
-    report: Option<OwnerReport>,
+    /// [`fingerprint`] of the accepted report; 0 = none.
+    fp: u64,
 }
 
 impl Entry {
@@ -66,11 +70,18 @@ impl Entry {
     fn done(&self) -> bool {
         self.job.state >= state::COMMITTED
     }
-    fn end(&mut self, st: u8, result: i32, now_utc: i64) {
-        self.job.state = st;
-        self.job.result = result;
-        self.job.finished_utc = now_utc;
-    }
+}
+
+/// A report's FNV-1a 64 over its encoding (never 0, which means none).
+#[must_use]
+pub fn fingerprint(report: &OwnerReport) -> u64 {
+    let h = report
+        .encode()
+        .iter()
+        .fold(0xcbf2_9ce4_8422_2325u64, |h, &b| {
+            (h ^ u64::from(b)).wrapping_mul(0x0100_0000_01b3)
+        });
+    h.max(1)
 }
 
 fn needs(work: u8) -> u8 {
@@ -109,6 +120,9 @@ impl Jobs {
     /// # Errors
     /// `KErrPermissionDenied` for an app the shell can't tell apart by SID (the kit shares the legacy bridge's), a
     /// SID that isn't the app's, or a client older than 1.20; `KErrArgument` for a damaged payload.
+    ///
+    /// `now` is `(ms since boot, Unix seconds)`. A registration replaces the app's last one: what it was woken for is woken again (on this session, if it has
+    /// the capability), and work another session of it claimed is interrupted.
     pub fn register(
         &mut self,
         key: &'static str,
@@ -116,12 +130,30 @@ impl Jobs {
         session: u32,
         minor: u8,
         payload: &[u8],
+        (now_ms, now_utc): (u64, i64),
     ) -> Result<(), i32> {
         if minor < OWNER_MINOR || key == "kit" || key == apps::LEGACY || apps::sid(key) != Some(sid)
         {
             return Err(kerr::PERMISSION_DENIED);
         }
         let caps = wire::decode_register(payload).ok_or(kerr::ARGUMENT)?;
+        for e in &mut self.entries {
+            if e.key() == Some(key) && e.job.state == state::QUEUED && e.dispatched {
+                e.dispatched = false;
+                e.since_ms = now_ms;
+            }
+        }
+        let stale: Vec<u32> = self
+            .entries
+            .iter()
+            .filter(|e| {
+                e.key() == Some(key) && e.job.state == state::RUNNING && e.claimed != Some(session)
+            })
+            .map(|e| e.job.ticket)
+            .collect();
+        for t in stale {
+            self.complete(t, state::INTERRUPTED, KERR_DIED, now_utc);
+        }
         self.owners.retain(|o| o.key != key);
         self.owners.push(Owner {
             key,
@@ -219,7 +251,7 @@ impl Jobs {
             dispatched: false,
             claimed: None,
             since_ms: now_ms,
-            report: None,
+            fp: 0,
         });
         Ok(ticket)
     }
@@ -234,14 +266,22 @@ impl Jobs {
         }
     }
 
-    /// A queued job's app that isn't registered yet: the shell starts it hidden (one at a time).
+    /// The apps of queued jobs that aren't registered yet, oldest job first, each once: the shell starts the first
+    /// that isn't running (one that runs and never registers, a 1.19 app, doesn't hold up the others).
     #[must_use]
-    pub fn waiting_owner(&self) -> Option<&'static str> {
-        self.entries
+    pub fn waiting_owners(&self) -> Vec<&'static str> {
+        let mut out: Vec<&'static str> = Vec::new();
+        for k in self
+            .entries
             .iter()
             .filter(|e| e.job.state == state::QUEUED)
             .filter_map(Entry::key)
-            .find(|k| self.owner(k).is_none())
+        {
+            if self.owner(k).is_none() && !out.contains(&k) {
+                out.push(k);
+            }
+        }
+        out
     }
 
     /// The wakes due now, each `(key, session, event)`: queued jobs whose owner registered with the capability. They
@@ -292,16 +332,36 @@ impl Jobs {
         session: u32,
         ticket: u32,
     ) -> Result<OwnerWork, i32> {
-        let o = self.check(key, sid, session)?;
+        let work = self.claimable(key, sid, session, ticket)?;
         let e = self.entry(key, ticket)?;
-        if o.caps & needs(e.work()) == 0 {
+        e.job.state = state::RUNNING;
+        e.claimed = Some(session);
+        Ok(work)
+    }
+
+    /// What [`Self::claim`] would answer, changing nothing: the shell copies the reply to the owner first, then
+    /// claims.
+    ///
+    /// # Errors
+    /// As [`Self::claim`].
+    pub fn claimable(
+        &self,
+        key: &str,
+        sid: u32,
+        session: u32,
+        ticket: u32,
+    ) -> Result<OwnerWork, i32> {
+        let o = self.check(key, sid, session)?;
+        let e = self
+            .entries
+            .iter()
+            .find(|e| e.job.ticket == ticket)
+            .ok_or(kerr::NOT_FOUND)?;
+        if e.key() != Some(key) || o.caps & needs(e.work()) == 0 {
             return Err(kerr::PERMISSION_DENIED);
         }
         match (e.job.state, e.claimed) {
-            (state::QUEUED, _) => {
-                e.job.state = state::RUNNING;
-                e.claimed = Some(session);
-            }
+            (state::QUEUED, _) => {}
             (state::RUNNING, Some(s)) if s == session => {}
             _ => return Err(kerr::NOT_FOUND),
         }
@@ -328,14 +388,19 @@ impl Jobs {
         report: OwnerReport,
         now_utc: i64,
     ) -> Result<bool, i32> {
-        self.check(key, sid, session)?;
+        let o = self.check(key, sid, session)?;
+        let fp = fingerprint(&report);
         let e = self.entry(key, ticket)?;
         if e.done() {
-            return if e.report.as_ref() == Some(&report) {
+            return if e.fp == fp {
                 Ok(false)
             } else {
                 Err(KERR_ALREADY_EXISTS)
             };
+        }
+        // the capability it has now: one registered again without it can't finish
+        if o.caps & needs(e.work()) == 0 {
+            return Err(kerr::PERMISSION_DENIED);
         }
         if e.job.state != state::RUNNING || e.claimed != Some(session) {
             return Err(kerr::ARGUMENT);
@@ -351,14 +416,13 @@ impl Jobs {
             return Err(kerr::ARGUMENT);
         }
         e.job.committed_scope = report.committed_scope;
-        e.end(report.state, report.result, now_utc);
-        e.report = Some(report.clone());
+        e.fp = fp;
         let measure = e.work() == wire::WORK_MEASURE;
+        self.complete(ticket, report.state, report.result, now_utc);
         if measure {
             self.measured.retain(|(k, _)| *k != key);
             self.measured.push((key, report));
         }
-        self.prune();
         Ok(true)
     }
 
@@ -372,11 +436,10 @@ impl Jobs {
             .map(|o| o.key)
             .collect();
         self.owners.retain(|o| o.session != session);
-        let mut changed = false;
+        let mut claimed = Vec::new();
         for e in &mut self.entries {
             if e.job.state == state::RUNNING && e.claimed == Some(session) {
-                e.end(state::INTERRUPTED, KERR_DIED, now_utc);
-                changed = true;
+                claimed.push(e.job.ticket);
             } else if e.job.state == state::QUEUED
                 && e.dispatched
                 && e.key().is_some_and(|k| gone.contains(&k))
@@ -385,31 +448,51 @@ impl Jobs {
                 e.since_ms = now_ms;
             }
         }
-        if changed {
-            self.prune();
+        for &t in &claimed {
+            self.complete(t, state::INTERRUPTED, KERR_DIED, now_utc);
         }
-        changed
+        !claimed.is_empty()
     }
 
     /// Queued jobs whose owner didn't claim them within [`OWNER_WAIT_MS`] fail: not supported when it never
     /// registered (an app older than 1.20, or one that isn't an owner), timed out when it was woken. True when one did.
+    ///
+    /// The millisecond counter wraps (`e32::time::millis`); a time before a job's start restarts its wait.
     pub fn expire(&mut self, now_ms: u64, now_utc: i64) -> bool {
-        let mut changed = false;
+        let mut due = Vec::new();
         for e in &mut self.entries {
-            if e.job.state == state::QUEUED && now_ms.saturating_sub(e.since_ms) > OWNER_WAIT_MS {
+            if e.job.state != state::QUEUED {
+                continue;
+            }
+            if now_ms < e.since_ms {
+                e.since_ms = now_ms;
+            } else if now_ms - e.since_ms > OWNER_WAIT_MS {
                 let r = if e.dispatched {
                     KERR_TIMED_OUT
                 } else {
                     kerr::NOT_SUPPORTED
                 };
-                e.end(state::FAILED, r, now_utc);
-                changed = true;
+                due.push((e.job.ticket, r));
             }
         }
-        if changed {
-            self.prune();
+        for &(t, r) in &due {
+            self.complete(t, state::FAILED, r, now_utc);
         }
-        changed
+        !due.is_empty()
+    }
+
+    /// Job `ticket` ends: it moves behind the receipts (they are kept in the order the jobs finished) and the oldest
+    /// receipts past [`RECEIPTS_MAX`] go.
+    fn complete(&mut self, ticket: u32, st: u8, result: i32, now_utc: i64) {
+        let Some(i) = self.entries.iter().position(|e| e.job.ticket == ticket) else {
+            return;
+        };
+        let mut e = self.entries.remove(i);
+        e.job.state = st;
+        e.job.result = result;
+        e.job.finished_utc = now_utc;
+        self.entries.push(e);
+        self.prune();
     }
 
     fn prune(&mut self) {
@@ -424,7 +507,7 @@ impl Jobs {
         });
     }
 
-    /// The jobs, oldest first.
+    /// The jobs: the unfinished and the receipts, a receipt after the jobs that finished before it.
     pub fn jobs(&self) -> impl Iterator<Item = &Job> {
         self.entries.iter().map(|e| &e.job)
     }
@@ -435,16 +518,17 @@ impl Jobs {
         self.jobs().map(Job::encode).collect()
     }
 
-    /// What SYSSTART saves: `[1][next:w][count:h]` then `count × [len:h][job]`.
+    /// What SYSSTART saves: `[2][next:w][count:h]` then `count × [len:h][job][report fingerprint:q]`.
     #[must_use]
     pub fn encode(&self) -> Vec<u8> {
-        let mut b = alloc::vec![1];
+        let mut b = alloc::vec![FILE_VERSION];
         b.extend_from_slice(&self.next.to_le_bytes());
         b.extend_from_slice(&(self.entries.len() as u16).to_le_bytes());
         for e in &self.entries {
             let j = e.job.encode();
             b.extend_from_slice(&(j.len() as u16).to_le_bytes());
             b.extend_from_slice(&j);
+            b.extend_from_slice(&e.fp.to_le_bytes());
         }
         b
     }
@@ -453,40 +537,47 @@ impl Jobs {
     /// owner registered. `None` for a damaged file.
     #[must_use]
     pub fn restore(b: &[u8], now_utc: i64) -> Option<Self> {
-        let (&[1, n0, n1, n2, n3, c0, c1], mut rest) = b.split_first_chunk::<7>()? else {
+        let (&[FILE_VERSION, n0, n1, n2, n3, c0, c1], mut rest) = b.split_first_chunk::<7>()?
+        else {
             return None;
         };
         let next = u32::from_le_bytes([n0, n1, n2, n3]);
-        let mut entries: Vec<Entry> = Vec::new();
+        let mut jobs = Self {
+            next,
+            ..Self::default()
+        };
+        let mut unfinished = Vec::new();
         for _ in 0..u16::from_le_bytes([c0, c1]) {
             let (len, r) = rest.split_first_chunk::<2>()?;
             let len = usize::from(u16::from_le_bytes(*len));
-            let mut job = Job::decode(r.get(..len)?)?;
-            rest = &r[len..];
-            if entries.iter().any(|e| e.job.ticket == job.ticket) {
+            let job = Job::decode(r.get(..len)?)?;
+            let (fp, r) = r[len..].split_first_chunk::<8>()?;
+            rest = r;
+            let fp = u64::from_le_bytes(*fp);
+            // a receipt has the fingerprint of the report it accepted only if an owner finished it
+            if jobs.entries.iter().any(|e| e.job.ticket == job.ticket)
+                || (fp != 0 && !matches!(job.state, state::COMMITTED..=state::INTERRUPTED))
+            {
                 return None;
             }
             if job.state < state::COMMITTED {
-                job.state = state::INTERRUPTED;
-                job.result = KERR_DIED;
-                job.finished_utc = now_utc;
+                unfinished.push(job.ticket);
             }
-            entries.push(Entry {
+            jobs.entries.push(Entry {
                 job,
                 dispatched: false,
                 claimed: None,
                 since_ms: 0,
-                report: None,
+                fp,
             });
         }
         if !rest.is_empty() || next == 0 || next > i32::MAX as u32 {
             return None;
         }
-        let mut jobs = Self {
-            entries,
-            next,
-            ..Self::default()
-        };
+        // nothing resumes: each unfinished job ends now, after the receipts already there
+        for t in unfinished {
+            jobs.complete(t, state::INTERRUPTED, KERR_DIED, now_utc);
+        }
         jobs.prune();
         Some(jobs)
     }

@@ -674,7 +674,8 @@ fn sid(key: &str) -> u32 {
 fn table() -> Jobs {
     let mut j = Jobs::default();
     j.set_offered("clock", scope::CLOCK | scope::PREFERENCES);
-    j.register("clock", sid("clock"), S, 20, &[1, 3]).unwrap();
+    j.register("clock", sid("clock"), S, 20, &[1, 3], (0, UTC))
+        .unwrap();
     j
 }
 
@@ -784,25 +785,28 @@ fn only_the_registered_owner_on_its_session() {
     let c = sid("clock");
     // who may register
     assert_eq!(
-        j.register("clock", c, S, 19, &[1, 1]),
+        j.register("clock", c, S, 19, &[1, 1], (0, UTC)),
         Err(kerr::PERMISSION_DENIED),
         "a 1.19 client"
     );
     assert_eq!(
-        j.register("clock", c + 1, S, 20, &[1, 1]),
+        j.register("clock", c + 1, S, 20, &[1, 1], (0, UTC)),
         Err(kerr::PERMISSION_DENIED),
         "another SID"
     );
     assert_eq!(
-        j.register("kit", sid("kit"), S, 20, &[1, 1]),
+        j.register("kit", sid("kit"), S, 20, &[1, 1], (0, UTC)),
         Err(kerr::PERMISSION_DENIED),
         "the shared SID"
     );
     assert_eq!(
-        j.register(apps::LEGACY, 0, S, 20, &[1, 1]),
+        j.register(apps::LEGACY, 0, S, 20, &[1, 1], (0, UTC)),
         Err(kerr::PERMISSION_DENIED)
     );
-    assert_eq!(j.register("clock", c, S, 20, &[1, 0]), Err(kerr::ARGUMENT));
+    assert_eq!(
+        j.register("clock", c, S, 20, &[1, 0], (0, UTC)),
+        Err(kerr::ARGUMENT)
+    );
     let mut j = table();
     let t = j.submit(ipc::ACTION_MEASURE_APP, "clock", 0, 0).unwrap();
     assert_eq!(
@@ -820,7 +824,7 @@ fn only_the_registered_owner_on_its_session() {
         Err(kerr::PERMISSION_DENIED),
         "not registered"
     );
-    j.register("calendar", sid("calendar"), 9, 20, &[1, 1])
+    j.register("calendar", sid("calendar"), 9, 20, &[1, 1], (0, UTC))
         .unwrap();
     assert_eq!(
         j.claim("calendar", sid("calendar"), 9, t),
@@ -829,7 +833,7 @@ fn only_the_registered_owner_on_its_session() {
     );
     assert_eq!(j.claim("clock", c, S, 999), Err(kerr::NOT_FOUND));
     // a new session replaces the old registration
-    j.register("clock", c, 11, 20, &[1, 1]).unwrap();
+    j.register("clock", c, 11, 20, &[1, 1], (0, UTC)).unwrap();
     assert_eq!(j.claim("clock", c, S, t), Err(kerr::PERMISSION_DENIED));
     j.claim("clock", c, 11, t).unwrap();
     // finishing needs the claim on this session
@@ -847,8 +851,15 @@ fn only_the_registered_owner_on_its_session() {
         "not claimed"
     );
     // registered without the clear capability: a clear is refused at once
-    j.register("clock", c, 11, 20, &[1, wire::capability::MEASURE])
-        .unwrap();
+    j.register(
+        "clock",
+        c,
+        11,
+        20,
+        &[1, wire::capability::MEASURE],
+        (0, UTC),
+    )
+    .unwrap();
     assert_eq!(
         j.submit(ipc::ACTION_CLEAR, "clock", scope::CLOCK, 0),
         Err(kerr::NOT_SUPPORTED)
@@ -897,9 +908,10 @@ fn a_cold_owner_is_started_and_an_absent_one_expires() {
     let mut j = Jobs::default();
     let t = j.submit(ipc::ACTION_MEASURE_APP, "files", 0, 1000).unwrap();
     assert!(j.wakes().is_empty(), "no owner yet");
-    assert_eq!(j.waiting_owner(), Some("files"));
-    j.register("files", sid("files"), S, 20, &[1, 1]).unwrap();
-    assert_eq!(j.waiting_owner(), None);
+    assert_eq!(j.waiting_owners(), vec!["files"]);
+    j.register("files", sid("files"), S, 20, &[1, 1], (0, UTC))
+        .unwrap();
+    assert!(j.waiting_owners().is_empty());
     assert_eq!(
         j.wakes(),
         vec![("files", S, AppEvent::OwnerWork { ticket: t })]
@@ -938,7 +950,7 @@ fn owner_exit() {
         (job.state, job.result),
         (state::INTERRUPTED, wire::KERR_DIED)
     );
-    j.register("clock", c, 8, 20, &[1, 3]).unwrap();
+    j.register("clock", c, 8, 20, &[1, 3], (0, UTC)).unwrap();
     assert_eq!(
         j.finish(
             "clock",
@@ -955,7 +967,7 @@ fn owner_exit() {
     assert_eq!(j.wakes().len(), 1);
     assert!(!j.session_gone(8, 20, UTC), "no job changed");
     assert!(j.wakes().is_empty(), "no owner now");
-    j.register("clock", c, 9, 20, &[1, 3]).unwrap();
+    j.register("clock", c, 9, 20, &[1, 3], (0, UTC)).unwrap();
     assert_eq!(
         j.wakes(),
         vec![("clock", 9, AppEvent::OwnerWork { ticket: t2 })]
@@ -993,7 +1005,9 @@ fn a_restart_between_commit_and_ack() {
     }
     // nothing resumes, a late report is refused, and the new tickets don't reuse the old
     assert!(after.wakes().is_empty());
-    after.register("clock", c, 3, 20, &[1, 3]).unwrap();
+    after
+        .register("clock", c, 3, 20, &[1, 3], (0, UTC))
+        .unwrap();
     assert!(after.wakes().is_empty());
     assert_eq!(
         after.finish(
@@ -1036,4 +1050,322 @@ fn receipts_are_bounded() {
     let records = j.records();
     assert!(records.iter().all(|r| r.len() <= Job::MAX));
     assert!(wire::page(13, 1, &records, 0, 0, wire::PAGE_MAX).is_ok());
+}
+
+// --- review fixes (w1) -----------------------------------------------------------------------------------------------
+
+#[test]
+fn events_1_20_words_are_exact() {
+    for w in [
+        [27, 13, 0, 0],          // a zero revision
+        [27, 13, 1, 1],          // a reserved word
+        [29, 0, 0, 0],           // ticket 0
+        [29, 0x8000_0000, 0, 0], // past i32::MAX
+        [29, 1, 1, 0],           // a reserved word
+        [28, 0, 1, 0],           // not the exact 1.17 vector
+        [28, 0, 0, 1],
+        [28, 0x8000_0000, 0, 0], // a ticket past i32::MAX
+        [28, 5, 0, 9],
+    ] {
+        assert_eq!(AppEvent::decode(&ev(w)), None, "{w:?}");
+    }
+    assert_eq!(
+        AppEvent::decode(&ev([28, 0, 0, 0])),
+        Some(AppEvent::ClearData)
+    );
+    assert_eq!(
+        AppEvent::decode(&ev([29, 0x7fff_ffff, 0, 0])),
+        Some(AppEvent::OwnerWork {
+            ticket: 0x7fff_ffff
+        })
+    );
+}
+
+fn header(count: u16, rev: u32, first: u32, next: u32) -> Vec<u8> {
+    let mut b = vec![1, 13];
+    b.extend_from_slice(&count.to_le_bytes());
+    for w in [rev, first, next] {
+        b.extend_from_slice(&w.to_le_bytes());
+    }
+    b
+}
+
+#[test]
+fn a_page_claims_no_more_than_its_bytes_hold() {
+    // 16 bytes claiming 65535 records: refused before anything is reserved
+    assert!(wire::parse_page(&header(u16::MAX, 1, 0, wire::TERMINAL), 13, 0, 0).is_none());
+    // two empty records need four bytes
+    let mut b = header(2, 1, 0, wire::TERMINAL);
+    b.extend_from_slice(&[0, 0]);
+    assert!(wire::parse_page(&b, 13, 0, 0).is_none());
+    b.extend_from_slice(&[0, 0]);
+    assert_eq!(wire::parse_page(&b, 13, 0, 0).unwrap().1.len(), 2);
+}
+
+#[test]
+fn only_a_first_page_is_empty_and_cursors_dont_overflow() {
+    // an empty terminal continuation would publish a cut snapshot as whole
+    assert!(wire::parse_page(&header(0, 1, 2, wire::TERMINAL), 13, 2, 1).is_none());
+    let mut t = Traversal::new(13);
+    let p0 = wire::page(13, 1, &recs(3, 1), 0, 0, wire::HEADER_LEN + 3).unwrap();
+    assert_eq!(t.feed(&p0), Some(false));
+    assert_eq!(t.feed(&header(0, 1, 1, wire::TERMINAL)), None);
+    // the cursor arithmetic: first + count past u32, or landing on the terminal value
+    let mut b = header(1, 1, u32::MAX - 1, wire::TERMINAL);
+    b.extend_from_slice(&[0, 0]);
+    assert!(wire::parse_page(&b, 13, u32::MAX - 1, 1).is_none());
+    let mut b = header(2, 1, u32::MAX - 1, wire::TERMINAL);
+    b.extend_from_slice(&[0, 0, 0, 0]);
+    assert!(wire::parse_page(&b, 13, u32::MAX - 1, 1).is_none());
+}
+
+#[test]
+fn contradictory_receipts_are_refused() {
+    let measure = Job {
+        action: ipc::ACTION_MEASURE_APP as u8,
+        requested_scope: 0,
+        committed_scope: 0,
+        result: 0,
+        ..job()
+    };
+    let bad = [
+        Job {
+            state: state::FAILED,
+            ..measure
+        }, // failed without an error
+        Job {
+            state: state::COMMITTED,
+            result: -1,
+            ..measure
+        }, // committed with one
+        Job {
+            state: state::PARTIAL,
+            result: 1,
+            ..measure
+        },
+        Job {
+            state: state::COMMITTED,
+            result: 0,
+            ..job()
+        }, // committed less than asked
+        Job {
+            state: state::QUEUED,
+            finished_utc: 0,
+            result: -1,
+            ..measure
+        },
+        Job {
+            state: state::QUEUED,
+            committed_scope: 0,
+            ..job()
+        }, // finished time on a queued job
+        Job {
+            state: state::RUNNING,
+            committed_scope: scope::CLOCK,
+            finished_utc: 0,
+            ..job()
+        },
+    ];
+    for j in bad {
+        assert_eq!(Job::decode(&j.encode()), None, "{j:?}");
+        // and a saved table holding it doesn't restore
+        let rec = j.encode();
+        let mut file = vec![2, 9, 0, 0, 0, 1, 0];
+        file.extend_from_slice(&(rec.len() as u16).to_le_bytes());
+        file.extend_from_slice(&rec);
+        file.extend_from_slice(&[0; 8]);
+        assert_eq!(Jobs::restore(&file, UTC), None, "{j:?}");
+    }
+    let good = Job {
+        state: state::COMMITTED,
+        ..measure
+    };
+    assert_eq!(Job::decode(&good.encode()), Some(good));
+    let mut file = vec![2, 9, 0, 0, 0, 1, 0];
+    let rec = good.encode();
+    file.extend_from_slice(&(rec.len() as u16).to_le_bytes());
+    file.extend_from_slice(&rec);
+    file.extend_from_slice(&[0; 8]);
+    assert!(Jobs::restore(&file, UTC).is_some());
+    // an unfinished job can't carry a report's fingerprint
+    let q = Job {
+        state: state::QUEUED,
+        result: 0,
+        finished_utc: 0,
+        ..measure
+    }
+    .encode();
+    let mut file = vec![2, 9, 0, 0, 0, 1, 0];
+    file.extend_from_slice(&(q.len() as u16).to_le_bytes());
+    file.extend_from_slice(&q);
+    file.extend_from_slice(&[1; 8]);
+    assert_eq!(Jobs::restore(&file, UTC), None);
+}
+
+#[test]
+fn registering_again_rearms_wakes_and_interrupts_old_claims() {
+    let mut j = table();
+    let c = sid("clock");
+    let clear = j
+        .submit(ipc::ACTION_CLEAR, "clock", scope::CLOCK, 0)
+        .unwrap();
+    let measure = j.submit(ipc::ACTION_MEASURE_APP, "clock", 0, 0).unwrap();
+    assert_eq!(j.wakes().len(), 2);
+    j.claim("clock", c, S, measure).unwrap();
+    // the app connects again (a new session) and registers: its woken clear is woken again there, the claim on the
+    // old session is interrupted
+    j.register("clock", c, 8, 20, &[1, 3], (100, UTC)).unwrap();
+    assert_eq!(
+        j.wakes(),
+        vec![("clock", 8, AppEvent::ClearTicket { ticket: clear })]
+    );
+    let m = *j.jobs().find(|x| x.ticket == measure).unwrap();
+    assert_eq!((m.state, m.result), (state::INTERRUPTED, wire::KERR_DIED));
+    // the same session registering again keeps its claim
+    j.claim("clock", c, 8, clear).unwrap();
+    j.register("clock", c, 8, 20, &[1, 3], (100, UTC)).unwrap();
+    assert_eq!(
+        j.jobs().find(|x| x.ticket == clear).unwrap().state,
+        state::RUNNING
+    );
+    // but without the capability now it can't finish
+    j.register(
+        "clock",
+        c,
+        8,
+        20,
+        &[1, wire::capability::MEASURE],
+        (100, UTC),
+    )
+    .unwrap();
+    assert_eq!(
+        j.finish(
+            "clock",
+            c,
+            8,
+            clear,
+            done(state::COMMITTED, scope::CLOCK, 0),
+            UTC
+        ),
+        Err(kerr::PERMISSION_DENIED)
+    );
+}
+
+#[test]
+fn the_same_report_after_a_restart_is_recognised() {
+    let mut j = table();
+    let c = sid("clock");
+    let t = j
+        .submit(ipc::ACTION_CLEAR, "clock", scope::CLOCK, 0)
+        .unwrap();
+    j.claim("clock", c, S, t).unwrap();
+    let r = done(state::COMMITTED, scope::CLOCK, 0);
+    j.finish("clock", c, S, t, r.clone(), UTC).unwrap();
+    // the ACK was lost in the restart: the owner sends the same report again
+    let mut after = Jobs::restore(&j.encode(), UTC + 60).unwrap();
+    after
+        .register("clock", c, 3, 20, &[1, 3], (0, UTC))
+        .unwrap();
+    assert_eq!(after.finish("clock", c, 3, t, r, UTC + 61), Ok(false));
+    assert_eq!(
+        after.finish("clock", c, 3, t, done(state::PARTIAL, 0, -1), UTC),
+        Err(wire::KERR_ALREADY_EXISTS)
+    );
+    assert_eq!(
+        after.jobs().next().unwrap().finished_utc,
+        UTC,
+        "the receipt unchanged"
+    );
+}
+
+#[test]
+fn receipts_are_kept_in_the_order_jobs_finished() {
+    let mut j = table();
+    let c = sid("clock");
+    let f = sid("files");
+    j.register("files", f, 9, 20, &[1, 1], (0, UTC)).unwrap();
+    // a slow clear, then more than RECEIPTS_MAX quick measurements finish before it
+    let slow = j
+        .submit(ipc::ACTION_CLEAR, "clock", scope::CLOCK, 0)
+        .unwrap();
+    j.claim("clock", c, S, slow).unwrap();
+    for _ in 0..jobs::RECEIPTS_MAX + 3 {
+        let t = j.submit(ipc::ACTION_MEASURE_APP, "files", 0, 0).unwrap();
+        j.claim("files", f, 9, t).unwrap();
+        j.finish("files", f, 9, t, done(state::COMMITTED, 0, 0), UTC)
+            .unwrap();
+    }
+    assert_eq!(j.jobs().next().unwrap().ticket, slow, "unfinished: kept");
+    j.finish(
+        "clock",
+        c,
+        S,
+        slow,
+        done(state::COMMITTED, scope::CLOCK, 0),
+        UTC,
+    )
+    .unwrap();
+    let tickets: Vec<u32> = j.jobs().map(|x| x.ticket).collect();
+    assert_eq!(tickets.len(), jobs::RECEIPTS_MAX);
+    assert_eq!(
+        *tickets.last().unwrap(),
+        slow,
+        "the newest receipt is the last to finish"
+    );
+    // a restart keeps that order, and the jobs it interrupts finish after it
+    let pending = j.submit(ipc::ACTION_MEASURE_APP, "files", 0, 0).unwrap();
+    let after = Jobs::restore(&j.encode(), UTC + 1).unwrap();
+    let order: Vec<u32> = after.jobs().map(|x| x.ticket).collect();
+    assert_eq!(&order[order.len() - 2..], &[slow, pending]);
+    assert_eq!(order.len(), jobs::RECEIPTS_MAX);
+}
+
+#[test]
+fn every_unregistered_owner_is_listed_and_a_wrapped_clock_restarts_the_wait() {
+    let mut j = Jobs::default();
+    // the browser (a 1.19 app, running, never registers) doesn't hide Files behind it
+    let b = j
+        .submit(ipc::ACTION_MEASURE_APP, "browser", 0, 5_000_000)
+        .unwrap();
+    j.submit(ipc::ACTION_MEASURE_APP, "files", 0, 5_000_000)
+        .unwrap();
+    j.submit(ipc::ACTION_MEASURE_APP, "browser", 0, 5_000_000)
+        .unwrap();
+    assert_eq!(j.waiting_owners(), vec!["browser", "files"]);
+    // the millisecond counter wrapped: no expiry, the wait starts again
+    assert!(!j.expire(10, UTC));
+    assert!(!j.expire(10 + jobs::OWNER_WAIT_MS, UTC));
+    assert!(j.expire(11 + jobs::OWNER_WAIT_MS, UTC));
+    assert_eq!(
+        j.jobs().find(|x| x.ticket == b).unwrap().state,
+        state::FAILED
+    );
+}
+
+#[test]
+fn a_claim_is_checked_without_taking_the_job() {
+    let mut j = table();
+    let c = sid("clock");
+    let t = j.submit(ipc::ACTION_MEASURE_APP, "clock", 0, 0).unwrap();
+    let before = j.clone();
+    let w = j.claimable("clock", c, S, t).unwrap();
+    assert_eq!(j, before, "nothing changed");
+    assert_eq!(
+        j.claimable("clock", c, S + 1, t),
+        Err(kerr::PERMISSION_DENIED)
+    );
+    assert_eq!(j.claim("clock", c, S, t), Ok(w));
+    assert_eq!(j.jobs().next().unwrap().state, state::RUNNING);
+}
+
+#[test]
+fn report_fingerprints_differ_and_are_never_zero() {
+    let a = done(state::COMMITTED, 0, 0);
+    let b = done(state::COMMITTED, 0, 0);
+    assert_eq!(jobs::fingerprint(&a), jobs::fingerprint(&b));
+    assert_ne!(
+        jobs::fingerprint(&a),
+        jobs::fingerprint(&done(state::PARTIAL, 0, 0))
+    );
+    assert_ne!(jobs::fingerprint(&a), 0);
 }
