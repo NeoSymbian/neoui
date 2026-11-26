@@ -6,7 +6,7 @@ import { Note } from "../parts.slint";
 import { SetState } from "../state.slint";
 
 // an app's icon by its screen key, from the one-colour system set the rows tint (old apps share one)
-global AppIcon {
+export global AppIcon {
     public pure function of(key: string, old: bool) -> image {
         if old { return @image-url("@neoui/icons/sys/keypad.svg"); }
         if key == "clock" { return @image-url("@neoui/icons/sys/clock.svg"); }

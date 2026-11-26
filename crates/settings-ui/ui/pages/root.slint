@@ -77,9 +77,18 @@ export component RootPage inherits NeoList {
             clicked => { SetState.act("open", "7"); }
         }
 
+        // TP4: Panel & notifications (tp-settings), its line from the policy (Do not disturb, the apps allowed)
+        SettingRow {
+            title: "Notifications";
+            value: SetState.summaries[7];
+            icon: @image-url("@neoui/icons/sys/bell.svg");
+            tint: #e2467c;
+            clicked => { SetState.act("open", "27"); }
+        }
+
         SettingRow {
             title: "Battery";
-            value: SetState.summaries[7];
+            value: SetState.summaries[8];
             icon: @image-url("@neoui/icons/sys/battery_saver.svg");
             tint: #14a37f;
             clicked => { SetState.act("open", "8"); }
@@ -87,7 +96,7 @@ export component RootPage inherits NeoList {
 
         SettingRow {
             title: "Storage";
-            value: SetState.summaries[8];
+            value: SetState.summaries[9];
             icon: @image-url("@neoui/icons/sys/phone_storage.svg");
             tint: #8656e8;
             clicked => { SetState.act("open", "20"); }
@@ -96,7 +105,7 @@ export component RootPage inherits NeoList {
         SectionHeader { text: "Personal"; }
         SettingRow {
             title: "Date & time";
-            value: SetState.summaries[9];
+            value: SetState.summaries[10];
             icon: @image-url("@neoui/icons/sys/stopwatch.svg");
             tint: #3d8bfd;
             clicked => { SetState.act("open", "9"); }
@@ -104,7 +113,7 @@ export component RootPage inherits NeoList {
 
         SettingRow {
             title: "Language & keyboard";
-            value: SetState.summaries[10];
+            value: SetState.summaries[11];
             icon: @image-url("@neoui/icons/sys/language.svg");
             tint: #1fa9c4;
             clicked => { SetState.act("open", "10"); }
@@ -120,7 +129,7 @@ export component RootPage inherits NeoList {
         SectionHeader { text: "Apps"; }
         SettingRow {
             title: "Apps";
-            value: SetState.summaries[12];
+            value: SetState.summaries[13];
             icon: @image-url("@neoui/icons/sys/apps.svg");
             tint: #8656e8;
             clicked => { SetState.act("open", "13"); }
@@ -129,7 +138,7 @@ export component RootPage inherits NeoList {
         SectionHeader { text: "System"; }
         SettingRow {
             title: "Developer options";
-            value: SetState.summaries[13];
+            value: SetState.summaries[14];
             icon: @image-url("@neoui/icons/sys/usb.svg");
             tint: #5b6472;
             clicked => { SetState.act("open", "11"); }
@@ -157,6 +166,8 @@ component GridTile inherits Rectangle {
     preferred-width: 0px;
     min-width: 0px;
     height: 104 * Theme.dp;
+    // an empty label keeps a short row's columns (the grid's last row): drawn as nothing
+    visible: root.label != "";
     background: t.pressed ? Theme.pressed : transparent;
     border-radius: 12 * Theme.dp;
     accessible-role: button;
@@ -196,7 +207,7 @@ component GridTile inherits Rectangle {
 }
 
 // The root, Nokia grid variant (set2-root-grid, S01): the categories in 3 columns; the pages are the list's. Only
-// categories with a page today, in the board's order (Notifications and Security come with TP4 and SE6); Mobile
+// categories with a page today, in the board's order (Security comes with SE6); Mobile
 // network is under Connectivity, as the board groups it.
 export component RootGridPage inherits NeoList {
     VerticalLayout {
@@ -208,14 +219,15 @@ export component RootGridPage inherits NeoList {
              { l: "Display", i: @image-url("@neoui/icons/sys/brightness.svg"), c: #e2a92a, p: 5, s: 4 },
              { l: "Sounds", i: @image-url("@neoui/icons/sys/volume.svg"), c: #e5484d, p: 7, s: 6 }],
             [{ l: "Navigation", i: @image-url("@neoui/icons/sys/home.svg"), c: #3d8bfd, p: 6, s: 5 },
-             { l: "Battery", i: @image-url("@neoui/icons/sys/battery_saver.svg"), c: #14a37f, p: 8, s: 7 },
-             { l: "Storage", i: @image-url("@neoui/icons/sys/phone_storage.svg"), c: #8656e8, p: 20, s: 8 }],
-            [{ l: "Privacy", i: @image-url("@neoui/icons/sys/privacy.svg"), c: #5b6472, p: 15, s: -1 },
-             { l: "Time", i: @image-url("@neoui/icons/sys/stopwatch.svg"), c: #3d8bfd, p: 9, s: 9 },
-             { l: "Language", i: @image-url("@neoui/icons/sys/language.svg"), c: #1fa9c4, p: 10, s: 10 }],
-            [{ l: "Apps", i: @image-url("@neoui/icons/sys/apps.svg"), c: #8656e8, p: 13, s: 12 },
-             { l: "Developer", i: @image-url("@neoui/icons/sys/usb.svg"), c: #5b6472, p: 11, s: 13 },
-             { l: "About", i: @image-url("@neoui/icons/sys/info.svg"), c: #5b6472, p: 12, s: -1 }],
+             { l: "Notifications", i: @image-url("@neoui/icons/sys/bell.svg"), c: #e2467c, p: 27, s: 7 },
+             { l: "Battery", i: @image-url("@neoui/icons/sys/battery_saver.svg"), c: #14a37f, p: 8, s: 8 }],
+            [{ l: "Storage", i: @image-url("@neoui/icons/sys/phone_storage.svg"), c: #8656e8, p: 20, s: 9 },
+             { l: "Privacy", i: @image-url("@neoui/icons/sys/privacy.svg"), c: #5b6472, p: 15, s: -1 },
+             { l: "Time", i: @image-url("@neoui/icons/sys/stopwatch.svg"), c: #3d8bfd, p: 9, s: 10 }],
+            [{ l: "Language", i: @image-url("@neoui/icons/sys/language.svg"), c: #1fa9c4, p: 10, s: 11 },
+             { l: "Apps", i: @image-url("@neoui/icons/sys/apps.svg"), c: #8656e8, p: 13, s: 13 },
+             { l: "Developer", i: @image-url("@neoui/icons/sys/usb.svg"), c: #5b6472, p: 11, s: 14 }],
+            [{ l: "About", i: @image-url("@neoui/icons/sys/info.svg"), c: #5b6472, p: 12, s: -1 }, { l: "", i: @image-url("@neoui/icons/sys/info.svg"), c: #5b6472, p: 0, s: -1 }, { l: "", i: @image-url("@neoui/icons/sys/info.svg"), c: #5b6472, p: 0, s: -1 }],
         ]: HorizontalLayout {
             spacing: 4 * Theme.dp;
             for t in r: GridTile {

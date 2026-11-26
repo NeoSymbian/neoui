@@ -522,6 +522,7 @@ export component Shade inherits Rectangle {
 
             if root.all: HorizontalLayout {
                 alignment: center;
+                spacing: 10 * Theme.dp;
                 Rectangle {
                     height: 40 * Theme.dp;
                     width: clear-text.preferred-width + 36 * Theme.dp;
@@ -538,6 +539,25 @@ export component Shade inherits Rectangle {
                             root.notes-cleared();
                             root.all = false;
                         }
+                    }
+                }
+                // TP4: Settings → Panel & notifications
+                Rectangle {
+                    height: 40 * Theme.dp;
+                    width: manage-text.preferred-width + 36 * Theme.dp;
+                    border-radius: self.height / 2;
+                    background: manage-touch.pressed ? Theme.pressed : Theme.field;
+                    accessible-role: button;
+                    accessible-label: "Manage notifications";
+                    accessible-action-default => { root.open-view("settings", "panel"); }
+                    manage-text := Text {
+                        text: "Manage";
+                        color: Theme.text;
+                        font-size: 14 * Theme.dp;
+                        font-weight: 600;
+                    }
+                    manage-touch := TouchArea {
+                        clicked => { root.open-view("settings", "panel"); }
                     }
                 }
             }

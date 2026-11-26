@@ -228,14 +228,14 @@ jobs:
           tap 425 82; expect "neoui: app settings resumed"
           # TP2a: home, Apps, UI kit (its tile ends the grid's 5th row), ⋮ → Notifications, Post sample cards (6, one
           # ongoing, a group of 3); the shade from the status bar, See all, a swipe on the reminder (Alerts) dismisses
-          # it, Clear all takes the other 4 and leaves the ongoing one
+          # it, Clear all (left of TP4's Manage) takes the other 4 and leaves the ongoing one
           wait_s 1; swipe 270 1075 270 900; expect "neoui: screen home"; wait_s 1
           tap 485 973; wait_s 2; tap 448 1000; expect "neoui: app kit surface"; wait_s 2
           tap 497 72; wait_s 2; tap 298 874; wait_s 2
           tap 270 160; expect "kit: sample cards posted (Ok"; wait_s 1
           tap 270 12; wait_s 2; tap 476 340; wait_s 2
           swipe 60 650 520 650; expect "kit: card 4 gone (0)"; wait_s 2
-          tap 270 840; expect "neoui: 4 notifications cleared"
+          tap 187 840; expect "neoui: 4 notifications cleared"
           # Mark read (an in-place action) on the group's head: the kit hears it without coming forward
           wait_s 1; tap 270 12; wait_s 1; tap 270 160; expect "kit: sample cards posted (Ok"; wait_s 1
           tap 270 12; wait_s 2; tap 174 670; expect "kit: card 5 opened (2)"

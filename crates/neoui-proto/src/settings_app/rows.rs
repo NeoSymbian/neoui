@@ -25,6 +25,10 @@ pub enum ProviderId {
     Apps,
     /// the Wi-Fi link's detail fields, while there is a link
     WifiFields,
+    /// (TP4) Notifications' apps, one per policy owner (INFO 7), with its summary
+    NotifyApps,
+    /// (TP4) every app's declared channels (INFO 7), with its effective importance
+    Channels,
 }
 
 /// What search may match a row by. Credentials, PINs, clipboard contents, message bodies and draft text are never
@@ -611,6 +615,92 @@ pub const ROWS: &[Row] = &[
         &["language", "translation", "menus"],
     ),
     // D8: the clipboard toast, the local diagnostics (Dev tools' log)
+    // TP4 / D9 (notifications.rs): Panel & notifications (tp-settings), Notifications (set2-notifications), one app
+    // (set2-notify-app, nt-settings); an app's own switches go by its page only (they're about the app on it)
+    row(
+        "root.notifications",
+        Root,
+        Panel,
+        "Notifications",
+        &["alerts", "do not disturb", "banners", "shade"],
+    ),
+    row(
+        "panel.swipehome",
+        Panel,
+        Panel,
+        "Swipe down on home opens the shade",
+        &["shade", "gesture", "pull down"],
+    ),
+    action(
+        "panel.apps",
+        Panel,
+        Notifications,
+        "App notifications",
+        &["per app", "channels"],
+    ),
+    row(
+        "panel.dnd",
+        Panel,
+        Panel,
+        "Do not disturb",
+        &["dnd", "quiet", "silence"],
+    ),
+    row(
+        "notify.bannert",
+        Panel,
+        Panel,
+        "Pop-up time",
+        &["banner", "heads-up", "seconds"],
+    ),
+    row(
+        "notify.dnd",
+        Notifications,
+        Notifications,
+        "Do not disturb",
+        &["dnd", "quiet", "silence"],
+    ),
+    family(
+        "notify.app",
+        Notifications,
+        NotifyApp,
+        ProviderId::NotifyApps,
+        &["notifications"],
+    ),
+    Row {
+        search: Search::Omit,
+        ..action(
+            "notify.allow",
+            NotifyApp,
+            NotifyApp,
+            "Allow notifications",
+            &[],
+        )
+    },
+    Row {
+        search: Search::Omit,
+        ..action("notify.banners", NotifyApp, NotifyApp, "Banners", &[])
+    },
+    Row {
+        search: Search::Omit,
+        ..action("notify.sound", NotifyApp, NotifyApp, "Sound", &[])
+    },
+    Row {
+        search: Search::Omit,
+        ..action(
+            "notify.badge",
+            NotifyApp,
+            NotifyApp,
+            "Badge on the icon",
+            &[],
+        )
+    },
+    family(
+        "notify.channel",
+        NotifyApp,
+        NotifyApp,
+        ProviderId::Channels,
+        &["channel", "importance"],
+    ),
     row(
         "privacy.clip_notice",
         Privacy,
@@ -637,7 +727,7 @@ pub const ROWS: &[Row] = &[
 
 /// The root list's rows, top to bottom (set2-root-list, root.slint's `RootPage`): row `i` shows
 /// `SetState.summaries[i]`, the projection of `ROOT_LIST[i]` (tests/rows.rs checks the page against this).
-pub const ROOT_LIST: [&str; 15] = [
+pub const ROOT_LIST: [&str; 16] = [
     "root.wifi",
     "root.mobile",
     "root.bt",
@@ -645,6 +735,7 @@ pub const ROOT_LIST: [&str; 15] = [
     "root.display",
     "root.navigation",
     "root.sounds",
+    "root.notifications",
     "root.battery",
     "root.storage",
     "root.datetime",
@@ -656,12 +747,13 @@ pub const ROOT_LIST: [&str; 15] = [
 ];
 
 /// The root grid's tiles in order (set2-root-grid): label, the page it opens and the root row whose summary it reads
-/// out (accessibility only; the tiles stay label-only). Notifications and Security wait for their pages.
-pub const ROOT_GRID: [(&str, Page, Option<&str>); 12] = [
+/// out (accessibility only; the tiles stay label-only). Security waits for its page.
+pub const ROOT_GRID: [(&str, Page, Option<&str>); 13] = [
     ("Connectivity", Connectivity, None),
     ("Display", Display, Some("root.display")),
     ("Sounds", Sounds, Some("root.sounds")),
     ("Navigation", Navigation, Some("root.navigation")),
+    ("Notifications", Panel, Some("root.notifications")),
     ("Battery", Battery, Some("root.battery")),
     ("Storage", Storage, Some("root.storage")),
     ("Privacy", Privacy, None),

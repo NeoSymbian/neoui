@@ -1,0 +1,160 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// TP4 / D9: Panel & notifications (tp-settings: the shade's swipe on home, App notifications, Do not disturb, the
+// banner's time), Notifications (set2-notifications: Do not disturb and every app with its line) and one app's
+// notifications (set2-notify-app with nt-settings' channels: Allow, Banners, Sound, Badge, the channels and their
+// importance). Every value is the shell's policy (INFO 7) or the store's notify.* keys. Tiles, the tap on the status
+// bar, the media player, the live island, the lock screen and the history come with TP3/TP6–TP8 and stay out.
+import { Theme, NeoList, SectionHeader, ListRow } from "@neoui/kit.slint";
+import { Note } from "../parts.slint";
+import { SetState } from "../state.slint";
+import { AppIcon } from "system.slint";
+
+export component PanelPage inherits NeoList {
+    VerticalLayout {
+        alignment: start;
+        SectionHeader { text: "Top panel"; }
+        ListRow {
+            value-bright: true;
+            title: "Swipe down on home opens the shade";
+            checked: SetState.found == "panel.swipehome";
+            has-switch: true;
+            switch-on <=> SetState.swipe-home;
+            switch-toggled(v) => { SetState.act("shell.swipehome", v ? "1" : "0"); }
+            divider: false;
+        }
+
+        SectionHeader { text: "Notifications"; }
+        ListRow {
+            value-bright: true;
+            title: "App notifications";
+            checked: SetState.found == "panel.apps";
+            subtitle: "Per app and per channel";
+            chevron: true;
+            clicked => { SetState.act("open", "28"); }
+        }
+
+        ListRow {
+            value-bright: true;
+            title: "Do not disturb";
+            checked: SetState.found == "panel.dnd";
+            subtitle: SetState.dnd-text;
+            has-switch: true;
+            switch-on <=> SetState.dnd;
+            switch-toggled(v) => { SetState.act("notify-dnd", v ? "1" : "0"); }
+        }
+
+        ListRow {
+            value-bright: true;
+            title: "Pop-up time";
+            checked: SetState.found == "notify.bannert";
+            subtitle: "How long a banner stays";
+            value: SetState.banner-text;
+            chevron: true;
+            divider: false;
+            clicked => { SetState.sheet = "banner-time"; }
+        }
+    }
+}
+
+export component NotificationsPage inherits NeoList {
+    VerticalLayout {
+        alignment: start;
+        SectionHeader { text: "General"; }
+        ListRow {
+            value-bright: true;
+            title: "Do not disturb";
+            checked: SetState.found == "notify.dnd";
+            subtitle: SetState.dnd-text;
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/dnd.svg");
+            has-switch: true;
+            switch-on <=> SetState.dnd;
+            switch-toggled(v) => { SetState.act("notify-dnd", v ? "1" : "0"); }
+            divider: false;
+        }
+
+        SectionHeader { text: "Apps"; }
+        for a in SetState.notify-apps: ListRow {
+            value-bright: true;
+            title: a.name;
+            checked: SetState.found == "notify.app." + a.key;
+            subtitle: a.summary;
+            has-icon: true;
+            icon: AppIcon.of(a.key == "dtsrv" ? "clock" : a.key, false);
+            // the switch is the app's Allow; the row opens its page
+            has-switch: true;
+            switch-on: a.allowed;
+            switch-toggled(v) => { SetState.act("notify-allow", v ? a.key + ",1" : a.key + ",0"); }
+            clicked => { SetState.act("notify-app", a.key); }
+        }
+
+        if !SetState.notify-ok: Note { text: "This shell doesn't say what each app may do yet (protocol 1.21)."; }
+    }
+}
+
+export component NotifyAppPage inherits NeoList {
+    VerticalLayout {
+        alignment: start;
+        SectionHeader { text: SetState.notify-current.name; }
+        ListRow {
+            value-bright: true;
+            title: "Allow notifications";
+            subtitle: "Status bar icon, badge, shade";
+            has-switch: true;
+            switch-on <=> SetState.notify-allow;
+            switch-toggled(v) => { SetState.act("notify-flag", v ? "allow,1" : "allow,0"); }
+        }
+
+        if SetState.notify-allow: ListRow {
+            value-bright: true;
+            title: "Banners";
+            subtitle: "Urgent ones slide down for " + SetState.banner-time + " s";
+            has-switch: true;
+            switch-on <=> SetState.notify-banner;
+            switch-toggled(v) => { SetState.act("notify-flag", v ? "banner,1" : "banner,0"); }
+        }
+        // the sound is the shell's chime, but Phone's and Messages' come from the modem and Clock rings its alarms
+        if SetState.notify-allow && SetState.notify-sound-ours: ListRow {
+            value-bright: true;
+            title: "Sound";
+            subtitle: SetState.notify-sound-text;
+            has-switch: true;
+            switch-on <=> SetState.notify-sound;
+            switch-toggled(v) => { SetState.act("notify-flag", v ? "sound,1" : "sound,0"); }
+        }
+        if SetState.notify-allow && !SetState.notify-sound-ours: ListRow {
+            value-bright: true;
+            title: "Sound";
+            subtitle: SetState.notify-sound-text;
+            value: "Not yet (NeoModem)";
+        }
+        if SetState.notify-allow: ListRow {
+            value-bright: true;
+            title: "Badge on the icon";
+            has-switch: true;
+            switch-on <=> SetState.notify-badge;
+            switch-toggled(v) => { SetState.act("notify-flag", v ? "badge,1" : "badge,0"); }
+            divider: false;
+        }
+
+        if SetState.notify-allow: SectionHeader { text: "Channels · declared by the app"; }
+        if SetState.notify-allow: VerticalLayout {
+            for c[i] in SetState.channels: VerticalLayout {
+                if c.owner == SetState.notify-current.key: ListRow {
+                    value-bright: true;
+                    title: c.name;
+                    checked: SetState.found == "notify.channel." + c.owner + "." + c.id;
+                    subtitle: c.general ? "The app declares no channels" : c.description;
+                    value: c.value;
+                    chevron: true;
+                    clicked => {
+                        SetState.channel-current = c;
+                        SetState.sheet = "channel";
+                    }
+                }
+            }
+        }
+
+        Note { text: "Do not disturb holds banners and sounds from apps. Incoming calls and SMS tones come from the modem and still ring."; }
+    }
+}

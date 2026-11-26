@@ -25,6 +25,10 @@ export struct DriveRow { letter: string, title: string, used: string, note: stri
 // a part of the Storage bar or a kind: its name, size text, and for a bar part where it starts and its share (0..1)
 export struct PartRow { name: string, size: string, start: float, share: float }
 export struct AppRow { key: string, name: string, old: bool, settings: bool }
+// TP4: an app on Notifications (its policy key, caption, line, its notifications allowed) and a channel of an app
+// (its id, name, description, effective importance's name and number 0 off..4, whether it is the General row)
+export struct NotifyAppRow { key: string, name: string, summary: string, allowed: bool }
+export struct ChannelRow { owner: string, id: int, name: string, description: string, value: string, level: int, general: bool }
 // bssid: the access point ("02:00:00:00:00:01"; the details' identity, D1)
 export struct WifiLink { shown: bool, connected: bool, bssid: string, name: string, subtitle: string, bars: int, band: string, details: [WifiDetail], sign-in: bool }
 
@@ -235,6 +239,33 @@ export global SetState {
     in property <bool> your-tones-full;
     in-out property <YourTone> your-current;
     in property <string> import-note;
+
+    // TP4 (notifications.rs): the shell's policy (INFO 7) — false: this shell doesn't answer it; Do not disturb
+    // (notify.dnd) and what it holds, the root's line, the swipe on home (shell.swipehome), the banner's seconds
+    // (notify.bannert) and their choices; the apps, every app's channels, the app its page is about and its switches
+    // (n.<app>: allow, banners, sound, badge); whether its sound is the shell's (else MODEMD or Clock ring it); the
+    // channel the importance sheet is for, and the importances' names and descriptions
+    in property <bool> notify-ok: true;
+    in-out property <bool> dnd;
+    in property <string> dnd-text;
+    in property <string> notify-root;
+    in-out property <bool> swipe-home: true;
+    in property <int> banner-time: 5;
+    in property <string> banner-text: "5 s";
+    in property <[string]> banner-times;
+    in property <int> banner-index;
+    in property <[NotifyAppRow]> notify-apps;
+    in property <[ChannelRow]> channels;
+    in-out property <NotifyAppRow> notify-current;
+    in-out property <bool> notify-allow: true;
+    in-out property <bool> notify-banner: true;
+    in-out property <bool> notify-sound: true;
+    in-out property <bool> notify-badge: true;
+    in property <bool> notify-sound-ours: true;
+    in property <string> notify-sound-text;
+    in-out property <ChannelRow> channel-current;
+    in property <[string]> importances: ["Urgent", "Default", "Low", "Silent", "Off"];
+    in property <[string]> importance-hints: ["Sound, pop-up banner", "Sound, status bar glyph, in the shade", "No sound, no glyph, in the shade", "Folded under Silent at the bottom", "Nothing from this channel"];
 
     // the open sheet: "" none, "timeout", "date-format", "zone", "pad-strength", "pad-default", "pad-dirs", "pad-a",
     // "pad-b", "wifi-join", "wifi-details"; the network the join sheet is for, and what is typed in it

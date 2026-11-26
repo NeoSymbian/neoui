@@ -199,6 +199,12 @@ impl RowKey {
         let id = self.id.0;
         match &self.instance {
             Some(InstanceId::Profile(p)) if id == "sounds.profile" => format!("sounds.p{p}"),
+            // TP4: Notifications' app rows and the channels (`notify.app.messages`, `notify.channel.messages.1`)
+            Some(InstanceId::App(AppId::Native(k))) if id == "notify.app" => format!("{id}.{k}"),
+            Some(InstanceId::Channel {
+                owner: AppId::Native(k),
+                id: c,
+            }) => format!("{id}.{k}.{c}"),
             Some(InstanceId::App(AppId::Native(k))) => format!("apps.{k}"),
             Some(InstanceId::App(AppId::Legacy(e))) => format!("apps.{e:08x}"),
             Some(InstanceId::Drive(d)) => format!("{id}.{}", char::from(b'A' + d)),
@@ -362,6 +368,23 @@ pub enum KindsState {
     Partial(String),
 }
 
+/// (TP4) An app on Notifications, from INFO 7: its policy key, its caption and its line (`app_summary`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NotifyFact {
+    pub owner: &'static str,
+    pub name: String,
+    pub summary: String,
+}
+
+/// (TP4) A channel an app declared (or its General one), from INFO 7: its name and effective importance's name.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ChannelFact {
+    pub owner: &'static str,
+    pub id: u8,
+    pub name: String,
+    pub value: String,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AppFact {
     pub id: AppId,
@@ -407,6 +430,9 @@ pub struct Facts {
     pub apps: Vec<AppFact>,
     pub link: Option<LinkFact>,
     pub console: Console,
+    /// (TP4) Notifications' apps and every channel (empty: the shell doesn't answer INFO 7, not read yet)
+    pub notify_apps: Vec<NotifyFact>,
+    pub channels: Vec<ChannelFact>,
 }
 
 impl Facts {
@@ -906,6 +932,105 @@ impl Provider for WifiFields {
     }
 }
 
+/// (TP4) Notifications' apps: the summary from the shell's policy (INFO 7); a row opens the app's page.
+struct NotifyApps;
+impl NotifyApps {
+    fn app<'a>(f: &'a Facts, key: &RowKey) -> Option<&'a NotifyFact> {
+        match &key.instance {
+            Some(InstanceId::App(AppId::Native(k))) => f.notify_apps.iter().find(|a| a.owner == *k),
+            _ => None,
+        }
+    }
+}
+impl Provider for NotifyApps {
+    fn enumerate(&self, f: &Facts, row: &'static Row, out: &mut Vec<RowKey>) {
+        for a in &f.notify_apps {
+            out.push(RowKey::with(
+                row.id,
+                InstanceId::App(AppId::Native(a.owner)),
+            ));
+        }
+    }
+
+    fn read(&self, f: &Facts, key: &RowKey) -> Reading {
+        Self::app(f, key).map_or(Reading::Unavailable("No longer available"), |a| {
+            Reading::Value(a.summary.clone())
+        })
+    }
+
+    fn label(&self, f: &Facts, key: &RowKey) -> Label {
+        Label {
+            title: Self::app(f, key).map_or_else(String::new, |a| a.name.clone()),
+            path: String::from(Page::Notifications.title()),
+            aliases: &[],
+        }
+    }
+
+    fn destination(&self, _f: &Facts, key: &RowKey) -> Option<Destination> {
+        Some(Destination {
+            page: Page::NotifyApp,
+            context: key.instance.clone(),
+            sheet: None,
+            focus: None,
+        })
+    }
+}
+
+/// (TP4) The channels: their effective importance; a hit opens its app's page with the channel selected.
+struct Channels;
+impl Channels {
+    fn channel<'a>(f: &'a Facts, key: &RowKey) -> Option<&'a ChannelFact> {
+        match &key.instance {
+            Some(InstanceId::Channel {
+                owner: AppId::Native(k),
+                id,
+            }) => f.channels.iter().find(|c| c.owner == *k && c.id == *id),
+            _ => None,
+        }
+    }
+}
+impl Provider for Channels {
+    fn enumerate(&self, f: &Facts, row: &'static Row, out: &mut Vec<RowKey>) {
+        for c in &f.channels {
+            out.push(RowKey::with(
+                row.id,
+                InstanceId::Channel {
+                    owner: AppId::Native(c.owner),
+                    id: c.id,
+                },
+            ));
+        }
+    }
+
+    fn read(&self, f: &Facts, key: &RowKey) -> Reading {
+        Self::channel(f, key).map_or(Reading::Unavailable("No longer available"), |c| {
+            Reading::Value(c.value.clone())
+        })
+    }
+
+    fn label(&self, f: &Facts, key: &RowKey) -> Label {
+        let c = Self::channel(f, key);
+        let app = c.and_then(|c| f.notify_apps.iter().find(|a| a.owner == c.owner));
+        Label {
+            title: c.map_or_else(String::new, |c| c.name.clone()),
+            path: app.map_or_else(
+                || String::from(Page::Notifications.title()),
+                |a| format!("Notifications · {}", a.name),
+            ),
+            aliases: &[],
+        }
+    }
+
+    fn destination(&self, _f: &Facts, key: &RowKey) -> Option<Destination> {
+        Some(Destination {
+            page: Page::NotifyApp,
+            context: key.instance.clone(),
+            sheet: None,
+            focus: Some(key.clone()),
+        })
+    }
+}
+
 impl ProviderId {
     /// The provider that serves this family.
     #[must_use]
@@ -919,6 +1044,8 @@ impl ProviderId {
             ProviderId::OverviewKinds => &OverviewKinds,
             ProviderId::Apps => &Apps,
             ProviderId::WifiFields => &WifiFields,
+            ProviderId::NotifyApps => &NotifyApps,
+            ProviderId::Channels => &Channels,
         }
     }
 }
@@ -1276,15 +1403,17 @@ mod tests {
     fn search_ranks_like_the_board() {
         let snap = project_all(&facts());
         // set2-search: the Date & time rows, Screen timeout, then the root's Date & time, then the page's other rows.
-        // D5's Screen-on time (the board's last) is a whole-word match, so it comes before Screen timeout
+        // D5's Screen-on time (the board's last) and TP4's Pop-up time are whole-word matches, so they come before
+        // Screen timeout
         let t = titles(&snap, "time");
         assert_eq!(
-            t[..7],
+            t[..8],
             [
                 "Automatic time",
                 "Automatic time zone",
                 "Time zone",
                 "24-hour time",
+                "Pop-up time",
                 "Screen-on time",
                 "Screen timeout",
                 "Date & time"

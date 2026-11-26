@@ -38,9 +38,16 @@ pub enum Page {
     Wallpaper = 25,
     /// (D7) The text size (set2-fontsize): a preview and the four sizes.
     FontSize = 26,
+    /// (TP4) Panel & notifications (tp-settings): the shade's swipe, App notifications, Do not disturb, pop-up time.
+    Panel = 27,
+    /// (TP4) Notifications (set2-notifications): Do not disturb and every app with its policy.
+    Notifications = 28,
+    /// (TP4) One app's notifications (set2-notify-app, nt-settings): its switches and channels; the app is NEOSET's
+    /// current one.
+    NotifyApp = 29,
 }
 
-pub const ALL: [Page; 27] = [
+pub const ALL: [Page; 30] = [
     Page::Root,
     Page::Wifi,
     Page::Mobile,
@@ -68,6 +75,9 @@ pub const ALL: [Page; 27] = [
     Page::TimeZone,
     Page::Wallpaper,
     Page::FontSize,
+    Page::Panel,
+    Page::Notifications,
+    Page::NotifyApp,
 ];
 
 impl Page {
@@ -112,6 +122,9 @@ impl Page {
             Page::TimeZone => "timezone",
             Page::Wallpaper => "wallpaper",
             Page::FontSize => "fontsize",
+            Page::Panel => "panel",
+            Page::Notifications => "notifications",
+            Page::NotifyApp => "notifyapp",
         }
     }
 
@@ -139,6 +152,7 @@ impl Page {
             Page::AppDetail => Page::Apps,
             Page::Ringtone => Page::Sounds,
             Page::TimeZone => Page::DateTime,
+            Page::NotifyApp => Page::Notifications,
             p => p,
         }
     }
@@ -174,6 +188,8 @@ impl Page {
             Page::TimeZone => "Time zone",
             Page::Wallpaper => "Wallpaper",
             Page::FontSize => "Font size",
+            Page::Panel => "Panel & notifications",
+            Page::Notifications | Page::NotifyApp => "Notifications",
         }
     }
 
@@ -192,6 +208,8 @@ impl Page {
             Page::Ringtone => Some(Page::Profile),
             Page::TimeZone => Some(Page::DateTime),
             Page::Wallpaper | Page::FontSize => Some(Page::Display),
+            Page::Notifications => Some(Page::Panel),
+            Page::NotifyApp => Some(Page::Notifications),
             _ => Some(Page::Root),
         }
     }
@@ -208,7 +226,10 @@ mod tests {
             assert_eq!(Page::from_id(p.id()), Some(*p));
             assert_eq!(Page::from_name(p.name()), Some(*p));
         }
-        assert_eq!(Page::from_id(27), None);
+        assert_eq!(Page::from_id(30), None);
+        assert_eq!(Page::opened(29, "").from_outside(), Page::Notifications);
+        assert_eq!(Page::NotifyApp.parent(), Some(Page::Notifications));
+        assert_eq!(Page::Notifications.parent(), Some(Page::Panel));
         assert_eq!(Page::opened(0, "wallpaper"), Page::Wallpaper);
         assert_eq!(Page::FontSize.parent(), Some(Page::Display));
         assert_eq!(Page::Ringtone.parent(), Some(Page::Profile));

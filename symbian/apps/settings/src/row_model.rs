@@ -126,6 +126,7 @@ fn refresh_sources(ctx: &Ctx, ui: &SettingsApp) {
     ctx.storage.drives(ui);
     ctx.storage.show(ui);
     ctx.old_apps(ui);
+    crate::notifications::refresh(&ctx.app, ui);
     d2::refresh(ui, Page::Developer);
     d2::refresh(ui, Page::About);
     crate::battery_cycle::refresh(&ctx.app, ui); // D5
@@ -219,6 +220,7 @@ fn open(ctx: &Ctx, ui: &SettingsApp, d: &Destination) {
         }
         _ => {}
     }
+    crate::notifications::context(&ctx.app, &s, &d.context);
     ctx.open(d.page);
     if let Some(sheet) = d.sheet {
         s.set_sheet(sheet.name().into());

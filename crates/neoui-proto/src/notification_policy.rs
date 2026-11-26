@@ -552,6 +552,49 @@ pub fn records(owner: &str, policy: &Policy, declared: &[Channel], global: u8) -
     out
 }
 
+/// An importance as Settings names it (nt-settings): 0 (the channel is off) "Off".
+#[must_use]
+pub fn importance_name(i: u8) -> &'static str {
+    match i {
+        importance::URGENT => "Urgent",
+        importance::DEFAULT => "Default",
+        importance::LOW => "Low",
+        importance::MIN => "Silent",
+        _ => "Off",
+    }
+}
+
+/// An app's line on Notifications (set2-notifications: "Banners · sound", "Missed calls · banners · sound", "Off"):
+/// its one declared channel's name if it has only one, banners if on, sound or no sound. The Settings page, search
+/// and the root read this one text.
+#[must_use]
+pub fn app_summary(app: &AppRecord, channels: &[ChannelRecord]) -> String {
+    if app.requested_flags & flag::ALLOW == 0 {
+        return String::from("Off");
+    }
+    let mut parts: Vec<&str> = Vec::new();
+    let declared: Vec<&ChannelRecord> = channels
+        .iter()
+        .filter(|c| c.owner == app.owner && c.channel != 0)
+        .collect();
+    if let [one] = declared.as_slice() {
+        parts.push(&one.name);
+    }
+    if app.requested_flags & flag::BANNER != 0 {
+        parts.push("banners");
+    }
+    parts.push(if app.requested_flags & flag::SOUND != 0 {
+        "sound"
+    } else {
+        "no sound"
+    });
+    let line = parts.join(" · ");
+    let mut c = line.chars();
+    c.next().map_or_else(String::new, |f| {
+        f.to_uppercase().chain(c).collect::<String>()
+    })
+}
+
 /// The shell's saved declarations (`C:\private\e0002001\channels.dat`): `1:b, count:h, (owner:s16, len:b,
 /// declaration[len])*`.
 #[must_use]
@@ -851,6 +894,46 @@ mod tests {
         let Record::App(a) = &recs[0] else { panic!() };
         assert_eq!(a.caption, "Messages");
         assert_eq!(Record::decode(&[2]), None);
+    }
+
+    #[test]
+    fn summaries_read_as_the_board_writes_them() {
+        let app = |flags| AppRecord {
+            owner: "files".into(),
+            caption: "Files".into(),
+            requested_flags: flags,
+            effective_flags: flags,
+            requested_lock: 0,
+            effective_lock: 1,
+            tone: TONE_PROFILE,
+        };
+        let recs = records(
+            "phone",
+            &Policy::default(),
+            &[ch(2, 3, "Missed calls")],
+            lock::SHOW,
+        );
+        let chans: Vec<ChannelRecord> = recs
+            .into_iter()
+            .filter_map(|r| match r {
+                Record::Channel(c) => Some(c),
+                Record::App(_) => None,
+            })
+            .collect();
+        let mut phone = app(flag::ALL);
+        phone.owner = "phone".into();
+        assert_eq!(
+            app_summary(&phone, &chans),
+            "Missed calls · banners · sound"
+        );
+        assert_eq!(app_summary(&app(flag::ALL), &[]), "Banners · sound");
+        assert_eq!(
+            app_summary(&app(flag::ALLOW | flag::BANNER), &[]),
+            "Banners · no sound"
+        );
+        assert_eq!(app_summary(&app(flag::BANNER), &[]), "Off");
+        assert_eq!(importance_name(0), "Off");
+        assert_eq!(importance_name(importance::MIN), "Silent");
     }
 
     #[test]

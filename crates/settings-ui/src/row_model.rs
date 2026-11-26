@@ -8,8 +8,8 @@ use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 use neoui_proto::settings_app::row_model::{
-    AppFact, AppId, Console, DriveFact, Epochs, Facts, Hit, KindsState, LinkFact, RowSnapshot,
-    Sample, Scalar, WifiField, project_all, search,
+    AppFact, AppId, ChannelFact, Console, DriveFact, Epochs, Facts, Hit, KindsState, LinkFact,
+    NotifyFact, RowSnapshot, Sample, Scalar, WifiField, project_all, search,
 };
 use neoui_proto::settings_app::storage::KINDS;
 use neoui_proto::sound_profile::Profile;
@@ -127,6 +127,15 @@ pub fn facts(s: &SetState<'_>, sample: Sample, epochs: Epochs) -> Facts {
         ("pads.console", on(s.get_pad_console())),
         // D5
         ("battery.screen_on", text(s.get_screen_on())),
+        // TP4: the root's line, the panel's switches and the banner's time
+        (
+            "root.notifications",
+            (!s.get_notify_root().is_empty()).then(|| Scalar::Text(s.get_notify_root().into())),
+        ),
+        ("panel.swipehome", on(s.get_swipe_home())),
+        ("panel.dnd", on(s.get_dnd())),
+        ("notify.dnd", on(s.get_dnd())),
+        ("notify.bannert", text(s.get_banner_text())),
     ] {
         if let Some(v) = v {
             f.scalars.insert(key, v);
@@ -197,6 +206,36 @@ pub fn facts(s: &SetState<'_>, sample: Sample, epochs: Epochs) -> Facts {
         })
     });
     f.apps = native.chain(old.filter(|_| s.get_old_ok())).collect();
+    // TP4: the policy owners and every channel, as INFO 7 said (none from a shell without it)
+    let owner = |k: &str| {
+        neoui_proto::notification_policy::OWNERS
+            .iter()
+            .copied()
+            .find(|o| *o == k)
+    };
+    f.notify_apps = s
+        .get_notify_apps()
+        .iter()
+        .filter_map(|a| {
+            Some(NotifyFact {
+                owner: owner(a.key.as_str())?,
+                name: String::from(a.name.as_str()),
+                summary: String::from(a.summary.as_str()),
+            })
+        })
+        .collect();
+    f.channels = s
+        .get_channels()
+        .iter()
+        .filter_map(|c| {
+            Some(ChannelFact {
+                owner: owner(c.owner.as_str())?,
+                id: u8::try_from(c.id).ok()?,
+                name: String::from(c.name.as_str()),
+                value: String::from(c.value.as_str()),
+            })
+        })
+        .collect();
     f.link = link.shown.then(|| LinkFact {
         bssid: mac(link.bssid.as_str()),
         fields: link

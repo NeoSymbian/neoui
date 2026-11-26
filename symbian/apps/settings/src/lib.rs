@@ -17,6 +17,7 @@ mod apps_detail;
 mod battery_cycle;
 mod d2;
 mod modem;
+mod notifications;
 mod profile_audio;
 mod row_model;
 mod sound;
@@ -159,6 +160,8 @@ fn run() -> Result<(), i32> {
                 ctx.open(Page::from_id(page).unwrap_or(Page::Root).from_outside());
             }
             AppEvent::Settings { .. } => store::load(&app, &ui),
+            // TP4: the shell's policy (INFO 7) moved on
+            AppEvent::SettingsInfo { kind: 7, .. } => notifications::refresh(&app, &ui),
             AppEvent::SettingsInfo { .. } => apps_detail::tick(&ctx, &ui, ctx.page.get(), true),
             // the shell's keyboard: its height (0 while a field keeps the focus: the user put it away)
             AppEvent::Keyboard { h } => {
@@ -319,6 +322,7 @@ impl Ctx {
             store::profiles(&self.app, &ui);
             s.set_title(s.get_profile_current().name);
         }
+        notifications::opened(&s, page);
         if page == Page::AppDetail {
             s.set_title(s.get_app_current().name);
             s.set_app_clear(asks::clear_what(s.get_app_current().key.as_str()).into());
@@ -845,6 +849,7 @@ impl Ctx {
                     store::write(app, &ui, "radio.bt", "0");
                 }
             }
+            a if a.starts_with("notify-") => notifications::act(self, &ui, a, value),
             // a setting: its key and value
             key if key.contains('.') => {
                 store::write(app, &ui, key, value);

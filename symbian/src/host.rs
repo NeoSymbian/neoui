@@ -62,6 +62,8 @@ pub const PAGES: &[(&str, &str, u16)] = &[
     ("settings", "navigation", 6),
     // D7: home's long-press Wallpaper opens the picker itself
     ("settings", "wallpaper", 25),
+    // TP4: the shade's Manage opens Panel & notifications
+    ("settings", "panel", 27),
 ];
 
 /// Apps started (hidden) at boot, in this order, and never closed for room: DTSRV (a service, 1.19) rings alarms

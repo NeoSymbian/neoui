@@ -10,8 +10,8 @@
 use neoui_proto::settings_app::choices::{KEYBOARDS, NAV_MODES};
 use neoui_proto::settings_app::page::Page;
 use neoui_proto::settings_app::row_model::{
-    AppFact, AppId, Availability, Console, DriveFact, Facts, KindsState, LinkFact, Reading, Scalar,
-    WifiField, project_all, search,
+    AppFact, AppId, Availability, ChannelFact, Console, DriveFact, Facts, KindsState, LinkFact,
+    NotifyFact, Reading, Scalar, WifiField, project_all, search,
 };
 use neoui_proto::settings_app::rows::{ProviderId, ROOT_GRID, ROOT_LIST, ROWS};
 use neoui_proto::settings_app::storage::Kind;
@@ -41,6 +41,9 @@ const COMPONENTS: &[(&str, Page)] = &[
     ("StoragePage", Page::Storage),
     ("ResetPage", Page::Reset),
     ("BatteryUsagePage", Page::BatteryUsage),
+    ("PanelPage", Page::Panel),
+    ("NotificationsPage", Page::Notifications),
+    ("NotifyAppPage", Page::NotifyApp),
 ];
 
 fn page_file(name: &str) -> String {
@@ -145,6 +148,16 @@ const REPEATERS: &[(ProviderId, &str, &str)] = &[
         ProviderId::WifiFields,
         "wifi.slint",
         "for d in SetState.wifi-link.details: HorizontalLayout",
+    ),
+    (
+        ProviderId::NotifyApps,
+        "notifications.slint",
+        "for a in SetState.notify-apps: ListRow",
+    ),
+    (
+        ProviderId::Channels,
+        "notifications.slint",
+        "for c[i] in SetState.channels: VerticalLayout",
     ),
 ];
 
@@ -256,6 +269,21 @@ fn facts() -> Facts {
         ..Facts::default()
     };
     f.console = Console::Shown(false);
+    f.notify_apps = vec![NotifyFact {
+        owner: "messages",
+        name: "Messages".into(),
+        summary: "Banners · sound".into(),
+    }];
+    f.channels = vec![ChannelFact {
+        owner: "messages",
+        id: 1,
+        name: "Conversations".into(),
+        value: "Urgent".into(),
+    }];
+    f.scalars.insert(
+        "root.notifications",
+        Scalar::Text("8 of 8 apps allowed".into()),
+    );
     f.scalars.insert("about.slot", Scalar::Text("a".into()));
     f.scalars
         .insert("storage.free", Scalar::Text("C: 5.9 GB free".into()));
@@ -358,6 +386,32 @@ const MANIFEST: &[(&str, &str, &str, ProviderId, Page, Gate)] = &[
         Page::About,
         |f| {
             f.scalars.remove("about.slot");
+        },
+    ),
+    (
+        "set2-notifications",
+        "Messages",
+        "notify.app",
+        ProviderId::NotifyApps,
+        Page::NotifyApp,
+        |f| f.notify_apps.clear(),
+    ),
+    (
+        "nt-settings",
+        "Conversations",
+        "notify.channel",
+        ProviderId::Channels,
+        Page::NotifyApp,
+        |f| f.channels.clear(),
+    ),
+    (
+        "set2-root-list",
+        "Notifications",
+        "root.notifications",
+        ProviderId::Builtin,
+        Page::Panel,
+        |f| {
+            f.scalars.remove("root.notifications");
         },
     ),
     (

@@ -18,6 +18,7 @@ import { DisplayPage, NavigationPage, SoundsPage, BatteryPage, BatteryUsagePage,
 import { DateTimePage, TimeZonePage, KeyboardPage, PrivacyPage } from "pages/personal.slint";
 import { AppsPage, AppSheet, AppDetailPage, ResetPage, OldAppsPage, DeveloperPage, AboutPage } from "pages/system.slint";
 import { WallpaperPage, FontSizePage } from "pages/appearance.slint";
+import { PanelPage, NotificationsPage, NotifyAppPage } from "pages/notifications.slint";
 import { Wallpapers } from "@neoui/components/wallpaper.slint";
 
 export { Theme, Scroll, KeyboardFocus, Kit, SetState, WifiNet, WifiLink, WifiDetail, SearchHit, DriveRow, PartRow, Wallpapers }
@@ -97,6 +98,9 @@ export component SettingsApp inherits Window {
         }
         if SetState.page == 25: WallpaperPage { }
         if SetState.page == 26: FontSizePage { }
+        if SetState.page == 27: PanelPage { }
+        if SetState.page == 28: NotificationsPage { }
+        if SetState.page == 29: NotifyAppPage { }
     }
 
     // the sheets: full size, last, so they cover the header and the page
@@ -161,6 +165,28 @@ export component SettingsApp inherits Window {
         descriptions: ["Weekday, day and month", "Day.month.year", "Year-month-day (ISO 8601)", "Month/day/year"];
         current: SetState.date-format;
         chosen(i) => { SetState.act("time.date_format", i); }
+        dismissed => { SetState.sheet = ""; }
+    }
+    // TP4: the banner's time, and a channel's importance (nt-settings' choices)
+    if SetState.sheet == "banner-time": ChoiceSheet {
+        open: true;
+        radio-left: true;
+        title-start: true;
+        title: "Pop-up time";
+        choices: SetState.banner-times;
+        current: SetState.banner-index;
+        chosen(i) => { SetState.sheet = ""; SetState.act("notify-bannert", i); }
+        dismissed => { SetState.sheet = ""; }
+    }
+    if SetState.sheet == "channel": ChoiceSheet {
+        open: true;
+        radio-left: true;
+        title-start: true;
+        title: SetState.channel-current.name;
+        choices: SetState.importances;
+        descriptions: SetState.importance-hints;
+        current: SetState.channel-current.level == 0 ? 4 : 4 - SetState.channel-current.level;
+        chosen(i) => { SetState.sheet = ""; SetState.act("notify-importance", i); }
         dismissed => { SetState.sheet = ""; }
     }
     if SetState.sheet == "pad-strength": ChoiceSheet {

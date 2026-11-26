@@ -220,6 +220,7 @@ pub fn load(app: &App, ui: &SettingsApp) {
     s.set_pad_lefty(get(app, keys::LEGACY_PAD_LEFTY));
     s.set_pad_console(get(app, keys::LEGACY_PAD_CONSOLE));
     crate::appearance::load(app, ui);
+    crate::notifications::refresh(app, ui);
     s.set_clip_notice(get(app, keys::PRIVACY_CLIP_NOTICE));
 }
 

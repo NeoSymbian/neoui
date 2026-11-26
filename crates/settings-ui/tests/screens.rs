@@ -11,8 +11,8 @@ use neoui_proto::settings_app::row_model::{
 use neoui_proto::settings_app::rows::{ROOT_LIST, Search};
 use settings_ui::row_model as rm;
 use settings_ui::{
-    AppRow, DriveRow, PartRow, ProfileRow, SetState, WifiDetail, WifiLink, WifiNet, WifiSaved,
-    ZoneRow,
+    AppRow, ChannelRow, DriveRow, NotifyAppRow, PartRow, ProfileRow, SetState, WifiDetail,
+    WifiLink, WifiNet, WifiSaved, ZoneRow,
 };
 use slint::{ComponentHandle, Model, SharedString};
 
@@ -347,6 +347,56 @@ fn fill(sh: &Shot) {
     s.set_wallpaper("night".into());
     s.set_wallpaper_name("Night".into());
     s.set_clip_notice(true);
+    // TP4: the shell's policy as INFO 7 says it (the apps the shell has n.<app> keys for, Files turned off), DND off
+    let app = |key: &str, name: &str, summary: &str, allowed| NotifyAppRow {
+        key: key.into(),
+        name: name.into(),
+        summary: summary.into(),
+        allowed,
+    };
+    s.set_notify_apps(model(vec![
+        app("phone", "Phone & Contacts", "Banners · sound", true),
+        app("messages", "Messages", "Banners · sound", true),
+        app("dtsrv", "Clock & Calendar", "Banners · sound", true),
+        app("devtools", "Dev tools", "Banners · sound", true),
+        app("files", "Files", "Off", false),
+        app("browser", "Browser", "Banners · no sound", true),
+    ]));
+    let ch = |owner: &str, id, name: &str, description: &str, level: i32| ChannelRow {
+        owner: owner.into(),
+        id,
+        name: name.into(),
+        description: description.into(),
+        value: ["Off", "Silent", "Low", "Default", "Urgent"][level as usize].into(),
+        level,
+        general: id == 0,
+    };
+    s.set_channels(model(vec![
+        ch("phone", 1, "Calls", "The call in progress", 3),
+        ch("phone", 2, "Missed calls", "Calls you didn't answer", 3),
+        ch("messages", 1, "Conversations", "New messages", 4),
+        ch(
+            "messages",
+            2,
+            "Failed to send",
+            "A message that didn't go",
+            3,
+        ),
+        ch("messages", 3, "Delivery reports", "A message arrived", 2),
+        ch("messages", 4, "Blocked messages", "From blocked senders", 1),
+        ch("dtsrv", 0, "General", "", 3),
+        ch("devtools", 0, "General", "", 3),
+        ch("files", 0, "General", "", 0),
+        ch("browser", 0, "General", "", 3),
+    ]));
+    s.set_notify_root("5 of 6 apps allowed".into());
+    s.set_dnd(false);
+    s.set_dnd_text("No banners or sounds from apps".into());
+    s.set_banner_time(5);
+    s.set_banner_text("5 s".into());
+    s.set_banner_times(strings(&["3 s", "5 s", "8 s", "10 s"]));
+    s.set_banner_index(1);
+    s.set_swipe_home(true);
 }
 
 /// D4: the Apps list's subtitles for `apps` (as NEOSET sets them from INFO 8: what the shell and the owners here
@@ -448,7 +498,8 @@ fn every_page() {
             assert_eq!(snap.rows[hit.row].value_text, summaries[i], "{id}");
         }
     }
-    assert_eq!(summaries[8], "C: 3.1 GB free");
+    assert_eq!(summaries[7], "5 of 6 apps allowed");
+    assert_eq!(summaries[9], "C: 3.1 GB free");
 
     // the Nokia grid (S01, ⋮ → View as grid)
     s.set_root_grid(true);
@@ -533,7 +584,7 @@ fn every_page() {
     s.set_storage_free("".into());
     let snap = project(&sh, Epochs::default());
     assert!(searched(&sh, &snap, "console overlay").is_empty());
-    assert_eq!(s.get_summaries().row_data(8).unwrap(), "C: can't be read");
+    assert_eq!(s.get_summaries().row_data(9).unwrap(), "C: can't be read");
     s.set_console_ok(true);
     s.set_storage_free("C: 3.1 GB free".into());
     let snap = project(&sh, Epochs::default());
@@ -985,6 +1036,33 @@ fn every_page() {
     page(&sh, 14, "Old apps");
     sheet(&sh, "pad-b");
     sh.shoot("pad-settings-b");
+
+    // TP4: Panel & notifications (tp-settings), Notifications (set2-notifications), Messages' page with its channels
+    // (set2-notify-app, nt-settings) and a channel's importance sheet; their taps ask the app
+    page(&sh, 27, "Panel & notifications");
+    sh.shoot("tp-settings");
+    page(&sh, 28, "Notifications");
+    sh.shoot("set2-notifications");
+    sh.take_acts();
+    sh.tap(100.0, 260.0); // Messages, the second app
+    assert_eq!(sh.take_acts(), acts(&[("notify-app", "messages")]));
+    s.set_notify_current(s.get_notify_apps().row_data(1).unwrap());
+    s.set_notify_sound_ours(false);
+    s.set_notify_sound_text("Calls and SMS tones come from the modem".into());
+    page(&sh, 29, "Messages");
+    sh.shoot("set2-notify-app");
+    s.set_channel_current(s.get_channels().row_data(2).unwrap());
+    sheet(&sh, "channel");
+    sh.shoot("nt-settings");
+    sh.take_acts();
+    sh.tap(100.0, 505.0); // Low
+    assert_eq!(sh.take_acts(), acts(&[("notify-importance", "2")]));
+    s.set_sheet(SharedString::new());
+    // a shell older than 1.21: no apps, and the page says why
+    s.set_notify_ok(false);
+    page(&sh, 28, "Notifications");
+    sh.draw();
+    s.set_notify_ok(true);
 
     // every row that shows a value has one for search, from the sample state above (D1's projection)
     let snap = project(&sh, Epochs::default());
