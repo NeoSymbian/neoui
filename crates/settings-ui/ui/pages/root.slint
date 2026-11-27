@@ -103,13 +103,12 @@ export component RootPage inherits NeoList {
         }
 
         SectionHeader { text: "Personal"; }
-        // D15: no lock screen or PIN yet; the row says so and opens nothing
         SettingRow {
             title: "Lock screen & security";
             value: SetState.summaries[10];
             icon: @image-url("@neoui/icons/sys/lock.svg");
             tint: #2bb0a0;
-            chevron: false;
+            clicked => { SetState.act("open", "34"); }
         }
 
         SettingRow {

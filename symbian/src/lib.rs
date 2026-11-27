@@ -70,6 +70,8 @@ const DISPLAY_SET_STATE: i32 = 20;
 const DISPLAY_STATE: i32 = 21;
 /// `EStdKeyDevice0` (`e32keys.h`): the Pixel's Power key (kernel `a64_keys.cpp`).
 const SCAN_POWER: i32 = 0xa4;
+/// EStdKeyF12: the Power key on QEMU virt, which has none (no panel there, so never on the phone).
+const SCAN_F12: i32 = 0x6b;
 /// `EStdKeyIncVolume` / `EStdKeyDecVolume`: during a call they set its volume (telephony C6)
 const SCAN_VOL_UP: i32 = 0xa2;
 const SCAN_VOL_DOWN: i32 = 0xa3;
@@ -299,7 +301,9 @@ fn main() -> i32 {
                             // Power is the system's: held, it opens the Power menu (below)
                             Ok(ev)
                                 if matches!(ev.i_type, raw::EKEY_DOWN | raw::EKEY_UP)
-                                    && ev.scan_code() == SCAN_POWER =>
+                                    && (ev.scan_code() == SCAN_POWER
+                                        // (TP8) virt has no Power key: F12 is one there (virt-taps locks with it)
+                                        || (panel_max == 0 && ev.scan_code() == SCAN_F12)) =>
                             {
                                 let now = time::millis();
                                 let change = if ev.i_type == raw::EKEY_DOWN {
@@ -502,7 +506,11 @@ fn main() -> i32 {
                     let mut evs = routed;
                     coalesce_moves(&mut evs);
                     for event in evs {
-                        let app_on_screen = host.front().is_some() && !phone.modal();
+                        // (TP8) nor under the lock screen or the PIN dialog: its keys go to the shell
+                        let app_on_screen = host.front().is_some()
+                            && !phone.modal()
+                            && !ui.lock_shown()
+                            && !ui.lock_pin_up();
                         match event {
                             // fingers after the first: the app's when they press in it (the shell's widgets and
                             // gestures follow finger 0 only), until they lift or another app comes to the front
@@ -924,6 +932,7 @@ fn main() -> i32 {
             // (TP4) a new card's alert: the banner (never over a full-screen call or the keyboard's field), its chime
             // and buzz; the banner goes after notify.bannert seconds
             if let Some(p) = host.policies.pending.take() {
+                host.lock_card_alert(p.key, p.id, p.banner); // (TP8) an Urgent card may wake the screen
                 let covered = (phone.in_call() && ui.screen() == "phone") || ui.keyboard_h() > 0;
                 if p.banner && !covered && scr.is_on() {
                     ui.set_banner(Some((p.key, p.id)));
@@ -1060,7 +1069,9 @@ fn main() -> i32 {
             }
             clockwork.frame(&mut ui, &mut host, ms);
             // a ringing call, or a service's OPEN_WAKE (an alarm, 1.19)
-            let woke = if phone.take_ring() | core::mem::take(&mut host.wake) {
+            let (ring, alarm) = (phone.take_ring(), core::mem::take(&mut host.wake));
+            host.lock_woke(ring, alarm, &ui.screen()); // (TP8) a call or an alarm shows over the lock
+            let woke = if ring | alarm | host.lock.take_urgent() {
                 scr.wake(ms)
             } else {
                 None
@@ -1078,6 +1089,7 @@ fn main() -> i32 {
                     host.send(AppEvent::InputReset);
                 }
             }
+            host.lock_frame(&mut ui, &mut phone); // (TP8, TP9) the lock screen, its pad, the PIN dialog
             if panel_max > 0 && scr.is_on() {
                 // Battery saver caps the level without moving the setting (SE3a); off, the setting's level at once
                 let setting = host.settings.get(keys::DISPLAY_BRIGHTNESS).unwrap_or(160);
@@ -1831,6 +1843,7 @@ fn set_screen(c: screen::Change, host: &mut Host) -> Option<bool> {
     };
     dprintln!("neoui: screen {} ({})", if on { "on" } else { "off" }, r);
     host.screen_power(on);
+    host.lock_screen_power(on); // (TP8)
     display_state()
 }
 

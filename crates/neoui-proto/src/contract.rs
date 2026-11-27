@@ -104,29 +104,26 @@ pub fn media(
     media::Session::decode(&b).map(Some).ok_or(kerr::ARGUMENT)
 }
 
-/// The longest request [`settings_action`] reads.
+/// The longest `SETTINGS_ACTION` request the checks below read.
 pub const ACTION_REQUEST_MAX: usize = wire::WallpaperRequest::LEN;
 
-/// The answer to `SETTINGS_ACTION` `kind` when it is one of 1.22's not built yet (14 `LOCK_DIALOG`), else `None`.
-/// `read(max)` reads the request (slot 1, `KErrArgument` past `max`), only for Settings. `KErrPermissionDenied` for
-/// anyone else, `KErrArgument` for a malformed request, else `KErrNotSupported`. 8 `INSTALL_WALLPAPER` is built (D7):
-/// [`wallpaper_request`]; 12 `EDIT_TILES` is built with TP7, the shell's `edit_tiles_action`.
-pub fn settings_action(
-    kind: i32,
+/// (TP9) `SETTINGS_ACTION` 14 `LOCK_DIALOG`'s checks before SYSSTART opens its PIN dialog: `KErrPermissionDenied`
+/// unless the caller is Settings (nothing is read before), `KErrArgument` for a malformed request; else the mode
+/// (`wire::lock_dialog`). The digits never cross IPC: the dialog is the shell's own.
+///
+/// # Errors
+/// As above.
+pub fn lock_dialog_request(
     caller: Caller<'_>,
     read: impl FnOnce(usize) -> Result<Vec<u8>, i32>,
-) -> Option<i32> {
-    let valid: fn(&[u8]) -> bool = match kind {
-        ipc::ACTION_LOCK_DIALOG => |b| wire::lock_dialog_request(b).is_some(),
-        _ => return None,
-    };
+) -> Result<u8, i32> {
     if caller != Caller::Settings {
-        return Some(kerr::PERMISSION_DENIED);
+        return Err(kerr::PERMISSION_DENIED);
     }
-    Some(match read(ACTION_REQUEST_MAX) {
-        Ok(b) if valid(&b) => kerr::NOT_SUPPORTED,
-        _ => kerr::ARGUMENT,
-    })
+    read(ACTION_REQUEST_MAX)
+        .ok()
+        .and_then(|b| wire::lock_dialog_request(&b))
+        .ok_or(kerr::ARGUMENT)
 }
 
 /// (D7) `SETTINGS_ACTION` 8 `INSTALL_WALLPAPER`'s checks before the shell takes the file: `KErrPermissionDenied`
@@ -381,47 +378,32 @@ mod tests {
             wallpaper_request(settings, read(&big)),
             Err(kerr::NOT_SUPPORTED)
         );
-        assert_eq!(
-            settings_action(ipc::ACTION_INSTALL_WALLPAPER, settings, never),
-            None
+        // (TP9) the PIN dialog: Settings only, nothing read before; a known mode
+        let (good, bad) = (
+            wire::encode_lock_dialog(wire::lock_dialog::CHANGE).to_vec(),
+            vec![1, 3],
         );
-        // the one action 1.22 still checks without acting on it
-        {
-            let (kind, good, bad) = (
-                ipc::ACTION_LOCK_DIALOG,
-                wire::encode_lock_dialog(wire::lock_dialog::CHANGE).to_vec(),
-                vec![1, 3],
-            );
-            assert_eq!(
-                settings_action(kind, Caller::App("clock"), never),
-                Some(kerr::PERMISSION_DENIED)
-            );
-            // an app that calls itself settings without NEOSET's SID is an app
-            assert_eq!(
-                settings_action(kind, Caller::App(apps::SETTINGS), never),
-                Some(kerr::PERMISSION_DENIED)
-            );
-            assert_eq!(
-                settings_action(kind, settings, read(&good)),
-                Some(kerr::NOT_SUPPORTED)
-            );
-            assert_eq!(
-                settings_action(kind, settings, read(&bad)),
-                Some(kerr::ARGUMENT)
-            );
-            assert_eq!(
-                settings_action(kind, settings, read(&[0; ACTION_REQUEST_MAX + 1])),
-                Some(kerr::ARGUMENT)
-            );
-        }
-        for kind in [
-            ipc::ACTION_EDIT_TILES,
-            ipc::ACTION_SIGN_IN,
-            ipc::ACTION_EDIT_HOME,
-            ipc::ACTION_VOLUME,
-        ] {
-            assert_eq!(settings_action(kind, settings, never), None);
-        }
+        assert_eq!(
+            lock_dialog_request(Caller::App("clock"), never),
+            Err(kerr::PERMISSION_DENIED)
+        );
+        // an app that calls itself settings without NEOSET's SID is an app
+        assert_eq!(
+            lock_dialog_request(Caller::App(apps::SETTINGS), never),
+            Err(kerr::PERMISSION_DENIED)
+        );
+        assert_eq!(
+            lock_dialog_request(settings, read(&good)),
+            Ok(wire::lock_dialog::CHANGE)
+        );
+        assert_eq!(
+            lock_dialog_request(settings, read(&bad)),
+            Err(kerr::ARGUMENT)
+        );
+        assert_eq!(
+            lock_dialog_request(settings, read(&[0; ACTION_REQUEST_MAX + 1])),
+            Err(kerr::ARGUMENT)
+        );
     }
 
     #[test]

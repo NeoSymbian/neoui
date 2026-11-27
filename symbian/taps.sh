@@ -32,6 +32,9 @@ swipe_hold() {
 }
 # hold X Y: a long press (a second), for the kit's long-press (selection mode, menus)
 hold() { at "$1" "$2"; add "mouse_button 1"; add "wait 1"; add "mouse_button 0"; add "expect neoui: tap from Some(($1, $2))"; }
+# power_key: the Power key's stand-in on QEMU virt, which has none (F12; the shell takes it as Power only without a
+# panel, TP8): a press turns an on screen off (the shell locks) and wakes an off one
+power_key() { add "sendkey f12"; }
 # drag X Y1 Y2: a vertical swipe
 drag() { swipe "$1" "$2" "$1" "$3"; }
 # wait_s N: N seconds, for what logs nothing (a drag settling)

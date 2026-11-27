@@ -23,6 +23,7 @@ import { SimLockPage, SimPinSheet } from "pages/sim-lock.slint";
 import { StorageDrivePage } from "pages/storage-drive.slint";
 import { BtDevicePage, BtPairDialog } from "pages/bluetooth.slint";
 import { WifiHiddenPage } from "pages/wifi-hidden.slint";
+import { LockPage } from "pages/lock.slint";
 import { Wallpapers } from "@neoui/components/wallpaper.slint";
 
 export { Theme, Scroll, KeyboardFocus, Kit, SetState, WifiNet, WifiLink, WifiDetail, SearchHit, DriveRow, PartRow, Wallpapers, BtDevice }
@@ -111,6 +112,7 @@ export component SettingsApp inherits Window {
         if SetState.page == 31: StorageDrivePage { }
         if SetState.page == 32: BtDevicePage { }
         if SetState.page == 33: WifiHiddenPage { }
+        if SetState.page == 34: LockPage { }
     }
 
     // the sheets: full size, last, so they cover the header and the page
@@ -125,6 +127,45 @@ export component SettingsApp inherits Window {
         change: SetState.sheet == "sim-change";
         open: true;
         dismissed => { SetState.sheet = ""; SetState.act("sim-cancel", ""); KeyboardFocus.open = false; }
+    }
+    // TP8/TP9: the lock's style (lock.on) and, with a PIN, Change or Remove (the shell's dialog)
+    if SetState.sheet == "lock-style": ChoiceSheet {
+        open: true;
+        radio-left: true;
+        title-start: true;
+        title: "Lock screen style";
+        choices: ["None", "Swipe"];
+        current: SetState.lock-on ? 1 : 0;
+        chosen(i) => {
+            SetState.sheet = "";
+            SetState.act("lock.on", i == 1 ? "1" : "0");
+        }
+        dismissed => { SetState.sheet = ""; }
+    }
+    if SetState.sheet == "lock-pin": ChoiceSheet {
+        open: true;
+        title-start: true;
+        title: "Screen lock PIN";
+        choices: ["Change PIN", "Remove PIN"];
+        current: -1;
+        chosen(i) => {
+            SetState.sheet = "";
+            SetState.act("lock-pin", i == 0 ? "1" : "2");
+        }
+        dismissed => { SetState.sheet = ""; }
+    }
+    if SetState.sheet == "notify-lock": ChoiceSheet {
+        open: true;
+        radio-left: true;
+        title-start: true;
+        title: "Show on lock screen";
+        choices: SetState.notify-lock-names;
+        current: SetState.notify-lock;
+        chosen(i) => {
+            SetState.sheet = "";
+            SetState.act("notify.lock", i);
+        }
+        dismissed => { SetState.sheet = ""; }
     }
     if SetState.sheet == "message-tone": ChoiceSheet {
         open: true;

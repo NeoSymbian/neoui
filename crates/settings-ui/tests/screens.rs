@@ -1115,6 +1115,27 @@ fn every_page() {
     sheet(&sh, "pad-b");
     sh.shoot("pad-settings-b");
 
+    // TP8/TP9: Lock screen & security (set2-lock): the preview, the style (derived), double-tap not yet, the cards on
+    // it and the PIN; without a PIN its row asks the shell's dialog to enrol, with one a sheet offers Change and Remove
+    s.set_nav_mode(2);
+    page(&sh, 34, "Lock screen & security");
+    sh.shoot("set2-lock");
+    sh.take_acts();
+    sh.tap(100.0, 48.0 + 34.0 + 128.0 + 3.0 * 72.0 + 34.0 + 36.0);
+    assert_eq!(sh.take_acts(), acts(&[("lock-pin", "0")]));
+    sh.tap(100.0, 48.0 + 34.0 + 128.0 + 36.0);
+    assert_eq!(s.get_sheet(), "lock-style");
+    s.set_sheet(SharedString::new());
+    s.set_lock_pin_set(true);
+    sh.tap(100.0, 48.0 + 34.0 + 128.0 + 36.0);
+    assert_eq!(s.get_sheet(), "", "a PIN keeps the lock: no style to pick");
+    sh.tap(100.0, 48.0 + 34.0 + 128.0 + 3.0 * 72.0 + 34.0 + 36.0);
+    assert_eq!(s.get_sheet(), "lock-pin");
+    sh.shoot("set2-lock-sheet");
+    s.set_sheet(SharedString::new());
+    s.set_lock_pin_set(false);
+    s.set_nav_mode(1);
+
     // TP4: Panel & notifications (tp-settings), Notifications (set2-notifications), Messages' page with its channels
     // (set2-notify-app, nt-settings) and a channel's importance sheet; their taps ask the app
     page(&sh, 27, "Panel & notifications");

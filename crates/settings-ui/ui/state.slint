@@ -323,6 +323,16 @@ export global SetState {
     in-out property <string> sim-new;
     in-out property <string> sim-again;
 
+    // TP8/TP9 (lock.rs): lock.on, whether a PIN is set (lock.pin_set, only the shell writes it), notify.lock (0 show,
+    // 1 private, 2 off) and its names, the preview's time and date; the style is derived, never stored
+    in-out property <bool> lock-on: true;
+    in property <bool> lock-pin-set;
+    in property <int> notify-lock;
+    in property <[string]> notify-lock-names: ["Show all", "Hide content", "Off"];
+    out property <string> lock-style: lock-pin-set ? "PIN" : lock-on ? "Swipe" : "None";
+    in property <string> lock-time: "10:24";
+    in property <string> lock-date: "Tuesday, 17 November";
+
     // the open sheet: "" none, "timeout", "date-format", "zone", "pad-strength", "pad-default", "pad-dirs", "pad-a",
     // "pad-b", "wifi-join", "wifi-details"; the network the join sheet is for, and what is typed in it
     in-out property <string> sheet;
@@ -351,6 +361,7 @@ export global SetState {
     // - "city-query" + the search text; "pad-reset" (QUERY first); "clip-clear";
     // - "app" + "phone" | "messages" | "devtools" (another app's settings); "devtools" + a page ("console", "tools");
     // - "console" + "1" | "0" (the kernel console over the screen, D2);
-    // - "search" + the query; "root-grid" + "1" | "0".
+    // - "search" + the query; "root-grid" + "1" | "0";
+    // - (TP9) "lock-pin" + "0" | "1" | "2" (enrol, change, remove: the shell's own PIN dialog, ACTION_LOCK_DIALOG).
     callback act(string, string);
 }

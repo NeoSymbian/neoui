@@ -9,6 +9,7 @@ extern crate alloc;
 mod home;
 pub mod keyboard;
 pub mod layer;
+pub mod lock;
 mod media;
 pub mod peek;
 mod settings;
@@ -368,6 +369,8 @@ pub struct Renderer {
     tiles: Rc<RefCell<tiles::State>>,
     /// (TP3) the media buttons' commands
     media: media::Commands,
+    /// (TP8, TP9) the lock screen's, PIN pad's and PIN dialog's events
+    lock: lock::Events,
 }
 
 /// Slint's lines for a scrolled list's frame (smooth-ui S2d): the rows of `list` outside `draw` were moved into place
@@ -520,6 +523,7 @@ impl Renderer {
         let home = home::wire(&ui, edited.clone());
         let tiles = tiles::wire(&ui, edited.clone());
         let media = media::wire(&ui);
+        let lock = lock::wire(&ui);
         Ok(Self {
             window,
             ui,
@@ -551,6 +555,7 @@ impl Renderer {
             thumbs: Vec::new(),
             tiles,
             media,
+            lock,
         })
     }
 
@@ -784,7 +789,7 @@ impl Renderer {
             0 if focus.get_open() => focus.get_mode(),
             m => m,
         };
-        mode == 3 && self.keyboard_h() > 0
+        (mode == 3 && self.keyboard_h() > 0) || self.lock_pin_up() // (TP9)
     }
 
     /// The user put the keyboard away with the toolbar's keyboard button: the app in front gets its body back.
@@ -1106,7 +1111,10 @@ impl Renderer {
     /// Is the shade or a dialog open over the app area? The UI server neither composes the app's surface over it nor
     /// gives it the touches meanwhile.
     pub fn overlay_open(&self) -> bool {
-        self.ui.get_shade_open() || (self.ui.get_app_front() && self.ui.get_query_open())
+        self.ui.get_shade_open()
+            || (self.ui.get_app_front() && self.ui.get_query_open())
+            || self.lock_shown() // (TP8)
+            || self.ui.global::<Lock>().get_dialog() // (TP9)
     }
 
     /// Show or hide the Power menu (the UI server opens it when Power is held).

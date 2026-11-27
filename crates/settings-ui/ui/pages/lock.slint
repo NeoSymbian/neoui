@@ -1,0 +1,109 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// TP8/TP9, Lock screen & security (set2-lock): a preview of the lock screen, its style (derived from lock.on and the
+// shell's lock.pin_set: None, Swipe, PIN), double-tap to wake (the kernel's touch driver can't yet), the cards on it
+// (notify.lock) and the screen-lock PIN, which the shell's own dialog sets (ACTION_LOCK_DIALOG: NEOSET never sees the
+// digits). SIM PIN lock opens D11's page.
+import { Theme, NeoList, SectionHeader, ListRow } from "@neoui/kit.slint";
+import { Note } from "../parts.slint";
+import { SetState } from "../state.slint";
+
+export component LockPage inherits NeoList {
+    VerticalLayout {
+        alignment: start;
+        SectionHeader { text: "Lock screen"; }
+        HorizontalLayout {
+            padding-left: Theme.margin;
+            padding-right: Theme.margin;
+            padding-bottom: 8 * Theme.dp;
+            Rectangle {
+                height: 120 * Theme.dp;
+                border-radius: Theme.radius;
+                background: @linear-gradient(180deg, #1b2230 0%, #0f1319 100%);
+                border-width: 1px;
+                border-color: Theme.card-border;
+                VerticalLayout {
+                    x: 20 * Theme.dp;
+                    alignment: center;
+                    Text {
+                        text: SetState.lock-time;
+                        color: Theme.text;
+                        font-size: 44 * Theme.dp;
+                    }
+                    Text {
+                        text: SetState.lock-date;
+                        color: Theme.text-secondary;
+                        font-size: 14 * Theme.dp;
+                    }
+                }
+                Text {
+                    x: parent.width - self.width - 20 * Theme.dp;
+                    width: 120 * Theme.dp;
+                    horizontal-alignment: right;
+                    wrap: word-wrap;
+                    text: SetState.lock-style == "None" ? "No lock screen" : SetState.nav-mode == 0 ? "Swipe up to unlock" : "Swipe in from any edge";
+                    color: Theme.text-secondary;
+                    font-size: 13 * Theme.dp;
+                }
+            }
+        }
+
+        ListRow {
+            title: "Lock screen style";
+            checked: SetState.found == "lock.style";
+            subtitle: SetState.lock-pin-set ? "The PIN keeps the lock on" : SetState.lock-on ? (SetState.nav-mode == 0 ? "Swipe up" : "Swipe · any edge") : "The phone opens at once";
+            value: SetState.lock-style;
+            chevron: !SetState.lock-pin-set;
+            clicked => {
+                if !SetState.lock-pin-set {
+                    SetState.sheet = "lock-style";
+                }
+            }
+        }
+
+        // D15: the touch controller sleeps with the panel off (kernel a64_touch.cpp)
+        ListRow {
+            title: "Double-tap to wake";
+            checked: SetState.found == "lock.double_tap";
+            subtitle: "Not yet (kernel)";
+        }
+
+        ListRow {
+            title: "Notifications on lock screen";
+            checked: SetState.found == "lock.notify";
+            subtitle: SetState.notify-lock == 1 ? "Who sent them, not what" : "Missed calls, messages";
+            has-switch: true;
+            switch-on: SetState.notify-lock != 2;
+            switch-toggled(v) => { SetState.act("notify.lock", v ? "0" : "2"); }
+            divider: false;
+        }
+
+        SectionHeader { text: "Security"; }
+        ListRow {
+            title: "Screen lock PIN";
+            checked: SetState.found == "lock.pin";
+            subtitle: "Asked on wake";
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/lock.svg");
+            value: SetState.lock-pin-set ? "On" : "Off";
+            chevron: true;
+            clicked => {
+                if SetState.lock-pin-set {
+                    SetState.sheet = "lock-pin";
+                } else {
+                    SetState.act("lock-pin", "0");
+                }
+            }
+        }
+
+        ListRow {
+            title: "SIM PIN lock";
+            checked: SetState.found == "lock.sim";
+            subtitle: "Mobile network › SIM";
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/privacy.svg");
+            chevron: true;
+            divider: false;
+            clicked => { SetState.act("open", "30"); }
+        }
+    }
+}

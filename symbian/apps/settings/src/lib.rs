@@ -16,6 +16,7 @@ mod appearance;
 mod apps_detail;
 mod battery_cycle;
 mod d2;
+mod lock;
 mod modem;
 mod navigation;
 mod notifications;
@@ -407,6 +408,9 @@ impl Ctx {
         }
         if page == Page::StorageDrive {
             storage_drive::show(self, &ui);
+        }
+        if page == Page::Lock {
+            lock::show(&ui);
         }
         if page == Page::Profile && every(5) {
             profile_audio::refresh(&mut self.modem.borrow_mut(), &ui);
@@ -816,6 +820,7 @@ impl Ctx {
             "storage-recount" => self.storage.recount(),
             "console" => d2::set_console(app, &ui, value == "1"),
             "edit-home" => navigation::edit_home(app),
+            "lock-pin" => lock::pin(app, value),
             // a ROM app's page (SE4a)
             "app-detail" => {
                 if row_model::app_current(&s, value) {

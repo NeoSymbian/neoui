@@ -8,3 +8,10 @@ license.workspace = true
 # exports neoui's `ui/` folder (theme, fonts, components) as DEP_NEOUI_UI to crates that depend on this one: apps in
 # other repos (NeoSymbian/phone) give it to slint-build as the `@neoui` library, so there is one theme
 links = "neoui"
+
+[dependencies]
+# (TP9) the screen-lock PIN's verifier: PBKDF2-HMAC-SHA1, the RustCrypto crates (and versions) neohw's `wpa` already
+# ships, so the ROM carries one reviewed set; the record is versioned for a later SHA-256
+sha1 = { version = "0.11", default-features = false }
+hmac = { version = "0.13", default-features = false }
+pbkdf2 = { version = "0.13", default-features = false, features = ["hmac"] }

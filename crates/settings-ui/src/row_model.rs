@@ -156,6 +156,15 @@ pub fn facts(s: &SetState<'_>, sample: Sample, epochs: Epochs) -> Facts {
         ("panel.dnd", notify(on(s.get_dnd()))),
         ("notify.dnd", notify(on(s.get_dnd()))),
         ("notify.bannert", notify(text(s.get_banner_text()))),
+        // TP8/TP9: the derived style, the cards on the lock screen, whether a PIN is set (never the PIN)
+        ("root.lock", text(s.get_lock_style())),
+        ("lock.style", text(s.get_lock_style())),
+        ("lock.notify", on(s.get_notify_lock() != 2)),
+        ("lock.pin", on(s.get_lock_pin_set())),
+        (
+            "notify.lock",
+            notify(pick(s.get_notify_lock_names(), s.get_notify_lock())),
+        ),
         // D11: what MODEMD says of the SIM PIN, never the PIN
         ("mobile.sim_lock", text(s.get_sim_lock_text())),
         (

@@ -45,6 +45,7 @@ const COMPONENTS: &[(&str, Page)] = &[
     ("NotificationsPage", Page::Notifications),
     ("NotifyAppPage", Page::NotifyApp),
     ("SimLockPage", Page::SimLock),
+    ("LockPage", Page::Lock),
 ];
 
 fn page_file(name: &str) -> String {
@@ -558,19 +559,13 @@ const NOT_YET: &[(&str, &str, &str, Page, &str)] = &[
         Page::Bluetooth,
         "Not yet (D14)",
     ),
+    // TP8: the lock screen is built; double-tap waits for the kernel's touch driver
     (
-        "set2-root-list",
-        "Lock screen & security",
-        "root.lock",
-        Page::Root,
-        "Not yet (D15)",
-    ),
-    (
-        "set2-notifications",
-        "Show on lock screen",
-        "notify.lock",
-        Page::Notifications,
-        "Not yet (D15)",
+        "set2-lock",
+        "Double-tap to wake",
+        "lock.double_tap",
+        Page::Lock,
+        "Not yet (kernel)",
     ),
     (
         "set2-storage",

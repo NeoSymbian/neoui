@@ -611,6 +611,25 @@ jobs:
           grep -aE 'neoui: settings runs with capabilities 0x[0-9a-f]+' $s
           ! grep -aq 'K::Fault\|Kern::Fault\|\[EKERN\] panic\|rust panic' $s
 
+      # TP8, the lock screen (docs neoui-shell/top-panel.md "Lock screen (TP8)"): virt has no Power key, so F12 stands in
+      # for it (taps.sh power_key). A press turns the screen off and the shell locks (lock.on is on by default; the
+      # layer is put up while dark), a second wakes it into the lock screen, and a swipe up unlocks.
+      - name: Boot again; lock and unlock
+        working-directory: build
+        run: |
+          cp out/serial.log out/serial-storage.log
+          export SCREEN=539x1079
+          . ../neoui/symbian/taps.sh
+          wait_s 2; power_key; expect "neoui: screen off"; expect "neoui: locked"; expect "neoui: lock shown"
+          wait_s 1; power_key; expect "neoui: screen on"
+          wait_s 1; swipe 270 900 270 500; expect "neoui: unlocked (swipe)"; expect "neoui: lock gone"
+          ui_run 90
+          s=out/serial.log
+          grep -a 'neoui: locked' $s
+          grep -a 'neoui: lock shown' $s
+          grep -a 'neoui: unlocked (swipe)' $s
+          ! grep -aq 'K::Fault\|Kern::Fault\|\[EKERN\] panic\|rust panic' $s
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -622,3 +641,4 @@ jobs:
             build/out/serial-legacy.log
             build/out/serial-home.log
             build/out/serial-gestures.log
+            build/out/serial-storage.log

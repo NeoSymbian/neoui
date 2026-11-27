@@ -175,11 +175,11 @@ pub const ROWS: &[Row] = &[
         "Storage",
         &["space", "memory", "disk", "free"],
     ),
-    // D15: the lock screen and its PIN have no page yet (set2-lock); the root says so
-    action(
+    // TP8/TP9: the lock screen and its PIN (set2-lock); the summary is the derived style (None, Swipe, PIN)
+    row(
         "root.lock",
         Root,
-        Root,
+        Lock,
         "Lock screen & security",
         &["security", "pin", "lock"],
     ),
@@ -820,14 +820,44 @@ pub const ROWS: &[Row] = &[
         "Pop-up time",
         &["banner", "heads-up", "seconds"],
     ),
-    // D15: no lock screen yet
-    action(
+    // TP8: notify.lock (Show all, Hide content, Off)
+    row(
         "notify.lock",
         Notifications,
         Notifications,
         "Show on lock screen",
         &["lock screen", "hide content", "private"],
     ),
+    // TP8/TP9: Lock screen & security (set2-lock); the PIN itself is never a value
+    row(
+        "lock.style",
+        Lock,
+        Lock,
+        "Lock screen style",
+        &["swipe", "screen lock", "none"],
+    ),
+    action(
+        "lock.double_tap",
+        Lock,
+        Lock,
+        "Double-tap to wake",
+        &["wake", "tap to wake"],
+    ),
+    row(
+        "lock.notify",
+        Lock,
+        Lock,
+        "Notifications on lock screen",
+        &["lock screen", "hide content", "private"],
+    ),
+    row(
+        "lock.pin",
+        Lock,
+        Lock,
+        "Screen lock PIN",
+        &["pin", "passcode", "security"],
+    ),
+    action("lock.sim", Lock, SimLock, "SIM PIN lock", &["sim pin"]),
     row(
         "notify.dnd",
         Notifications,
