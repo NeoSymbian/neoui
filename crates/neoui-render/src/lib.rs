@@ -183,6 +183,33 @@ pub fn status_apps(keys: &[&str]) -> (Vec<i32>, i32) {
     (shown, i32::try_from(more).unwrap_or(i32::MAX))
 }
 
+/// App `key`'s launcher badge: its own count, else for Phone and Messages MODEMD's (missed, unread); none when the
+/// user turned its badge off (applied after the counts are combined, so the fallback can't bring it back).
+fn badge_count(key: &str, own: i32, (missed, unread): (i32, i32), off: bool) -> i32 {
+    if off {
+        return 0;
+    }
+    match (key, own) {
+        ("phone", 0) => missed,
+        ("messages", 0) => unread,
+        (_, n) => n,
+    }
+}
+
+#[cfg(test)]
+mod badge_tests {
+    use super::badge_count;
+
+    #[test]
+    fn a_badge_turned_off_stays_off_with_the_fallback() {
+        assert_eq!(badge_count("messages", 0, (2, 3), false), 3);
+        assert_eq!(badge_count("messages", 0, (2, 3), true), 0);
+        assert_eq!(badge_count("phone", 0, (2, 3), true), 0);
+        assert_eq!(badge_count("phone", 4, (2, 3), false), 4);
+        assert_eq!(badge_count("files", 1, (2, 3), true), 0);
+    }
+}
+
 /// Card `n` of app `key` as the shade draws it (one on its own; the shade's rows set their section and group), its
 /// time against `clock` (now unix ms, the UTC offset in s, 24-hour).
 fn shade_note(key: &str, n: &Notification, clock: (u64, i32, bool)) -> ShadeNote {
@@ -305,6 +332,8 @@ pub struct Renderer {
     edited: Rc<RefCell<Vec<String>>>,
     /// the apps' badge counts (BADGE) as last given, merged with what the shell knows itself
     app_badges: Vec<(String, u32)>,
+    /// (TP4) apps whose badge the user turned off (their Badge or Allow switch): no count, the shell's fallback either
+    badges_off: Vec<String>,
     /// The apps with cards in the shade, newest first (the status bar's glyphs, TP1).
     status_keys: Vec<String>,
     /// lists scrolled by shifting pixels (smooth-ui S2d), and how many frames did so
@@ -494,6 +523,7 @@ impl Renderer {
             phone,
             edited,
             app_badges: Vec::new(),
+            badges_off: Vec::new(),
             status_keys: Vec::new(),
             scrolling: Scrolling::default(),
             shifts: 0,
@@ -596,6 +626,20 @@ impl Renderer {
                 // a pixel more each way: its edges may fall between pixels (it sits 12 dp clear of the screen's sides)
                 self.ui.get_toast_w() as u32 + 1,
                 self.ui.get_toast_h() as u32 + 1,
+            )
+        })
+    }
+
+    /// (TP4) The heads-up banner while it shows, in physical pixels: it lies over the app's body, so the UI server
+    /// copies it from the frame again after composing the app's surface, and keeps touches in it from the app.
+    pub fn banner_rect(&self) -> Option<Rect> {
+        self.ui.get_banner_on().then(|| {
+            Rect::new(
+                self.ui.get_banner_x() as i32,
+                self.ui.get_banner_y() as i32,
+                // a pixel more each way: its edges may fall between pixels
+                self.ui.get_banner_w() as u32 + 1,
+                self.ui.get_banner_h() as u32 + 1,
             )
         })
     }
@@ -935,13 +979,22 @@ impl Renderer {
         let model: Vec<i32> = apps
             .get_all()
             .iter()
-            .map(|a| match (a.key.as_str(), own(a.key.as_str())) {
-                ("phone", 0) => missed,
-                ("messages", 0) => unread,
-                (_, n) => n,
+            .map(|a| {
+                let key = a.key.as_str();
+                let off = self.badges_off.iter().any(|k| k == key);
+                badge_count(key, own(key), (missed, unread), off)
             })
             .collect();
         apps.set_badges(slint::ModelRc::from(Rc::new(slint::VecModel::from(model))));
+    }
+
+    /// (TP4) The apps whose badge the user turned off: they show none, MODEMD's counts included.
+    pub fn set_badges_off(&mut self, keys: &[&str]) {
+        let keys: Vec<String> = keys.iter().map(|k| (*k).into()).collect();
+        if keys != self.badges_off {
+            self.badges_off = keys;
+            self.update_badges();
+        }
     }
 
     /// How long until a Slint timer is due (a long press, a toast's end), so the server wakes for it.

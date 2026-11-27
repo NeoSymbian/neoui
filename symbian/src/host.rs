@@ -1253,8 +1253,10 @@ fn notify(
         list[i].1 = n;
         return Ok(0);
     }
-    if list.iter().filter(|(k, _)| *k == key).count() >= proto::NOTIFICATIONS_MAX
-        && let Some(oldest) = list.iter().rposition(|(k, _)| *k == key)
+    // the shell's own card under the app's key (the Wi-Fi login's) isn't in the app's quota, nor pushed out by it
+    let mine = |(k, o): &(&'static str, Notification)| *k == key && !Host::shell_card(k, o);
+    if list.iter().filter(|e| mine(e)).count() >= proto::NOTIFICATIONS_MAX
+        && let Some(oldest) = list.iter().rposition(mine)
     {
         list.remove(oldest);
     }
@@ -1499,6 +1501,10 @@ impl Service for Host {
                 let r = read_bytes(&m, 0, NOTIFICATION_MAX)
                     .and_then(|b| Notification::decode(&b).map_err(|_| kerr::ARGUMENT))
                     .and_then(|n| {
+                        // the shell's card id under this key is reserved: the app can't replace or remove it
+                        if Self::shell_card(key, &n) {
+                            return Err(kerr::PERMISSION_DENIED);
+                        }
                         // (TP4) the user's policy: an app or channel turned off refuses it; a removal always goes
                         if !n.title.is_empty() {
                             let old = self

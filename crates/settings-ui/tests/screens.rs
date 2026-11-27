@@ -1101,6 +1101,15 @@ fn every_page() {
     s.set_notify_ok(false);
     page(&sh, 28, "Notifications");
     sh.draw();
+    // and its Do not disturb and pop-up time say so (no switch, no sheet), on the page and in search alike
+    let snap = project(&sh, Epochs::default());
+    for id in ["panel.dnd", "notify.dnd", "notify.bannert"] {
+        assert_eq!(
+            snap.get(&RowKey::of(id)).unwrap().value_text,
+            "Not yet (protocol 1.21)",
+            "{id}"
+        );
+    }
     s.set_notify_ok(true);
 
     // every row that shows a value has one for search, from the sample state above (D1's projection)

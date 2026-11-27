@@ -5,6 +5,10 @@ mod common;
 use neoui_proto::page::{action, style};
 use neoui_render::Notification;
 
+fn x_mid(w: u32) -> i32 {
+    (w / 2) as i32
+}
+
 /// TP4 in the shell (nt-headsup, nt-shade): an Urgent conversation's banner over home with Do not disturb's moon off,
 /// a tap on its Mark read reported as the shade's action (and the banner gone), a swipe that only hides it, and a Min
 /// channel's card folded under Silent at the bottom of the list. Snapshots `tp4-*-pixel.png`; their visual
@@ -50,6 +54,12 @@ fn banner_silent_fold_and_dnd() {
     common::frame(&mut r, &mut buf, w, "banner");
     common::write_png("tp4-headsup-pixel.png", &buf, w, h);
     assert_ne!(buf, quiet, "the banner draws");
+    // where the server composites it over an app and keeps its touches from the app
+    let b = r.banner_rect().expect("the banner's bounds");
+    let (x, y) = (x_mid(w), (60.0 * d) as i32);
+    assert!(b.y >= (25.0 * d) as i32);
+    assert!(x >= b.x && y >= b.y && x < b.x + b.w as i32 && y < b.y + b.h as i32);
+    assert!(b.h as f32 > 60.0 * d && (b.h as f32) < 200.0 * d, "{b:?}");
 
     // a swipe up hides it; the card stays (nothing reported)
     let (x, y) = ((w / 2) as i32, (80.0 * d) as i32);
@@ -88,6 +98,8 @@ fn banner_silent_fold_and_dnd() {
     // the card left the shade: the banner can't show it
     r.set_banner(Some(("messages", 7)));
     assert!(!r.banner_shown());
+    common::frame(&mut r, &mut buf, w, "no banner");
+    assert_eq!(r.banner_rect(), None, "nothing to keep from the app");
 
     // Do not disturb: the moon in the status bar
     r.set_dnd(true);

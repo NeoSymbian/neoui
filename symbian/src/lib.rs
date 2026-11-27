@@ -459,7 +459,8 @@ fn main() -> i32 {
                                     && !phone.modal()
                                     && !power_menu
                                     && !ui.overlay_open()
-                                    && contains(&host.app_area(), x, y);
+                                    && contains(&host.app_area(), x, y)
+                                    && !ui.banner_rect().is_some_and(|r| contains(&r, x, y));
                                 if phase == TouchPhase::Down && in_app {
                                     fingers_app = front;
                                 }
@@ -491,10 +492,12 @@ fn main() -> i32 {
                                     down_at = Some((x, y));
                                     home_pull = false;
                                     // A touch belongs to the app from press to release if it starts in its body.
+                                    // (TP4) not on the banner over it: the banner is the shell's
                                     to_app = app_on_screen
                                         && !power_menu
                                         && !ui.overlay_open()
-                                        && contains(&host.app_area(), x, y);
+                                        && contains(&host.app_area(), x, y)
+                                        && !ui.banner_rect().is_some_and(|r| contains(&r, x, y));
                                     // Buttons over a full-screen page: the first tap shows the key row for a moment
                                     // (rule 13), the app doesn't get it
                                     if to_app
@@ -869,6 +872,7 @@ fn main() -> i32 {
                 host.clear_notifications();
             }
             if core::mem::take(&mut host.badges_changed) {
+                ui.set_badges_off(&host.badges_off());
                 ui.set_badges(&host.badges());
             }
             let want_query = match host.front() {
@@ -1130,6 +1134,16 @@ fn main() -> i32 {
                             display.blit(&frame, w, x, y, rw, rh);
                         }
                         host.note_displayed(time::millis());
+                    }
+                    // (TP4) the banner too, composited last over the app
+                    if !covered
+                        && app_px > 0
+                        && let Some(r) = ui.banner_rect()
+                    {
+                        let (x, y) = (r.x.max(0) as usize, r.y.max(0) as usize);
+                        let rw = (r.w as usize).min(w.saturating_sub(x));
+                        let rh = (r.h as usize).min(h.saturating_sub(y));
+                        display.blit(&frame, w, x, y, rw, rh);
                     }
                     // Show touches: put back what the rings covered before the hint (which may lie under them) is
                     // drawn, then the rings over everything; their cost counts in the perf line's app time

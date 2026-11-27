@@ -39,7 +39,9 @@ export component PanelPage inherits NeoList {
             title: "Do not disturb";
             checked: SetState.found == "panel.dnd";
             subtitle: SetState.dnd-text;
-            has-switch: true;
+            // a shell before 1.21 has no notify.* keys: nothing to switch
+            has-switch: SetState.notify-ok;
+            value: SetState.notify-ok ? "" : "Not yet (protocol 1.21)";
             switch-on <=> SetState.dnd;
             switch-toggled(v) => { SetState.act("notify-dnd", v ? "1" : "0"); }
         }
@@ -49,10 +51,14 @@ export component PanelPage inherits NeoList {
             title: "Pop-up time";
             checked: SetState.found == "notify.bannert";
             subtitle: "How long a banner stays";
-            value: SetState.banner-text;
-            chevron: true;
+            value: SetState.notify-ok ? SetState.banner-text : "Not yet (protocol 1.21)";
+            chevron: SetState.notify-ok;
             divider: false;
-            clicked => { SetState.sheet = "banner-time"; }
+            clicked => {
+                if SetState.notify-ok {
+                    SetState.sheet = "banner-time";
+                }
+            }
         }
     }
 }
@@ -68,7 +74,8 @@ export component NotificationsPage inherits NeoList {
             subtitle: SetState.dnd-text;
             has-icon: true;
             icon: @image-url("@neoui/icons/sys/dnd.svg");
-            has-switch: true;
+            has-switch: SetState.notify-ok;
+            value: SetState.notify-ok ? "" : "Not yet (protocol 1.21)";
             switch-on <=> SetState.dnd;
             switch-toggled(v) => { SetState.act("notify-dnd", v ? "1" : "0"); }
         }
@@ -92,7 +99,11 @@ export component NotificationsPage inherits NeoList {
             subtitle: a.summary;
             has-icon: true;
             icon: AppIcon.of(a.key == "dtsrv" ? "clock" : a.key, false);
-            // the switch is the app's Allow; the row opens its page
+            // the switch is the app's Allow; the row opens its page (its own accessible action: the switch is another)
+            accessible-role: button;
+            accessible-label: a.name + " notifications";
+            accessible-description: a.summary;
+            accessible-action-default => { SetState.act("notify-app", a.key); }
             has-switch: true;
             switch-on: a.allowed;
             switch-toggled(v) => { SetState.act("notify-allow", v ? a.key + ",1" : a.key + ",0"); }

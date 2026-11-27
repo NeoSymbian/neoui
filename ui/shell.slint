@@ -110,6 +110,13 @@ export component Shell inherits Window {
     out property <length> toast-y: toast.y;
     out property <length> toast-w: toast.width;
     out property <length> toast-h: toast.height;
+    // (TP4) the banner where it is drawn (0 high while none shows): the UI server puts it back over the app's surface
+    // and keeps the touches in it from the app
+    out property <bool> banner-on: banner-card.visible;
+    out property <length> banner-x: banner-card.x;
+    out property <length> banner-y: banner-card.y;
+    out property <length> banner-w: banner-card.width;
+    out property <length> banner-h: banner-card.height;
     // the home screen's pages, for the UI server's swipe (smooth-ui S2c): which one shows, and the band they fill
     in-out property <int> home-page <=> home.page;
     out property <length> home-strip-h: home.strip-h;
@@ -516,7 +523,8 @@ export component Shell inherits Window {
     }
 
     // (TP4) an Urgent card's banner under the status bar, over the app; never over the shade or the Power menu
-    if root.banner-shown && !root.shade-open && !root.power-open: NotificationBanner {
+    banner-card := NotificationBanner {
+        visible: root.banner-shown && !root.shade-open && !root.power-open;
         x: 8 * Theme.dp;
         width: root.width - 16 * Theme.dp;
         y: (root.full ? 0 : Theme.status-h) + 6 * Theme.dp;

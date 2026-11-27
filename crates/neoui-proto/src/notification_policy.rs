@@ -243,6 +243,16 @@ impl Policy {
     }
 }
 
+/// An edit of a stored `n.<app>`: `stored` is the value read (`None`: it couldn't be read); the bytes to write, or
+/// `None` when the stored value couldn't be read or decoded. An edit never starts from the defaults it guessed: that
+/// would turn back on what the user turned off.
+#[must_use]
+pub fn edit(stored: Option<&[u8]>, f: impl FnOnce(&mut Policy)) -> Option<Vec<u8>> {
+    let mut p = Policy::decode(stored?)?;
+    f(&mut p);
+    Some(p.encode())
+}
+
 /// `notify.lock` (0 show, 1 private, 2 off) in [`lock`] terms.
 #[must_use]
 pub fn global_lock(notify_lock: i32) -> u8 {
@@ -275,10 +285,11 @@ impl Effective {
 }
 
 /// The one policy function: channel `channel` of an app with `policy`, which declared that channel with `declared`
-/// importance (`None`: undeclared, or channel 0, General: Default). `global` is [`global_lock`].
+/// importance (`None`: undeclared, or channel 0). A channel the app never declared is General (channel 0, Default):
+/// the override Settings shows on General applies to it. `global` is [`global_lock`].
 #[must_use]
 pub fn effective(policy: &Policy, channel: u8, declared: Option<u8>, global: u8) -> Effective {
-    let over = policy.override_of(channel);
+    let over = policy.override_of(if declared.is_some() { channel } else { 0 });
     if policy.flags & flag::ALLOW == 0 || over == OVERRIDE_OFF {
         return Effective {
             lock: lock::OFF,
@@ -564,26 +575,32 @@ pub fn importance_name(i: u8) -> &'static str {
     }
 }
 
-/// An app's line on Notifications (set2-notifications: "Banners · sound", "Missed calls · banners · sound", "Off"):
-/// its one declared channel's name if it has only one, banners if on, sound or no sound. The Settings page, search
-/// and the root read this one text.
+/// An app's line on Notifications (set2-notifications: "Banners · sound", "Missed calls · sound", "Off"): what its
+/// channels do in effect (any accepted, any with a banner, any with sound), with its one declared channel's name if it
+/// has only one. Without channel records, the app's own switches. The Settings page, search and the root read this
+/// one text.
 #[must_use]
 pub fn app_summary(app: &AppRecord, channels: &[ChannelRecord]) -> String {
-    if app.requested_flags & flag::ALLOW == 0 {
+    let mine: Vec<&ChannelRecord> = channels.iter().filter(|c| c.owner == app.owner).collect();
+    let any = |f: u8| {
+        if mine.is_empty() {
+            app.requested_flags & flag::ALLOW != 0 && app.requested_flags & f != 0
+        } else {
+            mine.iter().any(|c| c.effective_flags & f != 0)
+        }
+    };
+    if !any(flag::ALLOW) {
         return String::from("Off");
     }
     let mut parts: Vec<&str> = Vec::new();
-    let declared: Vec<&ChannelRecord> = channels
-        .iter()
-        .filter(|c| c.owner == app.owner && c.channel != 0)
-        .collect();
+    let declared: Vec<&&ChannelRecord> = mine.iter().filter(|c| c.channel != 0).collect();
     if let [one] = declared.as_slice() {
         parts.push(&one.name);
     }
-    if app.requested_flags & flag::BANNER != 0 {
+    if any(flag::BANNER) {
         parts.push("banners");
     }
-    parts.push(if app.requested_flags & flag::SOUND != 0 {
+    parts.push(if any(flag::SOUND) {
         "sound"
     } else {
         "no sound"
@@ -743,6 +760,26 @@ mod tests {
     }
 
     #[test]
+    fn an_edit_never_starts_from_guessed_defaults() {
+        let off = Policy {
+            flags: flag::ALL & !flag::ALLOW,
+            ..Policy::default()
+        }
+        .encode();
+        // badge off on a turned-off app keeps it off
+        let b = edit(Some(&off), |p| p.flags &= !flag::BADGE).unwrap();
+        assert_eq!(
+            Policy::decode(&b).unwrap().flags,
+            flag::BANNER | flag::SOUND
+        );
+        // nothing stored is the defaults
+        assert_eq!(edit(Some(&[]), |_| {}), Some(Vec::new()));
+        // unreadable or damaged: no edit
+        assert_eq!(edit(None, |_| {}), None);
+        assert_eq!(edit(Some(&[9, 9]), |_| {}), None);
+    }
+
+    #[test]
     fn one_function_for_every_surface() {
         let p = Policy::default();
         let urgent = effective(&p, 1, Some(importance::URGENT), lock::SHOW);
@@ -796,6 +833,19 @@ mod tests {
         one.set_override(2, OVERRIDE_OFF);
         assert!(!effective(&one, 2, Some(4), lock::SHOW).accepts());
         assert!(effective(&one, 1, Some(4), lock::SHOW).accepts());
+        // an undeclared channel is General: General's override applies to it
+        let mut general = Policy::default();
+        general.set_override(0, OVERRIDE_OFF);
+        assert!(!effective(&general, 7, None, lock::SHOW).accepts());
+        general.set_override(0, importance::LOW);
+        assert_eq!(
+            effective(&general, 7, None, lock::SHOW).importance,
+            importance::LOW
+        );
+        assert_eq!(
+            effective(&general, 1, Some(4), lock::SHOW).importance,
+            importance::URGENT
+        );
         // an override wins over the declaration
         one.set_override(1, importance::LOW);
         assert_eq!(
@@ -922,10 +972,17 @@ mod tests {
             .collect();
         let mut phone = app(flag::ALL);
         phone.owner = "phone".into();
-        assert_eq!(
-            app_summary(&phone, &chans),
-            "Missed calls · banners · sound"
-        );
+        // Missed calls is Default: sound, no banner (only Urgent banners)
+        assert_eq!(app_summary(&phone, &chans), "Missed calls · sound");
+        // every channel silent: no banner, no sound, whatever the switches say
+        let mut quiet = chans.clone();
+        quiet
+            .iter_mut()
+            .for_each(|c| c.effective_flags = flag::ALLOW);
+        assert_eq!(app_summary(&phone, &quiet), "Missed calls · no sound");
+        // every channel off: Off
+        quiet.iter_mut().for_each(|c| c.effective_flags = 0);
+        assert_eq!(app_summary(&phone, &quiet), "Off");
         assert_eq!(app_summary(&app(flag::ALL), &[]), "Banners · sound");
         assert_eq!(
             app_summary(&app(flag::ALLOW | flag::BANNER), &[]),

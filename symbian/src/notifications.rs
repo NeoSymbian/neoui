@@ -48,6 +48,9 @@ pub struct Pending {
 /// The host's TP4 state.
 pub struct Policies {
     catalogue: Vec<(&'static str, Channel)>,
+    /// The saved catalogue was read (or there is none): until then a declaration answers `KErrNotReady` and nothing
+    /// is saved, so a failed read never costs the other apps' declarations.
+    loaded: bool,
     rate: Rate,
     /// The store's change counter the policy was last applied at.
     seq: u32,
@@ -55,9 +58,29 @@ pub struct Policies {
     pub pending: Option<Pending>,
 }
 
+/// The file a save writes first, then puts in [`CATALOGUE_PATH`]'s place.
+const CATALOGUE_STAGING: &str = "C:\\private\\e0002001\\channels.tmp";
+
 impl Policies {
-    /// The saved declarations (none when there are none or the file is damaged: apps declare again).
+    /// The saved declarations; read again on the next declaration if that failed.
     pub fn boot() -> Self {
+        let mut p = Self {
+            catalogue: Vec::new(),
+            loaded: false,
+            rate: Rate::default(),
+            seq: 0,
+            pending: None,
+        };
+        p.load();
+        p
+    }
+
+    /// Read the saved catalogue, if it isn't yet. A damaged one is dropped (its apps declare again on their next
+    /// connect); an unreadable one is tried again later.
+    fn load(&mut self) -> bool {
+        if self.loaded {
+            return true;
+        }
         let read = || -> Result<Vec<u8>, i32> {
             let fs = Fs::connect()?;
             let f = File::open(&fs, CATALOGUE_PATH, mode::READ | mode::SHARE_READERS_ONLY)?;
@@ -66,46 +89,45 @@ impl Policies {
                 return Err(kerr::CORRUPT);
             }
             let mut b = alloc::vec![0; size];
-            let n = f.read_at(0, &mut b)?;
-            b.truncate(n);
+            // a short read is a failed one, never taken as the catalogue
+            if f.read_at(0, &mut b)? != size {
+                return Err(kerr::CORRUPT);
+            }
             Ok(b)
         };
-        let catalogue = match read() {
+        self.catalogue = match read() {
             Ok(b) => policy::decode_catalogue(&b).unwrap_or_else(|| {
                 dprintln!("neoui: channels file damaged, apps declare again");
                 Vec::new()
             }),
             Err(err::KERR_NOT_FOUND | err::KERR_PATH_NOT_FOUND) => Vec::new(),
             Err(e) => {
-                dprintln!("neoui: channels file unreadable ({})", e);
-                Vec::new()
+                dprintln!("neoui: channels file unreadable ({}), trying again", e);
+                return false;
             }
         };
-        Self {
-            catalogue,
-            rate: Rate::default(),
-            seq: 0,
-            pending: None,
-        }
+        self.loaded = true;
+        true
     }
 
-    fn save(&self) {
-        let list: Vec<(&str, &Channel)> = self.catalogue.iter().map(|(k, c)| (*k, c)).collect();
-        let bytes = policy::encode_catalogue(&list);
-        let r = || -> Result<(), i32> {
-            let fs = Fs::connect()?;
-            for dir in ["C:\\private\\", "C:\\private\\e0002001\\"] {
-                match fs.mkdir(dir) {
-                    Ok(()) | Err(err::KERR_ALREADY_EXISTS) => {}
-                    Err(e) => return Err(e),
-                }
+    /// Write `list` to [`CATALOGUE_STAGING`], flushed and closed, which then replaces [`CATALOGUE_PATH`] in one
+    /// file-server operation: a failed save leaves the last catalogue whole.
+    fn save(list: &[(&'static str, Channel)]) -> Result<(), i32> {
+        let refs: Vec<(&str, &Channel)> = list.iter().map(|(k, c)| (*k, c)).collect();
+        let bytes = policy::encode_catalogue(&refs);
+        let fs = Fs::connect()?;
+        for dir in ["C:\\private\\", "C:\\private\\e0002001\\"] {
+            match fs.mkdir(dir) {
+                Ok(()) | Err(err::KERR_ALREADY_EXISTS) => {}
+                Err(e) => return Err(e),
             }
-            File::replace(&fs, CATALOGUE_PATH, mode::SHARE_EXCLUSIVE)?.write(&bytes)
-        }();
-        if let Err(e) = r {
-            // kept in RAM: the app's next declaration saves it again
-            dprintln!("neoui: channels save failed ({})", e);
         }
+        {
+            let f = File::replace(&fs, CATALOGUE_STAGING, mode::SHARE_EXCLUSIVE)?;
+            f.write(&bytes)?;
+            f.flush()?;
+        }
+        fs.replace_file(CATALOGUE_STAGING, CATALOGUE_PATH)
     }
 
     fn declared(&self, app: &str, channel: u8) -> Option<u8> {
@@ -161,17 +183,27 @@ impl Host {
         else {
             return kerr::ARGUMENT;
         };
-        let list = &mut self.policies.catalogue;
+        // the saved catalogue first: a declaration never replaces what couldn't be read
+        if !self.policies.load() {
+            return err::KERR_NOT_READY;
+        }
+        // the new catalogue is saved before it is used or acknowledged; a failed save changes nothing
+        let mut list = self.policies.catalogue.clone();
         let mine = list.iter().filter(|(k, _)| *k == key).count();
         match list.iter_mut().find(|(k, d)| *k == key && d.id == c.id) {
+            // saved already (only a saved catalogue is ever in use)
             Some((_, d)) if *d == c => return 0,
             // new metadata; the user's override lives in n.<app> and stays
             Some((_, d)) => *d = c,
             None if mine >= CHANNELS_MAX => return kerr::OVERFLOW,
             None => list.push((key, c)),
         }
+        if let Err(e) = Policies::save(&list) {
+            dprintln!("neoui: channels save failed ({})", e);
+            return e;
+        }
+        self.policies.catalogue = list;
         dprintln!("neoui: {} declared a channel", key);
-        self.policies.save();
         self.info_changed(proto::INFO_CHANNELS);
         0
     }
@@ -222,6 +254,15 @@ impl Host {
     pub(super) fn badge_allowed(&self, app: &str) -> bool {
         let p = self.app_policy(app);
         p.flags & policy::flag::ALLOW != 0 && p.flags & policy::flag::BADGE != 0
+    }
+
+    /// (TP4) The policy owners whose badge is off (the renderer drops MODEMD's fallback counts for them too).
+    pub fn badges_off(&self) -> Vec<&'static str> {
+        OWNERS
+            .iter()
+            .copied()
+            .filter(|k| !self.badge_allowed(k))
+            .collect()
     }
 
     /// Apps with cards that show their glyph in the status bar, newest first (Default and Urgent channels).

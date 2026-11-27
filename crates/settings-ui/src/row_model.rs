@@ -38,6 +38,13 @@ pub fn facts(s: &SetState<'_>, sample: Sample, epochs: Epochs) -> Facts {
     };
     let text = |t: SharedString| Some(Scalar::Text(String::from(t.as_str())));
     let on = |b: bool| Some(Scalar::On(b));
+    let notify = |v: Option<Scalar>| {
+        if s.get_notify_ok() {
+            v
+        } else {
+            Some(Scalar::Text("Not yet (protocol 1.21)".into()))
+        }
+    };
     let link = s.get_wifi_link();
     let keyboards = s.get_keyboards();
     let kb = |i: usize| keyboards.row_data(i).map(Scalar::On);
@@ -140,9 +147,10 @@ pub fn facts(s: &SetState<'_>, sample: Sample, epochs: Epochs) -> Facts {
             (!s.get_notify_root().is_empty()).then(|| Scalar::Text(s.get_notify_root().into())),
         ),
         ("panel.swipehome", on(s.get_swipe_home())),
-        ("panel.dnd", on(s.get_dnd())),
-        ("notify.dnd", on(s.get_dnd())),
-        ("notify.bannert", text(s.get_banner_text())),
+        // a shell before 1.21 has none of these (the rows say so)
+        ("panel.dnd", notify(on(s.get_dnd()))),
+        ("notify.dnd", notify(on(s.get_dnd()))),
+        ("notify.bannert", notify(text(s.get_banner_text()))),
     ] {
         if let Some(v) = v {
             f.scalars.insert(key, v);

@@ -47,14 +47,20 @@ fn records(app: &App) -> Option<(Vec<AppRecord>, Vec<ChannelRecord>)> {
     Some((apps, channels))
 }
 
-/// App `owner`'s `n.<owner>` as stored (the defaults when there is none).
-fn stored(app: &App, owner: &str) -> Policy {
-    policy::key_of(owner)
-        .and_then(|k| match app.setting_raw(k) {
-            Ok(Value::Bytes(b)) => Policy::decode(&b),
-            _ => None,
-        })
-        .unwrap_or_default()
+/// App `owner`'s `n.<owner>` as stored (empty: none, the defaults); `None` when it couldn't be read.
+fn stored_bytes(app: &App, owner: &str) -> Option<Vec<u8>> {
+    match app.setting_raw(policy::key_of(owner)?) {
+        Ok(Value::Bytes(b)) => Some(b),
+        r => {
+            dprintln!("settings: {} policy unreadable ({:?})", owner, r.err());
+            None
+        }
+    }
+}
+
+/// App `owner`'s policy as stored; `None` when it couldn't be read or decoded (never guessed defaults).
+fn stored(app: &App, owner: &str) -> Option<Policy> {
+    Policy::decode(&stored_bytes(app, owner)?)
 }
 
 /// Whose sound isn't the shell's: MODEMD rings calls and SMS, Clock its alarms (the shell plays them no chime).
@@ -147,7 +153,10 @@ fn current(app: &App, s: &SetState<'_>) {
     if owner.is_empty() {
         return;
     }
-    let p = stored(app, &owner);
+    // unreadable: the switches keep what they showed (an edit is refused until it reads)
+    let Some(p) = stored(app, &owner) else {
+        return;
+    };
     s.set_notify_allow(p.flags & flag::ALLOW != 0);
     s.set_notify_banner(p.flags & flag::BANNER != 0);
     s.set_notify_sound(p.flags & flag::SOUND != 0);
@@ -210,13 +219,17 @@ fn change(app: &App, s: &SetState<'_>, f: impl FnOnce(&mut Policy)) {
     let Some(key) = policy::key_of(&owner) else {
         return;
     };
-    let mut p = stored(app, &owner);
-    f(&mut p);
-    let r = app.set_setting_raw(key, &Value::Bytes(p.encode()));
+    // only from what is stored: a value that can't be read is never replaced by edited defaults
+    let r = match policy::edit(stored_bytes(app, &owner).as_deref(), f) {
+        Some(b) => app.set_setting_raw(key, &Value::Bytes(b)),
+        None => Err(-20), // KErrCorrupt
+    };
     dprintln!("settings: {} policy ({:?})", owner, r);
     if r.is_err() {
         let _ = app.note("Couldn't change the notifications", "");
     }
+    // the switches show what is stored: the change, or (failed) what was there
+    current(app, s);
 }
 
 /// The pages' asks: `notify-dnd` 1/0, `notify-app` + an owner, `notify-flag` + "allow,1", `notify-importance` + a
@@ -231,6 +244,10 @@ pub fn act(ctx: &Ctx, ui: &SettingsApp, action: &str, value: &str) {
                 .set_setting_raw(keys::NOTIFY_DNDTO.name(), &Value::Bytes(Vec::new()))
                 .and_then(|()| app.set_setting(keys::NOTIFY_DND, value == "1"));
             dprintln!("settings: do not disturb {} ({:?})", value, r);
+            if r.is_err() {
+                let _ = app.note("Couldn't change Do not disturb", "");
+                refresh(app, ui); // the switch shows what is stored again
+            }
         }
         "notify-app" => {
             if select(app, &s, value) {
@@ -303,6 +320,10 @@ pub fn act(ctx: &Ctx, ui: &SettingsApp, action: &str, value: &str) {
             {
                 let r = app.set_setting(keys::NOTIFY_BANNERT, *t);
                 dprintln!("settings: banner {} s ({:?})", t, r);
+                if r.is_err() {
+                    let _ = app.note("Couldn't change the pop-up time", "");
+                    refresh(app, ui);
+                }
             }
         }
         _ => {}
