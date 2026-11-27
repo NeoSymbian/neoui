@@ -91,6 +91,11 @@ impl Host {
         }
     }
 
+    /// How long (µs) until the HUD's end is due, for the main loop's wait: it hides on time, not at the next idle wake.
+    pub fn media_wake_us(&self, ms: u64) -> Option<u64> {
+        (self.media.hud_until != 0).then(|| self.media.hud_until.saturating_sub(ms) * 1000)
+    }
+
     /// A volume key stepped the call's volume (`call`) or the media volume: the HUD shows the level for 2 s.
     pub fn volume_hud(&mut self, ui: &mut Renderer, call: Option<u8>, ms: u64) {
         let level = call.unwrap_or_else(|| {

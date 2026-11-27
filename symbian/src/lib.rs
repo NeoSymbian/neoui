@@ -255,7 +255,8 @@ fn main() -> i32 {
             } else {
                 IDLE_US
             };
-            // a Slint timer (a long press, the kit's spinner), the toast's end, or a held gesture's pause is due sooner
+            // a Slint timer (a long press, the kit's spinner), the toast's, banner's or volume HUD's end, or a held gesture's
+            // pause is due sooner
             let wait = [
                 gest.busy().then_some(50_000),
                 ui.next_timer().map(|d| d.as_micros() as u64),
@@ -263,6 +264,7 @@ fn main() -> i32 {
                     neoui_proto::settings_app::privacy::toast_wake_us(*until, time::millis())
                 }),
                 (banner_until != 0).then(|| banner_until.saturating_sub(time::millis()) * 1000),
+                host.media_wake_us(time::millis()),
             ]
             .into_iter()
             .flatten()
