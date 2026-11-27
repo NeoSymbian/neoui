@@ -333,6 +333,9 @@ pub struct Post {
     pub new: bool,
     /// `NOTIFY_SILENT_UPDATE` or ongoing: never an alert, and free.
     pub quiet: bool,
+    /// (TP5, O1) A ringing call: a new Call-style card with `NOTIFY_STICKY` (`crate::calls::rings`). On an Urgent
+    /// channel it alerts past Do not disturb, ongoing or not, and costs no rate.
+    pub ring: bool,
 }
 
 /// What a post does now: the banner, the sound, a vibration.
@@ -353,6 +356,12 @@ impl Alert {
 /// alert again (asked only when it would: [`Rate::take`]). DND keeps the card in the shade and holds the rest.
 #[must_use]
 pub fn alert(e: &Effective, post: Post, dnd: bool, rate: impl FnOnce() -> bool) -> Alert {
+    if e.accepts() && post.new && post.ring && e.importance == importance::URGENT {
+        return Alert {
+            banner: e.flags & flag::BANNER != 0,
+            sound: e.flags & flag::SOUND != 0,
+        };
+    }
     if !e.accepts() || !post.new || post.quiet || dnd {
         return Alert::default();
     }
@@ -816,7 +825,7 @@ mod tests {
                 &e,
                 Post {
                     new: true,
-                    quiet: false,
+                    ..Post::default()
                 },
                 false,
                 || true,
@@ -872,28 +881,18 @@ mod tests {
         let e = effective(&Policy::default(), 1, Some(importance::URGENT), lock::SHOW);
         let new = Post {
             new: true,
-            quiet: false,
+            ..Post::default()
         };
         assert!(alert(&e, new, false, || true).any());
         assert!(!alert(&e, new, true, || true).any(), "DND");
-        assert!(
-            !alert(
-                &e,
-                Post {
-                    new: false,
-                    quiet: false
-                },
-                false,
-                || true
-            )
-            .any()
-        );
+        assert!(!alert(&e, Post::default(), false, || true).any());
         assert!(
             !alert(
                 &e,
                 Post {
                     new: true,
-                    quiet: true
+                    quiet: true,
+                    ..Post::default()
                 },
                 false,
                 || true
@@ -911,6 +910,30 @@ mod tests {
         assert!(!r.take("files", 10_000));
         assert!(r.take("browser", 10_000), "per app");
         assert!(r.take("files", 60_000), "the first one left the window");
+    }
+
+    /// (TP5, O1) A ringing call on an Urgent channel gets past Do not disturb, its ongoing flag and the rate; on any
+    /// other channel, or as a replacement, it is an ordinary card.
+    #[test]
+    fn an_urgent_ring_passes_dnd() {
+        let e = effective(&Policy::default(), 1, Some(importance::URGENT), lock::SHOW);
+        let ring = Post {
+            new: true,
+            quiet: true,
+            ring: true,
+        };
+        let a = alert(&e, ring, true, || panic!("a ring costs no rate"));
+        assert!(a.banner && a.sound);
+        let again = Post { new: false, ..ring };
+        assert!(!alert(&e, again, false, || true).any());
+        let default = effective(&Policy::default(), 1, Some(importance::DEFAULT), lock::SHOW);
+        assert!(!alert(&default, ring, true, || true).any(), "DND holds it");
+        let off = Policy {
+            flags: flag::ALL & !flag::ALLOW,
+            ..Policy::default()
+        };
+        let off = effective(&off, 1, Some(importance::URGENT), lock::SHOW);
+        assert!(!alert(&off, ring, false, || true).any());
     }
 
     #[test]

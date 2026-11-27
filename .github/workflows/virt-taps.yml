@@ -529,6 +529,45 @@ jobs:
           grep -a 'neoui: home page' $s
           ! grep -aq 'K::Fault\|Kern::Fault\|\[EKERN\] panic\|rust panic' $s
 
+      # TP5, TP6 and TP4's inline reply (docs neoui-shell/top-panel.md), in Gestures, from the UI kit's Notifications
+      # page (Apps 485,973 -> UI kit 449,990 -> ⋮ 497,72 -> Notifications 298,874; its buttons 84 px apart from 160):
+      # - Ringing call card (412): an Urgent sticky Call card is the call banner; its round Answer (314,93 dp, at the
+      #   right of the body row: tests/tp5_calls.rs) comes back as Notified 0xA0 and the kit starts its call activity.
+      # - Start a timer and a call (496): two activities; the island's pill is the call (Call › Timer); held (its left
+      #   part, 160 dp), it opens in place; End (297,102 dp: tests/tp6_island.rs) reaches the kit as ActivityTap 0x13.
+      # - Card to reply to (580): its banner's Reply pill (73,133 dp) opens the inline field; "On my way" (120,270 dp)
+      #   and Send (316,222 dp: tests/tp4_reply.rs) hand the text over; the kit reads it with REPLY_TEXT.
+      - name: Boot again; calls, the island and the inline reply (TP5, TP6, TP4)
+        working-directory: build
+        run: |
+          cp out/serial.log out/serial-home.log
+          export SCREEN=539x1079 NAV=gestures
+          . ../neoui/symbian/taps.sh
+          tap 485 973; wait_s 1; tap 449 990; expect "neoui: app kit started"; wait_s 2
+          tap 497 72; wait_s 2; tap 298 874; wait_s 2
+          tap 270 412; expect "kit: ringing card posted (Ok(())), shell call keys true"; expect "neoui: sticky banner kit 20"
+          wait_s 1; tap 470 139; expect "neoui: call key 0xa0 for kit card 20"; expect "kit: card 20 opened (160)"
+          wait_s 1; tap 270 496; expect "kit: activities posted (Ok"; expect "neoui: activity kit 0 kind 3"
+          wait_s 2; hold 240 18; wait_s 1
+          tap 445 153; expect "neoui: island kit 1 tap 19"; expect "kit: activity 1 tap 19"
+          wait_s 1; tap 270 580; expect "kit: reply card posted (Ok"; wait_s 1
+          tap 109 199; wait_s 1; tap 180 404; wait_s 1
+          tap 473 332; expect "neoui: reply for kit card 21 (9 bytes)"; expect "kit: reply to card 21: 9 bytes"
+          wait_s 1; tap 270 664; expect "kit: live demo ended (Ok"
+          ui_run 240
+          s=out/serial.log
+          grep -a 'neoui: sticky banner kit 20' $s
+          grep -a 'neoui: call key 0xa0 for kit card 20' $s
+          grep -a 'kit: card 20 opened (160)' $s
+          grep -a 'neoui: activity kit 1 kind 1' $s
+          grep -a 'neoui: island kit 1 tap 19' $s
+          grep -a 'kit: activity 1 tap 19' $s
+          grep -a 'neoui: reply text taken by kit card 21' $s
+          grep -a 'kit: reply to card 21: 9 bytes' $s
+          ! grep -aq 'neoui: activity from kit refused' $s
+          ! grep -aq 'On my way' $s   # the reply's text is never logged
+          ! grep -aq 'K::Fault\|Kern::Fault\|\[EKERN\] panic\|rust panic' $s
+
       # Navigation v2's gestures (docs neoui-shell/navigation.md; edge zone 16 dp = 24 px, sides and the band commit at 72 dp =
       # 108 px, Home at 80 dp = 120 px). The Thumb map (Gestures, the default):
       # - Settings (via Apps 485,973 and 270,805; the NEOSET app) -> Home & navigation (270,721).
@@ -547,7 +586,7 @@ jobs:
       - name: Boot again; gesture navigation (the Thumb map, then N9)
         working-directory: build
         run: |
-          cp out/serial.log out/serial-home.log
+          cp out/serial.log out/serial-calls.log
           export SCREEN=539x1079 NAV=gestures
           . ../neoui/symbian/taps.sh
           tap 485 973; tap 270 805; expect "neoui: app settings surface"; wait_s 2
@@ -621,4 +660,5 @@ jobs:
             build/out/serial-main.log
             build/out/serial-legacy.log
             build/out/serial-home.log
+            build/out/serial-calls.log
             build/out/serial-gestures.log

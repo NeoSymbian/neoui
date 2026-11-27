@@ -29,6 +29,9 @@ import { Shade, ShadeNote } from "components/shade.slint";
 import { NotificationBanner } from "components/notification-banner.slint";
 import { VolumeHud } from "components/media.slint";
 import { Media } from "media.slint";
+export { Island, Reply, IslandItem } from "island.slint";
+import { Island, Reply } from "island.slint";
+import { IslandCompact, IslandExpanded } from "components/island.slint";
 export { ShadeNote } from "components/shade.slint";
 export { Apps } from "screens/menu.slint";
 export { HomeModel } from "screens/home-edit.slint";
@@ -129,6 +132,13 @@ export component Shell inherits Window {
     out property <length> hud-y: hud.y;
     out property <length> hud-w: hud.width;
     out property <length> hud-h: hud.height;
+    // (TP6) the island where it lies over the app (held open, or floating over a full-screen call): the UI server puts
+    // it back over the app's surface and keeps its touches from the app
+    out property <bool> island-over: island-open.visible || (root.full && island.visible);
+    out property <length> island-x: island-open.visible ? island-open.x : island.x;
+    out property <length> island-y: island-open.visible ? island-open.y : island.y;
+    out property <length> island-w: island-open.visible ? island-open.width : island.width;
+    out property <length> island-h: island-open.visible ? island-open.height : island.height;
     // the home screen's pages, for the UI server's swipe (smooth-ui S2c): which one shows, and the band they fill
     in-out property <int> home-page <=> home.page;
     out property <length> home-strip-h: home.strip-h;
@@ -227,6 +237,9 @@ export component Shell inherits Window {
     in property <ShadeNote> banner;
     in-out property <bool> banner-shown;
     callback banner-opened(int);
+    // (TP4) notify.bannert (0: a sticky card's banner, no bar); Reply on a shade card's row (the banner takes it)
+    in property <int> banner-seconds: 5;
+    callback reply-asked(int);
     in property <bool> dnd;
     in property <bool> sim-pin-required;
     in property <bool> sim-blocked;
@@ -470,7 +483,8 @@ export component Shell inherits Window {
         y: 0;
         time: clock;
         bars: root.bars;
-        note: root.network-note;
+        // the island takes the middle
+        note: island.visible ? "" : root.network-note;
         rat: root.rat;
         wifi-bars: root.wifi-link.connected ? root.wifi-link.bars : -1;
         wifi-band: root.wifi-link.band;
@@ -540,11 +554,36 @@ export component Shell inherits Window {
         width: root.width - 16 * Theme.dp;
         y: (root.full ? 0 : Theme.status-h) + 6 * Theme.dp;
         note: root.banner;
+        seconds: root.banner-seconds;
         opened(a) => {
             root.banner-shown = false;
             root.banner-opened(a);
         }
-        closed => { root.banner-shown = false; }
+        closed => {
+            root.banner-shown = false;
+            if Reply.open {
+                Reply.open = false;
+                KeyboardFocus.close();
+            }
+        }
+    }
+
+    // (TP6) the island in the middle of the status bar; over a full-screen app only a call or a recording floats
+    // there. Held, it opens in place (over the shade and the banner too)
+    island := IslandCompact {
+        visible: Island.on && (Island.alert != "" || Island.shown.length > 0)
+            && (!root.full || (Island.pill() >= 0 && (Island.live[Island.pill()].kind <= 2)))
+            && !root.power-open;
+        x: (root.width - self.width) / 2;
+        y: root.full ? 4 * Theme.dp : (Theme.status-h - self.height) / 2;
+        pulled => { root.shade-open = true; }
+    }
+    island-open := IslandExpanded {
+        visible: Island.expanded >= 0 && !root.power-open;
+        index: Island.expanded;
+        x: 8 * Theme.dp;
+        width: root.width - 16 * Theme.dp;
+        y: 4 * Theme.dp;
     }
 
     // (TP3) the volume HUD under the status bar for 2 s after a volume key (the UI server times it)
@@ -579,6 +618,10 @@ export component Shell inherits Window {
         note-dismissed(i) => { root.note-dismissed(i); }
         notes-cleared => { root.notes-cleared(); }
         group-toggled(i) => { root.group-toggled(i); }
+        reply-asked(i) => {
+            root.shade-open = false;
+            root.reply-asked(i);
+        }
         note-opened(i, a) => {
             // an in-place action (kind 3, Mark read) leaves the shade open: its app isn't coming to the front
             if !(a > 0 && root.notes[i].kinds.length >= a && root.notes[i].kinds[a - 1] == 3) {

@@ -35,6 +35,8 @@ use e32::sys::{TPtr8, TPtrC8};
 use e32::time;
 use neoui_proto::ipc as proto;
 pub use neoui_proto::ipc::AppEvent;
+/// 1.22: what `App::shell_version` answers, and its feature bit for the shell's Answer and Reject on a Call card.
+pub use neoui_proto::ipc::{SHELL_CALL_KEYS, ShellVersion};
 pub use neoui_proto::notification_policy;
 /// Which apps open which files, and the pages of Files other apps open (protocol 1.12).
 pub use neoui_proto::open;

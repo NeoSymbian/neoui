@@ -360,11 +360,11 @@ pub struct ShellVersion {
 }
 
 impl ShellVersion {
-    /// This shell: [`VERSION`]; no feature yet (TP5's shell side, W2-J, sets [`SHELL_CALL_KEYS`] when it draws them).
+    /// This shell: [`VERSION`]; it draws a Call card's Answer and Reject ([`SHELL_CALL_KEYS`], TP5).
     pub const THIS: ShellVersion = ShellVersion {
         major: VERSION.0,
         minor: VERSION.1,
-        features: 0,
+        features: SHELL_CALL_KEYS,
     };
 
     /// The completion: `features << 16 | major << 8 | minor`, the feature bits cut to 15.
@@ -801,8 +801,11 @@ mod tests {
     #[test]
     fn the_shell_version_word() {
         let this = ShellVersion::THIS;
-        assert_eq!(this.encode(), 0x0116, "low 16 bits as before: 1.22");
-        assert!(!this.has(SHELL_CALL_KEYS), "this build draws no call keys");
+        assert_eq!(this.encode(), 0x1_0116, "1.22 with SHELL_CALL_KEYS");
+        assert!(
+            this.has(SHELL_CALL_KEYS),
+            "this build draws the call keys (TP5)"
+        );
         assert_eq!(ShellVersion::decode(this.encode()), Some(this));
         let keys = ShellVersion {
             features: SHELL_CALL_KEYS,

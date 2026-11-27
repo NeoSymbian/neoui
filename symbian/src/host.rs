@@ -58,6 +58,12 @@ pub mod wallpaper;
 // (TP3) the media session
 #[path = "media.rs"]
 pub mod media;
+// (TP5, TP4 reply) calls in the panel and inline replies
+#[path = "calls.rs"]
+pub mod calls;
+// (TP6) the live island
+#[path = "island.rs"]
+pub mod island;
 
 /// Apps whose shell screen is a launcher grid until they request FRONT(1).
 // shortcut: a fixed table like APPS; apps declare launcher support when apps are installable.
@@ -322,6 +328,9 @@ pub struct Host {
     pub wallpaper: wallpaper::Wallpaper,
     /// (TP3) the media session ([`media`])
     pub media: media::Media,
+    /// (TP5, TP4) held call keys and replies, the sticky banner ([`calls`]); (TP6) the island ([`island`])
+    pub calls: calls::Calls,
+    live: island::Live,
 }
 
 impl Host {
@@ -377,6 +386,8 @@ impl Host {
             tiles: tiles::Tiles::boot(),
             wallpaper: wallpaper::Wallpaper::boot(),
             media: media::Media::default(),
+            calls: calls::Calls::default(),
+            live: island::Live::default(),
         }
     }
 
@@ -407,6 +418,7 @@ impl Host {
         let key = app.key;
         self.unbound.remove(i);
         self.tiles_bound(key, minor);
+        self.calls_bound(key, minor);
         if let Ok(pid) = pid {
             self.saw_caps(key, pid); // (D8) what it may do, for Settings → Apps
         }
@@ -569,6 +581,10 @@ impl Host {
             key,
             action
         );
+        // (TP5) a ringing call's Answer or Reject: the app hears it where it is
+        if action == neoui_proto::page::CALL_ANSWER || action == neoui_proto::page::CALL_REJECT {
+            return self.call_key(key, n.id, action, now_ms);
+        }
         // an in-place action (Mark read): the app hears it where it is, started hidden if it isn't running; a
         // service (1.19) hears every tap so, and opens what it wants itself
         let in_place = apps::is_service(key)
@@ -1595,6 +1611,8 @@ impl Service for Host {
                                 .map(|(_, o)| o.clone());
                             self.admit(key, &n, old.as_ref(), now)?;
                         }
+                        // (TP4) a reply waiting for the card goes with the old one
+                        self.forget_reply(key, n.id);
                         notify(&mut self.notifications, key, n, unix_ms())
                     });
                 if r.is_ok() {
@@ -1624,11 +1642,15 @@ impl Service for Host {
                 let r = self.media_message(key, &m);
                 m.complete(r);
             }
-            // 1.22's contract: checked, not acted on yet (their producers and consumers land in W1–W3)
-            // (the caller by a positive catalogue SID match first: the legacy bridge publishes none of these)
-            op if contract::is_publisher_opcode(op) => {
-                let r =
-                    contract::ingress(op, app.key, m.client_sid(), |max| read_bytes(&m, 0, max));
+            // (TP6) an activity; (TP4) an inline reply's text
+            proto::ACTIVITY => {
+                let key = app.key;
+                let r = self.activity_message(key, &m);
+                m.complete(r);
+            }
+            proto::REPLY_TEXT => {
+                let key = app.key;
+                let r = self.reply_text_message(key, &m);
                 m.complete(r);
             }
             proto::SHELL_VERSION => {

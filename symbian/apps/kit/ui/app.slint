@@ -89,6 +89,11 @@ export global NotifyDemo {
     callback post();
     callback clear();
     callback widget();
+    // (TP5, TP6, TP4) a ringing call card, a timer and a call in the island, a card to reply to inline, and the end
+    callback ring();
+    callback live();
+    callback reply();
+    callback end-live();
 }
 
 component NotificationsPage inherits Rectangle {
@@ -116,6 +121,38 @@ component NotificationsPage inherits Rectangle {
             primary: false;
             clicked => {
                 NotifyDemo.widget();
+            }
+        }
+
+        Button {
+            text: "Ringing call card";
+            primary: false;
+            clicked => {
+                NotifyDemo.ring();
+            }
+        }
+
+        Button {
+            text: "Start a timer and a call";
+            primary: false;
+            clicked => {
+                NotifyDemo.live();
+            }
+        }
+
+        Button {
+            text: "Card to reply to";
+            primary: false;
+            clicked => {
+                NotifyDemo.reply();
+            }
+        }
+
+        Button {
+            text: "End the live demo";
+            primary: false;
+            clicked => {
+                NotifyDemo.end-live();
             }
         }
 

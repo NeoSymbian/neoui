@@ -121,6 +121,8 @@ pub struct Phone {
     preferences_retry_at: u64,
     /// a call started ringing since `take_ring` (the screen wakes for it)
     rang: bool,
+    /// (TP5) a call started ringing since `take_ring_pull` (the banner or the full-screen call)
+    ring_pull: bool,
     /// the SIM state whose PIN/blocked prompt the user put away ("Not now", or an emergency call)
     sim_dismissed: Option<u8>,
     /// the call log as MODEMD last sent it (for Phone's badge of missed calls) and its revision
@@ -155,6 +157,7 @@ impl Phone {
             preferences: None,
             preferences_retry_at: 0,
             rang: false,
+            ring_pull: false,
             sim_dismissed: None,
             log: Vec::new(),
             log_revision: None,
@@ -166,6 +169,11 @@ impl Phone {
     /// Did a call start ringing since the last call? (Once per call: main's screen wakes for it.)
     pub fn take_ring(&mut self) -> bool {
         core::mem::take(&mut self.rang)
+    }
+
+    /// (TP5) Did a call start ringing since the last call? The main loop shows it as the banner or full screen.
+    pub fn take_ring_pull(&mut self) -> bool {
+        core::mem::take(&mut self.ring_pull)
     }
 
     /// A call is up (ringing, dialling or connected): the screen stays on.
@@ -315,8 +323,11 @@ impl Phone {
         if rings {
             self.rang = true;
         }
-        // the Phone app comes up on its call page (host::PAGES): a call ringing, or one started elsewhere
-        if rings || (starts && !app_in_front) {
+        // (TP5) a call ringing: the main loop picks the banner or the full-screen call (host `calls::ringing`); one
+        // started elsewhere brings the Phone app up on its call page (host::PAGES)
+        if rings {
+            self.ring_pull = true;
+        } else if starts && !app_in_front {
             ui.show("phone", "call");
         }
         self.volume = None;

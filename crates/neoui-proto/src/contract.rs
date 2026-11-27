@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-//! What SYSSTART answers for protocol 1.22's opcodes and Settings actions before their shell side is built (W0a; docs
-//! neoui-shell/protocol.md "Protocol 1.22"): the caller is checked first, then its record, and a request that would
-//! be accepted answers `KErrNotSupported`. Each later stream replaces its part with the real handler and keeps the
-//! checks: `WIDGET` is [`widget`] (home Part 4, W1-E), `MEDIA` is [`media`] (TP3), `TILE` is [`tile`] (TP7).
+//! How SYSSTART checks protocol 1.22's opcodes and Settings actions (W0a; docs neoui-shell/protocol.md "Protocol
+//! 1.22"): the caller first, then its record. Each stream replaced the contract's `KErrNotSupported` with its handler
+//! and kept the checks: `WIDGET` is [`widget`] (home Part 4), `MEDIA` [`media`] (TP3), `TILE` [`tile`] (TP7),
+//! `ACTIVITY` [`activity`] (TP6) and `REPLY_TEXT` [`publisher`] (TP4).
 
 use crate::settings::access::Caller;
 use crate::settings::kerr;
@@ -10,17 +10,22 @@ use crate::settings_app::{wallpaper, wire};
 use crate::{activity, apps, ipc, media, tiles, widget};
 use alloc::vec::Vec;
 
-/// Whether `op` is one of 1.22's app → shell opcodes that publish for the caller and are not built yet (checked by
-/// [`ingress`]). `MEDIA` (TP3), `TILE` (TP7) and `WIDGET` are built: the shell checks them with [`media`], [`tile`]
-/// and [`widget`] and keeps them.
-#[must_use]
-pub fn is_publisher_opcode(op: i32) -> bool {
-    matches!(op, ipc::REPLY_TEXT | ipc::ACTIVITY)
+/// The caller of a publishing opcode: `KErrPermissionDenied` unless app `key` has a catalogue SID and the message's
+/// secure ID `sid` is it (the legacy bridge and the kit's shared SID publish nothing). `REPLY_TEXT` (TP4) is checked
+/// so before anything is read.
+///
+/// # Errors
+/// As above.
+pub fn publisher(key: &str, sid: u32) -> Result<(), i32> {
+    if apps::sid(key) == Some(sid) {
+        Ok(())
+    } else {
+        Err(kerr::PERMISSION_DENIED)
+    }
 }
 
-/// (TP7) A `TILE` from app `key` whose message carries secure ID `sid`, checked as [`ingress`] checks the others:
-/// `KErrPermissionDenied` unless `key` has a catalogue SID and `sid` is it, then `KErrArgument` for a malformed offer
-/// (`read` refuses one past [`tiles::OFFER_MAX`] with `KErrTooBig`).
+/// (TP7) A `TILE` from app `key` whose message carries secure ID `sid`, checked as the others: [`publisher`], then
+/// `KErrArgument` for a malformed offer (`read` refuses one past [`tiles::OFFER_MAX`] with `KErrTooBig`).
 ///
 /// # Errors
 /// As above.
@@ -29,40 +34,29 @@ pub fn tile(
     sid: u32,
     read: impl FnOnce(usize) -> Result<Vec<u8>, i32>,
 ) -> Result<tiles::Offer, i32> {
-    if apps::sid(key) != Some(sid) {
-        return Err(kerr::PERMISSION_DENIED);
-    }
+    publisher(key, sid)?;
     tiles::Offer::decode(&read(tiles::OFFER_MAX)?).ok_or(kerr::ARGUMENT)
 }
 
-/// The answer to publisher opcode `op` from app `key` whose message carries secure ID `sid`. `read(max)` reads the
-/// record (slot 0), refusing one over `max` bytes; it is called only once the caller is known.
+/// (TP6) An `ACTIVITY` from app `key` whose message carries secure ID `sid`: [`publisher`] (`read` is called only
+/// then, refusing a record over its maximum), then `KErrArgument` for a malformed record, and for kind Media too
+/// (that one is the shell's, derived from the media session).
 ///
-/// `KErrPermissionDenied` unless `key` has a catalogue SID and `sid` is it (the legacy bridge and the kit's shared
-/// SID publish nothing); then `KErrArgument` for a malformed record (an ACTIVITY of kind Media too: that one is the
-/// shell's); else `KErrNotSupported`.
-pub fn ingress(
-    op: i32,
+/// # Errors
+/// As above.
+pub fn activity(
     key: &str,
     sid: u32,
     read: impl FnOnce(usize) -> Result<Vec<u8>, i32>,
-) -> i32 {
-    if apps::sid(key) != Some(sid) {
-        return kerr::PERMISSION_DENIED;
-    }
-    let ok = |valid: bool| if valid { Ok(()) } else { Err(kerr::ARGUMENT) };
-    let r = match op {
-        ipc::ACTIVITY => read(activity::ACTIVITY_MAX).and_then(|b| {
-            ok(activity::Activity::decode(&b).is_some_and(|a| a.kind != activity::kind::MEDIA))
-        }),
-        // REPLY_TEXT reads nothing: no reply is pending before TP4's inline reply
-        _ => Ok(()),
-    };
-    r.err().unwrap_or(kerr::NOT_SUPPORTED)
+) -> Result<activity::Activity, i32> {
+    publisher(key, sid)?;
+    activity::Activity::decode(&read(activity::ACTIVITY_MAX)?)
+        .filter(|a| a.kind != activity::kind::MEDIA)
+        .ok_or(kerr::ARGUMENT)
 }
 
 /// `WIDGET` (46) from app `key` whose message carries secure ID `sid`: the content to keep, checked as for
-/// [`ingress`] (the caller first, `read` only then): `KErrPermissionDenied` unless `key` has a catalogue SID and `sid`
+/// [`publisher`] (the caller first, `read` only then): `KErrPermissionDenied` unless `key` has a catalogue SID and `sid`
 /// is it, so only the app's own EXE fills its widgets; `KErrTooBig` / `KErrArgument` for a long or malformed record,
 /// `KErrNotFound` for a name not in the app's catalogue, `KErrArgument` for another template.
 ///
@@ -73,9 +67,7 @@ pub fn widget(
     sid: u32,
     read: impl FnOnce(usize) -> Result<Vec<u8>, i32>,
 ) -> Result<widget::Content, i32> {
-    if apps::sid(key) != Some(sid) {
-        return Err(kerr::PERMISSION_DENIED);
-    }
+    publisher(key, sid)?;
     let c = widget::Content::decode(&read(widget::WIDGET_MAX)?).ok_or(kerr::ARGUMENT)?;
     c.fits(key).map_err(|template| {
         if template {
@@ -94,9 +86,7 @@ pub fn media(
     sid: u32,
     read: impl FnOnce(usize) -> Result<Vec<u8>, i32>,
 ) -> Result<Option<media::Session>, i32> {
-    if apps::sid(key) != Some(sid) {
-        return Err(kerr::PERMISSION_DENIED);
-    }
+    publisher(key, sid)?;
     let b = read(media::MEDIA_MAX)?;
     if b.is_empty() {
         return Ok(None);
@@ -161,7 +151,6 @@ mod tests {
     use crate::settings::access::SETTINGS_SID;
     use alloc::vec;
 
-    const OPS: [i32; 2] = [ipc::REPLY_TEXT, ipc::ACTIVITY];
     const CLOCK: u32 = 0xE000_8001;
 
     fn never(_: usize) -> Result<Vec<u8>, i32> {
@@ -170,29 +159,17 @@ mod tests {
 
     #[test]
     fn only_a_mapped_publisher_with_its_own_sid() {
-        for op in OPS {
-            assert!(is_publisher_opcode(op));
-            // the legacy bridge (no catalogue SID), the kit's shared SID claimed by it, another app's SID
-            assert_eq!(
-                ingress(op, LEGACY, LEGACY_SID, never),
-                kerr::PERMISSION_DENIED
-            );
-            assert_eq!(
-                ingress(op, "clock", LEGACY_SID, never),
-                kerr::PERMISSION_DENIED
-            );
-            assert_eq!(
-                ingress(op, "clock", 0xE000_5001, never),
-                kerr::PERMISSION_DENIED
-            );
-            assert_eq!(
-                ingress(op, "nosuchapp", CLOCK, never),
-                kerr::PERMISSION_DENIED
-            );
+        // the legacy bridge (no catalogue SID), the kit's shared SID claimed by it, another app's SID
+        for (key, sid) in [
+            (LEGACY, LEGACY_SID),
+            ("clock", LEGACY_SID),
+            ("clock", 0xE000_5001),
+            ("nosuchapp", CLOCK),
+        ] {
+            assert_eq!(publisher(key, sid), Err(kerr::PERMISSION_DENIED));
+            assert_eq!(activity(key, sid, never), Err(kerr::PERMISSION_DENIED));
         }
-        assert!(!is_publisher_opcode(ipc::NOTIFY) && !is_publisher_opcode(ipc::TILE));
-        assert!(!is_publisher_opcode(ipc::WIDGET), "WIDGET has its handler");
-        assert!(!is_publisher_opcode(ipc::MEDIA), "MEDIA has its handler");
+        assert_eq!(publisher("clock", CLOCK), Ok(()));
         let never_c =
             |_: usize| -> Result<Vec<u8>, i32> { panic!("read before the caller was checked") };
         assert_eq!(
@@ -243,36 +220,27 @@ mod tests {
             },
             ..next.clone()
         };
-        let cases = [
-            (ipc::ACTIVITY, timer.encode(), kerr::NOT_SUPPORTED),
-            (
-                ipc::ACTIVITY,
-                Activity::end(2).encode(),
-                kerr::NOT_SUPPORTED,
-            ),
-            (
-                ipc::ACTIVITY,
-                Activity {
-                    kind: activity::kind::MEDIA,
-                    ..timer.clone()
-                }
-                .encode(),
-                kerr::ARGUMENT,
-            ),
-            (ipc::ACTIVITY, vec![], kerr::ARGUMENT),
-            (ipc::REPLY_TEXT, vec![], kerr::NOT_SUPPORTED),
-        ];
-        for (op, b, want) in cases {
-            assert_eq!(
-                ingress(op, "clock", CLOCK, rec(b.clone())),
-                want,
-                "{op} {b:?}"
-            );
-        }
-        // REPLY_TEXT reads nothing
         assert_eq!(
-            ingress(ipc::REPLY_TEXT, "clock", CLOCK, never),
-            kerr::NOT_SUPPORTED
+            activity("clock", CLOCK, rec(timer.encode())),
+            Ok(timer.clone())
+        );
+        assert_eq!(
+            activity("clock", CLOCK, rec(Activity::end(2).encode())),
+            Ok(Activity::end(2))
+        );
+        let media = Activity {
+            kind: activity::kind::MEDIA,
+            ..timer.clone()
+        };
+        assert_eq!(
+            activity("clock", CLOCK, rec(media.encode())),
+            Err(kerr::ARGUMENT),
+            "the media activity is the shell's"
+        );
+        assert_eq!(activity("clock", CLOCK, rec(vec![])), Err(kerr::ARGUMENT));
+        assert_eq!(
+            activity("clock", CLOCK, rec(vec![1; activity::ACTIVITY_MAX + 1])),
+            Err(kerr::TOO_BIG)
         );
         // WIDGET: the app's own content back; another template, a name not in its catalogue, another app's name
         assert_eq!(widget("clock", CLOCK, rec(text.encode())), Ok(text.clone()));

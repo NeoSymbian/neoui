@@ -1,0 +1,432 @@
+// SPDX-License-Identifier: Apache-2.0
+// The live island (top-panel TP6, di-states, di-call, di-home): a drawn pill in the middle of the status bar for what
+// is happening now, at most two (a pill and a circle); a 2 s system alert in its place; held, it opens in place over
+// the status bar (a call gets the shell's Mute · Keypad · Speaker · End, O1; media the player; the rest their app's
+// buttons). The same activities are the cards at the top of the shade's Live section (nt-shade).
+import { Theme } from "../theme.slint";
+import { Glyph } from "frame.slint";
+import { Island, IslandItem } from "../island.slint";
+import { MediaPlayer } from "media.slint";
+
+// the kind's own glyph
+component Lead inherits Rectangle {
+    in property <IslandItem> item;
+    in property <length> size: 14 * Theme.dp;
+    width: size;
+    height: size;
+    if item.kind == 2: Rectangle {
+        width: root.size * 0.6;
+        height: self.width;
+        border-radius: self.width / 2;
+        background: item.tint;
+    }
+    if item.kind == 4: Rectangle {
+        border-radius: 3 * Theme.dp;
+        background: @linear-gradient(135deg, #e04e9b 0%, #8656e8 100%);
+    }
+    // a ring of 12 dots, lit as far as its fill goes (the renderer has no paths)
+    if item.kind == 5 || (item.kind != 2 && item.kind != 4 && item.ring >= 0): Rectangle {
+        for i in 12: Rectangle {
+            width: root.size / 5;
+            height: self.width;
+            border-radius: self.width / 2;
+            x: (root.size - self.width) / 2 + (root.size - self.width) / 2 * sin(i * 30deg);
+            y: (root.size - self.width) / 2 - (root.size - self.width) / 2 * cos(i * 30deg);
+            background: i < round(item.ring * 12) ? item.tint : #ffffff33;
+        }
+    }
+    if item.kind != 2 && item.kind != 4 && item.kind != 5 && item.ring < 0: Glyph {
+        size: root.size;
+        source: item.kind == 1 ? @image-url("../icons/sys/call.svg")
+            : item.kind == 3 ? @image-url("../icons/sys/timer.svg")
+            : @image-url("../icons/sys/bell.svg");
+        colorize: item.tint;
+    }
+}
+
+// media's level: four bars
+component Level inherits HorizontalLayout {
+    in property <color> tint;
+    spacing: 1.5 * Theme.dp;
+    alignment: end;
+    for h in [0.5, 1.0, 0.7, 0.85]: VerticalLayout {
+        alignment: end;
+        Rectangle {
+            width: 2.5 * Theme.dp;
+            height: 12 * Theme.dp * h;
+            border-radius: 1 * Theme.dp;
+            background: root.tint;
+        }
+    }
+}
+
+// The compact island in the status bar: the pill (the first activity, or the circle's after a sideways swipe), the
+// circle, or a system alert. Tap: the activity's app; hold: open it in place; sideways: swap; pull down: the shade.
+export component IslandCompact inherits Rectangle {
+    callback pulled();
+    property <int> pill: Island.pill();
+    property <int> circle: Island.circle();
+    property <IslandItem> p: pill >= 0 ? Island.live[pill] : { };
+    property <IslandItem> c: circle >= 0 ? Island.live[circle] : { };
+    property <bool> alerting: Island.alert != "";
+    property <bool> moved;
+    property <bool> held;
+    width: row.preferred-width;
+    height: 21 * Theme.dp;
+    visible: alerting || pill >= 0;
+    row := HorizontalLayout {
+        spacing: 4 * Theme.dp;
+        Rectangle {
+            width: max(96 * Theme.dp, min(200 * Theme.dp, inner.preferred-width + 20 * Theme.dp));
+            border-radius: self.height / 2;
+            background: #000000;
+            border-width: 1px;
+            border-color: #ffffff2e;
+            inner := HorizontalLayout {
+                padding-left: 10 * Theme.dp;
+                padding-right: 10 * Theme.dp;
+                spacing: 8 * Theme.dp;
+                if root.alerting: VerticalLayout {
+                    alignment: center;
+                    Glyph {
+                        size: 13 * Theme.dp;
+                        source: Island.alert-kind == 3 ? @image-url("../icons/sys/charging.svg")
+                            : Island.alert-kind == 2 ? @image-url("../icons/sys/vibrate.svg")
+                            : @image-url("../icons/sys/silent.svg");
+                        colorize: Island.alert-kind == 3 ? Theme.ok : #ff6b6b;
+                    }
+                }
+                if !root.alerting: VerticalLayout {
+                    alignment: center;
+                    Lead {
+                        item: root.p;
+                    }
+                }
+                if !root.alerting && root.p.kind == 4: Level {
+                    tint: root.p.tint;
+                    horizontal-stretch: 1;
+                }
+                if !root.alerting && root.p.kind != 4: Text {
+                    text: root.p.trail;
+                    color: root.p.tint;
+                    font-size: 12.5 * Theme.dp;
+                    font-weight: 600;
+                    horizontal-alignment: right;
+                    horizontal-stretch: 1;
+                    vertical-alignment: center;
+                }
+                if root.alerting: Text {
+                    text: Island.alert;
+                    color: Island.alert-kind == 3 ? Theme.ok : #ff6b6b;
+                    font-size: 12.5 * Theme.dp;
+                    font-weight: 600;
+                    horizontal-alignment: right;
+                    horizontal-stretch: 1;
+                    vertical-alignment: center;
+                }
+            }
+        }
+        if !root.alerting && root.circle >= 0: Rectangle {
+            width: self.height;
+            border-radius: self.height / 2;
+            background: #000000;
+            border-width: 1px;
+            border-color: #ffffff2e;
+            Lead {
+                item: root.c;
+                size: 13 * Theme.dp;
+            }
+        }
+    }
+    touch := TouchArea {
+        enabled: !root.alerting;
+        pointer-event(e) => {
+            if e.kind == PointerEventKind.down {
+                root.moved = false;
+                root.held = false;
+            }
+        }
+        moved => {
+            let dx = self.mouse-x - self.pressed-x;
+            let dy = self.mouse-y - self.pressed-y;
+            if !root.moved && abs(dx) > 24 * Theme.dp && abs(dx) > abs(dy) {
+                root.moved = true;
+                if root.circle >= 0 {
+                    Island.swapped = !Island.swapped;
+                }
+            }
+            if !root.moved && dy > 24 * Theme.dp {
+                root.moved = true;
+                root.pulled();
+            }
+        }
+        clicked => {
+            if !root.moved && !root.held {
+                Island.act(root.circle >= 0 && self.mouse-x > root.width - root.height ? root.circle : root.pill, 0);
+            }
+        }
+    }
+    Timer {
+        interval: 500ms;
+        running: touch.pressed && !root.moved && !root.held;
+        triggered => {
+            root.held = true;
+            Island.expanded = root.pill;
+        }
+    }
+}
+
+// a round key under the expanded call (di-call): a glyph on grey, white when on, red for End
+component CallKey inherits VerticalLayout {
+    in property <image> icon;
+    in property <string> label;
+    in property <bool> on;
+    in property <bool> danger;
+    in property <length> size: 48 * Theme.dp;
+    callback clicked;
+    spacing: 6 * Theme.dp;
+    alignment: start;
+    accessible-role: button;
+    accessible-label: label;
+    accessible-action-default => { root.clicked(); }
+    HorizontalLayout {
+        alignment: center;
+        Rectangle {
+            width: root.size;
+            height: root.size;
+            border-radius: self.width / 2;
+            background: root.danger ? (ta.pressed ? #c23a3f : Theme.danger) : root.on ? #ffffff : ta.pressed ? #3a3f47 : #2a2e35;
+            Glyph {
+                source: root.icon;
+                size: root.size * 0.42;
+                colorize: root.on ? #000000 : #ffffff;
+            }
+            ta := TouchArea {
+                clicked => { root.clicked(); }
+            }
+        }
+    }
+    if root.label != "": Text {
+        text: root.label;
+        color: Theme.text-secondary;
+        font-size: 12 * Theme.dp;
+        horizontal-alignment: center;
+    }
+}
+
+component Avatar inherits Rectangle {
+    in property <IslandItem> item;
+    in property <length> size: 44 * Theme.dp;
+    width: size;
+    height: size;
+    border-radius: size / 2;
+    background: item.initials != "" ? item.tint : #ffffff14;
+    if item.initials != "": Text {
+        text: item.initials;
+        color: white;
+        font-size: root.size * 0.38;
+        font-weight: 600;
+    }
+    if item.initials == "": Lead {
+        item: root.item;
+        size: root.size * 0.5;
+    }
+}
+
+// The island held open over the status bar (di-call, di-home, di-states "Expanded"). A swipe up folds it.
+export component IslandExpanded inherits Rectangle {
+    in property <int> index;
+    property <IslandItem> it: index >= 0 && index < Island.live.length ? Island.live[index] : { };
+    height: it.kind == 4 ? player.preferred-height : body.preferred-height;
+    background: #0c0d0f;
+    border-radius: 26 * Theme.dp;
+    border-width: 1px;
+    border-color: #ffffff26;
+    clip: true;
+    TouchArea {
+        moved => {
+            if self.mouse-y - self.pressed-y < -24 * Theme.dp {
+                Island.expanded = -1;
+            }
+        }
+        clicked => {
+            Island.act(root.index, 0);
+            Island.expanded = -1;
+        }
+    }
+    player := MediaPlayer {
+        visible: root.it.kind == 4;
+        background: transparent;
+        border-width: 0;
+        opened => {
+            Island.act(root.index, 0);
+            Island.expanded = -1;
+        }
+    }
+    Rectangle {
+        visible: root.it.kind != 4;
+    body := VerticalLayout {
+        padding: 16 * Theme.dp;
+        spacing: 14 * Theme.dp;
+        HorizontalLayout {
+            spacing: 12 * Theme.dp;
+            Avatar {
+                item: root.it;
+            }
+            VerticalLayout {
+                alignment: center;
+                horizontal-stretch: 1;
+                Text {
+                    text: root.it.app + (root.it.text != "" ? " · " + root.it.text : "");
+                    color: Theme.text-dim;
+                    font-size: 12 * Theme.dp;
+                    overflow: elide;
+                }
+                Text {
+                    text: root.it.title;
+                    color: Theme.text;
+                    font-size: 16.5 * Theme.dp;
+                    font-weight: 600;
+                    overflow: elide;
+                }
+            }
+            Text {
+                text: root.it.trail;
+                color: root.it.tint;
+                font-size: 24 * Theme.dp;
+                font-weight: 400;
+                vertical-alignment: center;
+            }
+        }
+        if root.it.kind == 5 && root.it.ring >= 0: Rectangle {
+            height: 5 * Theme.dp;
+            border-radius: self.height / 2;
+            background: #ffffff1f;
+            Rectangle {
+                x: 0;
+                width: parent.width * max(0, min(1, root.it.ring));
+                border-radius: parent.border-radius;
+                background: root.it.tint;
+            }
+        }
+        // a call: the shell's own keys (O1), reported as activity::key 0x10–0x13
+        if root.it.kind == 1: HorizontalLayout {
+            alignment: space-around;
+            CallKey {
+                icon: @image-url("../icons/sys/mic_off.svg");
+                label: "Mute";
+                on: root.it.muted;
+                clicked => { Island.act(root.index, 16); }
+            }
+            CallKey {
+                icon: @image-url("../icons/sys/keypad.svg");
+                label: "Keypad";
+                clicked => { Island.act(root.index, 17); }
+            }
+            CallKey {
+                icon: @image-url("../icons/sys/speaker.svg");
+                label: "Speaker";
+                on: root.it.speaker;
+                clicked => { Island.act(root.index, 18); }
+            }
+            CallKey {
+                icon: @image-url("../icons/sys/end_call.svg");
+                label: "End";
+                danger: true;
+                clicked => { Island.act(root.index, 19); }
+            }
+        }
+        // the app's buttons (Pause · Cancel), the first in the activity's tint
+        if root.it.kind != 1 && root.it.buttons.length > 0: HorizontalLayout {
+            spacing: 10 * Theme.dp;
+            for b[j] in root.it.buttons: Rectangle {
+                height: 44 * Theme.dp;
+                horizontal-stretch: 1;
+                border-radius: self.height / 2;
+                background: j == 0 ? root.it.tint.transparentize(0.75) : #2a2e35;
+                opacity: bta.pressed ? 0.7 : 1;
+                Text {
+                    text: b;
+                    color: j == 0 ? root.it.tint : Theme.text;
+                    font-size: 14.5 * Theme.dp;
+                    font-weight: 600;
+                }
+                bta := TouchArea {
+                    clicked => { Island.act(root.index, j + 1); }
+                }
+            }
+        }
+    }
+}
+}
+
+// An activity as a card at the top of the shade's Live section (nt-shade): "Call in progress · 04:12", the title;
+// a call's Mute and End at the right, other kinds their app's buttons. A tap opens the app.
+export component LiveCard inherits Rectangle {
+    in property <int> index;
+    property <IslandItem> it: Island.live[index];
+    height: row.preferred-height;
+    background: it.tint.transparentize(0.9);
+    border-radius: 16 * Theme.dp;
+    border-width: 1px;
+    border-color: it.tint.transparentize(0.65);
+    TouchArea {
+        clicked => { Island.act(root.index, 0); }
+    }
+    row := HorizontalLayout {
+        padding: 12 * Theme.dp;
+        spacing: 12 * Theme.dp;
+        VerticalLayout {
+            alignment: center;
+            Avatar {
+                item: root.it;
+                size: 36 * Theme.dp;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            Text {
+                text: (root.it.kind == 1 ? "Call in progress" : root.it.text != "" ? root.it.text : root.it.app)
+                    + (root.it.trail != "" ? " · " + root.it.trail : "");
+                color: root.it.tint;
+                font-size: 12.5 * Theme.dp;
+                overflow: elide;
+            }
+            Text {
+                text: root.it.title;
+                color: Theme.text;
+                font-size: 15 * Theme.dp;
+                font-weight: 600;
+                overflow: elide;
+            }
+        }
+        if root.it.kind == 1: CallKey {
+            icon: @image-url("../icons/sys/mic_off.svg");
+            size: 36 * Theme.dp;
+            on: root.it.muted;
+            alignment: center;
+            clicked => { Island.act(root.index, 16); }
+        }
+        if root.it.kind == 1: CallKey {
+            icon: @image-url("../icons/sys/end_call.svg");
+            size: 36 * Theme.dp;
+            danger: true;
+            alignment: center;
+            clicked => { Island.act(root.index, 19); }
+        }
+        if root.it.kind != 1: HorizontalLayout {
+            spacing: 14 * Theme.dp;
+            for b[j] in root.it.buttons: Text {
+                text: b;
+                color: j == 0 ? Theme.accent : Theme.text-secondary;
+                font-size: 13.5 * Theme.dp;
+                font-weight: 600;
+                vertical-alignment: center;
+                TouchArea {
+                    clicked => { Island.act(root.index, j + 1); }
+                }
+            }
+        }
+    }
+}

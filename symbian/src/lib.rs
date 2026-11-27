@@ -278,6 +278,7 @@ fn main() -> i32 {
                 }),
                 (banner_until != 0).then(|| banner_until.saturating_sub(time::millis()) * 1000),
                 host.media_wake_us(time::millis()),
+                host.island_wake_us(time::millis()),
             ]
             .into_iter()
             .flatten()
@@ -516,7 +517,8 @@ fn main() -> i32 {
                                     && !power_menu
                                     && !ui.overlay_open()
                                     && contains(&host.app_area(), x, y)
-                                    && !ui.banner_rect().is_some_and(|r| contains(&r, x, y));
+                                    && !ui.banner_rect().is_some_and(|r| contains(&r, x, y))
+                                    && !ui.island_rect().is_some_and(|r| contains(&r, x, y));
                                 if phase == TouchPhase::Down && in_app {
                                     fingers_app = front;
                                 }
@@ -553,7 +555,8 @@ fn main() -> i32 {
                                         && !power_menu
                                         && !ui.overlay_open()
                                         && contains(&host.app_area(), x, y)
-                                        && !ui.banner_rect().is_some_and(|r| contains(&r, x, y));
+                                        && !ui.banner_rect().is_some_and(|r| contains(&r, x, y))
+                                        && !ui.island_rect().is_some_and(|r| contains(&r, x, y));
                                     // Buttons over a full-screen page: the first tap shows the key row for a moment
                                     // (rule 13), the app doesn't get it
                                     if to_app
@@ -669,6 +672,7 @@ fn main() -> i32 {
                                 if to_app {
                                     if phase == TouchPhase::Down {
                                         ui.touch_outside_keyboard(y);
+                                        ui.fold_island(); // (TP6) a tap outside the island held open
                                     }
                                     let (x, y) = (x - body.x, y - body.y);
                                     host.send(AppEvent::Input(InputEvent::Touch {
@@ -723,6 +727,8 @@ fn main() -> i32 {
             // Apply modem navigation (a call brings the Phone app up) before the app lifecycle/compositor decides which
             // surface is visible.
             phone.poll(&mut ui, &host.settings);
+            // (TP5) a ringing call: the banner while the phone is in use, else the full-screen call
+            host.ringing(&mut ui, phone.take_ring_pull(), scr.is_on(), time::millis());
             let modal = phone.modal();
             let modal_changed = modal != phone_modal;
             phone_modal = modal;
@@ -932,7 +938,10 @@ fn main() -> i32 {
                         .get(keys::NOTIFY_BANNERT)
                         .unwrap_or(5)
                         .clamp(1, 30);
-                    banner_until = ms + secs as u64 * 1000;
+                    // (TP5) a sticky card's banner (a ringing call) has no time: it goes when the card stops ringing
+                    host.calls.sticky = p.sticky.then_some((p.key, p.id));
+                    banner_until = if p.sticky { 0 } else { ms + secs as u64 * 1000 };
+                    ui.set_banner_seconds(if p.sticky { 0 } else { secs as u32 });
                 }
                 if let Some(tone) = p.chime {
                     let volume = host.settings.get(keys::SOUND_RING_VOLUME).unwrap_or(8);
@@ -942,12 +951,16 @@ fn main() -> i32 {
                     let _ = haptic(200, 100);
                 }
             }
-            if banner_until != 0 && (ms >= banner_until || !ui.banner_shown()) {
+            // (TP4) not while the user writes a reply in it
+            if banner_until != 0 && !ui.replying() && (ms >= banner_until || !ui.banner_shown()) {
                 banner_until = 0;
                 ui.set_banner(None);
             }
             // (TP3) the media session: the player, its buttons, the HUD's end
             host.media_frame(&mut ui, ms);
+            // (TP6) the island; (TP5, TP4) a ringing call's banner, the call keys and inline replies
+            host.island_frame(&mut ui, ms);
+            host.calls_frame(&mut ui, ms);
             // by (app, id): whatever moved in the list since, the card the user touched (or nothing, if it went)
             for (key, id, action) in ui.take_notes_opened() {
                 host.open_notification(&key, id, action, ms);
@@ -1286,11 +1299,11 @@ fn main() -> i32 {
                         let rh = (r.h as usize).min(h.saturating_sub(y));
                         display.blit(&frame, w, x, y, rw, rh);
                     }
-                    // (TP3) the volume HUD too
-                    if !covered
-                        && app_px > 0
-                        && let Some(r) = ui.hud_rect()
-                    {
+                    // (TP3) the volume HUD too, and (TP6) the island held open or floating over a full-screen call
+                    for r in [ui.hud_rect(), ui.island_rect()].into_iter().flatten() {
+                        if covered || app_px == 0 {
+                            break;
+                        }
                         let (x, y) = (r.x.max(0) as usize, r.y.max(0) as usize);
                         let rw = (r.w as usize).min(w.saturating_sub(x));
                         let rh = (r.h as usize).min(h.saturating_sub(y));

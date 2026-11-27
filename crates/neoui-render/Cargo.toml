@@ -9,6 +9,8 @@ license.workspace = true
 [dependencies]
 neoui-proto.workspace = true
 slint.workspace = true
+# NeoSymbian/neohw: the SMS part counter for the inline reply (TP4; Apache-2.0, no_std), at the rev symbian/ pins
+sms = { git = "https://github.com/NeoSymbian/neohw", rev = "87627092aa42b79bc77cd5ee7fbc17a536b43226" }
 
 [build-dependencies]
 slint-build.workspace = true
