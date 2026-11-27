@@ -23,7 +23,7 @@ Mac the buffer is just shown in a window.
 | `crates/neoui-render` | `#![no_std]` + `alloc`: Slint platform on `MinimalSoftwareWindow`; `Renderer::new(w, h, now_ms)`, `render(buf, stride) -> Damage`, `dispatch(InputEvent)` |
 | `ui/launcher.slint` | The launcher: status bar, banner, 8 app tiles; sizes follow the window |
 | `ui/fonts/` | Inter (OFL-1.1), Ubuntu Mono, DejaVu Sans and DejaVu Sans Mono (Latin, Cyrillic, Armenian), bundled so the glyphs baked into the binary do not depend on the build host's fonts |
-| `ui/components/keyboard/` | The system keyboard: English, Armenian and Russian layouts as data, a terminal mode, number and phone pads (`pads/`), managed in Settings → Language & keyboard ([neoui-shell.md](https://github.com/NeoSymbian/docs/blob/main/neoui-shell.md), "System keyboard"). A field asks for its keyboard with `keys` (1 text, 3 number, 4 phone), an app with the `KEYBOARD` mode. Adding a keyboard: a file in `pads/`, a line in `Pads` (`layouts.slint`), a mode number in neoui-proto's `ipc` (and its height in `keyboard_heights`). A tap outside a field closes the keyboard; the toolbar's keyboard button puts it away and brings it back |
+| `ui/components/keyboard/` | The system keyboard: English, Armenian and Russian layouts as data, a terminal mode, number and phone pads (`pads/`), managed in Settings → Language & keyboard ([neoui-shell.md](https://github.com/NeoSymbian/docs/blob/main/neoui-shell/README.md), "System keyboard"). A field asks for its keyboard with `keys` (1 text, 3 number, 4 phone), an app with the `KEYBOARD` mode. Adding a keyboard: a file in `pads/`, a line in `Pads` (`layouts.slint`), a mode number in neoui-proto's `ipc` (and its height in `keyboard_heights`). A tap outside a field closes the keyboard; the toolbar's keyboard button puts it away and brings it back |
 | `crates/neoui-host` | Mac/Linux desktop host: winit + softbuffer, mouse as touch |
 | `snapshots/` | PNGs written by the snapshot tests |
 | `crates/neoui-term` | `#![no_std]` text console model: the grid, cursor and control characters of a Symbian console window |
@@ -33,7 +33,7 @@ Mac the buffer is just shown in a window.
 | `symbian/` | The launcher as a Symbian EXE (`SYSSTART.EXE`, GPL-3.0): its own workspace, built for ARMv8-A AArch32 softfp (`symbian/targets/armv8a-neosymbian-eabi.json`) with [e32-rs](https://github.com/NeoSymbian/e32-rs) |
 
 Settings store: done (Part 1). Planned: a notification service, editable home pages and widgets; the design is
-[neoui-shell.md](https://github.com/NeoSymbian/docs/blob/main/neoui-shell.md).
+[neoui-shell.md](https://github.com/NeoSymbian/docs/blob/main/neoui-shell/README.md).
 
 The renderer takes its time from a caller-supplied millisecond clock and owns
 no thread, file or OS handle. Glyphs are rendered to signed distance fields at
