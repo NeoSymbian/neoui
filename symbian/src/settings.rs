@@ -66,7 +66,10 @@ fn read(fs: &Fs, path: &str) -> Result<Vec<u8>, i32> {
     }
     let mut bytes = vec![0u8; size];
     let n = f.read_at(0, &mut bytes)?;
-    bytes.truncate(n);
+    // a short read is a failed one: half a store decoded would be saved over the whole
+    if n != size {
+        return Err(kerr::CORRUPT);
+    }
     Ok(bytes)
 }
 
@@ -80,7 +83,10 @@ pub fn open() -> Settings {
         error,
     } = report;
     match (error, version) {
-        (Some(e), _) => dprintln!("neoui: settings unreadable ({:?}), using defaults", e),
+        (Some(e), _) => dprintln!(
+            "neoui: settings unreadable ({:?}), using defaults; nothing is saved over the file",
+            e
+        ),
         (None, Some(v)) => dprintln!(
             "neoui: settings loaded {} keys (v{}, {} dropped)",
             keys,

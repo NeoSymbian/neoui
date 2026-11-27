@@ -675,10 +675,30 @@ impl Profiles {
     /// (SE2b) `sound.tones`: `[id][ringtone | message tone << 4]` for each profile whose tones aren't the built-in
     /// ones. A key of its own, so a shell from before SE2b (which drops unknown keys) keeps every profile.
     #[must_use]
+    ///
+    /// (D6) The user's own sounds go in as the built-in tone (their fallback): a shell from before them, which skips
+    /// a record with an id it doesn't know, keeps the profile's other tone. The real ids are
+    /// [`Self::encode_tones_yours`], read after these.
     pub fn encode_tones(&self) -> Vec<u8> {
+        let legacy = |t: u8| if t > tone::NONE { tone::BUILT_IN } else { t };
         let mut b = Vec::new();
         for p in &self.list {
-            if (p.ringtone, p.message_tone) != (tone::BUILT_IN, tone::BUILT_IN) {
+            let (r, m) = (legacy(p.ringtone), legacy(p.message_tone));
+            if (r, m) != (tone::BUILT_IN, tone::BUILT_IN) {
+                b.extend_from_slice(&[p.id, r | m << 4]);
+            }
+        }
+        b
+    }
+
+    /// (D6) `sound.tones_yours`: `[id][ringtone | message tone << 4]`, the real pair, for each profile that uses a
+    /// sound of the user's. Read after `sound.tones` (the same records, [`Self::apply_tones`]), so they win; a record
+    /// naming a sound no longer in the catalogue is skipped and the fallback stays.
+    #[must_use]
+    pub fn encode_tones_yours(&self) -> Vec<u8> {
+        let mut b = Vec::new();
+        for p in &self.list {
+            if p.ringtone > tone::NONE || p.message_tone > tone::NONE {
                 b.extend_from_slice(&[p.id, p.ringtone | p.message_tone << 4]);
             }
         }
@@ -989,7 +1009,13 @@ pub mod store {
     #[must_use]
     pub fn load<B: Backend>(s: &Service<B>) -> Profiles {
         let blob = s.get(keys::SOUND_PROFILES).map(|b| b.0).unwrap_or_default();
-        let tones = s.get(keys::SOUND_TONES).map(|b| b.0).unwrap_or_default();
+        // the fallbacks, then the user's own sounds over them
+        let mut tones = s.get(keys::SOUND_TONES).map(|b| b.0).unwrap_or_default();
+        tones.extend(
+            s.get(keys::SOUND_TONES_YOURS)
+                .map(|b| b.0)
+                .unwrap_or_default(),
+        );
         let feedback = s.get(keys::SOUND_FEEDBACK).map(|b| b.0).unwrap_or_default();
         let yours = s
             .get(keys::SOUND_YOUR_TONES)
@@ -1036,6 +1062,13 @@ pub mod store {
             .map(drop)?;
         s.set(Caller::Shell, keys::SOUND_TOUCH_VIBRATE, touch, now_ms)
             .map(drop)?;
+        s.set(
+            Caller::Shell,
+            keys::SOUND_TONES_YOURS,
+            Bytes(p.encode_tones_yours()),
+            now_ms,
+        )
+        .map(drop)?;
         s.set(
             Caller::Shell,
             keys::SOUND_TONES,
@@ -1124,8 +1157,8 @@ pub mod store {
             s.get(keys::SOUND_MESSAGE_TONE).unwrap_or(0).clamp(0, 255) as u8,
         );
         let tones_changed = p.reconcile_tones(tones);
-        // (D6) profiles from before the feedback sidecar: written once, so the mirrors say what is in force
-        let fresh = fresh || s.get(keys::SOUND_FEEDBACK).map_or(true, |b| b.0.is_empty());
+        // (D6) profiles from before the feedback sidecar read as all off, the mirrors' defaults: nothing to write at
+        // boot (the sidecar comes with the first explicit edit)
         match p.reconcile(mirrors(s), radios(s).airplane) {
             Some(set) => commit(s, &p, set, now_ms).is_ok(),
             // the upgrade's first write: the profiles go into the store as they were found
@@ -1508,15 +1541,48 @@ mod tests {
         );
         // the catalogue and the tones round trip; a catalogue without the sound drops its uses
         let m = p.mirrors();
+        let both = [p.encode_tones(), p.encode_tones_yours()].concat();
         let back = read(
             0,
             &p.encode(),
-            &p.encode_tones(),
+            &both,
             &p.encode_feedback(),
             &p.encode_yours(),
             m,
         );
         assert_eq!(back, p);
+        // a shell from before your sounds reads only sound.tones, and skips records with ids it doesn't know: each
+        // profile keeps its other tone, the user's sound reads as the built-in one
+        let old_decoder = |b: &[u8]| -> Vec<(u8, u8, u8)> {
+            b.as_chunks::<2>()
+                .0
+                .iter()
+                .filter(|r| r[1] & 0xf <= tone::NONE && r[1] >> 4 <= tone::NONE)
+                .map(|r| (r[0], r[1] & 0xf, r[1] >> 4))
+                .collect()
+        };
+        let mut q = p.clone();
+        q.apply(
+            Command::SetTones {
+                id: OUTDOOR,
+                ring: 9,
+                message: tone::BEEP,
+            },
+            ON,
+        )
+        .unwrap();
+        assert!(old_decoder(&q.encode_tones()).contains(&(OUTDOOR, tone::BUILT_IN, tone::BEEP)));
+        assert_eq!(
+            old_decoder(&p.encode_tones()).len(),
+            p.encode_tones().len() / 2
+        );
+        assert!(
+            p.encode_tones()
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .all(|r| r[1] & 0xf <= 3 && r[1] >> 4 <= 3)
+        );
         let lost = read(0, &p.encode(), &p.encode_tones(), &[], &[], m);
         assert_eq!(lost.get(GENERAL).unwrap().ringtone, tone::BUILT_IN);
         // deleted: every profile, active or not, rings with the built-in tone again
@@ -1852,7 +1918,8 @@ mod tests {
             assert!(s.get(keys::SOUND_KEYPAD_TONES).unwrap());
             assert!(!s.get(keys::SOUND_TOUCH_VIBRATE).unwrap());
             assert!(!store::reconcile(&mut s, 2));
-            // profiles from before D6: the sidecar is written once, everything off
+            // profiles from before D6 (the owner's phone): all off, as the mirrors' defaults say, and nothing written
+            // at boot: the store stays clean until an explicit edit
             let (mut s, _) = Service::open(Mem::default());
             let blob = Profiles::upgrade(stored(&s)).encode();
             s.set(
@@ -1863,10 +1930,12 @@ mod tests {
             )
             .map(drop)
             .unwrap();
-            assert!(store::reconcile(&mut s, 1));
+            assert!(s.flush().unwrap().is_ok());
+            assert!(!store::reconcile(&mut s, 1));
+            assert!(!s.is_dirty());
+            assert!(s.get(keys::SOUND_FEEDBACK).unwrap().0.is_empty());
+            assert_eq!(store::load(&s).feedback(), (false, false));
             assert!(!s.get(keys::SOUND_KEYPAD_TONES).unwrap());
-            assert!(!s.get(keys::SOUND_FEEDBACK).unwrap().0.is_empty());
-            assert!(!store::reconcile(&mut s, 2));
             store::apply(
                 &mut s,
                 Command::SetFeedback {

@@ -166,7 +166,12 @@ pub fn chime(tone: u8, volume: u8) {
         return;
     }
     let r = e32::thread::spawn(move || {
-        let pcm = neoaudio::tones::pcm(tone, volume);
+        // (D6) a sound of the user's: its file, as AUDIOD rings it (the built-in tone when it is missing)
+        let pcm = match neoaudio::tones::file(tone) {
+            Some(path) => your_pcm(&path, volume)
+                .unwrap_or_else(|| neoaudio::tones::pcm(neoaudio::tones::BUILT_IN, volume)),
+            None => neoaudio::tones::pcm(tone, volume),
+        };
         let r = session().and_then(|s| {
             let mut a = TIpcArgs::new();
             a.int(0, neoaudio::tones::RATE as i32).int(1, 1).int(2, 0);
@@ -192,4 +197,19 @@ pub fn chime(tone: u8, volume: u8) {
         dprintln!("neoui: chime thread failed ({})", e);
         PLAYING.store(false, Ordering::SeqCst);
     }
+}
+
+/// (D6) One of the user's sounds (NEOSET's `tones\<id>.pcm`) at `volume`: exactly one period, else `None`.
+fn your_pcm(path: &str, volume: u8) -> Option<alloc::vec::Vec<u8>> {
+    use e32::fs::{File, Fs, mode};
+    let fs = Fs::connect().ok()?;
+    let f = File::open(&fs, path, mode::READ | mode::SHARE_READERS_ONLY).ok()?;
+    let mut b = alloc::vec![0u8; neoaudio::tones::BYTES + 1];
+    let n = f.read_at(0, &mut b).ok()?;
+    if n != neoaudio::tones::BYTES {
+        return None;
+    }
+    b.truncate(n);
+    neoaudio::tones::scale(&mut b, volume);
+    Some(b)
 }

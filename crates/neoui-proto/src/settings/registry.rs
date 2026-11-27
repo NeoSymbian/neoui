@@ -133,6 +133,7 @@ pub const RESET_KEEPS: &[&str] = &[
     "sound.tones",
     "sound.feedback",
     "sound.your_tones",
+    "sound.tones_yours",
     "sound.keypad_tones",
     "sound.touch_vibrate",
     "sound.silent",
@@ -231,6 +232,10 @@ registry! {
         limit Limit::Range { min: 0, max: 15 }, owner Owner::Shell;
     /// (D6, SE2c-1) The user's own sounds (`sound_profile::Profiles::encode_yours`): `[id][len][name]`, ids 4..=15;
     /// their PCM is NEOSET's `tones\<id>.pcm`. Written only by the shell's reducer.
+    /// (D6) The profiles' tones that are the user's own sounds (`sound_profile::Profiles::encode_tones_yours`), read
+    /// over `sound.tones` (which keeps their built-in fallback for an older shell). Written only by the reducer.
+    SOUND_TONES_YOURS: Bytes = "sound.tones_yours", default DefaultValue::Bytes(&[]),
+        limit Limit::MaxLen(32), owner Owner::Shell;
     SOUND_YOUR_TONES: Bytes = "sound.your_tones", default DefaultValue::Bytes(&[]),
         limit Limit::MaxLen(512), owner Owner::Shell;
     /// (SE2b) The profiles' tones (`sound_profile::Profiles::encode_tones`): a key of its own beside

@@ -1019,6 +1019,17 @@ impl Host {
         );
         use sound_profile::{Refused, store::ApplyError};
         match r {
+            // (D6) a sound of the user's goes only once no profile names it on disk: Settings deletes its file after
+            // this answer, so the store is saved now (an unsaved or unsavable store answers an error, the file stays)
+            Ok(()) if matches!(cmd, sound_profile::Command::DeleteTone(_)) => {
+                match self.settings.flush() {
+                    Some(Err(e)) => {
+                        dprintln!("neoui: settings save for a deleted sound failed ({:?})", e);
+                        err::KERR_NOT_READY
+                    }
+                    _ => 0,
+                }
+            }
             Ok(()) => 0,
             Err(ApplyError::Refused(Refused::NotFound)) => err::KERR_NOT_FOUND,
             Err(ApplyError::Refused(Refused::Full)) => kerr::OVERFLOW,

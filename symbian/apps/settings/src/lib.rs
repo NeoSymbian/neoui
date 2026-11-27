@@ -419,6 +419,7 @@ impl Ctx {
         }
         row_model::tick(self, &ui, n);
         profile_audio::show_preview(&self.sound, &ui);
+        tone_import::poll(&self.app, &ui); // D6: a WAV converted on its worker
         if let Some(text) = self.sound.changed() {
             ui.global::<SetState>().set_sound_feedback(text.into());
         }

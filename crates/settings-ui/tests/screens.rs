@@ -869,6 +869,11 @@ fn every_page() {
     s.set_profile_current(general);
     s.set_import_note("Use a 16-bit PCM WAV".into()); // neoaudio::wav::WavError::Format
     sh.shoot("set2-ringtone-yours");
+    // the second sound's ⋮ (a labelled button, not only a long press) opens its sheet
+    sh.draw();
+    sh.tap(268.0, 82.0 + 4.0 * 64.0 + 26.0 + 64.0 + 32.0);
+    assert_eq!(s.get_sheet().as_str(), "your-tone");
+    assert_eq!(s.get_your_current().name.as_str(), "Gong");
     s.set_your_current(s.get_your_tones().row_data(0).unwrap());
     sheet(&sh, "your-tone");
     sh.shoot("set2-ringtone-sheet");

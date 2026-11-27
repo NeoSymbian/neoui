@@ -103,18 +103,38 @@ pub const ROOT_GRID: &str = "settings.root_grid";
 
 /// The sound profiles as the shell's reducer keeps them (read the same way, `sound_profile::read`).
 /// The keys come one IPC each: a commit between them (the power menu, the shade) shows as the active id changing,
-/// and they are read again.
+/// and they are read again. What can't be read shows as none (the pages); see [`read_profiles_checked`].
 pub fn read_profiles(app: &App) -> Profiles {
+    // lenient: every key reads, as empty at worst
+    read_with(app, true).unwrap_or_else(|_| unreachable!())
+}
+
+/// (D6) [`read_profiles`] for a change that must not mistake an unreadable key for an empty one (the catalogue of
+/// the user's sounds before an import or a delete).
+///
+/// # Errors
+/// The first key the shell couldn't give.
+pub fn read_profiles_checked(app: &App) -> Result<Profiles, i32> {
+    read_with(app, false)
+}
+
+/// `lenient`: an unreadable key reads as empty (never fails).
+fn read_with(app: &App, lenient: bool) -> Result<Profiles, i32> {
     let mut tries = 0;
     loop {
         let active = get(app, keys::SOUND_PROFILE);
         let bytes = |k| match app.setting_raw(k) {
-            Ok(Value::Bytes(b)) => b,
-            _ => Vec::new(),
+            Ok(Value::Bytes(b)) => Ok(b),
+            Ok(_) if lenient => Ok(Vec::new()),
+            Ok(_) => Err(-20), // KErrCorrupt: not the Bytes the registry says
+            Err(_) if lenient => Ok(Vec::new()),
+            Err(e) => Err(e),
         };
-        let (blob, tones) = (bytes("sound.profiles"), bytes("sound.tones"));
-        let feedback = bytes("sound.feedback");
-        let yours = bytes("sound.your_tones");
+        let (blob, mut tones) = (bytes("sound.profiles")?, bytes("sound.tones")?);
+        // the built-in fallbacks, then the user's own sounds over them (sound_profile::Profiles::encode_tones_yours)
+        tones.extend(bytes("sound.tones_yours")?);
+        let feedback = bytes("sound.feedback")?;
+        let yours = bytes("sound.your_tones")?;
         let mirrors = Mirrors {
             silent: get(app, keys::SOUND_SILENT),
             vibrate: get(app, keys::SOUND_VIBRATE),
@@ -122,7 +142,9 @@ pub fn read_profiles(app: &App) -> Profiles {
         };
         tries += 1;
         if get(app, keys::SOUND_PROFILE) == active || tries == 3 {
-            return sound_profile::read(active, &blob, &tones, &feedback, &yours, mirrors);
+            return Ok(sound_profile::read(
+                active, &blob, &tones, &feedback, &yours, mirrors,
+            ));
         }
     }
 }

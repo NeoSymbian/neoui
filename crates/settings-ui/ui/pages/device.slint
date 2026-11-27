@@ -747,6 +747,8 @@ component ToneRow inherits Rectangle {
     in property <bool> playable: true;
     in property <bool> playing;
     in property <bool> paused;
+    // one of the user's sounds: a ⋮ button (focusable, labelled) opens its sheet as a long press does
+    in property <bool> managed;
     callback choose;
     callback play;
     callback pause;
@@ -823,6 +825,28 @@ component ToneRow inherits Rectangle {
             }
         }
 
+        if root.managed: VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 40 * Theme.dp;
+                height: self.width;
+                border-radius: self.width / 2;
+                background: more.pressed ? Theme.pressed : transparent;
+                accessible-role: button;
+                accessible-label: "Rename or delete " + root.name;
+                accessible-action-default => { root.long-pressed(); }
+                Image {
+                    width: 20 * Theme.dp;
+                    height: self.width;
+                    source: @image-url("@neoui/icons/sys/more.svg");
+                    colorize: Theme.text-secondary;
+                }
+                more := TouchArea {
+                    clicked => { root.long-pressed(); }
+                }
+            }
+        }
+
         if root.playable: VerticalLayout {
             alignment: center;
             Rectangle {
@@ -896,6 +920,7 @@ export component RingtonePage inherits NeoList {
             choose => { SetState.act("profile-tone", "r," + t.id); }
             play => { SetState.act("tone-preview", t.id); }
             pause => { SetState.act("tone-pause", ""); }
+            managed: true;
             long-pressed => {
                 SetState.your-current = t;
                 SetState.sheet = "your-tone";
@@ -913,7 +938,7 @@ export component RingtonePage inherits NeoList {
             clicked => { SetState.act("tone-add", ""); }
         }
         if SetState.import-note != "": Note { text: SetState.import-note; }
-        Note { text: "▶ plays a tone at the profile's ring volume (the media volume applies too); leaving the page stops it. A tap chooses it; hold one of your sounds to rename or delete it. Your sounds ring for 2 s, then again."; }
+        Note { text: "▶ plays a tone at the profile's ring volume (the media volume applies too); leaving the page stops it. A tap chooses it; on your sounds the More button (or a long press) renames or deletes one. Your sounds ring for 2 s, then again."; }
     }
 }
 

@@ -45,6 +45,7 @@ pub const SHELL_ONLY: &[&str] = &[
     "sound.tones",
     "sound.feedback",
     "sound.your_tones",
+    "sound.tones_yours",
     "sound.keypad_tones",
     "sound.touch_vibrate",
     "home.layout",
