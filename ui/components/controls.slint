@@ -5,14 +5,14 @@ import { Kit } from "layers.slint";
 import { Glyph } from "frame.slint";
 import { KeyboardFocus } from "keyboard/focus.slint";
 
-// The typing part of a field: text in any of the keyboard's languages (DejaVu Sans: Latin, Cyrillic, Armenian; the
+// The typing part of a field: text in any of the keyboard's languages (NeoSans: Latin, Cyrillic, Armenian; the
 // window must import the font), and focus shows the system keyboard (`keys`: proto::KEYBOARD's 1 text, 3 number,
 // 4 phone).
 export component FieldInput inherits TextInput {
     in property <int> keys: 1;
     // KeyboardFocus.seq when this field took the focus: a later field's focus wins over this one letting go
     property <int> took;
-    font-family: "DejaVu Sans";
+    font-family: "NeoSans";
     font-size: Theme.font-body;
     color: Theme.text;
     vertical-alignment: center;
@@ -21,6 +21,7 @@ export component FieldInput inherits TextInput {
         if self.has-focus {
             self.reopen();
             KeyboardFocus.mode = self.keys;
+            KeyboardFocus.secret = self.input-type == InputType.password;
             KeyboardFocus.open = true;
         } else if self.took == KeyboardFocus.seq {
             KeyboardFocus.open = false;

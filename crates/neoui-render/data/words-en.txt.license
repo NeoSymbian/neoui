@@ -1,0 +1,6 @@
+words-en.txt: the 3000 most frequent words counted by neoui's tools/make_wordlists.py in Project Gutenberg books (public domain in the US; the list in tools/make_wordlists.py).
+Only the counts were kept, no text: a list of common words with their frequency rank is a fact about the language,
+so the list is the NeoSymbian Authors' own work.
+
+SPDX-FileCopyrightText: 2026 The NeoSymbian Authors
+SPDX-License-Identifier: Apache-2.0

@@ -243,6 +243,18 @@ export component KeyboardPage inherits NeoList {
             has-switch: true;
             switch-on <=> SetState.key-vibrate;
             switch-toggled(v) => { SetState.act("keyboard.vibrate", v ? "1" : "0"); }
+        }
+
+        ListRow {
+            value-bright: true;
+            title: "Word suggestions";
+            checked: SetState.found == "kb.suggest";
+            subtitle: "Common words above the keys";
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/keyboard.svg");
+            has-switch: true;
+            switch-on <=> SetState.suggest;
+            switch-toggled(v) => { SetState.act("keyboard.suggest", v ? "1" : "0"); }
             divider: false;
         }
 

@@ -484,6 +484,13 @@ pub const ROWS: &[Row] = &[
         &["cyrillic", "русский", "keyboard"],
     ),
     row(
+        "kb.3",
+        Keyboard,
+        Keyboard,
+        "Western Armenian",
+        &["arevmtahayeren", "արեւմտահայերէն", "keyboard"],
+    ),
+    row(
         "kb.current",
         Keyboard,
         Keyboard,
@@ -503,6 +510,13 @@ pub const ROWS: &[Row] = &[
         Keyboard,
         "Keypress vibration",
         &["haptic", "vibrate", "keyboard"],
+    ),
+    row(
+        "kb.suggest",
+        Keyboard,
+        Keyboard,
+        "Word suggestions",
+        &["predict", "autocomplete", "keyboard"],
     ),
     // Privacy
     action(

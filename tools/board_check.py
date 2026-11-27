@@ -24,7 +24,19 @@ from PIL import Image, ImageDraw
 from playwright.sync_api import sync_playwright
 
 # boards whose snapshot has another name (the app's page replaced the board's example)
-SNAPSHOT_FOR = {"set2-app-browser": "set2-app-detail"}
+SNAPSHOT_FOR = {
+    "set2-app-browser": "set2-app-detail",
+    # the keyboard's snapshots (crates/neoui-render/tests/keyboard.rs, pads.rs) draw it over an empty body
+    "kb2-en": "keyboard-en-539x1079",
+    "kb2-hy": "keyboard-hy-539x1079",
+    "kb2-ru": "keyboard-ru-539x1079",
+    "kb2-number": "keyboard-number-539x1079",
+    "kb2-phone": "keyboard-phone-539x1079",
+    "kb2-term": "keyboard-term-539x1079",
+    "kb2-buttons": "keys-keyboard-539x1079",
+    "sh-form-keyboard": "keyboard-en-539x1079",
+    "nav-map-keyboard": "keyboard-en-539x1079",
+}
 # boards that are specs or maps, not screens
 NOT_SCREENS = ("-spec-", "-replacement-map")
 STATUS_BAR = 25  # dp at the top of every 360x720 board
@@ -34,13 +46,17 @@ GAP = 6
 def pairs(boards: pathlib.Path, snaps: pathlib.Path, only: str):
     names = sorted(p.name[: -len(".dc.html")] for p in boards.glob(f"{only}*.dc.html"))
     names = [n for n in names if not any(x in n for x in NOT_SCREENS)]
-    shots = {p.stem for p in snaps.glob(f"{only}*.png")}
+    shots = {p.stem for p in snaps.glob("*.png")}
     found, missing = [], []
     for n in names:
         s = SNAPSHOT_FOR.get(n, n)
         (found if s in shots else missing).append((n, s))
     used = {s for _, s in found}
-    return found, [n for n, _ in missing], sorted(shots - used)
+    return (
+        found,
+        [n for n, _ in missing],
+        sorted(s for s in shots - used if s.startswith(only)),
+    )
 
 
 def side_by_side(
@@ -62,7 +78,9 @@ def side_by_side(
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Set each canvas board beside the app's snapshot.")
+    ap = argparse.ArgumentParser(
+        description="Set each canvas board beside the app's snapshot."
+    )
     ap.add_argument("boards", type=pathlib.Path)
     ap.add_argument(
         "--snapshots",

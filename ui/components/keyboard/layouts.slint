@@ -16,10 +16,16 @@ import { Phone } from "pads/phone.slint";
 import { En } from "layouts/en.slint";
 import { Hy } from "layouts/hy.slint";
 import { Ru } from "layouts/ru.slint";
+import { Hyw } from "layouts/hyw.slint";
 
 export global Layouts {
-    out property <[Layout]> all: [En.layout, Hy.layout, Ru.layout];
-    out property <[bool]> on: [SystemSettings.keyboard-en, SystemSettings.keyboard-hy, SystemSettings.keyboard-ru];
+    out property <[Layout]> all: [En.layout, Hy.layout, Ru.layout, Hyw.layout];
+    out property <[bool]> on: [
+        SystemSettings.keyboard-en,
+        SystemSettings.keyboard-hy,
+        SystemSettings.keyboard-ru,
+        SystemSettings.keyboard-hyw,
+    ];
 
     public function set-on(i: int, v: bool) {
         if i == 0 {
@@ -28,6 +34,8 @@ export global Layouts {
             SystemSettings.keyboard-hy = v;
         } else if i == 2 {
             SystemSettings.keyboard-ru = v;
+        } else if i == 3 {
+            SystemSettings.keyboard-hyw = v;
         }
     }
 
@@ -36,6 +44,17 @@ export global Layouts {
     pure callback pick(on: [bool], from: int) -> int;
     // The most letter rows among the layouts turned on.
     pure callback tallest-of(on: [bool], all: [Layout]) -> int;
+    // What a long press on `key` offers (its entry in a layout's `alts`, one string per character); none: [].
+    pure callback alternates(alts: [string], key: string) -> [string];
+    // The word being typed after the keyboard typed `t` (letters add to it, Backspace takes one off, anything else
+    // ends it).
+    pure callback word-after(word: string, t: string) -> string;
+    // The words to offer for `word` in language `code` (the most frequent first; none for a short or unknown one).
+    pure callback suggest(code: string, word: string) -> [string];
+    // What replaces `word` with `pick` (Backspace for each of its letters, the word in its case, a space).
+    pure callback replacement(word: string, pick: string) -> string;
+    // Ctrl + `key` (the terminal row's Ctrl): its control code, or "" for a key that has none.
+    pure callback control(key: string) -> string;
 
     // the layout the keyboard shows: the chosen one, or the next one on if it was turned off
     out property <int> current: pick(on, SystemSettings.keyboard-layout);

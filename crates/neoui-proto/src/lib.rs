@@ -13,6 +13,7 @@ pub mod devtools;
 pub mod effects;
 pub mod gesture;
 pub mod home;
+pub mod hwkeys;
 pub mod ipc;
 pub mod media;
 pub mod notification_policy;

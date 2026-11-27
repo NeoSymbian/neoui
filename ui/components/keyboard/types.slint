@@ -21,6 +21,9 @@ export struct Layout {
     // the bottom row's punctuation
     comma: string,
     stop: string,
+    // long-press alternates: each entry is a key followed by what a long press on it offers, one character each, the
+    // first one picked unless the finger slides ("eéèêë")
+    alts: [string],
 }
 
 // What a pad key does: types its text, Backspace (8), Done (Enter, 13), or switches to the letter keyboard.

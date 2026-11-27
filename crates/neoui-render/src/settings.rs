@@ -172,6 +172,12 @@ pub(crate) static BINDINGS: &[Binding] = &[
     bool_binding!(keys::KEYBOARD_EN, get_keyboard_en, set_keyboard_en),
     bool_binding!(keys::KEYBOARD_HY, get_keyboard_hy, set_keyboard_hy),
     bool_binding!(keys::KEYBOARD_RU, get_keyboard_ru, set_keyboard_ru),
+    bool_binding!(keys::KEYBOARD_HYW, get_keyboard_hyw, set_keyboard_hyw),
+    bool_binding!(
+        keys::KEYBOARD_SUGGEST,
+        get_keyboard_suggest,
+        set_keyboard_suggest
+    ),
     bool_binding!(
         keys::KEYBOARD_SAME_HEIGHT,
         get_keyboard_same_height,

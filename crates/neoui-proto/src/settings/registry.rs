@@ -422,6 +422,12 @@ registry! {
     /// apps' pads give.
     KEYBOARD_VIBRATE: bool = "keyboard.vibrate", default DefaultValue::Bool(false), limit Limit::None,
         owner Owner::Shell;
+    /// The system keyboard has Western Armenian (phonetic, the Western pairs swapped; layouts/hyw.slint).
+    KEYBOARD_HYW: bool = "keyboard.hyw", default DefaultValue::Bool(false), limit Limit::None, owner Owner::Shell;
+    /// Word suggestions: a strip on the keyboard's top band offers the most frequent words that start with the word
+    /// being typed (neoui-render `suggest`); a tap replaces the word.
+    KEYBOARD_SUGGEST: bool = "keyboard.suggest", default DefaultValue::Bool(false), limit Limit::None,
+        owner Owner::Shell;
     /// Settings -> Old apps (the key pads LEGACY draws under an old app; NeoSymbian/legacy host/pad.cpp): a short
     /// vibration on each key.
     LEGACY_PAD_VIBRATE: bool = "legacy.pad.vibrate", default DefaultValue::Bool(true), limit Limit::None,

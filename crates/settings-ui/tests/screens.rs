@@ -76,12 +76,18 @@ fn fill(sh: &Shot) {
         city("Yerevan", "UTC+04:00"),
         city("Tbilisi", "UTC+04:00"),
     ]));
-    s.set_keyboards(model(vec![true, true, true]));
-    s.set_keyboard_names(strings(&["English", "Armenian", "Russian"]));
+    s.set_keyboards(model(vec![true, true, true, false]));
+    s.set_keyboard_names(strings(&[
+        "English",
+        "Armenian",
+        "Russian",
+        "Western Armenian",
+    ]));
     s.set_keyboard_hints(strings(&[
         "QWERTY",
         "Հայերեն · Phonetic",
         "Русский · ЙЦУКЕН",
+        "Արեւմտահայերէն · Phonetic",
     ]));
     s.set_same_height(true);
     s.set_pad_vibrate(true);
@@ -1048,8 +1054,11 @@ fn every_page() {
     page(&sh, 10, "Language & keyboard");
     sh.draw();
     sh.take_acts();
-    sh.tap(321.0, 496.0);
+    sh.tap(321.0, 568.0); // under the four languages (W1: Western Armenian is the fourth)
     assert_eq!(sh.take_acts(), acts(&[("keyboard.vibrate", "1")]));
+    // W1: Word suggestions, under it
+    sh.tap(321.0, 640.0);
+    assert_eq!(sh.take_acts(), acts(&[("keyboard.suggest", "1")]));
 
     // D7: Wallpaper and Font size (the board shows Large chosen, the page itself drawn at Medium)
     page(&sh, 25, "Wallpaper");

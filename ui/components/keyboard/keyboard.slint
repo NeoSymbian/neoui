@@ -8,13 +8,18 @@
 // it): row k (0 = the bottom row) is centred 27 + 48 k dp above the bottom, keys are 42 dp high. The bottom row is
 // 10 units wide: symbols 0-1.5, globe 1.5-2.5, comma 2.5-3.5 (1.5 without a globe), space to 7.5, stop, Enter 8.5-10.
 // The pads (modes 3 and up: number, phone; data in pads/) use the same rows, each row's keys sharing its width.
-// shortcut: no key repeat, long-press or Ctrl; add them with text editing beyond one-line fields.
+// Held keys (W1): Backspace and the arrows type at once, then again after 400 ms and about 15 times a second; a
+// letter with alternates (a layout's `alts`) held 400 ms shows them over it (popup.slint), the finger slides to one
+// and lets go to type it. The terminal row's Ctrl makes the next letter its control code. With `keyboard.suggest`
+// the top band offers words for the one being typed (suggest.slint; the keyboard follows the word from its own keys).
 import { Theme } from "../../theme.slint";
 import { SystemSettings } from "../../system-settings.slint";
 import { Layout, Pad, PadKey, KeyKind } from "types.slint";
 import { Layouts, Pads } from "layouts.slint";
 import { Common } from "layouts/common.slint";
 import { KeyboardFocus } from "focus.slint";
+import { AltPopup } from "popup.slint";
+import { SuggestStrip } from "suggest.slint";
 
 component Key inherits Rectangle {
     in property <string> label;
@@ -25,7 +30,19 @@ component Key inherits Rectangle {
     in property <bool> special;
     in property <bool> lit;
     in property <image> icon;
+    // types on the press, then repeats while held (Backspace, the arrows)
+    in property <bool> repeat;
+    // a long press offers alternates: `held` after 400 ms, then `slid` (the finger's x in the key) and `let-go`
+    in property <bool> holdable;
     callback pressed-key;
+    callback held(length);
+    callback slid(length);
+    // the long press ended: `pick` false when the touch was cancelled
+    callback let-go(bool);
+    // a repeating key let go after typing `n` times more
+    callback repeated(int);
+    property <bool> fired;
+    property <int> reps;
     border-radius: Theme.radius-small;
     background: touch.pressed || lit ? #4a5160 : special ? #2a2e35 : #3a3f48;
     if label != "": Text {
@@ -52,9 +69,50 @@ component Key inherits Rectangle {
         source: icon;
         colorize: Theme.text;
     }
-    touch := TouchArea {
-        clicked => {
+    Timer {
+        interval: root.reps > 0 ? 66ms : 400ms;
+        running: root.repeat && touch.pressed;
+        triggered => {
+            root.reps += 1;
             root.pressed-key();
+        }
+    }
+
+    Timer {
+        interval: 400ms;
+        running: root.holdable && touch.pressed && !root.fired;
+        triggered => {
+            root.fired = true;
+            root.held(touch.mouse-x);
+        }
+    }
+
+    touch := TouchArea {
+        pointer-event(e) => {
+            if e.kind == PointerEventKind.down {
+                root.fired = false;
+                root.reps = 0;
+                if root.repeat {
+                    root.pressed-key();
+                }
+            } else if e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel {
+                if root.fired {
+                    root.let-go(e.kind == PointerEventKind.up);
+                }
+                if root.reps > 0 {
+                    root.repeated(root.reps);
+                }
+            }
+        }
+        moved => {
+            if root.fired {
+                root.slid(self.mouse-x);
+            }
+        }
+        clicked => {
+            if !root.repeat && !root.fired {
+                root.pressed-key();
+            }
         }
     }
 }
@@ -65,7 +123,14 @@ component KeyRow inherits Rectangle {
     in property <float> cols;
     in property <string> font;
     in property <bool> shift;
+    // the layout's long-press alternates (none on the symbols layer)
+    in property <[string]> alts;
     callback key(string);
+    // a long press on key `k` (at `x`, `w` wide in the row) with the finger at `at` in the row: offer `items`
+    callback held(string, [string], length, length, length);
+    callback slid(length);
+    callback let-go(bool);
+    callback repeated(int);
     property <bool> lead: keys.length > 0 && (keys[0] == "⇧" || keys[0] == "⌫");
     property <bool> tail: keys.length > 1 && (keys[keys.length - 1] == "⇧" || keys[keys.length - 1] == "⌫");
     property <int> ends: (lead ? 1 : 0) + (tail ? 1 : 0);
@@ -81,8 +146,23 @@ component KeyRow inherits Rectangle {
         font: end ? "NeoSans" : root.font;
         special: end;
         lit: k == "⇧" && root.shift;
+        repeat: k == "⌫";
+        property <[string]> offer: end ? [] : Layouts.alternates(root.alts, k);
+        holdable: self.offer.length > 0;
         pressed-key => {
             root.key(k);
+        }
+        held(at) => {
+            root.held(k, self.offer, self.x, self.width, self.x + at);
+        }
+        slid(at) => {
+            root.slid(self.x + at);
+        }
+        let-go(pick) => {
+            root.let-go(pick);
+        }
+        repeated(n) => {
+            root.repeated(n);
         }
     }
 }
@@ -98,6 +178,28 @@ export component Keyboard inherits Rectangle {
     in property <bool> edit-bar;
     property <bool> symbols;
     property <bool> shift;
+    // the terminal row's Ctrl: the next letter is its control code
+    property <bool> ctrl;
+    // the word being typed with these keys, for suggestions (a touch elsewhere or another field ends it)
+    property <string> word;
+    // shortcut: an app's password field still gets suggestions (the protocol doesn't say which fields are secret); the
+    // list is fixed, so nothing typed is kept, but the strip shows the start of the word: add a KEYBOARD flag
+    property <bool> secret: KeyboardFocus.open && KeyboardFocus.secret;
+    property <[string]> words: SystemSettings.keyboard-suggest && mode == 1 && !pad-on && !secret && word != "" ? Layouts.suggest(layout.code, word) : [];
+    // a long press's alternates: what it offers, the one picked, where (the popup's left, the row's top) and how wide
+    property <[string]> pop;
+    property <int> pop-at;
+    property <length> pop-x;
+    property <length> pop-y;
+    property <length> pop-cell;
+    property <int> seq: KeyboardFocus.seq;
+    property <int> outside: KeyboardFocus.outside;
+    changed seq => {
+        word = "";
+    }
+    changed outside => {
+        word = "";
+    }
     property <Layout> layout: Layouts.all[Layouts.current];
     // all languages as tall as the tallest one on: a shorter one gets the digit row on top
     property <bool> digits: SystemSettings.keyboard-same-height && layout.rows.length < Layouts.tallest;
@@ -118,6 +220,8 @@ export component Keyboard inherits Rectangle {
     height: mode == 2 ? term-h : pad-on ? bar + 6 * Theme.dp + pad.length * pitch : text-h;
     changed mode => {
         letters = false;
+        ctrl = false;
+        word = "";
     }
     background: #16181c;
     init => {
@@ -135,15 +239,54 @@ export component Keyboard inherits Rectangle {
     changed layout => {
         symbols = false;
         shift = false;
+        word = "";
+    }
+
+    // types `t` and follows the word it makes
+    function emit(t: string) {
+        typed(t);
+        word = Layouts.word-after(word, t);
     }
 
     function press(k: string) {
         if k == "⇧" {
             shift = !shift;
-        } else {
-            typed(k == "⌫" ? "\u{8}" : shift ? k.to-uppercase() : k);
+            return;
+        }
+        if ctrl && mode == 2 {
+            ctrl = false;
+            if Layouts.control(k) != "" {
+                emit(Layouts.control(k));
+                KeyboardFocus.logged("ctrl");
+                shift = false;
+                return;
+            }
+        }
+        emit(k == "⌫" ? "\u{8}" : shift ? k.to-uppercase() : k);
+        shift = false;
+    }
+
+    // a long press on a key `w` wide at `x` of a row whose top is `y`: the popup starts over it and stays on the
+    // keyboard; `at` is the finger
+    function open-pop(items: [string], x: length, y: length, w: length, at: length) {
+        pop = items;
+        pop-cell = w;
+        pop-x = max(0px, min(x, root.width - items.length * w - 6 * Theme.dp));
+        pop-y = max(0px, y - 50 * Theme.dp);
+        slide-pop(at);
+    }
+
+    function slide-pop(at: length) {
+        pop-at = max(0, min(pop.length - 1, floor((at - pop-x - 3 * Theme.dp) / pop-cell)));
+    }
+
+    function close-pop(pick: bool) {
+        if pick && pop.length > 0 {
+            emit(shift ? pop[pop-at].to-uppercase() : pop[pop-at]);
+            KeyboardFocus.logged("alternate " + (pop-at + 1) + " of " + pop.length);
             shift = false;
         }
+        pop = [];
     }
 
     function pad-press(k: PadKey) {
@@ -158,14 +301,18 @@ export component Keyboard inherits Rectangle {
         }
     }
 
+    function log-repeats(n: int) {
+        KeyboardFocus.logged("repeat " + n);
+    }
+
     // a swipe down on the top band puts the keyboard away too (Navigation v2 D20); on the band only, so the keys
     // keep their taps without the swipe handler's delay
     edit := HorizontalLayout {
         x: 4 * Theme.dp;
         y: 0;
         height: bar;
-        width: root.edit-bar ? self.preferred-width : 0;
-        visible: root.edit-bar;
+        width: root.edit-bar && words.length == 0 ? self.preferred-width : 0;
+        visible: root.edit-bar && words.length == 0;
         for item[i] in ["Select all", "Copy", "Paste"]: Rectangle {
             width: label.preferred-width + 20 * Theme.dp;
             background: t.pressed ? Theme.pressed : transparent;
@@ -194,6 +341,22 @@ export component Keyboard inherits Rectangle {
             if self.current-position.y - self.pressed-position.y > 24 * Theme.dp {
                 KeyboardFocus.dismissed = true;
             }
+        }
+    }
+
+    // the suggestions take the band left of the hide key (and the edit bar's place)
+    if words.length > 0: SuggestStrip {
+        x: 4 * Theme.dp;
+        y: 0;
+        width: root.width - 64 * Theme.dp - self.x;
+        height: bar;
+        words: root.words;
+        font: layout.font;
+        picked(w) => {
+            root.typed(Layouts.replacement(root.word, w));
+            KeyboardFocus.logged("suggestion");
+            root.word = "";
+            root.shift = false;
         }
     }
 
@@ -231,8 +394,17 @@ export component Keyboard inherits Rectangle {
             width: root.width / Common.terminal.length - 6 * Theme.dp;
             label: t.label;
             special: true;
+            repeat: t.repeat;
+            lit: t.text == "" && root.ctrl;
             pressed-key => {
-                root.typed(t.text);
+                if t.text == "" {
+                    root.ctrl = !root.ctrl;
+                } else {
+                    root.typed(t.text);
+                }
+            }
+            repeated(n) => {
+                root.log-repeats(n);
             }
         }
     }
@@ -247,8 +419,12 @@ export component Keyboard inherits Rectangle {
             hint: k.hint;
             icon: @image-url("../../icons/sys/backspace.svg");
             special: k.kind != KeyKind.char;
+            repeat: k.kind == KeyKind.backspace;
             pressed-key => {
                 root.pad-press(k);
+            }
+            repeated(n) => {
+                root.log-repeats(n);
             }
         }
     }
@@ -269,7 +445,12 @@ export component Keyboard inherits Rectangle {
         cols: symbols ? 10 : layout.cols;
         font: symbols ? "NeoSans" : layout.font;
         shift: root.shift && !symbols;
+        alts: symbols ? [] : layout.alts;
         key(k) => { root.press(k); }
+        held(k, items, x, w, at) => { root.open-pop(items, x, self.y, w, at); }
+        slid(at) => { root.slide-pop(at); }
+        let-go(pick) => { root.close-pop(pick); }
+        repeated(n) => { root.log-repeats(n); }
     }
 
     // the bottom row, the same in every language
@@ -328,9 +509,20 @@ export component Keyboard inherits Rectangle {
             label: "⏎";
             special: true;
             pressed-key => {
-                root.typed("\u{d}");
+                root.emit("\u{d}");
                 root.shift = false;
             }
         }
+    }
+
+    // over every row: a long press's alternates
+    if pop.length > 0: AltPopup {
+        x: root.pop-x;
+        y: root.pop-y;
+        items: root.pop;
+        upper: root.shift;
+        picked: root.pop-at;
+        cell: root.pop-cell;
+        font: layout.font;
     }
 }
