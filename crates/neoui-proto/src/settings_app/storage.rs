@@ -227,6 +227,27 @@ pub fn replaces(kept: Option<bool>, o: Outcome) -> bool {
     }
 }
 
+/// The drive rows saw each counted drive's volume ID (`None`: absent or unreadable) as `new`, last time as `old`:
+/// where it changed (another medium, a format, the drive came or went) that drive's mount generation moves on, so a
+/// count of the old volume can't land, and its kept count (the old volume's) goes. Returns whether any changed: then
+/// the changed volume is due a recount.
+pub fn volumes_changed<T>(
+    old: &[Option<u32>],
+    new: &[Option<u32>],
+    mounts: &mut [u32],
+    kept: &mut [Option<T>],
+) -> bool {
+    let mut any = false;
+    for (k, (o, n)) in old.iter().zip(new).enumerate() {
+        if o != n {
+            mounts[k] = mounts[k].wrapping_add(1);
+            kept[k] = None;
+            any = true;
+        }
+    }
+    any
+}
+
 /// "Other (system and app data)": what the drives use besides the counted files and apps. Never below zero: the
 /// skipped folders, unreadable ones and the file system's cluster slack aren't counted, so the parts can disagree.
 #[must_use]
@@ -512,6 +533,46 @@ mod tests {
         assert!(replaces(None, Outcome::Partial));
         assert!(!replaces(None, Outcome::Dropped));
         assert!(!replaces(Some(true), Outcome::Dropped));
+    }
+
+    #[test]
+    fn another_volume_drops_the_old_ones_count() {
+        let (mut mounts, mut kept) = ([7u32, u32::MAX], [Some("C: count"), Some("E: count")]);
+        // the same volumes: nothing moves
+        assert!(!volumes_changed(
+            &[Some(1), Some(2)],
+            &[Some(1), Some(2)],
+            &mut mounts,
+            &mut kept
+        ));
+        assert_eq!(
+            (mounts, kept),
+            ([7, u32::MAX], [Some("C: count"), Some("E: count")])
+        );
+        // E: another volume: its generation moves on (wrapping), its count goes, C:'s stays
+        assert!(volumes_changed(
+            &[Some(1), Some(2)],
+            &[Some(1), Some(3)],
+            &mut mounts,
+            &mut kept
+        ));
+        assert_eq!((mounts, kept), ([7, 0], [Some("C: count"), None]));
+        // E: gone, then back
+        kept[1] = Some("E: new count");
+        assert!(volumes_changed(
+            &[Some(1), Some(3)],
+            &[Some(1), None],
+            &mut mounts,
+            &mut kept
+        ));
+        assert_eq!((mounts[1], kept[1]), (1, None));
+        assert!(volumes_changed(
+            &[Some(1), None],
+            &[Some(1), Some(3)],
+            &mut mounts,
+            &mut kept
+        ));
+        assert_eq!(mounts[1], 2);
     }
 
     #[test]

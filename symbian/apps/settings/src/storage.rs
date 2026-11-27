@@ -82,6 +82,8 @@ struct Shared {
     last: [Option<Count>; 2],
     /// Each drive's mount generation (see the module's notes).
     mounts: [u32; 2],
+    /// A drive's volume changed since its count (its count was dropped): the next [`Storage::ensure`] counts again.
+    stale: bool,
     /// When a count was last kept (local "HH:MM"); `None` before the first.
     at: Option<String>,
     /// Why the last scan couldn't count (a file server error), shown until the next one.
@@ -185,14 +187,13 @@ impl Storage {
             *self.logged.borrow_mut() = logged;
         }
         self.vols.set(vols);
-        // another volume (or none) where the last look saw one: that drive's mount generation moves on, so a count
-        // of the old one can't land
+        // another volume (or none) where the last look saw one: that drive's mount generation moves on (a count of
+        // the old one can't land), its kept count goes, and Storage counts again when it is next shown
         if let (Some(old), Some(shared)) = (self.ids.replace(Some(ids)), self.shared) {
-            let mut g = shared.lock();
-            for k in 0..COUNTED.len() {
-                if old[k] != ids[k] {
-                    g.mounts[k] = g.mounts[k].wrapping_add(1);
-                }
+            let g = &mut *shared.lock();
+            if st::volumes_changed(&old, &ids, &mut g.mounts, &mut g.last) {
+                dprintln!("settings: storage: a drive's volume changed, its count dropped");
+                g.stale = true;
             }
         }
         s.set_drives(ModelRc::new(VecModel::from(rows)));
@@ -207,14 +208,27 @@ impl Storage {
         );
     }
 
-    /// The page opened, shown: count once if nothing is counted yet (a kept result isn't redone).
+    /// The page opened, shown: count once if nothing is counted yet or a drive's volume changed (a kept result isn't
+    /// redone).
     pub fn ensure(&self) {
         let Some(shared) = self.shared else { return };
         let idle = {
             let g = shared.lock();
-            !g.running && g.at.is_none()
+            !g.running && (g.at.is_none() || g.stale)
         };
         if idle {
+            self.start();
+        }
+    }
+
+    /// Each tick of the open page: count again once a drive's volume changed (not after an error: Recount does that).
+    pub fn recount_changed(&self) {
+        let Some(shared) = self.shared else { return };
+        let due = {
+            let g = shared.lock();
+            !g.running && g.stale
+        };
+        if due {
             self.start();
         }
     }
@@ -238,6 +252,7 @@ impl Storage {
             let mut g = shared.lock();
             g.generation = g.generation.wrapping_add(1);
             g.running = true;
+            g.stale = false;
             g.tally = [Tally::default(); 2];
             g.error = None;
             g.dropped.clear();

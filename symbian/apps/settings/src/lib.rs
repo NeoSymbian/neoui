@@ -395,6 +395,7 @@ impl Ctx {
             self.storage.drives(&ui);
         }
         if page == Page::Storage {
+            self.storage.recount_changed(); // a changed volume is counted again (D3)
             self.storage.show(&ui);
         }
         if page == Page::Profile && every(5) {
