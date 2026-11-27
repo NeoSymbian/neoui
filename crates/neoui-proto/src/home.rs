@@ -7,6 +7,10 @@
 //! `[itemCount, items…]`; a shortcut is `[0, keyRef]`, a widget `[1, keyRef, widgetId, size]`. Every count, ref and
 //! discriminant is a `u8`; ref 0 is an empty dock slot and `1..=keyCount` a key. Anything else (another version, a
 //! widget not in [`CATALOGUE`], a page that doesn't pack, trailing bytes) is refused and home shows [`Layout::default`].
+//!
+//! Version 2 (protocol 1.22, home.md Part 4) adds an app's widget, `[2, keyRef, nameLen, name ASCII, size]`, whose
+//! `(app, name)` and size are in [`crate::widget::CATALOGUE`]. A layout without one is still written as version 1,
+//! and both versions are read.
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -22,7 +26,9 @@ pub const DOCK: usize = 4;
 pub const MAX_KEYS: usize = 48;
 pub const MAX_KEY_LEN: usize = 16;
 pub const MAX_BYTES: usize = 2048;
-pub const VERSION: u8 = 1;
+pub const VERSION: u8 = 2;
+/// The version a layout without app widgets is written as (so an older shell still reads it).
+pub const VERSION_1: u8 = 1;
 
 /// A widget home draws (the shell feeds them).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -101,6 +107,12 @@ pub enum Item {
         widget: Widget,
         size: Size,
     },
+    /// (v2) An app's widget of [`crate::widget::CATALOGUE`]: its content comes with `ipc::WIDGET`.
+    AppWidget {
+        app: String,
+        name: String,
+        size: Size,
+    },
 }
 
 impl Item {
@@ -109,7 +121,7 @@ impl Item {
     pub fn cells(&self) -> (u8, u8) {
         match self {
             Item::Shortcut(_) => (1, 1),
-            Item::Widget { size, .. } => size.cells(),
+            Item::Widget { size, .. } | Item::AppWidget { size, .. } => size.cells(),
         }
     }
     /// The app it opens.
@@ -118,6 +130,7 @@ impl Item {
         match self {
             Item::Shortcut(k) => k,
             Item::Widget { widget, .. } => entry(*widget).1,
+            Item::AppWidget { app, .. } => app,
         }
     }
 }
@@ -235,6 +248,10 @@ pub fn drop_index(items: &[Item], index: usize, col: u8, row: u8) -> usize {
         .map_or(rest.len(), |p| p.index)
 }
 
+fn app_widget_ok(app: &str, name: &str, size: Size) -> bool {
+    crate::widget::find(app, name).is_some_and(|e| e.3.contains(&size))
+}
+
 fn valid_key(k: &str) -> bool {
     (1..=MAX_KEY_LEN).contains(&k.len()) && k.bytes().all(|b| b.is_ascii_graphic())
 }
@@ -337,6 +354,33 @@ impl Layout {
             return Err(Error::Invalid);
         }
         self.edit_page(page, |items| items.push(Item::Widget { widget, size }))
+    }
+
+    /// (v2) Adds app `app`'s widget `name` of [`crate::widget::CATALOGUE`] at the end of page `page`.
+    ///
+    /// # Errors
+    /// [`Error::Invalid`] for a widget or size the catalogue doesn't have, [`Error::Full`], [`Error::NotFound`].
+    pub fn add_app_widget(
+        &mut self,
+        app: &str,
+        name: &str,
+        size: Size,
+        page: usize,
+    ) -> Result<(), Error> {
+        if !app_widget_ok(app, name, size) {
+            return Err(Error::Invalid);
+        }
+        let mut next = self.clone();
+        next.edit_page(page, |items| {
+            items.push(Item::AppWidget {
+                app: String::from(app),
+                name: String::from(name),
+                size,
+            });
+        })?;
+        next.check_size()?;
+        *self = next;
+        Ok(())
     }
 
     /// Removes item `index` of page `page`.
@@ -449,10 +493,23 @@ impl Layout {
                     Item::Widget { widget, size } => {
                         pages.extend([1, key_ref(entry(*widget).1)?, *widget as u8, *size as u8]);
                     }
+                    Item::AppWidget { app, name, size } => {
+                        if !app_widget_ok(app, name, *size) {
+                            return Err(Error::Invalid);
+                        }
+                        pages.extend([2, key_ref(app)?, name.len() as u8]);
+                        pages.extend_from_slice(name.as_bytes());
+                        pages.push(*size as u8);
+                    }
                 }
             }
         }
-        let mut out = alloc::vec![VERSION, self.pages.len() as u8, keys.len() as u8];
+        let v2 = self
+            .pages
+            .iter()
+            .any(|p| p.items.iter().any(|i| matches!(i, Item::AppWidget { .. })));
+        let version = if v2 { VERSION } else { VERSION_1 };
+        let mut out = alloc::vec![version, self.pages.len() as u8, keys.len() as u8];
         for k in &keys {
             out.push(k.len() as u8);
             out.extend_from_slice(k.as_bytes());
@@ -465,7 +522,7 @@ impl Layout {
         Ok(out)
     }
 
-    /// The layout `bytes` hold, or `None` when they aren't a valid version-1 layout.
+    /// The layout `bytes` hold, or `None` when they aren't a valid version-1 or version-2 layout.
     #[must_use]
     pub fn decode(bytes: &[u8]) -> Option<Self> {
         if bytes.len() > MAX_BYTES {
@@ -473,7 +530,8 @@ impl Layout {
         }
         let mut b = bytes.iter().copied();
         let mut next = || b.next();
-        if next()? != VERSION {
+        let version = next()?;
+        if version != VERSION && version != VERSION_1 {
             return None;
         }
         let (page_count, key_count) = (usize::from(next()?), usize::from(next()?));
@@ -514,6 +572,17 @@ impl Layout {
                             return None;
                         }
                         Item::Widget { widget, size }
+                    }
+                    2 if version == VERSION => {
+                        let app = key(next()?)?;
+                        let len = usize::from(next()?);
+                        let name: Vec<u8> = (0..len).map(|_| next()).collect::<Option<_>>()?;
+                        let name = String::from_utf8(name).ok()?;
+                        let size = Size::from_u8(next()?)?;
+                        if !app_widget_ok(&app, &name, size) {
+                            return None;
+                        }
+                        Item::AppWidget { app, name, size }
                     }
                     _ => return None,
                 });
@@ -650,9 +719,9 @@ mod tests {
         let mut long = good.clone();
         long.push(0);
         assert_eq!(Layout::decode(&long), None);
-        let mut v2 = good.clone();
-        v2[0] = 2;
-        assert_eq!(Layout::load(&v2), Layout::default());
+        let mut v3 = good.clone();
+        v3[0] = 3;
+        assert_eq!(Layout::load(&v3), Layout::default());
         // a widget with an app that isn't its catalogue's, an unknown widget, a ref past the keys, zero pages
         let bad = [
             vec![
@@ -678,6 +747,57 @@ mod tests {
         let mut full = vec![1, 1, 1, 1, b'a', 0, 0, 0, 0, 25];
         full.extend((0..25).flat_map(|_| [0, 1]));
         assert_eq!(Layout::decode(&full), None);
+    }
+
+    #[test]
+    fn version_2_carries_app_widgets_and_reads_version_1() {
+        let v1 = Layout::default().encode().unwrap();
+        assert_eq!(
+            v1[0], VERSION_1,
+            "no app widget: still written as version 1"
+        );
+        // a version-1 layout read as it was; the same bytes marked version 2 too
+        let mut as_v2 = v1.clone();
+        as_v2[0] = VERSION;
+        assert_eq!(Layout::decode(&as_v2), Layout::decode(&v1));
+        let mut l = Layout::default();
+        l.add_app_widget("clock", "next", Size::Square, 1).unwrap();
+        l.pin("files", 1).unwrap();
+        let b = l.encode().unwrap();
+        assert_eq!(b[0], VERSION);
+        let d = Layout::decode(&b).unwrap();
+        assert_eq!(d, l);
+        assert_eq!(d.pages[1].items[0].app(), "clock");
+        assert_eq!(at(&pack(&d.pages[1].items).unwrap()), [(0, 0), (2, 0)]);
+        // not in the catalogue, or a size it doesn't have: refused, nothing changes
+        assert_eq!(
+            l.add_app_widget("clock", "next", Size::Tall, 1),
+            Err(Error::Invalid)
+        );
+        assert_eq!(
+            l.add_app_widget("files", "next", Size::Square, 1),
+            Err(Error::Invalid)
+        );
+        assert_eq!(l, d);
+        // every truncation; an app widget in a version-1 layout; a name or size the catalogue doesn't have
+        for n in 0..b.len() {
+            assert_eq!(Layout::decode(&b[..n]), None, "{n}");
+        }
+        let mut old = b.clone();
+        old[0] = VERSION_1;
+        assert_eq!(Layout::decode(&old), None);
+        let size_at = b.len() - 4; // [.., 2, ref, 4, "next", size, 0, ref(files)], then page 2: [0]
+        assert_eq!(b[size_at], Size::Square as u8);
+        let mut tall = b.clone();
+        tall[size_at] = Size::Tall as u8;
+        assert_eq!(Layout::decode(&tall), None);
+        let mut other = b.clone();
+        other[size_at - 1] = b'x';
+        assert_eq!(Layout::decode(&other), None);
+        // an item past the kinds
+        let mut kind = b.clone();
+        kind[size_at - 7] = 3;
+        assert_eq!(Layout::decode(&kind), None);
     }
 
     #[test]

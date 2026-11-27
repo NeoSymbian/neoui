@@ -4,6 +4,7 @@
 
 extern crate alloc;
 
+pub mod activity;
 pub mod apps;
 pub mod battery;
 pub mod clock;
@@ -12,6 +13,7 @@ pub mod effects;
 pub mod gesture;
 pub mod home;
 pub mod ipc;
+pub mod media;
 pub mod notification_policy;
 pub mod open;
 pub mod page;
@@ -20,6 +22,8 @@ pub mod settings;
 pub mod settings_app;
 pub mod shade;
 pub mod sound_profile;
+pub mod tiles;
+pub mod widget;
 pub mod wifi;
 
 /// This neoui build: "neoui <commit>[+dirty] <UTC time>, e32-rs <commit>" (build.rs).

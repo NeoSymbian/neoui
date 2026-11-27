@@ -836,6 +836,89 @@ pub const fn edit_home_request(b: &[u8]) -> bool {
     b.is_empty()
 }
 
+/// `ACTION_INSTALL_WALLPAPER` (1.22, D7), slot 1: `1:b, format:b = 1, width:h, height:h, stride:h, bytes:w` for the
+/// tightly packed, top-down RGB888 picture in the file of slots 2 and 3 (540 × 1080 for the Pixel's cache). The shell
+/// checks the file's length against `bytes` and the size against its own screen.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct WallpaperRequest {
+    pub width: u16,
+    pub height: u16,
+}
+
+impl WallpaperRequest {
+    /// The only format: RGB888.
+    pub const FORMAT_RGB888: u8 = 1;
+    /// The encoded length.
+    pub const LEN: usize = 12;
+    /// The largest side accepted.
+    pub const SIDE_MAX: u16 = 4096;
+
+    #[must_use]
+    pub fn stride(&self) -> u16 {
+        self.width * 3
+    }
+
+    #[must_use]
+    pub fn bytes(&self) -> u32 {
+        u32::from(self.stride()) * u32::from(self.height)
+    }
+
+    /// The request; `None` for a side of 0 or past [`Self::SIDE_MAX`].
+    #[must_use]
+    pub fn encode(&self) -> Option<Vec<u8>> {
+        let ok = |s: u16| (1..=Self::SIDE_MAX).contains(&s);
+        if !ok(self.width) || !ok(self.height) {
+            return None;
+        }
+        let mut w = W::default();
+        w.0.extend_from_slice(&[1, Self::FORMAT_RGB888]);
+        w.h(self.width);
+        w.h(self.height);
+        w.h(self.stride());
+        w.w(self.bytes());
+        Some(w.0)
+    }
+
+    /// `None` for another version or format, a side of 0 or past 4096, a stride that isn't `width × 3`, a length
+    /// that isn't `stride × height`, or another length.
+    #[must_use]
+    pub fn decode(b: &[u8]) -> Option<Self> {
+        let mut r = R(b);
+        if r.b()? != 1 || r.b()? != Self::FORMAT_RGB888 {
+            return None;
+        }
+        let req = Self {
+            width: r.h()?,
+            height: r.h()?,
+        };
+        let (stride, bytes) = (r.h()?, r.w()?);
+        r.end()?;
+        (req.encode().is_some() && stride == req.stride() && bytes == req.bytes()).then_some(req)
+    }
+}
+
+/// `ACTION_LOCK_DIALOG` (1.22, TP9) modes.
+pub mod lock_dialog {
+    pub const ENROL: u8 = 0;
+    pub const CHANGE: u8 = 1;
+    pub const REMOVE: u8 = 2;
+}
+
+/// `ACTION_LOCK_DIALOG`'s request: `[1, mode]`.
+#[must_use]
+pub fn encode_lock_dialog(mode: u8) -> [u8; 2] {
+    [1, mode]
+}
+
+/// The mode of an `ACTION_LOCK_DIALOG` request; `None` for another version, an unknown mode or another length.
+#[must_use]
+pub fn lock_dialog_request(b: &[u8]) -> Option<u8> {
+    match *b {
+        [1, mode] if mode <= lock_dialog::REMOVE => Some(mode),
+        _ => None,
+    }
+}
+
 /// The longest `SETTINGS_ACTION` request of 1.20's subkinds.
 pub const REQUEST_MAX: usize = 2 + 8 + 2 + ipc::KEY_MAX + 4;
 
@@ -1030,29 +1113,29 @@ impl Dedup {
 
 /// A record's bytes, field by field.
 #[derive(Default)]
-struct W(Vec<u8>);
+pub(crate) struct W(pub(crate) Vec<u8>);
 
 impl W {
-    fn b(&mut self, v: u8) {
+    pub(crate) fn b(&mut self, v: u8) {
         self.0.push(v);
     }
-    fn h(&mut self, v: u16) {
+    pub(crate) fn h(&mut self, v: u16) {
         self.0.extend_from_slice(&v.to_le_bytes());
     }
-    fn w(&mut self, v: u32) {
+    pub(crate) fn w(&mut self, v: u32) {
         self.0.extend_from_slice(&v.to_le_bytes());
     }
-    fn q(&mut self, v: u64) {
+    pub(crate) fn q(&mut self, v: u64) {
         self.0.extend_from_slice(&v.to_le_bytes());
     }
-    fn i(&mut self, v: i32) {
+    pub(crate) fn i(&mut self, v: i32) {
         self.0.extend_from_slice(&v.to_le_bytes());
     }
-    fn t(&mut self, v: i64) {
+    pub(crate) fn t(&mut self, v: i64) {
         self.0.extend_from_slice(&v.to_le_bytes());
     }
     /// `sN`: cut to `max` bytes on a character boundary.
-    fn s(&mut self, s: &str, max: usize) {
+    pub(crate) fn s(&mut self, s: &str, max: usize) {
         let mut end = s.len().min(max);
         while !s.is_char_boundary(end) {
             end -= 1;
@@ -1063,10 +1146,10 @@ impl W {
 }
 
 /// Reads a record back; every getter is `None` past the end.
-struct R<'a>(&'a [u8]);
+pub(crate) struct R<'a>(pub(crate) &'a [u8]);
 
 impl<'a> R<'a> {
-    fn take(&mut self, n: usize) -> Option<&'a [u8]> {
+    pub(crate) fn take(&mut self, n: usize) -> Option<&'a [u8]> {
         if n > self.0.len() {
             return None;
         }
@@ -1074,47 +1157,95 @@ impl<'a> R<'a> {
         self.0 = rest;
         Some(head)
     }
-    fn arr<const N: usize>(&mut self) -> Option<[u8; N]> {
+    pub(crate) fn arr<const N: usize>(&mut self) -> Option<[u8; N]> {
         self.take(N)?.try_into().ok()
     }
-    fn b(&mut self) -> Option<u8> {
+    pub(crate) fn b(&mut self) -> Option<u8> {
         Some(self.arr::<1>()?[0])
     }
-    fn h(&mut self) -> Option<u16> {
+    pub(crate) fn h(&mut self) -> Option<u16> {
         Some(u16::from_le_bytes(self.arr()?))
     }
-    fn w(&mut self) -> Option<u32> {
+    pub(crate) fn w(&mut self) -> Option<u32> {
         Some(u32::from_le_bytes(self.arr()?))
     }
-    fn q(&mut self) -> Option<u64> {
+    pub(crate) fn q(&mut self) -> Option<u64> {
         Some(u64::from_le_bytes(self.arr()?))
     }
-    fn i(&mut self) -> Option<i32> {
+    pub(crate) fn i(&mut self) -> Option<i32> {
         Some(i32::from_le_bytes(self.arr()?))
     }
-    fn t(&mut self) -> Option<i64> {
+    pub(crate) fn t(&mut self) -> Option<i64> {
         Some(i64::from_le_bytes(self.arr()?))
     }
     /// A byte of at most `max` (an enum or a bit set).
-    fn max(&mut self, max: u8) -> Option<u8> {
+    pub(crate) fn max(&mut self, max: u8) -> Option<u8> {
         self.b().filter(|&v| v <= max)
     }
     /// A [`scope`] word with no reserved bit set.
-    fn scope(&mut self) -> Option<u32> {
+    pub(crate) fn scope(&mut self) -> Option<u32> {
         self.w().filter(|&v| v & !scope::ALL == 0)
     }
     /// `n` reserved bytes, all zero.
-    fn zero(&mut self, n: usize) -> Option<()> {
+    pub(crate) fn zero(&mut self, n: usize) -> Option<()> {
         self.take(n)?.iter().all(|&b| b == 0).then_some(())
     }
-    fn s(&mut self, max: usize) -> Option<String> {
+    pub(crate) fn s(&mut self, max: usize) -> Option<String> {
         let n = usize::from(self.b()?);
         if n > max {
             return None;
         }
         core::str::from_utf8(self.take(n)?).ok().map(String::from)
     }
-    fn end(self) -> Option<()> {
+    pub(crate) fn end(self) -> Option<()> {
         self.0.is_empty().then_some(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_wallpaper_request() {
+        let pixel = WallpaperRequest {
+            width: 540,
+            height: 1080,
+        };
+        let b = pixel.encode().unwrap();
+        assert_eq!(b, [1, 1, 0x1c, 2, 0x38, 4, 0x54, 6, 0x60, 0xb2, 0x1a, 0]);
+        assert_eq!((pixel.stride(), pixel.bytes()), (1620, 1_749_600));
+        assert_eq!(WallpaperRequest::decode(&b), Some(pixel));
+        for n in 0..b.len() {
+            assert_eq!(WallpaperRequest::decode(&b[..n]), None, "{n}");
+        }
+        let mut long = b.clone();
+        long.push(0);
+        assert_eq!(WallpaperRequest::decode(&long), None);
+        // version, format, a stride or length that doesn't fit the size
+        for (at, v) in [(0, 2), (1, 2), (6, 0x55), (8, 0x61)] {
+            let mut x = b.clone();
+            x[at] = v;
+            assert_eq!(WallpaperRequest::decode(&x), None, "byte {at} = {v}");
+        }
+        for (width, height) in [(0, 1), (1, 0), (4097, 1)] {
+            assert_eq!(WallpaperRequest { width, height }.encode(), None);
+        }
+        let max = WallpaperRequest {
+            width: 4096,
+            height: 4096,
+        };
+        assert_eq!(WallpaperRequest::decode(&max.encode().unwrap()), Some(max));
+    }
+
+    #[test]
+    fn the_lock_dialog_request() {
+        for m in [lock_dialog::ENROL, lock_dialog::CHANGE, lock_dialog::REMOVE] {
+            assert_eq!(lock_dialog_request(&encode_lock_dialog(m)), Some(m));
+        }
+        assert_eq!(lock_dialog_request(&[1, 3]), None);
+        assert_eq!(lock_dialog_request(&[2, 0]), None);
+        assert_eq!(lock_dialog_request(&[1]), None);
+        assert_eq!(lock_dialog_request(&[1, 0, 0]), None);
     }
 }

@@ -1181,6 +1181,42 @@ fn read_bytes(m: &Message, param: usize, max: usize) -> Result<Vec<u8>, i32> {
     m.read8_vec(param)
 }
 
+/// A 1.22 opcode whose shell side isn't built yet: `KErrArgument` (or `KErrTooBig`, `KErrNotFound` for a widget not in
+/// the app's catalogue) for what a later shell would refuse too, else `KErrNotSupported`.
+fn contract_1_22(key: &str, m: &Message) -> i32 {
+    use neoui_proto::{activity, media, tiles, widget};
+    let check = |max: usize, ok: &dyn Fn(&[u8]) -> Result<(), i32>| {
+        read_bytes(m, 0, max).and_then(|b| ok(&b))
+    };
+    let r = match m.function() {
+        proto::MEDIA => check(media::MEDIA_MAX, &|b| {
+            (b.is_empty() || media::Session::decode(b).is_some())
+                .then_some(())
+                .ok_or(kerr::ARGUMENT)
+        }),
+        proto::ACTIVITY => check(activity::ACTIVITY_MAX, &|b| {
+            activity::Activity::decode(b)
+                .map(drop)
+                .ok_or(kerr::ARGUMENT)
+        }),
+        proto::TILE => check(tiles::OFFER_MAX, &|b| {
+            tiles::Offer::decode(b).map(drop).ok_or(kerr::ARGUMENT)
+        }),
+        proto::WIDGET => check(widget::WIDGET_MAX, &|b| {
+            let c = widget::Content::decode(b).ok_or(kerr::ARGUMENT)?;
+            c.fits(key).map_err(|template| {
+                if template {
+                    kerr::ARGUMENT
+                } else {
+                    err::KERR_NOT_FOUND
+                }
+            })
+        }),
+        _ => Ok(()), // REPLY_TEXT: no reply is ever pending yet
+    };
+    r.err().unwrap_or(err::KERR_NOT_SUPPORTED)
+}
+
 /// Reads descriptor argument `param` as text of at most `max` bytes.
 fn read_text(m: &Message, param: usize, max: usize) -> Result<String, i32> {
     if m.des_len(param)? > max {
@@ -1498,7 +1534,15 @@ impl Service for Host {
             },
             // cards and badges only from the app's own EXE (1.18, top-panel TP2a "Step 0"): the session binding
             // ("the newest app without a session") is checked against the caller's secure ID
-            proto::NOTIFY | proto::NOTIFY_CLEAR | proto::BADGE | proto::CHANNEL
+            proto::NOTIFY
+            | proto::NOTIFY_CLEAR
+            | proto::BADGE
+            | proto::CHANNEL
+            | proto::MEDIA
+            | proto::REPLY_TEXT
+            | proto::ACTIVITY
+            | proto::TILE
+            | proto::WIDGET
                 if apps::sid(app.key).is_some_and(|sid| sid != m.client_sid()) =>
             {
                 dprintln!(
@@ -1538,6 +1582,11 @@ impl Service for Host {
             proto::CHANNEL => {
                 let key = app.key;
                 let r = self.channel(key, &m);
+                m.complete(r);
+            }
+            // 1.22's contract: checked, not acted on yet (their producers and consumers land in W1–W3)
+            proto::MEDIA | proto::REPLY_TEXT | proto::ACTIVITY | proto::TILE | proto::WIDGET => {
+                let r = contract_1_22(app.key, &m);
                 m.complete(r);
             }
             proto::NOTIFY_CLEAR => {

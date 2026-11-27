@@ -38,7 +38,8 @@ pub fn caller(key: &str, sid: u32) -> Caller<'_> {
 
 /// Shell keys only the shell writes, even for the Settings app: the sound profiles go through the shell's reducer
 /// (`ipc::ACTION_PROFILE`) so the profile, its blob and its live values change together; home's layout is the shell's
-/// home editor's (D10: Settings opens the editor with `ipc::ACTION_EDIT_HOME`).
+/// home editor's (D10: Settings opens the editor with `ipc::ACTION_EDIT_HOME`), and the tile order the control
+/// centre's editor's (TP7, `ipc::ACTION_EDIT_TILES`); whether a lock PIN is set only SYSSTART's PIN dialog knows (TP9).
 pub const SHELL_ONLY: &[&str] = &[
     "sound.profile",
     "sound.profiles",
@@ -49,6 +50,8 @@ pub const SHELL_ONLY: &[&str] = &[
     "sound.keypad_tones",
     "sound.touch_vibrate",
     "home.layout",
+    "shell.tiles",
+    "lock.pin_set",
 ];
 
 /// App-owned keys the Settings app shows and may change (Date & time's 24-hour time is Clock's key).
@@ -119,6 +122,15 @@ mod tests {
         assert!(!s.may_write("clock.alarms"));
         assert!(!s.may_write("phone.speed"));
         assert!(!s.may_write("files.sort"));
+        // the shell's own editors and the PIN dialog (1.22)
+        assert!(!s.may_write("shell.tiles") && !s.may_write("lock.pin_set"));
+        assert!(s.may_write("lock.on") && s.may_write("ui.language"));
+        assert!(Caller::Shell.may_write("lock.pin_set"));
+        // the widgets' content is the shell's to keep, not the app's (`widget.<app>.<name>`)
+        assert!(
+            !Caller::App("clock").may_write("widget.clock.next")
+                && !s.may_write("widget.clock.next")
+        );
         // an app that calls itself "settings" is still only an app: no shell keys
         assert!(!Caller::App("settings").may_write("radio.wifi"));
         assert_eq!(alloc::format!("{s}"), "settings");

@@ -68,7 +68,27 @@ pub const NOTIFY_ONGOING: u8 = 1;
 pub const NOTIFY_SILENT_UPDATE: u8 = 2;
 /// The text is hidden on the lock screen (TP8).
 pub const NOTIFY_PRIVATE: u8 = 4;
-const NOTIFY_FLAGS: u8 = NOTIFY_ONGOING | NOTIFY_SILENT_UPDATE | NOTIFY_PRIVATE;
+/// 1.22 (O1, TP5): the banner doesn't time out (an incoming call's); an Urgent Call-style card with it gets past Do not
+/// disturb. A 1.21 shell refuses a card with it (`KErrArgument`).
+pub const NOTIFY_STICKY: u8 = 8;
+const NOTIFY_FLAGS: u8 = NOTIFY_ONGOING | NOTIFY_SILENT_UPDATE | NOTIFY_PRIVATE | NOTIFY_STICKY;
+
+/// 1.22 (O1): the round Answer and Reject keys the shell draws on a Call-style card, reported as
+/// `AppEvent::Notified { action }` (the app's own ≤ 3 actions, Silence and Reply with message, stay `i + 1`).
+pub const CALL_ANSWER: u16 = 0xA0;
+pub const CALL_REJECT: u16 = 0xA1;
+
+/// 1.22 (TP4): the longest inline reply (`ipc::REPLY_TEXT`), in bytes.
+pub const REPLY_MAX: usize = 480;
+
+/// An inline reply's text as `ipc::REPLY_TEXT` hands it over: 1–480 bytes of UTF-8; `None` otherwise.
+#[must_use]
+pub fn reply_text(b: &[u8]) -> Option<&str> {
+    if b.is_empty() || b.len() > REPLY_MAX {
+        return None;
+    }
+    core::str::from_utf8(b).ok()
+}
 
 /// [`Notification::style`] (1.18; docs neoui-shell/top-panel.md "Cards").
 pub mod style {
@@ -156,7 +176,7 @@ pub struct Notification {
     pub time: String,
     /// A bar under the text, 0-100 (1.11: a copy in Files); `None` = no bar.
     pub progress: Option<u8>,
-    /// 1.18: [`NOTIFY_ONGOING`], [`NOTIFY_SILENT_UPDATE`], [`NOTIFY_PRIVATE`].
+    /// 1.18: [`NOTIFY_ONGOING`], [`NOTIFY_SILENT_UPDATE`], [`NOTIFY_PRIVATE`]; 1.22: [`NOTIFY_STICKY`].
     pub flags: u8,
     /// 1.18: one of [`style`].
     pub style: u8,
@@ -679,6 +699,33 @@ mod tests {
     }
 
     #[test]
+    fn a_sticky_call_card_and_reply_text() {
+        let ringing = Notification {
+            id: 1,
+            title: s("Ava Lindqvist"),
+            text: s("+374 10 123456"),
+            actions: vec![s("Silence"), s("Reply")],
+            flags: NOTIFY_STICKY | NOTIFY_ONGOING,
+            style: style::CALL,
+            channel: 4,
+            action_kinds: vec![action::IN_PLACE, action::REPLY],
+            ..Notification::default()
+        };
+        let b = ringing.encode().unwrap();
+        assert_eq!(Notification::decode(&b), Ok(ringing));
+        // the shell's Answer and Reject can't be taken for the app's actions (at most 3, reported as 1..=3)
+        assert!(usize::from(CALL_ANSWER) > NOTIFY_ACTIONS_MAX && CALL_REJECT == CALL_ANSWER + 1);
+        assert_eq!(reply_text(b"On my way"), Some("On my way"));
+        assert_eq!(
+            reply_text("ա".repeat(240).as_bytes()).map(str::len),
+            Some(480)
+        );
+        assert_eq!(reply_text(&[b'x'; REPLY_MAX + 1]), None);
+        assert_eq!(reply_text(&[]), None);
+        assert_eq!(reply_text(&[0xff]), None);
+    }
+
+    #[test]
     fn notifications_grow_in_1_18_and_old_records_still_read() {
         let old = Notification {
             id: 7,
@@ -720,7 +767,7 @@ mod tests {
         // limits: unknown flags, styles and kinds, a long group, more kinds than actions
         for bad in [
             Notification {
-                flags: 8,
+                flags: 16,
                 ..bare.clone()
             },
             Notification {

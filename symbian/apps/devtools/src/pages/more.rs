@@ -95,6 +95,7 @@ pub fn show_settings(s: &DevState<'_>, app: &App) {
             Limit::Range { min, max } => format!(" · {min}..{max}"),
             Limit::MaxLen(n) => format!(" · up to {n} bytes"),
             Limit::Policy => " · a notification policy".into(),
+            Limit::Tiles => " · a tile order".into(),
         };
         Row {
             title: spec.name.into(),

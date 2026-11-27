@@ -58,13 +58,22 @@
 //! `notify.*`: [`crate::notification_policy::effective`]) to the badge, the shade, a banner and its sound, refuses a
 //! card of an app or channel turned off (`KErrPermissionDenied`), and Settings reads the channels and the policy
 //! ([`INFO_CHANNELS`], paged).
+//! Since 1.22 (the contract for top-panel TP3–TP9 and home Part 4; the shell's producers and consumers land in the
+//! W1–W3 streams, until then it checks the caller and the record and answers `KErrNotSupported`): a player owns the
+//! media session ([`MEDIA`], [`crate::media`], [`AppEvent::Media`]), an app shows live activities ([`ACTIVITY`],
+//! [`crate::activity`], [`AppEvent::ActivityTap`]), offers control-centre tiles ([`TILE`], [`crate::tiles`],
+//! [`AppEvent::Tile`], INFO 12 [`INFO_TILES`], [`ACTION_EDIT_TILES`]), fills its home widgets ([`WIDGET`],
+//! [`crate::widget`]; home's layout v2) and reads an inline reply ([`REPLY_TEXT`], [`AppEvent::NotifyReply`]). A
+//! card can be sticky (`page::NOTIFY_STICKY`) and a Call card reports the shell's Answer and Reject
+//! (`page::CALL_ANSWER`, `page::CALL_REJECT`). Settings installs a wallpaper ([`ACTION_INSTALL_WALLPAPER`]) and
+//! opens the lock PIN dialog ([`ACTION_LOCK_DIALOG`]). The four new events go only to 1.22 clients.
 
 use crate::{InputEvent, TouchPhase};
 
 /// The server's name (no leading `!`: that needs ProtServ).
 pub const SERVER: &str = "NeoUi";
 /// Protocol version (major, minor); a connect with another major is refused.
-pub const VERSION: (u8, u8) = (1, 21);
+pub const VERSION: (u8, u8) = (1, 22);
 
 /// `[Des8 out: GEOMETRY_LEN bytes = width, height, dp × 256 (u32 LE)]` → 0. `dp` is the shell's design unit in
 /// pixels (`min(screen w, h) / 360`), so apps size things like the shell does.
@@ -202,7 +211,7 @@ pub const CLIP_KIND: i32 = 30;
 /// `[kind, cursor: unused (0), Des8 out]` → the snapshot's length: something only the shell knows, encoded by
 /// [`crate::settings_app::info`] ([`INFO_BATTERY`], [`INFO_NET`], [`INFO_CLOCK`], [`INFO_APPS`],
 /// [`INFO_BATTERY_USAGE`]). `KErrOverflow` when `out` is
-/// too short, `KErrArgument` for an unknown kind. Opcodes 31–39 are reserved (docs neoui-shell/protocol.md).
+/// too short, `KErrArgument` for an unknown kind. Opcodes 31 and 38–39 are reserved (docs neoui-shell/protocol.md).
 ///
 /// 1.20: kinds 7 and up are paged, Settings only: `[kind, first_record, Des8 out, expected_rev]` → the page's length
 /// ([`crate::settings_app::wire::page`]: a 16-byte header and whole records, at most 4096 bytes). A first read sends
@@ -241,7 +250,7 @@ pub const INFO_BATTERY_CYCLE: i32 = 9;
 pub const INFO_VOLUME_STATE: i32 = 10;
 /// Reserved (D18): the update check's status.
 pub const INFO_UPDATE_STATUS: i32 = 11;
-/// Reserved (TP7, 1.21): the control centre's tiles.
+/// 1.22 (TP7), paged, Settings only: every tile, placed and offered ([`crate::tiles::Record`]).
 pub const INFO_TILES: i32 = 12;
 /// 1.20, paged: the acknowledged jobs and their receipts ([`crate::settings_app::wire::Job`]).
 pub const INFO_JOBS: i32 = 13;
@@ -281,7 +290,9 @@ pub const ACTION_CLEAR: i32 = 6;
 /// 1.20, Settings only: [`crate::settings_app::wire::MeasureRequest`] → a ticket: the app's owner measures its storage
 /// (started hidden if needed); measurements of an app already pending share the ticket.
 pub const ACTION_MEASURE_APP: i32 = 7;
-/// Reserved (D7): install a wallpaper from an RGB888 file.
+/// 1.22 (D7), Settings only: [`crate::settings_app::wire::WallpaperRequest`] in slot 1, the RFs/RFile of the tightly
+/// packed RGB888 picture in slots 2 and 3 → a ticket; the shell checks, stages and installs it, then publishes
+/// `display.wallpaper`.
 pub const ACTION_INSTALL_WALLPAPER: i32 = 8;
 /// 1.20 (D10), Settings only: an empty request ([`crate::settings_app::wire::edit_home_request`]) → 0: home comes to
 /// the front in its editor (again: the draft stays); the editor's own Done or Back saves `home.layout`. Another caller
@@ -291,11 +302,14 @@ pub const ACTION_EDIT_HOME: i32 = 9;
 pub const ACTION_VOLUME: i32 = 10;
 /// Reserved (D18): check for an update.
 pub const ACTION_CHECK_UPDATE: i32 = 11;
-/// Reserved (TP7, 1.21): open the control centre's editor.
+/// 1.22 (TP7), Settings only: an empty request ([`crate::tiles::edit_tiles_request`]) → 0 once the control centre's
+/// editor is up; its Done commits `shell.tiles`.
 pub const ACTION_EDIT_TILES: i32 = 12;
 /// Reserved (1.21): open the notification history.
 pub const ACTION_OPEN_HISTORY: i32 = 13;
-/// Reserved (TP9): the trusted screen-lock PIN dialog.
+/// 1.22 (TP9), Settings only: [`crate::settings_app::wire::lock_dialog_request`] (`[1, mode]`: 0 enrol, 1 change,
+/// 2 remove) → 0 once SYSSTART's own PIN dialog is up; the digits, the verifier and the back-off stay there, and only
+/// the shell writes `lock.pin_set`.
 pub const ACTION_LOCK_DIALOG: i32 = 14;
 /// Reserved (D19): [`ACTION_RESET`]'s recovery-mediated erase of C: (unsupported until its gates pass).
 pub const RESET_ERASE_C: u8 = 2;
@@ -307,10 +321,27 @@ pub const NOTIFY_CLEAR: i32 = 32;
 /// `KErrPermissionDenied`; `KErrArgument` for a malformed one, `KErrOverflow` past
 /// [`crate::notification_policy::CHANNELS_MAX`]. Its cards name it in `Notification::channel`.
 pub const CHANNEL: i32 = 34;
-/// Reserved (TP4, 1.21): `[card_id, Des8 out]` the text of an inline reply.
+/// 1.22 (TP3): `[Des8 session]` ([`crate::media::Session`], at most [`crate::media::MEDIA_MAX`] bytes; empty ends the
+/// caller's session) → 0. Commands come back as [`AppEvent::Media`]. Only from the app's own EXE
+/// (`KErrPermissionDenied`), `KErrArgument` for a malformed record.
+pub const MEDIA: i32 = 33;
+/// 1.22 (TP4): `[card_id, Des8 out]` → the length of the inline reply to the caller's card `card_id` (UTF-8, 1 to
+/// [`crate::page::REPLY_MAX`] bytes) after [`AppEvent::NotifyReply`]; taking it ends the pending reply. `KErrNotFound`
+/// with none pending, `KErrOverflow` for a short buffer (the text stays). Only from the app's own EXE.
 pub const REPLY_TEXT: i32 = 35;
-/// Reserved (TP7, 1.21): `[Des8 offer]` a control-centre tile.
+/// 1.22 (TP6): `[Des8 activity]` ([`crate::activity::Activity`], at most [`crate::activity::ACTIVITY_MAX`] bytes; an
+/// empty title ends it) → 0. Taps come back as [`AppEvent::ActivityTap`]. Only from the app's own EXE;
+/// `KErrPermissionDenied` too when the user turned the app off for the island (`island.deny`).
+pub const ACTIVITY: i32 = 36;
+/// 1.22 (TP7): `[Des8 offer]` ([`crate::tiles::Offer`], at most [`crate::tiles::OFFER_MAX`] bytes) → 0: offer (kind 0:
+/// withdraw) one of the caller's four tiles; the user places it. Taps come back as [`AppEvent::Tile`]. Only from the
+/// app's own EXE.
 pub const TILE: i32 = 37;
+/// 1.22 (home.md Part 4): `[Des8 content]` ([`crate::widget::Content`], at most [`crate::widget::WIDGET_MAX`] bytes) →
+/// 0: the content of one of the caller's home widgets, kept under `widget.<app>.<name>`. `KErrNotFound` for a name
+/// not in the app's [`crate::widget::CATALOGUE`], `KErrArgument` for a malformed record or another template. Only
+/// from the app's own EXE. (Not 11 or 12, home.md's first numbers: they are 1.4's retired `TITLE` and `TOOLBAR`.)
+pub const WIDGET: i32 = 46;
 /// 1.20: `[mode, ticket, descriptor, 0]`, an app as the owner of its data ([`crate::settings_app::jobs`]). Mode 0
 /// `OWNER_REGISTER` `[0, 0, Des8 payload]` (`[1, capabilities]`) → 0; mode 1 `OWNER_CLAIM` `[1, ticket, Des8 out]` →
 /// the [`crate::settings_app::wire::OwnerWork`]'s length; mode 2 `OWNER_FINISH` `[2, ticket, Des8 report]` → 0 once
@@ -422,6 +453,16 @@ pub enum AppEvent {
     /// 1.20, to a registered owner: a confirmed clear `ticket` (`[28, ticket]`, nonzero; [`AppEvent::ClearData`] is
     /// `[28, 0]`). Claim it before deleting anything.
     ClearTicket { ticket: u32 },
+    /// 1.22, to the media session's owner: a command from the shade, the island, the lock screen or home
+    /// ([`crate::media::cmd`]; `arg` the position in ms for SEEK, 0/1 for SHUFFLE and REPEAT).
+    Media { cmd: u8, arg: u32 },
+    /// 1.22: the user sent an inline reply on the app's card `id`; read it with [`REPLY_TEXT`].
+    NotifyReply { id: u32 },
+    /// 1.22: a tap on the app's activity `id`: `i` 0 the activity itself, 1–2 its button `i - 1`, or a key the shell
+    /// draws for a call ([`crate::activity::key`]).
+    ActivityTap { id: u8, i: u8 },
+    /// 1.22: a tap (`hold` false) or a hold (true: its settings page) on the app's tile `id` (its local id).
+    Tile { id: u8, hold: bool },
 }
 
 const KIND_TOUCH: u32 = 1;
@@ -443,14 +484,17 @@ const KIND_OPEN: u32 = 19;
 const KIND_NOTIFIED: u32 = 20;
 const KIND_INPUT_RESET: u32 = 21;
 const KIND_NOTIFY_GONE: u32 = 22;
-// 23–26 are reserved (docs neoui-shell/protocol.md: Media, NotifyReply, ActivityTap, Tile)
+const KIND_MEDIA: u32 = 23;
+const KIND_NOTIFY_REPLY: u32 = 24;
+const KIND_ACTIVITY_TAP: u32 = 25;
+const KIND_TILE: u32 = 26;
 const KIND_SETTINGS_INFO: u32 = 27;
 const KIND_CLEAR_DATA: u32 = 28;
 const KIND_OWNER_WORK: u32 = 29;
 
 impl AppEvent {
     /// The protocol minor a client must have connected with to get this event (an older decoder refuses it and its
-    /// app ends): 18 for `NotifyGone`, 20 for 1.20's events, 0 for the rest (sent as before 1.18).
+    /// app ends): 18 for `NotifyGone`, 20 for 1.20's events, 22 for 1.22's, 0 for the rest (sent as before 1.18).
     #[must_use]
     pub fn needs_minor(&self) -> u8 {
         match self {
@@ -458,6 +502,10 @@ impl AppEvent {
             AppEvent::SettingsInfo { .. }
             | AppEvent::OwnerWork { .. }
             | AppEvent::ClearTicket { .. } => 20,
+            AppEvent::Media { .. }
+            | AppEvent::NotifyReply { .. }
+            | AppEvent::ActivityTap { .. }
+            | AppEvent::Tile { .. } => 22,
             _ => 0,
         }
     }
@@ -493,6 +541,10 @@ impl AppEvent {
             AppEvent::SettingsInfo { kind, rev } => [KIND_SETTINGS_INFO, u32::from(kind), rev, 0],
             AppEvent::OwnerWork { ticket } => [KIND_OWNER_WORK, ticket, 0, 0],
             AppEvent::ClearTicket { ticket } => [KIND_CLEAR_DATA, ticket, 0, 0],
+            AppEvent::Media { cmd, arg } => [KIND_MEDIA, u32::from(cmd), arg, 0],
+            AppEvent::NotifyReply { id } => [KIND_NOTIFY_REPLY, id, 0, 0],
+            AppEvent::ActivityTap { id, i } => [KIND_ACTIVITY_TAP, u32::from(id), u32::from(i), 0],
+            AppEvent::Tile { id, hold } => [KIND_TILE, u32::from(id), u32::from(hold), 0],
         };
         let mut out = [0u8; EVENT_LEN];
         for (i, v) in w.iter().enumerate() {
@@ -564,6 +616,34 @@ impl AppEvent {
                 id: w(1),
                 why: u8::try_from(w(2)).ok()?,
             },
+            // 1.22's words are exact too: reserved words 0, the fields in range
+            KIND_MEDIA | KIND_NOTIFY_REPLY | KIND_ACTIVITY_TAP | KIND_TILE if w(3) != 0 => {
+                return None;
+            }
+            KIND_MEDIA => {
+                let cmd = u8::try_from(w(1)).ok()?;
+                crate::media::valid_command(cmd, w(2))
+                    .then_some(AppEvent::Media { cmd, arg: w(2) })?
+            }
+            KIND_NOTIFY_REPLY if w(2) != 0 => return None,
+            KIND_NOTIFY_REPLY => AppEvent::NotifyReply { id: w(1) },
+            KIND_ACTIVITY_TAP => {
+                let (id, i) = (u8::try_from(w(1)).ok()?, u8::try_from(w(2)).ok()?);
+                let key = (crate::activity::key::MUTE..=crate::activity::key::END).contains(&i);
+                (id < crate::activity::IDS && (i <= 2 || key))
+                    .then_some(AppEvent::ActivityTap { id, i })?
+            }
+            KIND_TILE => {
+                let id = u8::try_from(w(1))
+                    .ok()
+                    .filter(|&l| l < crate::tiles::LOCAL_IDS)?;
+                let hold = match w(2) {
+                    0 => false,
+                    1 => true,
+                    _ => return None,
+                };
+                AppEvent::Tile { id, hold }
+            }
             _ => return None,
         })
     }
@@ -630,6 +710,22 @@ mod tests {
             AppEvent::ClearTicket {
                 ticket: 0x7fff_ffff,
             },
+            AppEvent::Media {
+                cmd: crate::media::cmd::SEEK,
+                arg: 90_000,
+            },
+            AppEvent::Media {
+                cmd: crate::media::cmd::REPEAT,
+                arg: 1,
+            },
+            AppEvent::NotifyReply { id: u32::MAX },
+            AppEvent::ActivityTap { id: 3, i: 2 },
+            AppEvent::ActivityTap {
+                id: 0,
+                i: crate::activity::key::END,
+            },
+            AppEvent::Tile { id: 0, hold: true },
+            AppEvent::Tile { id: 3, hold: false },
         ];
         for e in all {
             assert_eq!(AppEvent::decode(&e.encode()), Some(e));
@@ -647,6 +743,41 @@ mod tests {
             b[0] = kind;
             assert_eq!(AppEvent::decode(&b), None, "kind {kind}");
         }
+    }
+
+    #[test]
+    fn events_of_1_22_are_exact_and_only_for_1_22_clients() {
+        let ev = |w: [u32; 4]| {
+            let mut b = [0u8; EVENT_LEN];
+            for (i, v) in w.iter().enumerate() {
+                b[i * 4..i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+            }
+            AppEvent::decode(&b)
+        };
+        assert_eq!(ev([23, 2, 0, 0]), Some(AppEvent::Media { cmd: 2, arg: 0 }));
+        assert_eq!(ev([24, 9, 0, 0]), Some(AppEvent::NotifyReply { id: 9 }));
+        for bad in [
+            [23, 0, 0, 0], // no command
+            [23, 8, 0, 0], // past REPEAT
+            [23, 1, 5, 0], // PLAY with an arg
+            [23, 6, 2, 0], // SHUFFLE 2
+            [23, 5, 1, 1], // a reserved word
+            [24, 1, 1, 0],
+            [25, 4, 0, 0],    // activity id past 3
+            [25, 0, 3, 0],    // a third button
+            [25, 0, 0x14, 0], // past End
+            [25, 0x100, 0, 0],
+            [26, 4, 0, 0], // local id past 3
+            [26, 0, 2, 0], // hold 2
+            [26, 0, 0, 1],
+        ] {
+            assert_eq!(ev(bad), None, "{bad:?}");
+        }
+        assert_eq!(AppEvent::Tile { id: 1, hold: false }.needs_minor(), 22);
+        assert_eq!(AppEvent::NotifyReply { id: 1 }.needs_minor(), 22);
+        assert_eq!(AppEvent::Media { cmd: 1, arg: 0 }.needs_minor(), 22);
+        assert_eq!(AppEvent::ActivityTap { id: 0, i: 0 }.needs_minor(), 22);
+        assert!(VERSION.1 >= 22);
     }
 
     #[test]
