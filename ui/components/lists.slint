@@ -138,13 +138,16 @@ export component ListRow inherits Rectangle {
     height: subtitle == "" ? Theme.list-row-h : Theme.list-row-double-h;
     background: touch.pressed ? Theme.pressed : checked ? Theme.selected : transparent;
     // (D1) the row a search hit selected asks its list to show it (only where an app armed Reveal: Settings)
-    changed checked => {
+    function reveal() {
         if checked && !selecting && Reveal.armed {
             Reveal.y = self.absolute-position.y;
             Reveal.h = self.height;
             Reveal.seq += 1;
         }
     }
+    changed checked => { root.reveal(); }
+    // a page opened on a hit: its row is checked from the start
+    init => { root.reveal(); }
     touch := TouchArea {
         changed pressed => {
             if self.pressed {

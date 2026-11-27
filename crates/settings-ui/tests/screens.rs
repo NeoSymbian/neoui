@@ -1312,6 +1312,21 @@ fn every_page() {
     sh.tap(100.0, 635.0);
     assert_eq!(sh.take_acts(), acts(&[("wifi-saved-forget", "11")]));
     s.set_found("".into());
+    // as NEOSET opens a hit: the page and the hit set together, before the page is first drawn (its row is checked
+    // from the start)
+    page(&sh, 0, "Settings");
+    sh.draw();
+    page(&sh, 17, "Saved networks");
+    s.set_found("wifi.saved_net.Net 11".into());
+    sh.draw();
+    sh.take_acts();
+    sh.tap(100.0, 635.0);
+    assert_eq!(
+        sh.take_acts(),
+        acts(&[("wifi-saved-forget", "11")]),
+        "a page opened on a hit"
+    );
+    s.set_found("".into());
 
     // every row that shows a value has one for search, from the sample state above (D1's projection)
     let snap = project(&sh, Epochs::default());

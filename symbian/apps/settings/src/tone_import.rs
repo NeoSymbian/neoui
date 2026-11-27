@@ -177,8 +177,13 @@ fn install(app: &App, staging: &str, name: Option<String>) -> Result<String, Str
     // an unreadable catalogue is an error, never an empty one: a taken id must not be written over
     let profiles = crate::store::read_profiles_checked(app)
         .map_err(|e| format!("Couldn't read your sounds ({e})"))?;
+    // an id whose file stayed after a delete is skipped (anything but "not there" counts as there)
+    let fs = Fs::connect().map_err(|e| format!("Couldn't save the sound ({e})"))?;
+    let occupied = |id: u8| {
+        neoaudio::tones::file(id).is_none_or(|p| !matches!(fs.entry(&p), Err(-1 | -12))) // KErrNotFound, KErrPathNotFound
+    };
     let id = profiles
-        .free_tone()
+        .free_tone_without(occupied)
         .ok_or_else(|| String::from("Twelve sounds at most: delete one first."))?;
     let name = name.unwrap_or_else(|| format!("Sound {}", id - 3));
     action(app, &Command::AddTone(id, name.clone()))
@@ -186,8 +191,7 @@ fn install(app: &App, staging: &str, name: Option<String>) -> Result<String, Str
     let path = neoaudio::tones::file(id).ok_or_else(|| String::from("No such sound"))?;
     // the id is ours now, but a file already under it is never written over (a rename fails on it): the id goes
     // back and the import says so
-    let moved = Fs::connect().and_then(|fs| fs.rename(staging, &path));
-    if let Err(e) = moved {
+    if let Err(e) = fs.rename(staging, &path) {
         let _ = action(app, &Command::DeleteTone(id));
         return Err(if e == -11 {
             String::from("A file is already in that sound's place; nothing was replaced") // KErrAlreadyExists
