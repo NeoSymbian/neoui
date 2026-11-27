@@ -307,8 +307,9 @@ export global SetState {
     // D11 (sim_lock.rs): the SIM PIN as MODEMD reports it (settings_app::sim_lock's summary and note), Use SIM PIN's
     // switch (on = asked for at start) and whether it and Change SIM PIN can be used, the card's tries ("" = it doesn't
     // say), the last request's outcome, a request with the card, the sheet's warning (one try left, a refusal) and the
-    // protection the toggle sheet asks for. sim-old/new/again are the sheets' masked fields: never stored, logged,
-    // searched or sent through act; NEOSET copies and empties them on submit, Back, hide and another page.
+    // protection the toggle sheet asks for. sim-old/new/again-n are the sheets' PIN fields' digit counts: the digits
+    // themselves stay in NEOSET's wipeable buffers (each key goes to pin-key, never to act; Slint only draws dots), which
+    // NEOSET empties on submit, Back, hide and another page.
     in property <string> sim-lock-text;
     in-out property <bool> sim-pin-on;
     in property <bool> sim-can-toggle;
@@ -319,9 +320,11 @@ export global SetState {
     in property <bool> sim-busy;
     in property <string> sim-warning;
     in property <bool> sim-want-on;
-    in-out property <string> sim-old;
-    in-out property <string> sim-new;
-    in-out property <string> sim-again;
+    in property <int> sim-old-n;
+    in property <int> sim-new-n;
+    in property <int> sim-again-n;
+    // a key in a PIN field ("old", "new", "again"): true if NEOSET took it (a digit or Backspace)
+    callback pin-key(string, string) -> bool;
 
     // the open sheet: "" none, "timeout", "date-format", "zone", "pad-strength", "pad-default", "pad-dirs", "pad-a",
     // "pad-b", "wifi-join", "wifi-details"; the network the join sheet is for, and what is typed in it

@@ -1183,20 +1183,36 @@ fn every_page() {
     // the masked form (dots only), at one try left the warning first, then Change SIM PIN's three fields
     s.set_sim_want_on(false);
     sheet(&sh, "sim-pin");
-    s.set_sim_old("4321".into());
+    s.set_sim_old_n(4);
     sh.draw(); // the field's focus reserves the keyboard's room first
     sh.shoot("set2-sim-lock-sheet");
+    // (D11) the PIN field's keys go to pin-key (NEOSET's wipeable buffer), never through act; Slint keeps a count
+    let keys = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
+    let k = keys.clone();
+    s.on_pin_key(move |f, key| {
+        k.borrow_mut().push((f.to_string(), key.to_string()));
+        key != "x"
+    });
+    sh.take_acts();
+    for key in ["1", "2", "x"] {
+        sh.key(key);
+    }
+    assert_eq!(
+        *keys.borrow(),
+        [("old", "1"), ("old", "2"), ("old", "x")].map(|(f, k)| (f.to_string(), k.to_string()))
+    );
+    assert!(sh.take_acts().is_empty(), "no digit through act");
     sim_lock(&s, Lock::On, "1");
-    s.set_sim_old("".into());
+    s.set_sim_old_n(0);
     s.set_sim_warning(sl::LAST_TRY.into());
     sh.shoot("set2-sim-lock-last");
     s.set_sim_warning("".into());
     sheet(&sh, "sim-change");
-    s.set_sim_old("1111".into());
-    s.set_sim_new("2222".into());
+    s.set_sim_old_n(4);
+    s.set_sim_new_n(4);
     sh.draw();
-    for set in [SetState::set_sim_old, SetState::set_sim_new] {
-        set(&s, "".into());
+    for set in [SetState::set_sim_old_n, SetState::set_sim_new_n] {
+        set(&s, 0);
     }
     // waiting for the card, then its answer on the page
     page(&sh, 30, "SIM card lock");

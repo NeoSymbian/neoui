@@ -132,6 +132,36 @@ pub fn gate(lock: Lock, tries: Option<u8>, change: bool, confirmed: bool) -> Gat
 /// The one-try warning the sheet shows before the second press.
 pub const LAST_TRY: &str = "Only 1 attempt left. If this PIN is wrong the SIM is blocked and needs your carrier's PUK. Press again to continue.";
 
+/// What MODEMD said when the sheet opened (D11): a request is for that card, slot, application and try count only.
+/// A refusal leaves the sheet open on a card that changed (a wrong PIN used a try, MODEMD restarted), so it thaws:
+/// nothing is sent until the next status, which MODEMD published after the refusal's re-read, freezes it again.
+#[derive(Clone, Copy, Default)]
+pub struct Frozen<T: Copy> {
+    at: Option<T>,
+    thaw: bool,
+}
+
+impl<T: Copy> Frozen<T> {
+    /// The sheet opens on `now`.
+    pub fn open(&mut self, now: Option<T>) {
+        (self.at, self.thaw) = (now, false);
+    }
+    /// A request was refused and the sheet stays.
+    pub fn refused(&mut self) {
+        (self.at, self.thaw) = (None, true);
+    }
+    /// MODEMD's latest status, each poll (before that poll's outcome is taken).
+    pub fn status(&mut self, now: Option<T>) {
+        if self.thaw {
+            (self.at, self.thaw) = (now, false);
+        }
+    }
+    #[must_use]
+    pub fn get(&self) -> Option<T> {
+        self.at
+    }
+}
+
 /// A PIN as typed: 4 to 8 digits, leading zeroes kept.
 pub fn check(pin: &[u8]) -> Result<(), &'static str> {
     if !(4..=8).contains(&pin.len()) {
@@ -173,6 +203,69 @@ pub fn outcome(result: i32, on: Option<bool>, tries: Option<u8>) -> alloc::strin
         -5 => String::from("This modem service can't change the SIM PIN."),
         e => format!("The SIM refused ({e}). {}", left(tries)),
     }
+}
+
+/// A PIN field's digits, held here and not in the UI (D11): the sheet sends each key ([`PinBuf::key`]) and shows
+/// only [`PinBuf::len`] dots, so no UI string ever holds the PIN. Zeroed by [`PinBuf::clear`] and on drop.
+#[derive(Default)]
+pub struct PinBuf {
+    b: [u8; 8],
+    n: usize,
+}
+
+impl PinBuf {
+    /// A key from the field: a digit is added (up to 8), Backspace (U+0008) takes the last one away. False for
+    /// any other key, which the field leaves to others.
+    pub fn key(&mut self, key: &str) -> bool {
+        match key.as_bytes() {
+            [d] if d.is_ascii_digit() => {
+                if self.n < self.b.len() {
+                    self.b[self.n] = *d;
+                    self.n += 1;
+                }
+                true
+            }
+            [8] => {
+                if self.n > 0 {
+                    self.n -= 1;
+                    wipe(&mut self.b[self.n..]);
+                }
+                true
+            }
+            _ => false,
+        }
+    }
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.n
+    }
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.n == 0
+    }
+    #[must_use]
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.b[..self.n]
+    }
+    pub fn clear(&mut self) {
+        wipe(&mut self.b);
+        self.n = 0;
+    }
+}
+
+impl Drop for PinBuf {
+    fn drop(&mut self) {
+        self.clear();
+    }
+}
+
+/// Zero `b` so the compiler can't drop the writes as dead (the buffer is freed or reused next).
+pub fn wipe(b: &mut [u8]) {
+    for x in b.iter_mut() {
+        // SAFETY: a valid, aligned, exclusive reference.
+        unsafe { core::ptr::write_volatile(x, 0) };
+    }
+    core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
 }
 
 #[cfg(test)]
@@ -236,5 +329,64 @@ mod tests {
         assert!(outcome(-1035, None, Some(0)).contains("PUK"));
         assert_eq!(outcome(0, None, Some(3)), "SIM PIN changed.");
         assert!(Lock::Blocked.note().contains("can't enter a PUK"));
+    }
+
+    #[test]
+    fn after_a_refusal_the_sheet_is_for_the_card_as_modemd_reads_it_next() {
+        let mut f = Frozen::default();
+        f.status(Some(3));
+        assert_eq!(f.get(), None, "nothing before the sheet opens");
+        f.open(Some(3));
+        f.status(Some(2));
+        assert_eq!(f.get(), Some(3), "a status while the sheet is open doesn't move it");
+        // a wrong PIN: the card now says 2; this poll's status may predate MODEMD's re-read
+        f.refused();
+        assert_eq!(f.get(), None, "nothing is sent until the next status");
+        f.status(Some(2));
+        assert_eq!(f.get(), Some(2), "the retry is for the card as it is now");
+        f.status(Some(1));
+        assert_eq!(f.get(), Some(2), "frozen again");
+        f.open(None);
+        assert_eq!(f.get(), None);
+    }
+
+    #[test]
+    fn a_refused_request_refreezes_the_sheet_from_the_next_status() {
+        let mut o = Opened::default();
+        assert_eq!(o.get(), None);
+        o.open(Some(3)); // the sheet opens at 3 tries
+        o.poll(Some(3));
+        assert_eq!(o.get(), Some(3));
+        // a wrong PIN: the sheet stays; the status that carried the answer may predate the card's re-read
+        o.refused();
+        assert_eq!(o.get(), None);
+        assert!(o.rereading());
+        o.poll(Some(2)); // the next read: the card says 2
+        assert_eq!((o.get(), o.rereading()), (Some(2), false));
+        o.poll(Some(1)); // later reads don't move it
+        assert_eq!(o.get(), Some(2));
+        // the sheet opens again: that status, and no re-read pending
+        o.refused();
+        o.open(Some(5));
+        o.poll(Some(4));
+        assert_eq!((o.get(), o.rereading()), (Some(5), false));
+    }
+
+    #[test]
+    fn a_pin_buffer_takes_digits_and_backspace_only_and_wipes() {
+        let mut p = PinBuf::default();
+        for k in ["0", "1", "x", "2", "3", "\u{1b}"] {
+            p.key(k);
+        }
+        assert_eq!(p.as_bytes(), b"0123");
+        assert!(!p.key("a") && !p.key("12") && p.key("\u{8}"));
+        assert_eq!(p.as_bytes(), b"012");
+        assert_eq!(p.b[3], 0, "a removed digit is zeroed");
+        for _ in 0..10 {
+            p.key("9");
+        }
+        assert_eq!(p.len(), 8, "8 digits at most");
+        p.clear();
+        assert!(p.is_empty() && p.b == [0; 8]);
     }
 }

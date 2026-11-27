@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // D11, SIM card lock (set2-sim-lock): Use SIM PIN, Change SIM PIN, the card's attempts left, and the PIN sheets. Every
-// value is what MODEMD reports (sim_lock.rs); the PIN fields are masked number fields that NEOSET empties after use.
-import { Theme, NeoList, ListRow, Sheet, TextField, Button } from "@neoui/kit.slint";
+// value is what MODEMD reports (sim_lock.rs); the PIN fields hold no digits (PinField), NEOSET empties them after use.
+import { Theme, NeoList, ListRow, Sheet, Button, KeyboardFocus } from "@neoui/kit.slint";
 import { Note } from "../parts.slint";
 import { SetState } from "../state.slint";
 
@@ -42,6 +42,69 @@ export component SimLockPage inherits NeoList {
     }
 }
 
+// A PIN field that holds no PIN: each key goes to NEOSET (SetState.pin-key), which keeps the digits in a wipeable
+// buffer; the field draws `count` dots. It looks like the kit's TextField with `password` (no eye: nothing to show).
+component PinField inherits Rectangle {
+    in property <string> field;
+    in property <int> count;
+    in property <string> placeholder;
+    in property <bool> autofocus;
+    // KeyboardFocus.seq when this field took the focus (as the kit's FieldInput)
+    property <int> took;
+    height: Theme.field-h;
+    border-radius: Theme.radius-small;
+    background: Theme.field;
+    border-width: max(1px, Theme.dp / 2);
+    border-color: scope.has-focus ? Theme.accent : Theme.text-dim;
+    Text {
+        x: 14 * Theme.dp;
+        width: parent.width - 28 * Theme.dp;
+        text: root.count == 0 ? root.placeholder : root.dots(root.count);
+        color: root.count == 0 ? Theme.text-dim : Theme.text;
+        font-family: "NeoSans";
+        font-size: Theme.font-body;
+        vertical-alignment: center;
+        overflow: elide;
+    }
+
+    function dots(n: int) -> string {
+        n <= 0 ? "" : n == 1 ? "●" : n == 2 ? "●●" : n == 3 ? "●●●" : n == 4 ? "●●●●" : n == 5 ? "●●●●●" : n == 6 ? "●●●●●●" : n == 7 ? "●●●●●●●" : "●●●●●●●●"
+    }
+    function reopen() {
+        KeyboardFocus.seq += 1;
+        root.took = KeyboardFocus.seq;
+        KeyboardFocus.dismissed = false;
+    }
+    scope := FocusScope {
+        key-pressed(e) => {
+            SetState.pin-key(root.field, e.text) ? EventResult.accept : EventResult.reject
+        }
+        changed has-focus => {
+            if self.has-focus {
+                root.reopen();
+                KeyboardFocus.mode = 3;
+                KeyboardFocus.secret = true;
+                KeyboardFocus.open = true;
+            } else if root.took == KeyboardFocus.seq {
+                KeyboardFocus.open = false;
+            }
+        }
+    }
+
+    TouchArea {
+        clicked => {
+            scope.focus();
+            root.reopen();
+        }
+    }
+
+    init => {
+        if root.autofocus {
+            scope.focus();
+        }
+    }
+}
+
 // Use SIM PIN's sheet (the current PIN) and Change SIM PIN's (current, new, new again). The attempts left come first;
 // at one left the first press only warns. No PUK here.
 export component SimPinSheet inherits Sheet {
@@ -61,27 +124,24 @@ export component SimPinSheet inherits Sheet {
             wrap: word-wrap;
         }
 
-        TextField {
+        PinField {
+            field: "old";
+            count: SetState.sim-old-n;
             placeholder: root.change ? "Current PIN" : "SIM PIN";
-            password: true;
-            keys: 3;
             autofocus: true;
-            text <=> SetState.sim-old;
             accessible-label: root.change ? "Current SIM PIN" : "SIM PIN";
         }
 
-        if root.change: TextField {
+        if root.change: PinField {
+            field: "new";
+            count: SetState.sim-new-n;
             placeholder: "New PIN (4 to 8 digits)";
-            password: true;
-            keys: 3;
-            text <=> SetState.sim-new;
             accessible-label: "New SIM PIN";
         }
-        if root.change: TextField {
+        if root.change: PinField {
+            field: "again";
+            count: SetState.sim-again-n;
             placeholder: "New PIN again";
-            password: true;
-            keys: 3;
-            text <=> SetState.sim-again;
             accessible-label: "New SIM PIN again";
         }
         if SetState.sim-warning != "" || SetState.sim-outcome != "": Text {
