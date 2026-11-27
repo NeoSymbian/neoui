@@ -132,6 +132,36 @@ pub fn gate(lock: Lock, tries: Option<u8>, change: bool, confirmed: bool) -> Gat
 /// The one-try warning the sheet shows before the second press.
 pub const LAST_TRY: &str = "Only 1 attempt left. If this PIN is wrong the SIM is blocked and needs your carrier's PUK. Press again to continue.";
 
+/// What MODEMD said when the sheet opened (D11): a request is for that card, slot, application and try count only.
+/// A refusal leaves the sheet open on a card that changed (a wrong PIN used a try, MODEMD restarted), so it thaws:
+/// nothing is sent until the next status, which MODEMD published after the refusal's re-read, freezes it again.
+#[derive(Clone, Copy, Default)]
+pub struct Frozen<T: Copy> {
+    at: Option<T>,
+    thaw: bool,
+}
+
+impl<T: Copy> Frozen<T> {
+    /// The sheet opens on `now`.
+    pub fn open(&mut self, now: Option<T>) {
+        (self.at, self.thaw) = (now, false);
+    }
+    /// A request was refused and the sheet stays.
+    pub fn refused(&mut self) {
+        (self.at, self.thaw) = (None, true);
+    }
+    /// MODEMD's latest status, each poll (before that poll's outcome is taken).
+    pub fn status(&mut self, now: Option<T>) {
+        if self.thaw {
+            (self.at, self.thaw) = (now, false);
+        }
+    }
+    #[must_use]
+    pub fn get(&self) -> Option<T> {
+        self.at
+    }
+}
+
 /// A PIN as typed: 4 to 8 digits, leading zeroes kept.
 pub fn check(pin: &[u8]) -> Result<(), &'static str> {
     if !(4..=8).contains(&pin.len()) {
@@ -299,6 +329,47 @@ mod tests {
         assert!(outcome(-1035, None, Some(0)).contains("PUK"));
         assert_eq!(outcome(0, None, Some(3)), "SIM PIN changed.");
         assert!(Lock::Blocked.note().contains("can't enter a PUK"));
+    }
+
+    #[test]
+    fn after_a_refusal_the_sheet_is_for_the_card_as_modemd_reads_it_next() {
+        let mut f = Frozen::default();
+        f.status(Some(3));
+        assert_eq!(f.get(), None, "nothing before the sheet opens");
+        f.open(Some(3));
+        f.status(Some(2));
+        assert_eq!(f.get(), Some(3), "a status while the sheet is open doesn't move it");
+        // a wrong PIN: the card now says 2; this poll's status may predate MODEMD's re-read
+        f.refused();
+        assert_eq!(f.get(), None, "nothing is sent until the next status");
+        f.status(Some(2));
+        assert_eq!(f.get(), Some(2), "the retry is for the card as it is now");
+        f.status(Some(1));
+        assert_eq!(f.get(), Some(2), "frozen again");
+        f.open(None);
+        assert_eq!(f.get(), None);
+    }
+
+    #[test]
+    fn a_refused_request_refreezes_the_sheet_from_the_next_status() {
+        let mut o = Opened::default();
+        assert_eq!(o.get(), None);
+        o.open(Some(3)); // the sheet opens at 3 tries
+        o.poll(Some(3));
+        assert_eq!(o.get(), Some(3));
+        // a wrong PIN: the sheet stays; the status that carried the answer may predate the card's re-read
+        o.refused();
+        assert_eq!(o.get(), None);
+        assert!(o.rereading());
+        o.poll(Some(2)); // the next read: the card says 2
+        assert_eq!((o.get(), o.rereading()), (Some(2), false));
+        o.poll(Some(1)); // later reads don't move it
+        assert_eq!(o.get(), Some(2));
+        // the sheet opens again: that status, and no re-read pending
+        o.refused();
+        o.open(Some(5));
+        o.poll(Some(4));
+        assert_eq!((o.get(), o.rereading()), (Some(5), false));
     }
 
     #[test]
