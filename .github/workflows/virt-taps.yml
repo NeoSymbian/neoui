@@ -249,10 +249,13 @@ jobs:
           wait_s 1; swipe 270 1075 270 900; expect "neoui: screen home"; wait_s 1
           swipe 270 300 270 600; expect "neoui: shade from home"; wait_s 1
           tap 425 82; expect "neoui: app settings resumed"
+          # G2: over Settings, a short swipe up from the band peeks (the app shrinks into a card over home) and settles
+          # back; the long one below settles onto home and commits it, with no fade
+          wait_s 1; swipe 270 1075 270 1040; expect "neoui: peek cancel"; wait_s 1
           # TP2a: home, Apps, UI kit (its tile ends the grid's 5th row), ⋮ → Notifications, Post sample cards (6, one
           # ongoing, a group of 3); the shade from the status bar, See all, a swipe on the reminder (Alerts) dismisses
           # it, Clear all (left of TP4's Manage) takes the other 4 and leaves the ongoing one
-          wait_s 1; swipe 270 1075 270 900; expect "neoui: screen home"; wait_s 1
+          swipe 270 1075 270 900; expect "neoui: peek commit home"; expect "neoui: screen home"; wait_s 1
           tap 485 973; wait_s 2; tap 448 1000; expect "neoui: app kit surface"; wait_s 2
           tap 497 72; wait_s 2; tap 298 874; wait_s 2
           tap 270 160; expect "kit: sample cards posted (Ok"; wait_s 1
@@ -301,6 +304,10 @@ jobs:
           # TP1: the shade from home, then Settings from its ⚙
           grep -a 'neoui: shade from home' $s
           grep -a 'neoui: app settings resumed' $s
+          # G2: the peek ran, a short swipe put the app back, a long one went home through it
+          grep -a 'neoui: peek Card' $s
+          grep -a 'neoui: peek cancel' $s
+          grep -a 'neoui: peek commit home' $s
           # TP2a: the kit's cards passed the SID check, a swipe and Clear all reached it, the ongoing card stayed
           grep -a 'kit: sample cards posted (Ok' $s
           ! grep -aq 'refused for kit' $s

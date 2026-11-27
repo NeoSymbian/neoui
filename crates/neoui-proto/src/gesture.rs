@@ -245,6 +245,15 @@ impl Recognizer {
         )
     }
 
+    /// (G2) The touch is a Thumb move along the bottom band (its `Track`s are the previous / next app's, not a swipe
+    /// up from it): how far it went (px, rightwards positive).
+    pub fn along_dx(&self) -> Option<i32> {
+        match self.state {
+            State::Along { dx, .. } => Some(dx),
+            _ => None,
+        }
+    }
+
     /// Forget the touch in progress (the screen changed under it): the server drops what it held, and the rest of
     /// the touch is dropped too.
     pub fn reset(&mut self) {
@@ -740,6 +749,16 @@ mod tests {
             ],
         );
         assert_eq!(next, Step::Commit(Gesture::NextApp));
+        // (G2) the server tells a move along the band from a swipe up by the state, not the Track
+        r.feed(Down, 300, 2150, 0, ALL);
+        r.feed(Move, 340, 2150, 50, ALL);
+        assert_eq!(r.along_dx(), Some(40));
+        r.feed(Up, 340, 2150, 60, ALL);
+        assert_eq!(r.along_dx(), None);
+        r.feed(Down, 300, 2150, 0, ALL);
+        r.feed(Move, 300, 2100, 50, ALL);
+        assert_eq!(r.along_dx(), None, "up from the band");
+        r.feed(Up, 300, 2100, 60, ALL);
         let short = run(
             &mut r,
             &[
