@@ -85,9 +85,7 @@ impl Host {
 
     /// (G3) Hand the new thumbnails to Open apps; (G2) keep them, and the full frame, only while their app runs.
     pub fn show_thumbs(&mut self, ui: &mut neoui_render::Renderer) {
-        if self.d10.thumbs.is_empty() {
-            return;
-        }
+        // every frame, not only with new thumbnails: a closed app's frame (9 MB on the Pixel) goes at once
         let running = self.running();
         self.d10.kept.retain(|t| running.contains(&t.0));
         if self

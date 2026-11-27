@@ -394,7 +394,8 @@ fn main() -> i32 {
                             routed.push(ev);
                             continue;
                         };
-                        if peek::pinch(&mut pinch, &mut ui, &mut host, &ev, ms) {
+                        let busy = gest.busy() || peek.is_some();
+                        if peek::pinch(&mut pinch, &mut ui, &mut host, &ev, ms, busy) {
                             continue;
                         }
                         if id != 0 {
@@ -757,7 +758,15 @@ fn main() -> i32 {
             host.show_thumbs(&mut ui);
             let ms = time::millis();
             host.tick_jobs(ms);
-            for key in host.reap(ms) {
+            let reaped = host.reap(ms);
+            // (G2) the host moving the screen (an app's exit, OPEN or leave) ends a peek first: it would put it back
+            if peek.is_some()
+                && (!reaped.is_empty() || host.requested_screen.is_some() || host.leave)
+            {
+                peek::abort(&mut peek, &mut ui);
+                repaint_all = true;
+            }
+            for key in reaped {
                 // its screen goes with it: home, or Classic apps for the bridge (its guest's list)
                 if ui.screen() == key {
                     ui.show(neoui_proto::apps::after_exit(key), "");
@@ -777,6 +786,9 @@ fn main() -> i32 {
                 ui.leave_app();
             }
             let now = ui.screen();
+            // (G2) the peek's slide was the animation of the change it committed (once: a gesture that changed
+            // nothing must not take the next fade)
+            let slid = peek.is_none() && core::mem::take(&mut no_fade);
             // (G2) a peek's preview is no screen change: the app stays in front until it commits
             if now != screen && peek.is_none() {
                 dprintln!("neoui: screen {}", now);
@@ -785,8 +797,8 @@ fn main() -> i32 {
                 hint = None;
                 // what is on screen now (the old app with it, before set_screen hides it) fades out; when memory is
                 // short there is no fade, the new screen just appears (the Pixel's kernel has 87 MB of RAM for now)
-                if core::mem::take(&mut no_fade) {
-                    // (G2) the peek's slide was the animation
+                if slid {
+                    // no fade: the slide showed the change
                 } else if old.len() == w * h || old.try_reserve_exact(w * h).is_ok() {
                     old.resize(w * h, 0);
                     snapshot(&host, &frame, &mut old, w);
@@ -1093,6 +1105,8 @@ fn main() -> i32 {
             }
             if !scr.is_on() {
                 touches.clear(); // a sleeping touchscreen sends no lifts; the rings go at the next frame
+                close_restore |= peek.is_some(); // (G2) nor a peek's: it would wait for one at wake
+                peek::abort(&mut peek, &mut ui);
                 host.release_frames(); // apps go on (their frames aren't shown)
                 continue; // nothing drawn while dark; the pollers above keep running
             }

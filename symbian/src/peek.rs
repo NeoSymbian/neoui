@@ -241,13 +241,15 @@ fn overlay(h: &Hint, y: usize, row: &mut [u32]) {
 
 /// (G3) A pinch on Open apps (the switcher, or Lanes' third lane) switches 2 ↔ 3 columns (`nav.switcher_cols`).
 /// True when the touch is the pinch's and goes no further: the second finger, and the first while both are down
-/// (Slint loses its press then, so no card opens).
+/// (Slint loses its press then, so no card opens). None while the first finger is an edge gesture or a peek runs
+/// (`busy`): swallowing that finger's lift would leave the peek waiting for it.
 pub fn pinch(
     pinch: &mut Pinch,
     ui: &mut Renderer,
     host: &mut Host,
     ev: &InputEvent,
     now: u64,
+    busy: bool,
 ) -> bool {
     let InputEvent::Touch { id, x, y, phase } = *ev else {
         return false;
@@ -255,7 +257,7 @@ pub fn pinch(
     let lanes = host.settings.get(keys::HOME_STYLE).unwrap_or(0) == 1;
     let screen = ui.screen();
     let open_apps = screen == "switcher" || (lanes && screen == "home" && ui.home_page() == 2);
-    if !open_apps || host.front().is_some() || ui.overlay_open() {
+    if busy || !open_apps || host.front().is_some() || ui.overlay_open() {
         *pinch = Pinch::default();
         return false;
     }
