@@ -143,6 +143,12 @@ fn the_control_centre_its_editor_and_the_wifi_sheet() {
     );
     common::frame(&mut r, &mut buf, w, "wifi list");
     common::write_png("tp-wifi.png", &buf, w, h);
+    // the sheet is opaque (tp-wifi): under the list, nothing of the control centre shows through
+    let band = (h as usize * 65 / 100)..(h as usize * 90 / 100);
+    let ghost = band
+        .flat_map(|y| buf[y * w as usize..][..w as usize].iter().copied())
+        .find(|&p| p != 0xFF0F_1115);
+    assert_eq!(ghost, None, "the Wi-Fi sheet shows the control centre");
     r.cancel_touch();
     // Done (the right half of the bottom row)
     common::tap(
