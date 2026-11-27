@@ -53,9 +53,11 @@ pub enum Page {
     BtDevice = 32,
     /// (D12, not yet) Add a hidden Wi-Fi network (set2-wifi-hidden).
     WifiHidden = 33,
+    /// (TP8, TP9) Lock screen & security (set2-lock): the style, double-tap, cards on it, the screen-lock PIN.
+    Lock = 34,
 }
 
-pub const ALL: [Page; 34] = [
+pub const ALL: [Page; 35] = [
     Page::Root,
     Page::Wifi,
     Page::Mobile,
@@ -90,6 +92,7 @@ pub const ALL: [Page; 34] = [
     Page::StorageDrive,
     Page::BtDevice,
     Page::WifiHidden,
+    Page::Lock,
 ];
 
 impl Page {
@@ -141,6 +144,7 @@ impl Page {
             Page::StorageDrive => "drive",
             Page::BtDevice => "btdevice",
             Page::WifiHidden => "wifihidden",
+            Page::Lock => "lock",
         }
     }
 
@@ -212,6 +216,7 @@ impl Page {
             Page::StorageDrive => "Drive",
             Page::BtDevice => "Bluetooth device",
             Page::WifiHidden => "Add network",
+            Page::Lock => "Lock screen & security",
         }
     }
 
@@ -252,7 +257,7 @@ mod tests {
             assert_eq!(Page::from_id(p.id()), Some(*p));
             assert_eq!(Page::from_name(p.name()), Some(*p));
         }
-        assert_eq!(Page::from_id(34), None);
+        assert_eq!(Page::from_id(35), None);
         assert_eq!(Page::opened(31, "").from_outside(), Page::Storage);
         assert_eq!(Page::opened(0, "btdevice").from_outside(), Page::Bluetooth);
         assert_eq!(Page::WifiHidden.parent(), Some(Page::Wifi));

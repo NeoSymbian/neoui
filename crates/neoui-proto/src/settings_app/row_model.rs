@@ -672,7 +672,7 @@ impl Provider for Action {
                 Availability::Disabled("Not yet (D13)")
             }
             "bt.visible" | "bt.paired" => Availability::Disabled("Not yet (D14)"),
-            "root.lock" | "notify.lock" => Availability::Disabled("Not yet (D15)"),
+            "lock.double_tap" => Availability::Disabled("Not yet (kernel)"),
             "reset.erase" => Availability::Disabled("Not yet (D19)"),
             // (D7) Photos is still being designed (O6)
             "display.wallpaper_photos" => Availability::Disabled("Not yet (Photos)"),
@@ -1656,8 +1656,8 @@ mod tests {
         let usb = snap.get(&RowKey::of("storage.usb")).unwrap();
         assert_eq!(usb.availability, Availability::Disabled("Not yet (FS6)"));
         // a stage that hasn't landed is drawn disabled and found with its reason; Add hidden network only with Wi-Fi on
-        let lock = snap.get(&RowKey::of("root.lock")).unwrap();
-        assert_eq!(lock.value_text, "Not yet (D15)");
+        let tap = snap.get(&RowKey::of("lock.double_tap")).unwrap();
+        assert_eq!(tap.value_text, "Not yet (kernel)");
         let hidden = |f: &Facts| {
             project_all(f)
                 .get(&RowKey::of("wifi.hidden"))

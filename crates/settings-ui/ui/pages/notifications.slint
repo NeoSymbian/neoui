@@ -4,8 +4,7 @@
 // notifications (set2-notify-app with nt-settings' channels: Allow, Banners, Sound, Badge, the channels and their
 // importance). Every value is the shell's policy (INFO 7) or the store's notify.* keys. Tiles (the shell's editor,
 // ACTION_EDIT_TILES) and the tap on the status bar (shell.tap) came with TP7; the media player, the live island, the
-// lock screen and the history come with TP3/TP6/TP8 and stay out;
-// Notifications' "Show on lock screen" says "Not yet (D15)".
+// history comes later; Notifications' "Show on lock screen" is notify.lock (TP8).
 import { Theme, NeoList, SectionHeader, ListRow } from "@neoui/kit.slint";
 import { Note } from "../parts.slint";
 import { SetState } from "../state.slint";
@@ -109,15 +108,22 @@ export component NotificationsPage inherits NeoList {
             switch-toggled(v) => { SetState.act("notify-dnd", v ? "1" : "0"); }
         }
 
-        // D15: there is no lock screen yet
+        // TP8: notify.lock
         ListRow {
             value-bright: true;
             title: "Show on lock screen";
             checked: SetState.found == "notify.lock";
-            subtitle: "Not yet (D15)";
+            subtitle: SetState.notify-ok ? "" : "Not yet (protocol 1.21)";
+            value: SetState.notify-ok ? SetState.notify-lock-names[SetState.notify-lock] : "";
+            chevron: SetState.notify-ok;
             has-icon: true;
             icon: @image-url("@neoui/icons/sys/lock.svg");
             divider: false;
+            clicked => {
+                if SetState.notify-ok {
+                    SetState.sheet = "notify-lock";
+                }
+            }
         }
 
         SectionHeader { text: "Apps"; }

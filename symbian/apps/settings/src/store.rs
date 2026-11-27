@@ -51,7 +51,7 @@ pub fn fill_fixed(ui: &SettingsApp) {
 }
 
 /// The shell's value, else the registry's default (a shell older than the key refuses it).
-fn get<T: Setting + Default>(app: &App, key: Key<T>) -> T {
+pub fn get<T: Setting + Default>(app: &App, key: Key<T>) -> T {
     app.setting(key)
         .or_else(|_| neoui_proto::settings::Store::new().get(key))
         .unwrap_or_default()
@@ -84,6 +84,11 @@ fn local_now() -> LocalTime {
         hour: t.hour,
         minute: t.minute,
     }
+}
+
+/// (TP8) Today's date in the chosen format, as the lock screen's preview shows it.
+pub fn date_text_now() -> alloc::string::String {
+    date_text(&local_now(), 0)
 }
 
 /// Date format: today's date in the chosen format and in each of the four (again each time the page reads it, so a
@@ -245,6 +250,7 @@ pub fn load(app: &App, ui: &SettingsApp) {
     crate::appearance::load(app, ui);
     crate::notifications::refresh(app, ui);
     crate::navigation::load(app, ui);
+    crate::lock::load(app, ui);
     s.set_clip_notice(get(app, keys::PRIVACY_CLIP_NOTICE));
 }
 
