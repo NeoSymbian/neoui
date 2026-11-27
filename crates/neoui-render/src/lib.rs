@@ -11,8 +11,8 @@ pub mod keyboard;
 pub mod layer;
 pub mod peek;
 mod settings;
-mod tiles;
 mod suggest;
+mod tiles;
 mod wallpaper;
 
 use alloc::boxed::Box;

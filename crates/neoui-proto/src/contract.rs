@@ -377,13 +377,13 @@ mod tests {
             settings_action(ipc::ACTION_INSTALL_WALLPAPER, settings, never),
             None
         );
-        for (kind, good, bad) in [
-            (
+        // the one action 1.22 still checks without acting on it
+        {
+            let (kind, good, bad) = (
                 ipc::ACTION_LOCK_DIALOG,
                 wire::encode_lock_dialog(wire::lock_dialog::CHANGE).to_vec(),
                 vec![1, 3],
-            ),
-        ] {
+            );
             assert_eq!(
                 settings_action(kind, Caller::App("clock"), never),
                 Some(kerr::PERMISSION_DENIED)
