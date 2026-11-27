@@ -2,7 +2,7 @@
 //! What SYSSTART answers for protocol 1.22's opcodes and Settings actions before their shell side is built (W0a; docs
 //! neoui-shell/protocol.md "Protocol 1.22"): the caller is checked first, then its record, and a request that would
 //! be accepted answers `KErrNotSupported`. Each later stream replaces its part with the real handler and keeps the
-//! checks.
+//! checks: `WIDGET` is [`widget`] (home Part 4, W1-E).
 
 use crate::settings::access::Caller;
 use crate::settings::kerr;
@@ -13,10 +13,7 @@ use alloc::vec::Vec;
 /// is built (TP7): the shell checks it with [`tile`] and keeps it.
 #[must_use]
 pub fn is_publisher_opcode(op: i32) -> bool {
-    matches!(
-        op,
-        ipc::MEDIA | ipc::REPLY_TEXT | ipc::ACTIVITY | ipc::WIDGET
-    )
+    matches!(op, ipc::MEDIA | ipc::REPLY_TEXT | ipc::ACTIVITY)
 }
 
 /// (TP7) A `TILE` from app `key` whose message carries secure ID `sid`, checked as [`ingress`] checks the others:
@@ -58,20 +55,36 @@ pub fn ingress(
         ipc::ACTIVITY => read(activity::ACTIVITY_MAX).and_then(|b| {
             ok(activity::Activity::decode(&b).is_some_and(|a| a.kind != activity::kind::MEDIA))
         }),
-        ipc::WIDGET => read(widget::WIDGET_MAX).and_then(|b| {
-            let c = widget::Content::decode(&b).ok_or(kerr::ARGUMENT)?;
-            c.fits(key).map_err(|template| {
-                if template {
-                    kerr::ARGUMENT
-                } else {
-                    kerr::NOT_FOUND
-                }
-            })
-        }),
         // REPLY_TEXT reads nothing: no reply is pending before TP4's inline reply
         _ => Ok(()),
     };
     r.err().unwrap_or(kerr::NOT_SUPPORTED)
+}
+
+/// `WIDGET` (46) from app `key` whose message carries secure ID `sid`: the content to keep, checked as for
+/// [`ingress`] (the caller first, `read` only then): `KErrPermissionDenied` unless `key` has a catalogue SID and `sid`
+/// is it, so only the app's own EXE fills its widgets; `KErrTooBig` / `KErrArgument` for a long or malformed record,
+/// `KErrNotFound` for a name not in the app's catalogue, `KErrArgument` for another template.
+///
+/// # Errors
+/// As above.
+pub fn widget(
+    key: &str,
+    sid: u32,
+    read: impl FnOnce(usize) -> Result<Vec<u8>, i32>,
+) -> Result<widget::Content, i32> {
+    if apps::sid(key) != Some(sid) {
+        return Err(kerr::PERMISSION_DENIED);
+    }
+    let c = widget::Content::decode(&read(widget::WIDGET_MAX)?).ok_or(kerr::ARGUMENT)?;
+    c.fits(key).map_err(|template| {
+        if template {
+            kerr::ARGUMENT
+        } else {
+            kerr::NOT_FOUND
+        }
+    })?;
+    Ok(c)
 }
 
 /// The longest request [`settings_action`] reads.
@@ -108,7 +121,7 @@ mod tests {
     use crate::settings::access::SETTINGS_SID;
     use alloc::vec;
 
-    const OPS: [i32; 4] = [ipc::MEDIA, ipc::REPLY_TEXT, ipc::ACTIVITY, ipc::WIDGET];
+    const OPS: [i32; 3] = [ipc::MEDIA, ipc::REPLY_TEXT, ipc::ACTIVITY];
     const CLOCK: u32 = 0xE000_8001;
 
     fn never(_: usize) -> Result<Vec<u8>, i32> {
@@ -138,6 +151,21 @@ mod tests {
             );
         }
         assert!(!is_publisher_opcode(ipc::NOTIFY) && !is_publisher_opcode(ipc::TILE));
+        assert!(!is_publisher_opcode(ipc::WIDGET), "WIDGET has its handler");
+        let never_c =
+            |_: usize| -> Result<Vec<u8>, i32> { panic!("read before the caller was checked") };
+        assert_eq!(
+            widget(LEGACY, LEGACY_SID, never_c).err(),
+            Some(kerr::PERMISSION_DENIED)
+        );
+        assert_eq!(
+            widget("clock", LEGACY_SID, never_c).err(),
+            Some(kerr::PERMISSION_DENIED)
+        );
+        assert_eq!(
+            widget("kit", CLOCK, never_c).err(),
+            Some(kerr::PERMISSION_DENIED)
+        );
     }
 
     #[test]
@@ -200,17 +228,6 @@ mod tests {
                 kerr::ARGUMENT,
             ),
             (ipc::ACTIVITY, vec![], kerr::ARGUMENT),
-            (ipc::WIDGET, text.encode(), kerr::NOT_SUPPORTED),
-            (ipc::WIDGET, next.encode(), kerr::ARGUMENT), // another template
-            (
-                ipc::WIDGET,
-                widget::Content {
-                    name: "other".into(),
-                    ..text.clone()
-                }
-                .encode(),
-                kerr::NOT_FOUND,
-            ),
             (ipc::REPLY_TEXT, vec![], kerr::NOT_SUPPORTED),
         ];
         for (op, b, want) in cases {
@@ -225,11 +242,35 @@ mod tests {
             ingress(ipc::REPLY_TEXT, "clock", CLOCK, never),
             kerr::NOT_SUPPORTED
         );
-        // a widget name of another app's catalogue
+        // WIDGET: the app's own content back; another template, a name not in its catalogue, another app's name
+        assert_eq!(widget("clock", CLOCK, rec(text.encode())), Ok(text.clone()));
         assert_eq!(
-            ingress(ipc::WIDGET, "files", 0xE000_6001, rec(text.encode())),
-            kerr::NOT_FOUND
+            widget("clock", CLOCK, rec(next.encode())),
+            Err(kerr::ARGUMENT)
         );
+        let other = widget::Content {
+            name: "other".into(),
+            ..text.clone()
+        };
+        assert_eq!(
+            widget("clock", CLOCK, rec(other.encode())),
+            Err(kerr::NOT_FOUND)
+        );
+        assert_eq!(
+            widget("files", 0xE000_6001, rec(text.encode())),
+            Err(kerr::NOT_FOUND)
+        );
+        assert_eq!(widget("clock", CLOCK, rec(vec![1])), Err(kerr::ARGUMENT));
+        assert_eq!(
+            widget("clock", CLOCK, rec(vec![0; widget::WIDGET_MAX + 1])),
+            Err(kerr::TOO_BIG)
+        );
+        // the kit's demo (its own SID)
+        let demo = widget::Content {
+            name: "demo".into(),
+            ..text.clone()
+        };
+        assert_eq!(widget("kit", LEGACY_SID, rec(demo.encode())), Ok(demo));
     }
 
     /// (TP7) `TILE`: the caller first, then the offer.

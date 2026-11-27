@@ -1,0 +1,360 @@
+// SPDX-License-Identifier: Apache-2.0
+// (home.md Part 4) Home's 2 × 2 widgets and the apps' widgets: the shell's Clock, Agenda, Favourites and Music at
+// 2 × 2 (their 4 × n faces are in screens/home.slint), and an app's widget drawn from what it sent (`ipc::WIDGET`)
+// with its template: Text, Count or People, at 2 × 2 or 4 × 1. Before any content it shows its label greyed.
+import { Theme } from "../theme.slint";
+import { Kit } from "layers.slint";
+import { Now } from "../now.slint";
+import { BigClock, Card } from "controls.slint";
+import { Glyph } from "frame.slint";
+import { Avatar } from "lists.slint";
+import { WidgetContent } from "../screens/home-edit.slint";
+
+// The clock at 2 × 2: the time, the date and the next alarm, smaller. Tap: Clock.
+export component ClockSquare inherits Rectangle {
+    callback clicked;
+    VerticalLayout {
+        alignment: start;
+        spacing: 6 * Theme.dp;
+        HorizontalLayout {
+            alignment: start;
+            spacing: 4 * Theme.dp;
+            BigClock {
+                hours: Now.hours;
+                minutes: Now.minutes;
+                lead-zero: Now.h24;
+                digit-h: 40 * Theme.dp;
+            }
+
+            if Now.am-pm != "": VerticalLayout {
+                alignment: end;
+                Text {
+                    text: Now.am-pm;
+                    color: Theme.text-secondary;
+                    font-size: 12 * Theme.dp;
+                }
+            }
+        }
+
+        Text {
+            text: Now.date;
+            color: Theme.text-secondary;
+            font-size: Theme.font-label;
+            wrap: word-wrap;
+        }
+
+        if Now.next-alarm != "": HorizontalLayout {
+            alignment: start;
+            spacing: 4 * Theme.dp;
+            Glyph {
+                source: @image-url("../icons/sys/alarm.svg");
+                size: Theme.font-label;
+                colorize: Theme.text-dim;
+            }
+
+            Text {
+                text: Now.next-alarm;
+                color: Theme.text-dim;
+                font-size: Theme.font-label;
+                overflow: elide;
+            }
+        }
+    }
+
+    TouchArea {
+        clicked => {
+            Kit.accept();
+            root.clicked();
+        }
+    }
+}
+
+// The next event at 2 × 2 (dtsrv.next): its colour bar, title (two lines) and time, or "No events". Tap: Calendar.
+export component AgendaSquare inherits Card {
+    callback clicked;
+    VerticalLayout {
+        alignment: start;
+        padding: Theme.card-pad;
+        spacing: 8 * Theme.dp;
+        Text {
+            text: "NEXT";
+            color: Theme.text-dim;
+            font-size: Theme.font-status * 0.9;
+            font-weight: 600;
+            letter-spacing: 0.06 * Theme.font-status;
+        }
+
+        if Now.next-event-title == "": Text {
+            text: "No events";
+            color: Theme.text-dim;
+            font-size: Theme.font-body;
+        }
+        if Now.next-event-title != "": Rectangle {
+            height: 4 * Theme.dp;
+            width: 28 * Theme.dp;
+            x: 0;
+            border-radius: 2 * Theme.dp;
+            background: Now.next-event-colour;
+        }
+        if Now.next-event-title != "": Text {
+            text: Now.next-event-title;
+            color: Theme.text;
+            font-size: Theme.font-body;
+            font-weight: 600;
+            wrap: word-wrap;
+            max-height: 2.6 * Theme.font-body;
+            overflow: elide;
+        }
+        if Now.next-event-title != "": Text {
+            text: Now.next-event-time;
+            color: Theme.text-dim;
+            font-size: Theme.font-label;
+            overflow: elide;
+        }
+    }
+
+    TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+// Favourites at 2 × 2 (no contacts source in the shell yet): its empty state. Tap: Contacts.
+export component FavouritesSquare inherits Card {
+    callback clicked;
+    VerticalLayout {
+        alignment: start;
+        padding: Theme.card-pad;
+        spacing: 8 * Theme.dp;
+        Glyph {
+            x: 0;
+            source: @image-url("../icons/sys/star.svg");
+            size: 28 * Theme.dp;
+            colorize: Theme.text-secondary;
+        }
+
+        Text {
+            text: "Favourites";
+            color: Theme.text;
+            font-size: Theme.font-body;
+            font-weight: 600;
+        }
+
+        Text {
+            text: "No favourites yet";
+            color: Theme.text-dim;
+            font-size: Theme.font-label;
+            wrap: word-wrap;
+        }
+    }
+
+    TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+// Music at 2 × 2 (TP3's media session isn't there yet): the art over "Nothing playing". Tap: Music.
+export component MusicSquare inherits Card {
+    callback clicked;
+    VerticalLayout {
+        alignment: start;
+        padding: Theme.card-pad;
+        spacing: 10 * Theme.dp;
+        Rectangle {
+            x: 0;
+            width: 56 * Theme.dp;
+            height: 56 * Theme.dp;
+            border-radius: Theme.radius-small;
+            background: @linear-gradient(135deg, #e04e9b 0%, #8656e8 100%);
+            Glyph {
+                source: @image-url("../icons/sys/note.svg");
+                size: 26 * Theme.dp;
+            }
+        }
+
+        Text {
+            text: "Nothing playing";
+            color: Theme.text;
+            font-size: Theme.font-body;
+            font-weight: 600;
+            overflow: elide;
+        }
+
+        Text {
+            text: "Music";
+            color: Theme.text-dim;
+            font-size: Theme.font-label;
+        }
+    }
+
+    TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+// An app's widget: `content` drawn with its template at 2 × 2 (`square`) or 4 × 1; the app's `icon` and the widget's
+// `label` greyed until the first content. Tap: the app.
+export component AppWidgetCard inherits Card {
+    in property <WidgetContent> content;
+    in property <string> label;
+    // shortcut: always the app's icon; the content's kit glyph id (`icon`) is not drawn until the glyphs have ids here
+    in property <image> icon;
+    in property <bool> square;
+    callback clicked;
+    accessible-role: button;
+    accessible-label: root.content.template == 1 ? root.content.title : root.label;
+
+    // none yet: the app's icon and the widget's name, greyed (stacked at 2 × 2, side by side at 4 × 1)
+    if root.content.template == 0 && root.square: VerticalLayout {
+        padding: Theme.card-pad;
+        spacing: 10 * Theme.dp;
+        alignment: start;
+        Image {
+            x: 0;
+            width: 28 * Theme.dp;
+            height: 28 * Theme.dp;
+            source: root.icon;
+            opacity: 0.4;
+        }
+
+        Text {
+            text: root.label;
+            color: Theme.text-dim;
+            font-size: Theme.font-body;
+            wrap: word-wrap;
+        }
+    }
+    if root.content.template == 0 && !root.square: HorizontalLayout {
+        padding: Theme.card-pad;
+        spacing: 10 * Theme.dp;
+        alignment: start;
+        VerticalLayout {
+            alignment: center;
+            Image {
+                width: 28 * Theme.dp;
+                height: 28 * Theme.dp;
+                source: root.icon;
+                opacity: 0.4;
+            }
+        }
+
+        Text {
+            text: root.label;
+            color: Theme.text-dim;
+            font-size: Theme.font-body;
+            vertical-alignment: center;
+            overflow: elide;
+        }
+    }
+
+    // Text: the icon and title, then lines (two at 2 × 2, one at 4 × 1)
+    if root.content.template == 1: VerticalLayout {
+        padding: Theme.card-pad;
+        spacing: 4 * Theme.dp;
+        alignment: root.square ? start : center;
+        HorizontalLayout {
+            spacing: 8 * Theme.dp;
+            Image {
+                width: 20 * Theme.dp;
+                height: 20 * Theme.dp;
+                source: root.icon;
+            }
+
+            Text {
+                text: root.content.title;
+                color: Theme.text;
+                font-size: Theme.font-body;
+                font-weight: 600;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+        }
+
+        for line[i] in root.content.lines: Text {
+            visible: i < (root.square ? 2 : 1);
+            height: i < (root.square ? 2 : 1) ? self.preferred-height : 0;
+            text: line;
+            color: Theme.text-secondary;
+            font-size: Theme.font-label;
+            overflow: elide;
+        }
+    }
+
+    // Count: a big number with its label
+    if root.content.template == 2: VerticalLayout {
+        padding: Theme.card-pad;
+        spacing: 2 * Theme.dp;
+        alignment: center;
+        HorizontalLayout {
+            spacing: 10 * Theme.dp;
+            alignment: start;
+            Text {
+                text: root.content.value;
+                color: Theme.text;
+                font-size: (root.square ? 40 : 30) * Theme.dp;
+                font-weight: 600;
+                vertical-alignment: center;
+            }
+
+            if !root.square: Text {
+                text: root.content.title;
+                color: Theme.text-secondary;
+                font-size: Theme.font-body;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+        }
+
+        if root.square: Text {
+            text: root.content.title;
+            color: Theme.text-secondary;
+            font-size: Theme.font-label;
+            overflow: elide;
+        }
+    }
+
+    // People: avatars (a row of five at 4 × 1, two by two at 2 × 2), names under them at 2 × 2
+    if root.content.template == 3 && !root.square: HorizontalLayout {
+        padding-left: Theme.card-pad;
+        padding-right: Theme.card-pad;
+        spacing: 10 * Theme.dp;
+        alignment: start;
+        for p in root.content.people: Avatar {
+            y: (parent.height - self.height) / 2;
+            initials: p.initials;
+            tint: p.tint;
+            size: min(44 * Theme.dp, parent.height - 16 * Theme.dp);
+        }
+    }
+    if root.content.template == 3 && root.square: Rectangle {
+        for p[i] in root.content.people: Rectangle {
+            visible: i < 4;
+            x: Math.mod(i, 2) * parent.width / 2;
+            y: Math.floor(i / 2) * parent.height / 2;
+            width: parent.width / 2;
+            height: parent.height / 2;
+            Avatar {
+                y: 10 * Theme.dp;
+                initials: p.initials;
+                tint: p.tint;
+                size: min(40 * Theme.dp, parent.height - 34 * Theme.dp);
+            }
+
+            Text {
+                y: parent.height - 22 * Theme.dp;
+                width: parent.width - 8 * Theme.dp;
+                text: p.name;
+                color: Theme.text-secondary;
+                font-size: Theme.font-status * 0.9;
+                horizontal-alignment: center;
+                overflow: elide;
+            }
+        }
+    }
+
+    TouchArea {
+        clicked => {
+            Kit.accept();
+            root.clicked();
+        }
+    }
+}

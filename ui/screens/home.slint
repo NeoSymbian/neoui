@@ -9,6 +9,7 @@ import { Data } from "../data.slint";
 import { Now } from "../now.slint";
 import { Card, PageDots } from "../components/controls.slint";
 import { ClockWidget } from "../components/widgets.slint";
+import { ClockSquare, AgendaSquare, FavouritesSquare, MusicSquare, AppWidgetCard } from "../components/home-widgets.slint";
 import { Avatar } from "../components/lists.slint";
 import { Glyph } from "../components/frame.slint";
 import { Badge } from "../components/footer.slint";
@@ -228,22 +229,62 @@ component ItemView inherits Rectangle {
             }
         }
     }
-    if c.kind == 1 && c.widget == 1: ClockWidget {
+    // (Part 4) the shell's widgets at 2 × 2, and the apps' widgets
+    if c.kind == 1 && c.w == 2: Rectangle {
+        y: root.inset;
+        x: root.inset / 2;
+        width: root.width - root.inset;
+        height: root.height - 2 * root.inset;
+        if c.widget == 1: ClockSquare {
+            clicked => { root.open-app("clock"); }
+        }
+        if c.widget == 2: AgendaSquare {
+            clicked => { root.open-app("calendar"); }
+        }
+        if c.widget == 3: FavouritesSquare {
+            clicked => { root.open-app("contacts"); }
+        }
+        if c.widget == 4: MusicSquare {
+            clicked => { root.open-app("music"); }
+        }
+    }
+    if c.kind == 2: Rectangle {
+        y: root.inset;
+        x: c.w == 2 ? root.inset / 2 : 0;
+        width: root.width - (c.w == 2 ? root.inset : 0);
+        height: root.height - 2 * root.inset;
+        for app in Apps.all: Rectangle {
+            if app.key == c.key: AppWidgetCard {
+                content: c.content;
+                label: c.label;
+                icon: app.icon;
+                square: c.w == 2;
+                // on the page its content names (none yet: just the app)
+                clicked => {
+                    if c.content.template != 0 {
+                        HomeModel.op("open", c.content.page, 0, 0, 0, c.key);
+                    }
+                    root.open-app(c.key);
+                }
+            }
+        }
+    }
+    if c.kind == 1 && c.w == 4 && c.widget == 1: ClockWidget {
         y: root.inset;
         width: root.width;
         clicked => { root.open-app("clock"); }
     }
-    if c.kind == 1 && c.widget == 2: AgendaCard {
+    if c.kind == 1 && c.w == 4 && c.widget == 2: AgendaCard {
         y: root.inset;
         height: root.height - 2 * root.inset;
         clicked => { root.open-app("calendar"); }
     }
-    if c.kind == 1 && c.widget == 3: FavouritesCard {
+    if c.kind == 1 && c.w == 4 && c.widget == 3: FavouritesCard {
         y: root.inset;
         height: root.height - 2 * root.inset;
         clicked => { root.open-app("contacts"); }
     }
-    if c.kind == 1 && c.widget == 4: MusicCard {
+    if c.kind == 1 && c.w == 4 && c.widget == 4: MusicCard {
         y: root.inset;
         height: root.height - 2 * root.inset;
         clicked => { root.open-app("music"); }

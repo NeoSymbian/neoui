@@ -22,14 +22,24 @@ pub enum Template {
     People = 3,
 }
 
-/// An app widget the shell knows: `(app, name, template, sizes, label)`. The first size is the one Add puts on home.
-pub const CATALOGUE: &[(&str, &str, Template, &[Size], &str)] = &[(
-    "clock",
-    "next",
-    Template::Text,
-    &[Size::Square, Size::Wide],
-    "Next alarm",
-)];
+/// An app widget the shell knows: `(app, name, template, sizes, label)`. The Add sheet offers every size.
+pub const CATALOGUE: &[(&str, &str, Template, &[Size], &str)] = &[
+    (
+        "clock",
+        "next",
+        Template::Text,
+        &[Size::Square, Size::Wide],
+        "Next alarm",
+    ),
+    // NEOKIT's demo (its Notifications page sends it), so the shell's side runs on virt without DTSRV
+    (
+        "kit",
+        "demo",
+        Template::Text,
+        &[Size::Square, Size::Wide],
+        "Kit demo",
+    ),
+];
 
 /// The catalogue row of `(app, name)`.
 #[must_use]

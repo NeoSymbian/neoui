@@ -457,6 +457,58 @@ jobs:
           grep -a 'neocont: opened on page 0' $s
           ! grep -aq 'K::Fault\|Kern::Fault\|\[EKERN\] panic\|rust panic' $s
 
+      # Home Part 3 and 4 (docs neoui-shell/home.md), in Gestures (the Classic step left it so). In screen pixels:
+      # - Add to home: Apps (485,973) -> a long press on Clock (449,603) opens the kit's Menu at the finger; its one
+      #   item, Add to home (362,651: the menu's left edge clamped to 132 dp, its row 32 dp under the finger), saves
+      #   home.layout at once (page 0 is full: page 1). Reboot persistence is the conductor's check.
+      # - The kit's widget: UI kit (449,990) -> ⋮ (497,72) -> Notifications (298,874) -> Send home widget (third
+      #   button, 270,328): WIDGET passes the SID check and is kept under widget.kit.demo.
+      # - The editor: Settings (270,805) -> Home & navigation (270,721) -> Edit home (270,980) -> + (42,73) ->
+      #   Agenda's 2 × 2 (467,659: the sheet's six rows from the bottom, the last chip) -> + -> Kit demo's 2 × 2
+      #   (359,994: its first chip) -> Done (473,73) saves once.
+      # - The kit's widget opens the kit on its page: a swipe left to page 1 (the last: no change if Done left home
+      #   there) -> Kit demo's 2 × 2 under Clock and Agenda (146,470) -> the kit on NOTIFY_PAGE (10); home again.
+      # - Lanes: Settings again -> Home style (270,883) -> Lanes (270,988); home; a swipe moves between lanes; then
+      #   Pages again (270,892) for the steps after this one.
+      - name: Boot again; home (Add to home from the menu, the kit's widget, a 2 × 2 in the editor, Lanes)
+        working-directory: build
+        run: |
+          cp out/serial.log out/serial-legacy.log
+          export SCREEN=539x1079 NAV=gestures
+          . ../neoui/symbian/taps.sh
+          tap 485 973; wait_s 1
+          hold 449 603; wait_s 1; tap 362 651; expect "neoui: setting home.layout"
+          wait_s 1; tap 449 990; expect "neoui: app kit started"; wait_s 2
+          tap 497 72; wait_s 2; tap 298 874; wait_s 2
+          tap 270 328; expect "kit: home widget sent (Ok"; expect "neoui: widget widget.kit.demo from kit"
+          wait_s 1; swipe 270 1075 270 900; expect "neoui: screen home"; wait_s 1
+          tap 485 973; tap 270 805; expect "neoui: app settings surface"; wait_s 2
+          tap 270 721; expect "settings: page navigation"; wait_s 1
+          tap 270 980; expect "neoui: settings opens the home editor"; wait_s 1
+          tap 42 73; wait_s 1; tap 467 659; wait_s 1
+          tap 42 73; wait_s 1; tap 359 994; wait_s 1
+          tap 473 73; expect "neoui: setting home.layout"; wait_s 1
+          swipe 450 500 90 500; wait_s 1
+          tap 146 470; expect "neoui: widget of kit opens page 10"; wait_s 2
+          swipe 270 1075 270 900; expect "neoui: screen home"; wait_s 1
+          tap 485 973; tap 270 805; expect "neoui: app settings resumed"; wait_s 2
+          tap 270 883; wait_s 1; tap 270 988; expect "neoui: setting home.style = 1"
+          wait_s 1; swipe 270 1075 270 900; expect "neoui: screen home"; wait_s 1
+          swipe 450 500 90 500; expect "neoui: home page"; wait_s 1
+          tap 485 973; tap 270 805; expect "neoui: app settings resumed"; wait_s 2
+          tap 270 883; wait_s 1; tap 270 892; expect "neoui: setting home.style = 0"
+          ui_run 240
+          s=out/serial.log
+          test "$(grep -ac 'neoui: setting home.layout' $s)" -ge 2   # the menu's save, then Done's
+          grep -a 'kit: home widget sent (Ok' $s
+          grep -a 'neoui: widget widget.kit.demo from kit (Text)' $s
+          ! grep -aq 'neoui: widget refused for kit' $s
+          grep -a 'neoui: settings opens the home editor' $s
+          grep -a 'neoui: widget of kit opens page 10' $s
+          grep -a 'neoui: setting home.style = 1' $s
+          grep -a 'neoui: home page' $s
+          ! grep -aq 'K::Fault\|Kern::Fault\|\[EKERN\] panic\|rust panic' $s
+
       # Navigation v2's gestures (docs neoui-shell/navigation.md; edge zone 16 dp = 24 px, sides and the band commit at 72 dp =
       # 108 px, Home at 80 dp = 120 px). The Thumb map (Gestures, the default):
       # - Settings (via Apps 485,973 and 270,805; the NEOSET app) -> Home & navigation (270,721).
@@ -474,7 +526,7 @@ jobs:
       - name: Boot again; gesture navigation (the Thumb map, then N9)
         working-directory: build
         run: |
-          cp out/serial.log out/serial-legacy.log
+          cp out/serial.log out/serial-home.log
           export SCREEN=539x1079 NAV=gestures
           . ../neoui/symbian/taps.sh
           tap 485 973; tap 270 805; expect "neoui: app settings surface"; wait_s 2
@@ -525,3 +577,4 @@ jobs:
             build/out/serial.log
             build/out/serial-main.log
             build/out/serial-legacy.log
+            build/out/serial-home.log

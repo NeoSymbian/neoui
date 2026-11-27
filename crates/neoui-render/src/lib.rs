@@ -655,6 +655,17 @@ impl Renderer {
             .invoke_op("enter".into(), 0, 0, 0, 0, "".into());
     }
 
+    /// (home.md Part 4) The content the shell keeps for app `app`'s widget `name` (`widget.<app>.<name>`, from its
+    /// `ipc::WIDGET`), or `None` (never sent: the widget shows its label greyed).
+    pub fn set_app_widget(
+        &mut self,
+        app: &str,
+        name: &str,
+        c: Option<neoui_proto::widget::Content>,
+    ) {
+        home::set_content(&self.ui, &mut self.home.borrow_mut(), app, name, c);
+    }
+
     /// (D10) Is home's editor on? The UI server's page slide and pull to the shade stay off meanwhile.
     pub fn home_editing(&self) -> bool {
         self.home.borrow().editing()
@@ -924,6 +935,12 @@ impl Renderer {
     /// Clear all was tapped since the last call.
     pub fn take_notes_cleared(&mut self) -> bool {
         self.notes_cleared.replace(false)
+    }
+
+    /// (home.md Part 4) The app widgets tapped on home since the last call: (app key, the page its content names). The
+    /// tap already showed the app's screen; the server tells the app the page (`AppEvent::Page`).
+    pub fn take_widget_pages(&mut self) -> Vec<(String, u16)> {
+        self.home.borrow_mut().take_opened()
     }
 
     /// The shade's cards tapped since the last call: (app key, id, 0 for the card itself or `i + 1` for its action

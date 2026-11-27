@@ -29,6 +29,13 @@ SNAPSHOT_FOR = {
     "sh-shade-quick": "tp-shade",
     # (G2/G3) Open apps in Gestures: the switcher's own snapshot
     "nav-openapps": "switcher-gestures-539x1079",
+    # home (D10, home.md Parts 3 and 4)
+    "Main": "home-pixel",
+    "sh-home-buttons": "home-buttons-539x1079",
+    "sh-home-clock-24h": "home-clock-widget-540x1080",
+    "sh-home-clock-12h": "home-clock-widget-12h-540x1080",
+    "nav-home-longpress": "home-longpress-pixel",
+    "sh-apps-menu": "sh-apps-menu-hold-pixel",
 }
 # boards that are specs or maps, not screens
 NOT_SCREENS = ("-spec-", "-replacement-map", "-prototype")

@@ -128,6 +128,24 @@ fn run() -> Result<(), i32> {
     cards.on_clear(move || {
         dprintln!("kit: cards cleared ({:?})", a.clear_notify());
     });
+    // (home.md Part 4) the kit's widget on home: a Text card that counts the sends
+    let (a, sent) = (app.clone(), Rc::new(Cell::new(0u32)));
+    cards.on_widget(move || {
+        sent.set(sent.get() + 1);
+        let r = a.widget(&neoapp::widget::Content {
+            name: "demo".into(),
+            page: NOTIFY_PAGE as u16,
+            body: neoapp::widget::Body::Text {
+                icon: 0,
+                title: "Kit demo".into(),
+                lines: alloc::vec![
+                    format!("Sent {} times", sent.get()),
+                    "From the UI kit".into()
+                ],
+            },
+        });
+        dprintln!("kit: home widget sent ({:?})", r);
+    });
     ui.show().map_err(|_| -2)?;
     let mut shown = Page::default();
     describe(&app, &ui, &mut shown)?;

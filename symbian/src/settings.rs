@@ -142,6 +142,7 @@ impl UiMirror {
         for key in Renderer::shown_settings() {
             show(ui, settings, key);
         }
+        crate::host::widget::show_all(ui, settings);
         Self {
             seq: settings.store().seq(),
         }
@@ -168,11 +169,15 @@ impl UiMirror {
         let stale: Vec<&'static str> = match settings.store().changes_since(self.seq) {
             Some(changed) => {
                 let changed: Vec<&str> = changed.collect();
+                crate::host::widget::show_changed(ui, settings, &changed);
                 Renderer::shown_settings()
                     .filter(|k| changed.contains(k))
                     .collect()
             }
-            None => Renderer::shown_settings().collect(),
+            None => {
+                crate::host::widget::show_all(ui, settings);
+                Renderer::shown_settings().collect()
+            }
         };
         for key in stale {
             show(ui, settings, key);

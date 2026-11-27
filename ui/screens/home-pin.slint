@@ -1,0 +1,11 @@
+// SPDX-License-Identifier: Apache-2.0
+// (home.md Part 3) The Apps menu's long press on an app (menu.slint): Add to home, or Remove from home when it has an
+// icon there. The renderer's home.rs answers it on the saved layout (into the draft while editing) and saves at once.
+export global HomePin {
+    // does app `key` have an icon on home
+    pure callback pinned(string) -> bool;
+    // "add-home" (to the page home shows, else the first with room) or "remove-home", for app `key`
+    callback op(string, string);
+    // what it did, for the menu's toast ("" none; the menu clears it)
+    in-out property <string> note;
+}

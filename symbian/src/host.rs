@@ -49,6 +49,9 @@ mod home;
 // (TP7) the control centre's slot table, app tiles and their taps
 #[path = "tiles.rs"]
 pub mod tiles;
+// (home.md Part 4) WIDGET: app widgets' content
+#[path = "widget.rs"]
+pub(crate) mod widget;
 
 /// Apps whose shell screen is a launcher grid until they request FRONT(1).
 // shortcut: a fixed table like APPS; apps declare launcher support when apps are installable.
@@ -1590,6 +1593,11 @@ impl Service for Host {
             proto::TILE => {
                 let key = app.key;
                 let r = self.tile_offer(key, &m);
+                m.complete(r);
+            }
+            proto::WIDGET => {
+                let key = app.key;
+                let r = self.widget(key, &m);
                 m.complete(r);
             }
             // 1.22's contract: checked, not acted on yet (their producers and consumers land in W1–W3)
