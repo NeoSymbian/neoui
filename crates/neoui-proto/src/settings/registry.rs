@@ -38,6 +38,9 @@ pub enum Limit {
     Policy,
     /// (TP7) A tile order (`tiles::decode_order`): at most 32 valid ids, none twice.
     Tiles,
+    /// (TP6) A list of app keys (`activity::decode_deny`: `s16` entries, each 1–16 bytes of UTF-8), at most this many
+    /// bytes.
+    AppKeys(usize),
 }
 
 /// A default value, in a form that can be written in a `const` table.
@@ -118,6 +121,10 @@ impl Spec {
                 Err(super::Error::OutOfRange)
             }
             (Limit::Tiles, Value::Bytes(b)) if crate::tiles::decode_order(b).is_none() => {
+                Err(super::Error::OutOfRange)
+            }
+            (Limit::AppKeys(n), Value::Bytes(b)) if b.len() > n => Err(super::Error::TooLong),
+            (Limit::AppKeys(_), Value::Bytes(b)) if crate::activity::decode_deny(b).is_none() => {
                 Err(super::Error::OutOfRange)
             }
             _ => Ok(()),
@@ -346,13 +353,13 @@ registry! {
     /// (TP3) The media player in the shade.
     SHELL_MEDIA: bool = "shell.media", default DefaultValue::Bool(true), limit Limit::None, owner Owner::Shell;
     /// (TP7) The control centre's placed tiles in order (`tiles::encode_order`: LE u16 ids, high bit wide; empty = the
-    /// default order). Only the shell's editor writes it (`access::SHELL_ONLY`; Settings opens it with
+    /// default order, so the editor keeps at least one tile). Only the shell's editor writes it (`access::SHELL_ONLY`; Settings opens it with
     /// `ipc::ACTION_EDIT_TILES`).
     SHELL_TILES: Bytes = "shell.tiles", default DefaultValue::Bytes(&[]), limit Limit::Tiles, owner Owner::Shell;
     /// (TP6) Show live activities in the island.
     ISLAND_ON: bool = "island.on", default DefaultValue::Bool(true), limit Limit::None, owner Owner::Shell;
     /// (TP6) The apps turned off for the island (`activity::encode_deny`: `s16` app keys).
-    ISLAND_DENY: Bytes = "island.deny", default DefaultValue::Bytes(&[]), limit Limit::MaxLen(16 * 17),
+    ISLAND_DENY: Bytes = "island.deny", default DefaultValue::Bytes(&[]), limit Limit::AppKeys(16 * 17),
         owner Owner::Shell;
     /// (TP8) Show the lock screen when the screen comes on.
     LOCK_ON: bool = "lock.on", default DefaultValue::Bool(true), limit Limit::None, owner Owner::Shell;
@@ -620,10 +627,9 @@ mod tests {
         }
         let tiles = spec_of(keys::SHELL_TILES).unwrap();
         assert_eq!(
-            tiles.check(&Value::Bytes(crate::tiles::encode_order(&[
-                (1, true),
-                (3, false)
-            ]))),
+            tiles.check(&Value::Bytes(
+                crate::tiles::encode_order(&[(1, true), (3, false)]).unwrap()
+            )),
             Ok(())
         );
         assert_eq!(

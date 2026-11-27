@@ -785,9 +785,23 @@ impl App {
 
     /// (D7) Watch `display.font_size` and give its value now, 0–3 (1, Medium, when the shell has none): set it on the
     /// kit's `Theme.font-size` with [`font_scale!`], at start and again on each `AppEvent::Settings`.
-    pub fn watch_font_scale(&self) -> i32 {
-        let _ = self.watch_settings(neoui_proto::settings::keys::DISPLAY_FONT_SIZE.name());
-        self.font_scale()
+    ///
+    /// # Errors
+    /// The watch's ([`App::watch_settings`]: `KErrOverflow` past the per-app limit); the size isn't read then.
+    pub fn watch_font_scale(&self) -> Result<i32, i32> {
+        self.watch_settings(neoui_proto::settings::keys::DISPLAY_FONT_SIZE.name())?;
+        Ok(self.font_scale())
+    }
+
+    /// (1.22) The shell's protocol version (`proto::SHELL_VERSION`); `None` from a shell before 1.22, which doesn't
+    /// read 1.22's records: send it no `card::NOTIFY_STICKY` (a 1.21 shell refuses the card) and expect no
+    /// `card::CALL_ANSWER`/`CALL_REJECT` (draw Answer and Reject as the card's own actions there).
+    pub fn shell_version(&self) -> Option<(u8, u8)> {
+        let v = self
+            .server
+            .send_receive(proto::SHELL_VERSION, &TIpcArgs::new())
+            .ok()?;
+        Some(((v >> 8) as u8, v as u8))
     }
 
     /// (D7) The text size now, 0–3 (1 when the shell has none).

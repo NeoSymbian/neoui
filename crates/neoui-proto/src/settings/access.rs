@@ -77,7 +77,9 @@ impl Caller<'_> {
                     Owner::Any => true,
                     Owner::Shell => false,
                 },
-                None => namespace(name) == app,
+                // `widget.<app>.<name>` keeps app widgets' content (1.22): the shell writes it, never an app, even one
+                // whose key is "widget"
+                None => namespace(name) == app && namespace(name) != "widget",
             },
         }
     }
@@ -131,6 +133,8 @@ mod tests {
             !Caller::App("clock").may_write("widget.clock.next")
                 && !s.may_write("widget.clock.next")
         );
+        assert!(!Caller::App("widget").may_write("widget.clock.next"));
+        assert!(Caller::Shell.may_write("widget.clock.next"));
         // an app that calls itself "settings" is still only an app: no shell keys
         assert!(!Caller::App("settings").may_write("radio.wifi"));
         assert_eq!(alloc::format!("{s}"), "settings");

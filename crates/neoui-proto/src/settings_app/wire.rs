@@ -853,14 +853,16 @@ impl WallpaperRequest {
     /// The largest side accepted.
     pub const SIDE_MAX: u16 = 4096;
 
+    /// `width × 3`; `None` when it doesn't fit 16 bits.
     #[must_use]
-    pub fn stride(&self) -> u16 {
-        self.width * 3
+    pub fn stride(&self) -> Option<u16> {
+        self.width.checked_mul(3)
     }
 
+    /// `stride × height`; `None` when it doesn't fit 32 bits.
     #[must_use]
-    pub fn bytes(&self) -> u32 {
-        u32::from(self.stride()) * u32::from(self.height)
+    pub fn bytes(&self) -> Option<u32> {
+        u32::from(self.stride()?).checked_mul(u32::from(self.height))
     }
 
     /// The request; `None` for a side of 0 or past [`Self::SIDE_MAX`].
@@ -874,8 +876,8 @@ impl WallpaperRequest {
         w.0.extend_from_slice(&[1, Self::FORMAT_RGB888]);
         w.h(self.width);
         w.h(self.height);
-        w.h(self.stride());
-        w.w(self.bytes());
+        w.h(self.stride()?);
+        w.w(self.bytes()?);
         Some(w.0)
     }
 
@@ -893,7 +895,8 @@ impl WallpaperRequest {
         };
         let (stride, bytes) = (r.h()?, r.w()?);
         r.end()?;
-        (req.encode().is_some() && stride == req.stride() && bytes == req.bytes()).then_some(req)
+        (req.encode().is_some() && Some(stride) == req.stride() && Some(bytes) == req.bytes())
+            .then_some(req)
     }
 }
 
@@ -1214,7 +1217,17 @@ mod tests {
         };
         let b = pixel.encode().unwrap();
         assert_eq!(b, [1, 1, 0x1c, 2, 0x38, 4, 0x54, 6, 0x60, 0xb2, 0x1a, 0]);
-        assert_eq!((pixel.stride(), pixel.bytes()), (1620, 1_749_600));
+        assert_eq!(
+            (pixel.stride(), pixel.bytes()),
+            (Some(1620), Some(1_749_600))
+        );
+        // the arithmetic is checked, whatever the sides
+        let huge = WallpaperRequest {
+            width: u16::MAX,
+            height: u16::MAX,
+        };
+        assert_eq!((huge.stride(), huge.bytes()), (None, None));
+        assert_eq!(huge.encode(), None);
         assert_eq!(WallpaperRequest::decode(&b), Some(pixel));
         for n in 0..b.len() {
             assert_eq!(WallpaperRequest::decode(&b[..n]), None, "{n}");

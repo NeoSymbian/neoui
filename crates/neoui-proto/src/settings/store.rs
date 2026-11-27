@@ -285,6 +285,35 @@ mod tests {
     }
 
     #[test]
+    fn island_deny_is_checked_on_set_and_load() {
+        let mut s = Store::default();
+        let good = crate::activity::encode_deny(&["files"]);
+        assert_eq!(
+            s.set_raw("island.deny", Value::Bytes(good.clone())),
+            Ok(Changed::Yes)
+        );
+        // a cut-off entry, an empty key, bad UTF-8, too long: refused, and the value before stays
+        for bad in [
+            alloc::vec![5, b'f', b'i'],
+            alloc::vec![0],
+            alloc::vec![2, 0xff, 0xfe],
+            alloc::vec![1; 273],
+        ] {
+            assert!(
+                s.set_raw("island.deny", Value::Bytes(bad.clone())).is_err(),
+                "{bad:?}"
+            );
+            assert!(s.load_raw("island.deny", Value::Bytes(bad)).is_err());
+            assert_eq!(s.get_raw("island.deny"), Ok(Value::Bytes(good.clone())));
+        }
+        s.load_raw(
+            "island.deny",
+            Value::Bytes(crate::activity::encode_deny(&["a", "b"])),
+        )
+        .unwrap();
+    }
+
+    #[test]
     fn loading_does_not_journal() {
         let mut s = Store::new();
         s.load_raw("radio.wifi", Value::Bool(false)).expect("valid");

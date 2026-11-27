@@ -342,6 +342,10 @@ pub const TILE: i32 = 37;
 /// not in the app's [`crate::widget::CATALOGUE`], `KErrArgument` for a malformed record or another template. Only
 /// from the app's own EXE. (Not 11 or 12, home.md's first numbers: they are 1.4's retired `TITLE` and `TOOLBAR`.)
 pub const WIDGET: i32 = 46;
+/// 1.22: no arguments → `major << 8 | minor` of the shell's protocol, for any app: a publisher learns whether the
+/// shell reads 1.22's records (`page::NOTIFY_STICKY`). An older shell answers `KErrNotSupported`: treat it as
+/// before 1.22.
+pub const SHELL_VERSION: i32 = 47;
 /// 1.20: `[mode, ticket, descriptor, 0]`, an app as the owner of its data ([`crate::settings_app::jobs`]). Mode 0
 /// `OWNER_REGISTER` `[0, 0, Des8 payload]` (`[1, capabilities]`) → 0; mode 1 `OWNER_CLAIM` `[1, ticket, Des8 out]` →
 /// the [`crate::settings_app::wire::OwnerWork`]'s length; mode 2 `OWNER_FINISH` `[2, ticket, Des8 report]` → 0 once
@@ -506,6 +510,12 @@ impl AppEvent {
             | AppEvent::NotifyReply { .. }
             | AppEvent::ActivityTap { .. }
             | AppEvent::Tile { .. } => 22,
+            // a Call card's Answer and Reject (O1): an older Phone would take them for actions it doesn't have
+            AppEvent::Notified { action, .. }
+                if *action == crate::page::CALL_ANSWER || *action == crate::page::CALL_REJECT =>
+            {
+                22
+            }
             _ => 0,
         }
     }
@@ -777,6 +787,16 @@ mod tests {
         assert_eq!(AppEvent::NotifyReply { id: 1 }.needs_minor(), 22);
         assert_eq!(AppEvent::Media { cmd: 1, arg: 0 }.needs_minor(), 22);
         assert_eq!(AppEvent::ActivityTap { id: 0, i: 0 }.needs_minor(), 22);
+        let call = |action| AppEvent::Notified { id: 1, action }.needs_minor();
+        assert_eq!(
+            (
+                call(crate::page::CALL_ANSWER),
+                call(crate::page::CALL_REJECT),
+                call(1),
+                call(0)
+            ),
+            (22, 22, 0, 0)
+        );
         assert!(VERSION.1 >= 22);
     }
 

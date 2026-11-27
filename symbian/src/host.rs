@@ -26,6 +26,7 @@ use e32::sys::{TVersion, err};
 use neoui_proto::Rect;
 // the screen keys that are separate processes, their EXEs and command lines: shared with Settings' Apps page
 use neoui_proto::apps::{self, APPS, LEGACY};
+use neoui_proto::contract;
 use neoui_proto::ipc::{self as proto, AppEvent};
 use neoui_proto::page::{NOTE_MAX, NOTIFICATION_MAX, PAGE_MAX, QUERY_MAX, action};
 use neoui_proto::recents::Recents;
@@ -1181,42 +1182,6 @@ fn read_bytes(m: &Message, param: usize, max: usize) -> Result<Vec<u8>, i32> {
     m.read8_vec(param)
 }
 
-/// A 1.22 opcode whose shell side isn't built yet: `KErrArgument` (or `KErrTooBig`, `KErrNotFound` for a widget not in
-/// the app's catalogue) for what a later shell would refuse too, else `KErrNotSupported`.
-fn contract_1_22(key: &str, m: &Message) -> i32 {
-    use neoui_proto::{activity, media, tiles, widget};
-    let check = |max: usize, ok: &dyn Fn(&[u8]) -> Result<(), i32>| {
-        read_bytes(m, 0, max).and_then(|b| ok(&b))
-    };
-    let r = match m.function() {
-        proto::MEDIA => check(media::MEDIA_MAX, &|b| {
-            (b.is_empty() || media::Session::decode(b).is_some())
-                .then_some(())
-                .ok_or(kerr::ARGUMENT)
-        }),
-        proto::ACTIVITY => check(activity::ACTIVITY_MAX, &|b| {
-            activity::Activity::decode(b)
-                .map(drop)
-                .ok_or(kerr::ARGUMENT)
-        }),
-        proto::TILE => check(tiles::OFFER_MAX, &|b| {
-            tiles::Offer::decode(b).map(drop).ok_or(kerr::ARGUMENT)
-        }),
-        proto::WIDGET => check(widget::WIDGET_MAX, &|b| {
-            let c = widget::Content::decode(b).ok_or(kerr::ARGUMENT)?;
-            c.fits(key).map_err(|template| {
-                if template {
-                    kerr::ARGUMENT
-                } else {
-                    err::KERR_NOT_FOUND
-                }
-            })
-        }),
-        _ => Ok(()), // REPLY_TEXT: no reply is ever pending yet
-    };
-    r.err().unwrap_or(err::KERR_NOT_SUPPORTED)
-}
-
 /// Reads descriptor argument `param` as text of at most `max` bytes.
 fn read_text(m: &Message, param: usize, max: usize) -> Result<String, i32> {
     if m.des_len(param)? > max {
@@ -1534,15 +1499,7 @@ impl Service for Host {
             },
             // cards and badges only from the app's own EXE (1.18, top-panel TP2a "Step 0"): the session binding
             // ("the newest app without a session") is checked against the caller's secure ID
-            proto::NOTIFY
-            | proto::NOTIFY_CLEAR
-            | proto::BADGE
-            | proto::CHANNEL
-            | proto::MEDIA
-            | proto::REPLY_TEXT
-            | proto::ACTIVITY
-            | proto::TILE
-            | proto::WIDGET
+            proto::NOTIFY | proto::NOTIFY_CLEAR | proto::BADGE | proto::CHANNEL
                 if apps::sid(app.key).is_some_and(|sid| sid != m.client_sid()) =>
             {
                 dprintln!(
@@ -1585,9 +1542,14 @@ impl Service for Host {
                 m.complete(r);
             }
             // 1.22's contract: checked, not acted on yet (their producers and consumers land in W1–W3)
-            proto::MEDIA | proto::REPLY_TEXT | proto::ACTIVITY | proto::TILE | proto::WIDGET => {
-                let r = contract_1_22(app.key, &m);
+            // (the caller by a positive catalogue SID match first: the legacy bridge publishes none of these)
+            op if contract::is_publisher_opcode(op) => {
+                let r =
+                    contract::ingress(op, app.key, m.client_sid(), |max| read_bytes(&m, 0, max));
                 m.complete(r);
+            }
+            proto::SHELL_VERSION => {
+                m.complete(i32::from(proto::VERSION.0) << 8 | i32::from(proto::VERSION.1));
             }
             proto::NOTIFY_CLEAR => {
                 let key = app.key;
@@ -1700,7 +1662,13 @@ impl Service for Host {
                 m.complete(r.unwrap_or_else(|e| e));
             }
             proto::SETTINGS_ACTION => {
+                let caller = access::caller(app.key, m.client_sid());
+                // 1.22's actions (wallpaper, tile editor, PIN dialog): checked, not acted on yet
+                let new = contract::settings_action(m.int(0), caller, |max| {
+                    read_bytes(&m, 1, max).map_err(|_| kerr::ARGUMENT)
+                });
                 let r = match m.int(0) {
+                    _ if new.is_some() => new.unwrap_or(kerr::ARGUMENT),
                     proto::ACTION_SIGN_IN if self.portal.is_some() => {
                         dprintln!("neoui: {} asks to sign in to the Wi-Fi network", app.key);
                         self.open_portal(e32::time::millis());

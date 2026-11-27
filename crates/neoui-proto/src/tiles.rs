@@ -114,13 +114,17 @@ impl Id {
     }
 }
 
-/// `shell.tiles`: each placed tile as `id | WIDE` (LE u16), in order. Ids are checked when decoded.
+/// `shell.tiles`: each placed tile as `id | WIDE` (LE u16), in order; `None` when [`decode_order`] wouldn't read it
+/// back the same (an invalid or repeated id, more than 32, or none: empty is the default order, so the editor keeps
+/// at least one tile).
 #[must_use]
-pub fn encode_order(tiles: &[(u16, bool)]) -> Vec<u8> {
-    tiles
+pub fn encode_order(tiles: &[(u16, bool)]) -> Option<Vec<u8>> {
+    let b: Vec<u8> = tiles
         .iter()
         .flat_map(|&(id, wide)| (id | if wide { WIDE } else { 0 }).to_le_bytes())
-        .collect()
+        .collect();
+    let valid = tiles.iter().all(|t| Id::split(t.0).is_some());
+    (valid && !b.is_empty() && decode_order(&b).as_deref() == Some(tiles)).then_some(b)
 }
 
 /// The placed tiles of `shell.tiles` (empty: [`DEFAULT_ORDER`]); `None` for an odd length, more than 32, an invalid
@@ -328,17 +332,31 @@ mod tests {
     fn the_order() {
         assert_eq!(decode_order(&[]), Some(DEFAULT_ORDER.to_vec()));
         let o = vec![(builtin::DND, true), (300, false), (builtin::WIFI, false)];
-        let b = encode_order(&o);
+        let b = encode_order(&o).unwrap();
         assert_eq!(b, [4, 0x80, 44, 1, 1, 0]);
         assert_eq!(decode_order(&b), Some(o));
-        // odd, a repeat (wide or not), an invalid id, too many
+        // odd, a repeat (wide or not), an invalid id, too many: neither written nor read
         assert_eq!(decode_order(&[1]), None);
-        assert_eq!(decode_order(&encode_order(&[(1, false), (1, true)])), None);
-        assert_eq!(decode_order(&encode_order(&[(0, false)])), None);
-        assert_eq!(decode_order(&encode_order(&[(200, false)])), None);
+        assert_eq!(decode_order(&[1, 0, 1, 0x80]), None);
+        assert_eq!(decode_order(&[0, 0]), None);
+        assert_eq!(decode_order(&[200, 0]), None);
+        for bad in [
+            &[(1, false), (1, true)][..],
+            &[(0, false)],
+            &[(200, false)],
+            &[(0x8001, false)], // not wide Wi-Fi
+            &[],
+        ] {
+            assert_eq!(encode_order(bad), None, "{bad:?}");
+        }
+        assert_eq!(decode_order(&[1, 0x80]), Some(vec![(1, true)]));
         let many: Vec<(u16, bool)> = (0..33).map(|i| (APP_FIRST + i, false)).collect();
-        assert!(decode_order(&encode_order(&many[..32])).is_some());
-        assert_eq!(decode_order(&encode_order(&many)), None);
+        let full = encode_order(&many[..32]).unwrap();
+        assert!(decode_order(&full).is_some());
+        assert_eq!(encode_order(&many), None);
+        let mut over = full;
+        over.extend([0, 2]);
+        assert_eq!(decode_order(&over), None);
     }
 
     fn stopwatch() -> Offer {

@@ -50,8 +50,17 @@ pub const TRAIL_TEXT_MAX: usize = 8;
 pub const BUTTON_MAX: usize = 16;
 pub const BUTTONS_MAX: usize = 2;
 /// The longest encoded [`Activity`].
-pub const ACTIVITY_MAX: usize =
-    4 + 4 + 2 + 2 + (1 + TITLE_MAX) + (1 + TEXT_MAX) + 1 + 8 + 1 + BUTTONS_MAX * (1 + BUTTON_MAX);
+/// The trail's widest payload is Text's (a length byte and 8 bytes; Since and Until take 8).
+pub const ACTIVITY_MAX: usize = 4
+    + 4
+    + 2
+    + 2
+    + (1 + TITLE_MAX)
+    + (1 + TEXT_MAX)
+    + 1
+    + (1 + TRAIL_TEXT_MAX)
+    + 1
+    + BUTTONS_MAX * (1 + BUTTON_MAX);
 
 /// What the island shows at its end.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -277,17 +286,25 @@ mod tests {
         let end = Activity::end(3);
         assert!(end.is_end());
         assert_eq!(Activity::decode(&end.encode()), Some(end));
-        // the longest
+        // the longest: a full Text trail is the widest, Since one byte less; both decode
         let big = Activity {
             title: "t".repeat(40),
             text: "x".repeat(70),
-            trail: Trail::Since(0),
+            trail: Trail::Text("8 bytes!".into()),
             buttons: vec!["b".repeat(20), "c".repeat(16), "dropped".into()],
             ..timer()
         };
         let b = big.encode();
         assert_eq!(b.len(), ACTIVITY_MAX);
+        assert_eq!(ACTIVITY_MAX, 155);
         assert_eq!(Activity::decode(&b).unwrap().buttons.len(), 2);
+        let since = Activity {
+            trail: Trail::Since(u64::MAX),
+            ..big
+        }
+        .encode();
+        assert_eq!(since.len(), ACTIVITY_MAX - 1);
+        assert!(Activity::decode(&since).is_some());
     }
 
     #[test]
