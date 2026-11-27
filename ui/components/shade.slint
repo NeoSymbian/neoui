@@ -10,6 +10,8 @@ import { ProgressBar } from "feedback.slint";
 import { SystemSettings } from "../system-settings.slint";
 import { Now } from "../now.slint";
 import { FirstStop, PullForAll, ControlCentre, TileEditor, WifiSheet, TilesModel, TileCell } from "tiles.slint";
+import { Media } from "../media.slint";
+import { MediaPlayer } from "media.slint";
 
 // An app's entry (ipc NOTIFY): its title and text, "Clock · Time's up" style (the app's name first).
 // Since 1.9: up to two actions ("Reply", "Call") under the text, an avatar (initials on a tint), a time, and two lines
@@ -403,6 +405,7 @@ export component Shade inherits Rectangle {
             if !root.all && TilesModel.stop == 2: ControlCentre {
                 hold(c) => { root.held(c); }
                 detail(c) => { root.detail(c); }
+                media-opened => { root.open-app(Media.app-key); }
             }
 
             if !root.all && TilesModel.stop == 1: HorizontalLayout {
@@ -421,6 +424,11 @@ export component Shade inherits Rectangle {
                 Slider {
                     value <=> SystemSettings.brightness;
                 }
+            }
+
+            // (TP3) the media session's player (shell.media), under brightness; the control centre has its own
+            if !root.all && TilesModel.stop == 1 && Media.in-shade: MediaPlayer {
+                opened => { root.open-app(Media.app-key); }
             }
 
             // the first stop: its first 2 cards and See all; the list: every card in its section, then Clear all

@@ -9,6 +9,7 @@ extern crate alloc;
 mod home;
 pub mod keyboard;
 pub mod layer;
+mod media;
 pub mod peek;
 mod settings;
 mod suggest;
@@ -365,6 +366,8 @@ pub struct Renderer {
     thumbs: Vec<(String, slint::Image)>,
     /// (TP7) the control centre's order, the apps' offers and the editor's draft
     tiles: Rc<RefCell<tiles::State>>,
+    /// (TP3) the media buttons' commands
+    media: media::Commands,
 }
 
 /// Slint's lines for a scrolled list's frame (smooth-ui S2d): the rows of `list` outside `draw` were moved into place
@@ -516,6 +519,7 @@ impl Renderer {
             .on_edited(move |k| sink.borrow_mut().push(k.as_str().into()));
         let home = home::wire(&ui, edited.clone());
         let tiles = tiles::wire(&ui, edited.clone());
+        let media = media::wire(&ui);
         Ok(Self {
             window,
             ui,
@@ -546,6 +550,7 @@ impl Renderer {
             home,
             thumbs: Vec::new(),
             tiles,
+            media,
         })
     }
 

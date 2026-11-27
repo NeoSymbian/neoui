@@ -10,6 +10,8 @@ import { Glyph } from "frame.slint";
 import { Slider } from "controls.slint";
 import { Switch } from "lists.slint";
 import { SystemSettings } from "../system-settings.slint";
+import { Media } from "../media.slint";
+import { MediaPlayer } from "media.slint";
 
 // One drawn tile: its id (1–255 the shell's own, from 256 an app's), its label and line (an app's; the shell's own come
 // from `TilesModel`), its app's name for the editor ("CLOCK"), an app's glyph number and kind (1 toggle, 2 action,
@@ -525,6 +527,7 @@ component SliderRow inherits HorizontalLayout {
 export component ControlCentre inherits VerticalLayout {
     callback hold(TileCell);
     callback detail(TileCell);
+    callback media-opened();
     spacing: 10 * Theme.dp;
     TileGrid {
         cells: TilesModel.placed;
@@ -549,7 +552,10 @@ export component ControlCentre inherits VerticalLayout {
         moved(v) => { SystemSettings.media-volume = round(v * 10); }
     }
 
-    // (TP3, stream A) the media card goes here
+    // (TP3) the media session's player, as on the first stop
+    if Media.in-shade: MediaPlayer {
+        opened => { root.media-opened(); }
+    }
 
     Text {
         text: "Hold a tile for its settings · › for details";

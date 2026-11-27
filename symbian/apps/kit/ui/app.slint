@@ -128,12 +128,49 @@ component NotificationsPage inherits Rectangle {
     }
 }
 
+// TP3's media session from an app (docs neoui-shell/top-panel.md): post a sample track that "plays", end it, and the
+// commands the shade's and home's buttons sent
+export global MediaDemo {
+    in property <string> status: "Play the sample, then pull the shade down.";
+    callback play();
+    callback end();
+}
+
+component MediaPage inherits Rectangle {
+    VerticalLayout {
+        padding: Theme.margin;
+        spacing: Theme.margin;
+        alignment: start;
+        Button {
+            text: "Play a sample track";
+            clicked => {
+                MediaDemo.play();
+            }
+        }
+
+        Button {
+            text: "End the session";
+            primary: false;
+            clicked => {
+                MediaDemo.end();
+            }
+        }
+
+        Text {
+            text: MediaDemo.status;
+            color: Theme.text-secondary;
+            font-size: Theme.font-label;
+            wrap: word-wrap;
+        }
+    }
+}
+
 export component KitApp inherits Window {
     default-font-family: "NeoSans";
     background: Theme.bg;
     property <[string]> names: [
         "Headers", "Footer", "Lists", "Menus", "Date picker", "Time picker", "Controls", "Feedback", "Phone parts",
-        "Files", "Notifications"
+        "Files", "Notifications", "Media"
     ];
     VerticalLayout {
         Header {
@@ -152,6 +189,9 @@ export component KitApp inherits Window {
             vertical-stretch: 1;
         }
         if GalleryState.page == 10: NotificationsPage {
+            vertical-stretch: 1;
+        }
+        if GalleryState.page == 11: MediaPage {
             vertical-stretch: 1;
         }
     }

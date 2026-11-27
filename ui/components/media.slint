@@ -1,0 +1,328 @@
+// SPDX-License-Identifier: Apache-2.0
+// The media session's three faces (top-panel TP3): the shade's player (tp-shade), home's Media card (nt-home-media)
+// and the volume HUD under the status bar (nt-volume). They draw the `Media` global; a button sends its command to
+// the session's owner, a tap elsewhere on a card opens the owner's app. No art yet (BLOB comes later): the board's
+// "no cover art" tile, a note on a gradient.
+import { Theme } from "../theme.slint";
+import { Media } from "../media.slint";
+import { SystemSettings } from "../system-settings.slint";
+import { Glyph } from "frame.slint";
+
+component Art inherits Rectangle {
+    in property <length> size: 44 * Theme.dp;
+    width: size;
+    height: size;
+    border-radius: 8 * Theme.dp;
+    background: @linear-gradient(135deg, #e04e9b 0%, #8656e8 100%);
+    Glyph {
+        source: @image-url("../icons/sys/note.svg");
+        size: root.size / 2;
+    }
+}
+
+// A round control: a plain glyph, or white with a black glyph (play / pause); dim when off (shuffle, repeat)
+component Control inherits Rectangle {
+    in property <image> icon;
+    in property <length> size: 40 * Theme.dp;
+    in property <bool> primary;
+    in property <bool> dim;
+    callback clicked;
+    width: size;
+    height: size;
+    border-radius: size / 2;
+    background: primary ? (ta.pressed ? #d0d0d0 : #ffffff) : (ta.pressed ? Theme.pressed : transparent);
+    Glyph {
+        source: root.icon;
+        size: root.primary ? root.size / 2 : 22 * Theme.dp;
+        colorize: root.primary ? #000000 : root.dim ? Theme.text-dim : Theme.text;
+    }
+    ta := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+// play / pause: the session's owner gets the command; the last track (no session) opens its app instead
+export component PlayPause inherits Control {
+    callback open();
+    primary: true;
+    icon: Media.playing ? @image-url("../icons/sys/pause.svg") : @image-url("../icons/sys/play.svg");
+    clicked => {
+        if !Media.live {
+            root.open();
+        } else {
+            Media.command(Media.playing ? 2 : 1, 0);
+        }
+    }
+}
+
+// elapsed ─── total; a tap on the bar seeks there when the player can
+component Bar inherits HorizontalLayout {
+    spacing: 8 * Theme.dp;
+    Text {
+        text: Media.elapsed;
+        color: Theme.text-dim;
+        font-size: 11.5 * Theme.dp;
+        vertical-alignment: center;
+    }
+    Rectangle {
+        horizontal-stretch: 1;
+        track := Rectangle {
+            height: 4 * Theme.dp;
+            border-radius: 2 * Theme.dp;
+            background: #3a3f47;
+            Rectangle {
+                x: 0;
+                width: parent.width * max(0, min(1, Media.progress));
+                border-radius: 2 * Theme.dp;
+                background: #ffffff;
+            }
+        }
+        TouchArea {
+            enabled: Media.live && Media.can-seek;
+            clicked => {
+                Media.command(5, max(0, min(1, self.mouse-x / self.width)) * Media.duration-ms);
+            }
+        }
+    }
+    Text {
+        text: Media.total;
+        color: Theme.text-dim;
+        font-size: 11.5 * Theme.dp;
+        vertical-alignment: center;
+    }
+}
+
+component Titles inherits VerticalLayout {
+    alignment: center;
+    horizontal-stretch: 1;
+    min-width: 0;
+    Text {
+        text: Media.title;
+        color: Theme.text;
+        font-size: 15.5 * Theme.dp;
+        font-weight: 600;
+        overflow: elide;
+    }
+    Text {
+        text: (Media.artist != "" ? Media.artist + " · " : "") + Media.app;
+        color: Theme.text-dim;
+        font-size: 13 * Theme.dp;
+        overflow: elide;
+    }
+}
+
+// The shade's player (tp-shade), between brightness and the notifications
+export component MediaPlayer inherits Rectangle {
+    callback opened();
+    height: col.preferred-height;
+    background: #15181c;
+    border-radius: 16 * Theme.dp;
+    border-width: 1px;
+    border-color: #ffffff14;
+    TouchArea {
+        clicked => { root.opened(); }
+    }
+    col := VerticalLayout {
+        padding: 14 * Theme.dp;
+        spacing: 10 * Theme.dp;
+        HorizontalLayout {
+            spacing: 12 * Theme.dp;
+            Art {
+                size: 48 * Theme.dp;
+            }
+            Titles { }
+        }
+        if Media.progress >= 0: Bar { }
+        HorizontalLayout {
+            alignment: space-around;
+            Rectangle {
+                width: 40 * Theme.dp;
+                if Media.can-shuffle: Control {
+                    icon: @image-url("../icons/sys/shuffle.svg");
+                    dim: !Media.shuffle;
+                    clicked => { Media.command(6, Media.shuffle ? 0 : 1); }
+                }
+            }
+            Control {
+                icon: @image-url("../icons/sys/prev.svg");
+                opacity: Media.can-prev ? 1 : 0.35;
+                clicked => {
+                    if Media.can-prev { Media.command(4, 0); }
+                }
+            }
+            PlayPause {
+                size: 48 * Theme.dp;
+                opacity: Media.can-play ? 1 : 0.35;
+                open => { root.opened(); }
+            }
+            Control {
+                icon: @image-url("../icons/sys/next.svg");
+                opacity: Media.can-next ? 1 : 0.35;
+                clicked => {
+                    if Media.can-next { Media.command(3, 0); }
+                }
+            }
+            Rectangle {
+                width: 40 * Theme.dp;
+                if Media.can-repeat: Control {
+                    icon: @image-url("../icons/sys/repeat.svg");
+                    dim: !Media.repeat;
+                    clicked => { Media.command(7, Media.repeat ? 0 : 1); }
+                }
+            }
+        }
+    }
+}
+
+// Home's Media card (nt-home-media): the session, else the last track paused, else nothing playing. A tap opens the
+// owner (Music when there is none). The time row shows when the widget has room for it.
+export component HomeMedia inherits Rectangle {
+    callback clicked;
+    border-radius: Theme.radius;
+    background: Theme.card;
+    border-width: max(1px, Theme.dp / 2);
+    border-color: Theme.card-border;
+    TouchArea {
+        clicked => { root.clicked(); }
+    }
+    // nothing playing: the card as before TP3
+    if !Media.on: HorizontalLayout {
+        padding: 12 * Theme.dp;
+        spacing: 12 * Theme.dp;
+        Rectangle {
+            width: min(self.height, 52 * Theme.dp);
+            border-radius: Theme.radius-small;
+            background: @linear-gradient(135deg, #e04e9b 0%, #8656e8 100%);
+            Glyph {
+                source: @image-url("../icons/sys/note.svg");
+                size: 24 * Theme.dp;
+            }
+        }
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            Text {
+                text: "Nothing playing";
+                color: Theme.text;
+                font-size: Theme.font-body;
+                font-weight: 600;
+                overflow: elide;
+            }
+            Text {
+                text: "Music";
+                color: Theme.text-dim;
+                font-size: Theme.font-label;
+                overflow: elide;
+            }
+        }
+    }
+    if Media.on: VerticalLayout {
+        padding: 12 * Theme.dp;
+        spacing: 8 * Theme.dp;
+        alignment: center;
+        HorizontalLayout {
+            spacing: 12 * Theme.dp;
+            Art { }
+            Titles { }
+            if Media.live: VerticalLayout {
+                alignment: center;
+                Control {
+                    size: 36 * Theme.dp;
+                    icon: @image-url("../icons/sys/prev.svg");
+                    opacity: Media.can-prev ? 1 : 0.35;
+                    clicked => {
+                        if Media.can-prev { Media.command(4, 0); }
+                    }
+                }
+            }
+            VerticalLayout {
+                alignment: center;
+                PlayPause {
+                    size: 40 * Theme.dp;
+                    open => { root.clicked(); }
+                }
+            }
+            if Media.live: VerticalLayout {
+                alignment: center;
+                Control {
+                    size: 36 * Theme.dp;
+                    icon: @image-url("../icons/sys/next.svg");
+                    opacity: Media.can-next ? 1 : 0.35;
+                    clicked => {
+                        if Media.can-next { Media.command(3, 0); }
+                    }
+                }
+            }
+        }
+        if Media.progress >= 0 && root.height >= 100 * Theme.dp: Bar { }
+    }
+}
+
+// The volume HUD (nt-volume): a level bar under the status bar for 2 s after a volume key; the media volume with
+// what plays and the ringer beside it, or the call's volume in a call
+export component VolumeHud inherits Rectangle {
+    height: col.preferred-height;
+    border-radius: 18 * Theme.dp;
+    background: #1d2025;
+    border-width: 1px;
+    border-color: #ffffff1f;
+    col := VerticalLayout {
+        padding-left: 16 * Theme.dp;
+        padding-right: 16 * Theme.dp;
+        padding-top: 12 * Theme.dp;
+        padding-bottom: 12 * Theme.dp;
+        spacing: 8 * Theme.dp;
+        HorizontalLayout {
+            spacing: 14 * Theme.dp;
+            VerticalLayout {
+                alignment: center;
+                Glyph {
+                source: Media.hud-call ? @image-url("../icons/sys/call.svg") : @image-url("../icons/sys/volume.svg");
+                size: 22 * Theme.dp;
+                }
+            }
+            Rectangle {
+                horizontal-stretch: 1;
+                Rectangle {
+                    height: 6 * Theme.dp;
+                    border-radius: 3 * Theme.dp;
+                    background: #3a3f47;
+                    Rectangle {
+                        x: 0;
+                        width: parent.width * max(0, min(10, Media.hud-level)) / 10;
+                        border-radius: 3 * Theme.dp;
+                        background: Theme.accent;
+                    }
+                }
+            }
+            Text {
+                text: Media.hud-level;
+                color: Theme.text;
+                font-size: 14 * Theme.dp;
+                vertical-alignment: center;
+            }
+        }
+        HorizontalLayout {
+            spacing: 6 * Theme.dp;
+            Text {
+                text: Media.hud-call ? "Call" : "Media";
+                color: Theme.text;
+                font-size: 12.5 * Theme.dp;
+                font-weight: 600;
+            }
+            Text {
+                horizontal-stretch: 1;
+                min-width: 0;
+                text: !Media.hud-call && Media.live ? "· " + Media.title + ", from " + Media.app : "";
+                color: Theme.text-secondary;
+                font-size: 12.5 * Theme.dp;
+                overflow: elide;
+            }
+            if !Media.hud-call: Text {
+                text: "Ring \{SystemSettings.ring-volume} · Silent " + (SystemSettings.silent ? "on" : "off");
+                color: Theme.text-secondary;
+                font-size: 12.5 * Theme.dp;
+            }
+        }
+    }
+}

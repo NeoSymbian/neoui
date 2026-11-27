@@ -2,7 +2,7 @@
 //! What SYSSTART answers for protocol 1.22's opcodes and Settings actions before their shell side is built (W0a; docs
 //! neoui-shell/protocol.md "Protocol 1.22"): the caller is checked first, then its record, and a request that would
 //! be accepted answers `KErrNotSupported`. Each later stream replaces its part with the real handler and keeps the
-//! checks: `WIDGET` is [`widget`] (home Part 4, W1-E).
+//! checks: `WIDGET` is [`widget`] (home Part 4, W1-E), `MEDIA` is [`media`] (TP3), `TILE` is [`tile`] (TP7).
 
 use crate::settings::access::Caller;
 use crate::settings::kerr;
@@ -10,11 +10,12 @@ use crate::settings_app::{wallpaper, wire};
 use crate::{activity, apps, ipc, media, tiles, widget};
 use alloc::vec::Vec;
 
-/// Whether `op` is one of 1.22's app → shell opcodes that publish for the caller (checked by [`ingress`]). `TILE`
-/// is built (TP7): the shell checks it with [`tile`] and keeps it.
+/// Whether `op` is one of 1.22's app → shell opcodes that publish for the caller and are not built yet (checked by
+/// [`ingress`]). `MEDIA` (TP3), `TILE` (TP7) and `WIDGET` are built: the shell checks them with [`media`], [`tile`]
+/// and [`widget`] and keeps them.
 #[must_use]
 pub fn is_publisher_opcode(op: i32) -> bool {
-    matches!(op, ipc::MEDIA | ipc::REPLY_TEXT | ipc::ACTIVITY)
+    matches!(op, ipc::REPLY_TEXT | ipc::ACTIVITY)
 }
 
 /// (TP7) A `TILE` from app `key` whose message carries secure ID `sid`, checked as [`ingress`] checks the others:
@@ -39,7 +40,7 @@ pub fn tile(
 ///
 /// `KErrPermissionDenied` unless `key` has a catalogue SID and `sid` is it (the legacy bridge and the kit's shared
 /// SID publish nothing); then `KErrArgument` for a malformed record (an ACTIVITY of kind Media too: that one is the
-/// shell's), `KErrNotFound` for a widget name not in the app's catalogue; else `KErrNotSupported`.
+/// shell's); else `KErrNotSupported`.
 pub fn ingress(
     op: i32,
     key: &str,
@@ -51,8 +52,6 @@ pub fn ingress(
     }
     let ok = |valid: bool| if valid { Ok(()) } else { Err(kerr::ARGUMENT) };
     let r = match op {
-        ipc::MEDIA => read(media::MEDIA_MAX)
-            .and_then(|b| ok(b.is_empty() || media::Session::decode(&b).is_some())),
         ipc::ACTIVITY => read(activity::ACTIVITY_MAX).and_then(|b| {
             ok(activity::Activity::decode(&b).is_some_and(|a| a.kind != activity::kind::MEDIA))
         }),
@@ -86,6 +85,23 @@ pub fn widget(
         }
     })?;
     Ok(c)
+}
+
+/// `MEDIA` (TP3): the caller as for every publisher (`KErrPermissionDenied` without its catalogue SID), then the
+/// record: `Ok(None)` for the empty one (the caller's session ends), `KErrArgument` for a malformed one.
+pub fn media(
+    key: &str,
+    sid: u32,
+    read: impl FnOnce(usize) -> Result<Vec<u8>, i32>,
+) -> Result<Option<media::Session>, i32> {
+    if apps::sid(key) != Some(sid) {
+        return Err(kerr::PERMISSION_DENIED);
+    }
+    let b = read(media::MEDIA_MAX)?;
+    if b.is_empty() {
+        return Ok(None);
+    }
+    media::Session::decode(&b).map(Some).ok_or(kerr::ARGUMENT)
 }
 
 /// The longest request [`settings_action`] reads.
@@ -145,7 +161,7 @@ mod tests {
     use crate::settings::access::SETTINGS_SID;
     use alloc::vec;
 
-    const OPS: [i32; 3] = [ipc::MEDIA, ipc::REPLY_TEXT, ipc::ACTIVITY];
+    const OPS: [i32; 2] = [ipc::REPLY_TEXT, ipc::ACTIVITY];
     const CLOCK: u32 = 0xE000_8001;
 
     fn never(_: usize) -> Result<Vec<u8>, i32> {
@@ -176,6 +192,7 @@ mod tests {
         }
         assert!(!is_publisher_opcode(ipc::NOTIFY) && !is_publisher_opcode(ipc::TILE));
         assert!(!is_publisher_opcode(ipc::WIDGET), "WIDGET has its handler");
+        assert!(!is_publisher_opcode(ipc::MEDIA), "MEDIA has its handler");
         let never_c =
             |_: usize| -> Result<Vec<u8>, i32> { panic!("read before the caller was checked") };
         assert_eq!(
@@ -203,11 +220,6 @@ mod tests {
                 }
             }
         };
-        let song = media::Session {
-            state: media::state::PLAYING,
-            title: "x".into(),
-            ..media::Session::default()
-        };
         let timer = Activity {
             kind: activity::kind::TIMER,
             title: "Timer".into(),
@@ -232,10 +244,6 @@ mod tests {
             ..next.clone()
         };
         let cases = [
-            (ipc::MEDIA, song.encode(), kerr::NOT_SUPPORTED),
-            (ipc::MEDIA, vec![], kerr::NOT_SUPPORTED),
-            (ipc::MEDIA, vec![1], kerr::ARGUMENT),
-            (ipc::MEDIA, vec![0; media::MEDIA_MAX + 1], kerr::TOO_BIG),
             (ipc::ACTIVITY, timer.encode(), kerr::NOT_SUPPORTED),
             (
                 ipc::ACTIVITY,
@@ -414,5 +422,30 @@ mod tests {
         ] {
             assert_eq!(settings_action(kind, settings, never), None);
         }
+    }
+
+    #[test]
+    fn media_records() {
+        let song = media::Session {
+            state: media::state::PLAYING,
+            title: "x".into(),
+            ..media::Session::default()
+        };
+        let b = song.encode();
+        assert_eq!(media("clock", CLOCK, |_| Ok(b.clone())), Ok(Some(song)));
+        assert_eq!(media("clock", CLOCK, |_| Ok(vec![])), Ok(None));
+        assert_eq!(media("clock", CLOCK, |_| Ok(vec![1])), Err(kerr::ARGUMENT));
+        assert_eq!(
+            media("clock", CLOCK, |_| Err(kerr::TOO_BIG)),
+            Err(kerr::TOO_BIG)
+        );
+        assert_eq!(
+            media(LEGACY, LEGACY_SID, never),
+            Err(kerr::PERMISSION_DENIED)
+        );
+        assert_eq!(
+            media("clock", 0xE000_5001, never),
+            Err(kerr::PERMISSION_DENIED)
+        );
     }
 }

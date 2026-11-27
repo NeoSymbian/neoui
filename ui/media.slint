@@ -1,0 +1,38 @@
+// SPDX-License-Identifier: Apache-2.0
+// The media session (top-panel TP3, protocol 1.22 MEDIA): what the shade's player, home's Media card and the volume
+// HUD draw. The UI server fills it (neoui-render `media.rs`); the buttons come back through `command` as
+// `AppEvent::Media { cmd, arg }` for the session's owner.
+export global Media {
+    // something to draw: the session, or (home only) the last track, paused
+    in property <bool> on;
+    // a session (its owner runs); else the last track: its buttons open the app
+    in property <bool> live;
+    // the shade draws the player (`live` and `shell.media`)
+    in property <bool> in-shade;
+    in property <bool> playing;
+    in property <string> title;
+    in property <string> artist;
+    // the owner's name and key
+    in property <string> app;
+    in property <string> app-key;
+    // the controls the player answers (`media::caps`) and its modes
+    in property <bool> can-play;
+    in property <bool> can-prev;
+    in property <bool> can-next;
+    in property <bool> can-seek;
+    in property <bool> can-shuffle;
+    in property <bool> can-repeat;
+    in property <bool> shuffle;
+    in property <bool> repeat;
+    // 0..1 along a known duration; -1: none (a stream)
+    in property <float> progress: -1;
+    in property <string> elapsed;
+    in property <string> total;
+    in property <int> duration-ms;
+    // `media::cmd` and its argument (SEEK: ms)
+    callback command(int, int);
+    // the volume HUD (nt-volume) for 2 s after a volume key: the call's volume in a call, else the media volume
+    in property <bool> hud;
+    in property <bool> hud-call;
+    in property <int> hud-level;
+}

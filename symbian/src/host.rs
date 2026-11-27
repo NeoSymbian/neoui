@@ -55,6 +55,9 @@ pub(crate) mod widget;
 // (D7) Settings' wallpaper pictures
 #[path = "wallpaper.rs"]
 pub mod wallpaper;
+// (TP3) the media session
+#[path = "media.rs"]
+pub mod media;
 
 /// Apps whose shell screen is a launcher grid until they request FRONT(1).
 // shortcut: a fixed table like APPS; apps declare launcher support when apps are installable.
@@ -317,6 +320,8 @@ pub struct Host {
     pub tiles: tiles::Tiles,
     /// (D7) the installed wallpaper picture on its way to home ([`wallpaper`])
     pub wallpaper: wallpaper::Wallpaper,
+    /// (TP3) the media session ([`media`])
+    pub media: media::Media,
 }
 
 impl Host {
@@ -371,6 +376,7 @@ impl Host {
             d10: home::D10::default(),
             tiles: tiles::Tiles::boot(),
             wallpaper: wallpaper::Wallpaper::boot(),
+            media: media::Media::default(),
         }
     }
 
@@ -891,6 +897,8 @@ impl Host {
                 .is_some()
         });
         let limit = MAX_RUNNING.saturating_sub(starts);
+        // (TP3) a player in the background keeps playing
+        let playing = self.media.current.playing();
         let over: Vec<&'static str> = self
             .apps
             .over_limit(
@@ -899,6 +907,7 @@ impl Host {
                 |a| a.quit_at.is_some() || (RESIDENT.contains(&a.key) && !a.shown),
                 |a| {
                     a.key == key
+                        || playing == Some(a.key)
                         || apps::companions(key).contains(&a.key)
                         || RESIDENT.contains(&a.key)
                 },
@@ -1607,6 +1616,12 @@ impl Service for Host {
             proto::WIDGET => {
                 let key = app.key;
                 let r = self.widget(key, &m);
+                m.complete(r);
+            }
+            // (TP3) the media session
+            proto::MEDIA => {
+                let key = app.key;
+                let r = self.media_message(key, &m);
                 m.complete(r);
             }
             // 1.22's contract: checked, not acted on yet (their producers and consumers land in W1–W3)

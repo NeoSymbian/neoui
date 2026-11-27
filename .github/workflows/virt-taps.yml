@@ -271,7 +271,13 @@ jobs:
           # Mark read (an in-place action) on the group's head: the kit hears it without coming forward
           wait_s 1; tap 270 12; wait_s 1; tap 270 160; expect "kit: sample cards posted (Ok"; wait_s 1
           tap 270 12; wait_s 2; tap 174 670; expect "kit: card 5 opened (2)"
-          # TP7: the shade, a pull on its first stop's tiles (122 dp) goes on to the control centre; Do not disturb
+          # TP3: the kit's ⋮ → Media (menu row 11), Play a sample track posts the session; the shade's player (under
+          # brightness, above the cards) → its pause (268,511, tests/tp3_media.rs): the kit hears PAUSE
+          wait_s 2; tap 497 72; wait_s 2; tap 298 946; wait_s 2
+          tap 270 160; expect "kit: media posted (Ok"; expect "neoui: media kit state 1"; wait_s 1
+          tap 270 12; wait_s 2; tap 268 511; expect "neoui: media command 2 0 to kit"; expect "kit: media command 2 0"
+          # TP7: Back closes TP3's shade; the shade again, a pull on its first stop's tiles (122 dp; TP3's player is
+          # under them, and under the control centre's grid) goes on to the control centre; Do not disturb
           # (row 1, col 1: 137,189 dp) switches notify.dnd; ✎ (238,55 dp) opens the editor, Dark (row 2, col 0 under
           # the editor's hint: 51,315 dp) is dragged onto Wi-Fi's cell (51,163 dp), Done (318,55 dp) saves
           # shell.tiles; Back closes the shade. (The order surviving a reboot is checked on the integrated branch.)
@@ -282,7 +288,7 @@ jobs:
           swipe 76 471 76 244; wait_s 1
           tap 476 82; expect "neoui: setting shell.tiles = <"; expect "neoui: tile editor closed"; wait_s 1
           tap 90 1037; expect "neoui: control centre closed"
-          ui_run 620
+          ui_run 640
 
       - name: Check the output
         working-directory: build
@@ -324,6 +330,11 @@ jobs:
           grep -a 'kit: card 5 gone (1)' $s
           ! grep -aq 'kit: card 6 gone' $s
           grep -a 'kit: card 5 opened (2)' $s
+          # TP3: the kit owns the media session; the shade's pause reached it as event 23
+          grep -a 'kit: media posted (Ok' $s
+          grep -a 'neoui: media command 2 0 to kit' $s
+          grep -a 'kit: media command 2 0' $s
+          ! grep -aq 'neoui: media from kit refused' $s
           # TP7: the control centre by a pull, a tile switched Do not disturb, the editor saved a new order
           grep -a 'neoui: control centre shown' $s
           grep -a 'neoui: setting notify.dnd = true (by shell)' $s

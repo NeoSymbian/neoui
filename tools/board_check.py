@@ -27,6 +27,8 @@ from playwright.sync_api import sync_playwright
 SNAPSHOT_FOR = {
     "set2-app-browser": "set2-app-detail",
     "sh-shade-quick": "tp-shade",
+    # (TP3) the shade with a media session: its snapshot has the player
+    "tp-shade": "tp-shade-media",
     # (G2/G3) Open apps in Gestures: the switcher's own snapshot
     "nav-openapps": "switcher-gestures-539x1079",
     # home (D10, home.md Parts 3 and 4)

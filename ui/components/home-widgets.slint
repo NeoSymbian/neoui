@@ -9,6 +9,8 @@ import { BigClock, Card } from "controls.slint";
 import { Glyph } from "frame.slint";
 import { Avatar } from "lists.slint";
 import { WidgetContent } from "../screens/home-edit.slint";
+import { Media } from "../media.slint";
+import { PlayPause } from "media.slint";
 
 // The clock at 2 × 2: the time, the date and the next alarm, smaller. Tap: Clock.
 export component ClockSquare inherits Rectangle {
@@ -153,26 +155,44 @@ export component FavouritesSquare inherits Card {
 }
 
 // Music at 2 × 2 (TP3's media session isn't there yet): the art over "Nothing playing". Tap: Music.
+// (TP3) live: the media session's title and play / pause (nt-home-media at 2 × 2), else nothing playing
 export component MusicSquare inherits Card {
     callback clicked;
+    TouchArea {
+        clicked => { root.clicked(); }
+    }
+
     VerticalLayout {
         alignment: start;
         padding: Theme.card-pad;
         spacing: 10 * Theme.dp;
-        Rectangle {
-            x: 0;
-            width: 56 * Theme.dp;
-            height: 56 * Theme.dp;
-            border-radius: Theme.radius-small;
-            background: @linear-gradient(135deg, #e04e9b 0%, #8656e8 100%);
-            Glyph {
-                source: @image-url("../icons/sys/note.svg");
-                size: 26 * Theme.dp;
+        HorizontalLayout {
+            Rectangle {
+                width: 56 * Theme.dp;
+                height: 56 * Theme.dp;
+                border-radius: Theme.radius-small;
+                background: @linear-gradient(135deg, #e04e9b 0%, #8656e8 100%);
+                Glyph {
+                    source: @image-url("../icons/sys/note.svg");
+                    size: 26 * Theme.dp;
+                }
+            }
+
+            Rectangle {
+                horizontal-stretch: 1;
+            }
+
+            if Media.on: VerticalLayout {
+                alignment: center;
+                PlayPause {
+                    size: 40 * Theme.dp;
+                    open => { root.clicked(); }
+                }
             }
         }
 
         Text {
-            text: "Nothing playing";
+            text: Media.on ? Media.title : "Nothing playing";
             color: Theme.text;
             font-size: Theme.font-body;
             font-weight: 600;
@@ -180,14 +200,11 @@ export component MusicSquare inherits Card {
         }
 
         Text {
-            text: "Music";
+            text: !Media.on ? "Music" : (Media.artist != "" ? Media.artist + " · " : "") + Media.app;
             color: Theme.text-dim;
             font-size: Theme.font-label;
+            overflow: elide;
         }
-    }
-
-    TouchArea {
-        clicked => { root.clicked(); }
     }
 }
 
