@@ -25,6 +25,7 @@ use e32::{dprintln, time};
 use neoapp::App;
 use neoui_proto::InputEvent;
 use neoui_proto::ipc::{self as proto, AppEvent};
+use neoui_proto::settings_app::owner::Unsent;
 use neoui_proto::settings_app::wire::{self, DriveUsage, OwnerReport, capability, coverage, state};
 use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
 
@@ -93,6 +94,9 @@ fn run() -> Result<(), i32> {
     let mut eshell: Option<Process> = None;
     let mut eshell_running = false;
     let mut last_draw = 0u64;
+    // D4: a measurement's report the shell didn't take yet (sent again, never measured again), and whether a
+    // start only for owner work did it
+    let (mut unsent, mut worked): (Option<Unsent>, bool) = (None, false);
 
     let mut receive = pin!(server.receive());
     rt::block_on(async {
@@ -116,7 +120,14 @@ fn run() -> Result<(), i32> {
                             receive.set(server.receive());
                             let _ = server::dispatch(&mut con, msg?);
                         }
-                        Either::Right(Either::Right(())) => {}
+                        Either::Right(Either::Right(())) => {
+                            resend(&app, &mut unsent);
+                            if worked && eshell.is_none() && unsent.is_none() {
+                                dprintln!("term: owner work done, never shown: quit");
+                                con.close();
+                                return Ok(());
+                            }
+                        }
                     }
                     if eshell_running && eshell.as_ref().is_some_and(|p| p.exit_info().is_some()) {
                         eshell_running = false;
@@ -158,8 +169,9 @@ fn run() -> Result<(), i32> {
                     }
                 }
                 Some(AppEvent::OwnerWork { ticket }) => {
-                    owner_work(&app, ticket);
-                    if eshell.is_none() {
+                    owner_work(&app, ticket, &mut unsent);
+                    worked = true;
+                    if eshell.is_none() && unsent.is_none() {
                         dprintln!("term: owner work done, never shown: quit");
                         con.close();
                         return Ok(());
@@ -175,8 +187,28 @@ fn run() -> Result<(), i32> {
     })
 }
 
-/// D4: a measurement of Terminal's data: none on C:, every time (nothing is kept).
-fn owner_work(app: &App, ticket: u32) {
+/// Send the report the shell didn't take yet, exactly as made.
+fn resend(app: &App, unsent: &mut Option<Unsent>) {
+    if let Some(u) = unsent.take() {
+        let r = app.finish_owner_work(u.ticket, &u.report);
+        if let Err(e) = r {
+            dprintln!("term: report {} not taken ({})", u.ticket, e);
+        }
+        *unsent = u.after(r);
+    }
+}
+
+/// D4: a measurement of Terminal's data: none on C:, every time (nothing is kept). A report the shell doesn't take
+/// stays in `unsent`; the same ticket again only resends it.
+fn owner_work(app: &App, ticket: u32, unsent: &mut Option<Unsent>) {
+    if unsent.as_ref().is_some_and(|u| u.ticket == ticket) {
+        return resend(app, unsent);
+    }
+    resend(app, unsent);
+    if unsent.is_some() {
+        dprintln!("term: work {} waits: a report is still unsent", ticket);
+        return;
+    }
     match app.claim_owner_work(ticket) {
         Ok(w) if w.work == wire::WORK_MEASURE => {
             let report = OwnerReport {
@@ -195,9 +227,8 @@ fn owner_work(app: &App, ticket: u32) {
                 }],
                 ..OwnerReport::default()
             };
-            if let Err(e) = app.finish_owner_work(ticket, &report) {
-                dprintln!("term: report {} refused ({})", ticket, e);
-            }
+            *unsent = Some(Unsent::new(ticket, report));
+            resend(app, unsent);
         }
         Ok(_) => dprintln!("term: work {} isn't a measurement", ticket),
         Err(e) => dprintln!("term: work {} not claimed ({})", ticket, e),

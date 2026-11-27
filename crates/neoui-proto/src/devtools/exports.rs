@@ -14,6 +14,8 @@ use alloc::vec::Vec;
 
 /// Where Dev tools keeps the list (its private folder).
 pub const LIST_PATH: &str = "C:\\private\\e0002005\\exports.txt";
+/// Where a new list is written and flushed first; it then replaces [`LIST_PATH`] whole.
+pub const LIST_STAGING: &str = "C:\\private\\e0002005\\exports.tmp";
 
 /// One saved log.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -52,7 +54,7 @@ pub fn decode(text: &str) -> Option<Vec<Export>> {
         .map(|l| {
             let mut f = l.split('\t');
             let e = Export {
-                path: String::from(f.next().filter(|p| drive_of(p).is_some())?),
+                path: String::from(f.next().filter(|p| is_export_path(p))?),
                 len: f.next()?.parse().ok()?,
                 digest: u64::from_str_radix(f.next()?, 16).ok()?,
             };
@@ -70,6 +72,24 @@ pub fn is_export_name(name: &str) -> bool {
             .and_then(|r| r.strip_suffix(".txt"))
             .is_some_and(|d| !d.is_empty() && d.bytes().all(|b| b.is_ascii_digit()))
     })
+}
+
+/// Where Save logs writes: `C:\logs\` or `E:\logs\` (any case) and an export's name, nothing deeper. The list
+/// takes no other path, so a clear can never reach another file.
+#[must_use]
+pub fn is_export_path(path: &str) -> bool {
+    let b = path.as_bytes();
+    b.len() > 8
+        && matches!(b[0].to_ascii_uppercase(), b'C' | b'E')
+        && b[1..8].eq_ignore_ascii_case(b":\\logs\\")
+        && is_export_name(&path[8..])
+}
+
+/// Where a clear moves an export before it checks it again and deletes it (the same folder, so the same volume:
+/// the move is one rename).
+#[must_use]
+pub fn aside(path: &str) -> String {
+    format!("{path}.del")
 }
 
 /// The drive of an absolute path (`E:\logs\…` → 4), `None` for another kind of path.
@@ -124,8 +144,41 @@ mod tests {
         assert_eq!(decode(""), Some(vec![]));
         assert_eq!(decode("E:\\logs\\kernel-1.txt\t12\n"), None, "no digest");
         assert_eq!(decode("logs\\kernel-1.txt\t1\t0\n"), None, "not absolute");
+        assert_eq!(decode("C:\\data\\notes.txt\t1\t0\n"), None, "not an export");
+        assert_eq!(
+            decode("E:\\logs\\sub\\kernel-1.txt\t1\t0\n"),
+            None,
+            "deeper"
+        );
         assert_eq!(decode("E:\\a\t1\tzz\n"), None, "bad digest");
         assert_eq!(decode("E:\\a\t1\t0\tx\n"), None, "a field more");
+    }
+
+    #[test]
+    fn only_exports_in_the_logs_folder() {
+        for p in ["C:\\logs\\kernel-1700000.txt", "e:\\LOGS\\lastlog-5.txt"] {
+            assert!(is_export_path(p), "{p}");
+        }
+        for p in [
+            "D:\\logs\\kernel-1.txt",
+            "C:\\logs\\notes.txt",
+            "C:\\logs\\..\\kernel-1.txt",
+            "C:\\logs\\x\\kernel-1.txt",
+            "C:\\logsx\\kernel-1.txt",
+            "C:\\private\\e0002005\\kernel-1.txt",
+            "C:\\logs\\kernel-1.txt.del",
+            "C:\\logs\\",
+        ] {
+            assert!(!is_export_path(p), "{p}");
+        }
+        assert_eq!(
+            aside("E:\\logs\\kernel-1.txt"),
+            "E:\\logs\\kernel-1.txt.del"
+        );
+        assert!(
+            !is_export_name("kernel-1.txt.del"),
+            "aside isn't a lookalike"
+        );
     }
 
     #[test]

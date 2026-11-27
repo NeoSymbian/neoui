@@ -2,7 +2,9 @@
 //! D4: Dev tools as the owner of the logs it saved (protocol 1.20 owner work, docs neoui-shell/protocol.md "Owner
 //! work"). Settings → Apps → Dev tools measures them and clears them (`wire::scope::LOGS`), but only the exports in
 //! Dev tools' own list ([`exports`]) whose length and digest still match: another file in `\logs\` is never counted
-//! or deleted, and makes the count partial; so does a card that isn't in the slot.
+//! or deleted, and makes the count partial; so does a card that isn't in the slot. A clear moves each one aside in
+//! its folder, checks the moved file again and only then deletes it; one that changed is put back. A report the
+//! shell didn't take is kept and sent again ([`Unsent`]), never made again by clearing again.
 
 use alloc::format;
 use alloc::string::String;
@@ -12,6 +14,7 @@ use e32::fs::{File, Fs, mode};
 use neoapp::App;
 use neoui_proto::devtools::exports::{self, Export};
 use neoui_proto::settings::kerr;
+use neoui_proto::settings_app::owner::Unsent;
 use neoui_proto::settings_app::wire::{self, OwnerReport, capability, coverage, scope, state};
 
 const KERR_NOT_FOUND: i32 = -1;
@@ -26,7 +29,17 @@ pub fn register(app: &App) {
 }
 
 /// `AppEvent::OwnerWork` / `AppEvent::ClearTicket`: take `ticket`, do it, report. Nothing is deleted before the claim.
-pub fn work(app: &App, ticket: u32) {
+/// A report the shell doesn't take stays in `unsent` (sent again by [`resend`]); the same ticket again only resends it.
+pub fn work(app: &App, ticket: u32, unsent: &mut Option<Unsent>) {
+    if unsent.as_ref().is_some_and(|u| u.ticket == ticket) {
+        return resend(app, unsent);
+    }
+    resend(app, unsent); // an older one first
+    if unsent.is_some() {
+        // not claimed: nothing is done while a report waits (the shell times the work out, or wakes it again)
+        dprintln!("devtools: work {} waits: a report is still unsent", ticket);
+        return;
+    }
     let w = match app.claim_owner_work(ticket) {
         Ok(w) => w,
         Err(e) => {
@@ -50,8 +63,18 @@ pub fn work(app: &App, ticket: u32) {
         report.state,
         report.result
     );
-    if let Err(e) = app.finish_owner_work(ticket, &report) {
-        dprintln!("devtools: report {} refused ({})", ticket, e);
+    *unsent = Some(Unsent::new(ticket, report));
+    resend(app, unsent);
+}
+
+/// Send the report the shell didn't take yet, exactly as made (the shell answers the same report with 0).
+pub fn resend(app: &App, unsent: &mut Option<Unsent>) {
+    if let Some(u) = unsent.take() {
+        let r = app.finish_owner_work(u.ticket, &u.report);
+        if let Err(e) = r {
+            dprintln!("devtools: report {} not taken ({})", u.ticket, e);
+        }
+        *unsent = u.after(r);
     }
 }
 
@@ -98,9 +121,30 @@ fn write_list(fs: &Fs, list: &[Export]) -> Result<(), i32> {
             Err(e) => return Err(e),
         }
     }
-    let f = File::replace(fs, exports::LIST_PATH, mode::WRITE)?;
-    f.write(exports::encode(list).as_bytes())?;
-    f.flush()
+    // staged, flushed and closed, then one replace: a failed write leaves the last list whole
+    {
+        let f = File::replace(fs, exports::LIST_STAGING, mode::WRITE)?;
+        f.write(exports::encode(list).as_bytes())?;
+        f.flush()?;
+    }
+    fs.replace_file(exports::LIST_STAGING, exports::LIST_PATH)
+}
+
+/// Delete export `e` only if it is still the file written: moved aside in its folder (one rename on its volume),
+/// the moved file checked again, then deleted; a changed one is put back. `Ok(false)`: kept.
+fn delete_verified(fs: &Fs, e: &Export) -> Result<bool, i32> {
+    let aside = exports::aside(&e.path);
+    fs.rename(&e.path, &aside)?;
+    let same =
+        fs.entry(&aside).is_ok_and(|f| f.size == e.len) && file_digest(fs, &aside) == Ok(e.digest);
+    if same {
+        fs.delete(&aside)?;
+        return Ok(true);
+    }
+    if let Err(err) = fs.rename(&aside, &e.path) {
+        dprintln!("devtools: {} kept as {} ({})", e.path, aside, err);
+    }
+    Ok(false)
 }
 
 /// The digest of file `path`.
@@ -235,8 +279,10 @@ fn clear(fs: &Fs, asked: u32) -> OwnerReport {
     let mut kept = Vec::new();
     for (e, seen) in list {
         match seen {
-            Seen::Ours => match fs.delete(&e.path) {
-                Ok(()) | Err(KERR_NOT_FOUND) => {}
+            Seen::Ours => match delete_verified(fs, &e) {
+                Ok(true) | Err(KERR_NOT_FOUND) => {}
+                // it changed since the survey: not ours, kept (the next count is partial)
+                Ok(false) => kept.push(e),
                 Err(err) => {
                     dprintln!("devtools: {} not deleted ({})", e.path, err);
                     first_error = if first_error == 0 { err } else { first_error };
