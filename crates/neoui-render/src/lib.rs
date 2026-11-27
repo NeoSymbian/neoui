@@ -649,6 +649,17 @@ impl Renderer {
             .invoke_op("enter".into(), 0, 0, 0, 0, "".into());
     }
 
+    /// (home.md Part 4) The content the shell keeps for app `app`'s widget `name` (`widget.<app>.<name>`, from its
+    /// `ipc::WIDGET`), or `None` (never sent: the widget shows its label greyed).
+    pub fn set_app_widget(
+        &mut self,
+        app: &str,
+        name: &str,
+        c: Option<neoui_proto::widget::Content>,
+    ) {
+        home::set_content(&self.ui, &mut self.home.borrow_mut(), app, name, c);
+    }
+
     /// (D10) Is home's editor on? The UI server's page slide and pull to the shade stay off meanwhile.
     pub fn home_editing(&self) -> bool {
         self.home.borrow().editing()

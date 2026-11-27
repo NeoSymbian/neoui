@@ -46,6 +46,9 @@ mod settings_info;
 // (D10) Settings' Edit home and Open apps' thumbnails
 #[path = "home.rs"]
 mod home;
+// (home.md Part 4) WIDGET: app widgets' content
+#[path = "widget.rs"]
+pub(crate) mod widget;
 
 /// Apps whose shell screen is a launcher grid until they request FRONT(1).
 // shortcut: a fixed table like APPS; apps declare launcher support when apps are installable.
@@ -1571,6 +1574,11 @@ impl Service for Host {
             proto::CHANNEL => {
                 let key = app.key;
                 let r = self.channel(key, &m);
+                m.complete(r);
+            }
+            proto::WIDGET => {
+                let key = app.key;
+                let r = self.widget(key, &m);
                 m.complete(r);
             }
             // 1.22's contract: checked, not acted on yet (their producers and consumers land in W1–W3)

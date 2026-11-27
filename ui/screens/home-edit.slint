@@ -10,9 +10,31 @@ import { Sheet } from "../components/sheet.slint";
 import { NeoList } from "../components/scroll.slint";
 import { Apps } from "menu.slint";
 
+// (home.md Part 4) An app widget's content (neoui-proto `widget::Content`): `template` 0 none yet (the label shows
+// greyed), 1 Text (`title`, `lines`), 2 Count (`value`, its label in `title`), 3 People.
+export struct WidgetPerson { initials: string, tint: color, name: string }
+export struct WidgetContent { template: int, title: string, lines: [string], value: string, people: [WidgetPerson] }
+
 // An item on a page (`page`, its `index` there) at `col`, `row` and `w` × `h` cells of the 4 × 6 grid; `kind` 0 is an
-// app's icon (`key`), 1 a widget (`widget`: 1 Clock, 2 Agenda, 3 Favourites, 4 Media).
-export struct HomeCell { page: int, index: int, kind: int, key: string, widget: int, col: int, row: int, w: int, h: int }
+// app's icon (`key`), 1 a widget (`widget`: 1 Clock, 2 Agenda, 3 Favourites, 4 Media), 2 an app's widget (`key` the
+// app, `content` what it sent); `label` the widget's name.
+export struct HomeCell {
+    page: int,
+    index: int,
+    kind: int,
+    key: string,
+    widget: int,
+    col: int,
+    row: int,
+    w: int,
+    h: int,
+    label: string,
+    content: WidgetContent,
+}
+
+// A row of the Add sheet's Widgets tab: the shell's widget `widget`, or (0) the app widget `key` ("app.name"), in its
+// `sizes` (1 4 × 1, 2 4 × 2, 3 2 × 2)
+export struct AddWidget { label: string, widget: int, key: string, sizes: [int] }
 
 export global HomeModel {
     // the pages (1..5) and their items; Lanes' Home lane has every page's items in one column (`lane-rows` rows)
@@ -22,8 +44,8 @@ export global HomeModel {
     in property <int> lane-rows;
     // the dock's four slots ("" empty); Apps follows them, fixed
     in property <[string]> dock: ["phone", "messages", "browser", "camera"];
-    // the widget picker's rows (home::CATALOGUE's labels, in widget id order)
-    in property <[string]> widgets: ["Clock", "Agenda", "Favourites", "Music"];
+    // the widget picker's rows (home::CATALOGUE, then widget::CATALOGUE)
+    in property <[AddWidget]> widgets;
     in-out property <bool> editing;
     // the Add sheet: "" closed, "add" (to the page), "dock" (dock slot `dock-slot`)
     in-out property <string> sheet;
@@ -32,7 +54,7 @@ export global HomeModel {
     in property <string> message;
     // "enter", "done", "remove" (page, index), "drop" (page, index, col, row: the cell it was let go over),
     // "edge" (page, index, -1 | 1: to the end of the page beside it, a new one past the last), "pin" (page, key),
-    // "widget" (page, widget id), "dock" (slot, key; "" empties it)
+    // "widget" (page, widget id or 0, size; key "app.name" for an app's), "dock" (slot, key; "" empties it)
     callback op(string, int, int, int, int, string);
 }
 
@@ -162,22 +184,47 @@ export component AddSheet inherits Sheet {
         }
     }
 
-    if !root.apps-tab: VerticalLayout {
-        for name[i] in HomeModel.widgets: Rectangle {
+    // each widget with its sizes: a tap on a size adds it
+    if !root.apps-tab: NeoList {
+        height: min(6, HomeModel.widgets.length) * Theme.list-row-h;
+        content-height: HomeModel.widgets.length * Theme.list-row-h;
+        for w[i] in HomeModel.widgets: Rectangle {
+            y: i * Theme.list-row-h;
             height: Theme.list-row-h;
-            background: w-t.pressed ? Theme.pressed : transparent;
-            accessible-role: button;
-            accessible-label: "Add " + name;
-            accessible-action-default => { HomeModel.op("widget", root.page, i + 1, 0, 0, ""); }
-            Text {
-                x: 20 * Theme.dp;
-                text: name + (i < 2 ? "  ·  4 × 2" : "  ·  4 × 1");
-                color: Theme.text;
-                font-size: Theme.font-body;
-                vertical-alignment: center;
-            }
-            w-t := TouchArea {
-                clicked => { HomeModel.op("widget", root.page, i + 1, 0, 0, ""); }
+            HorizontalLayout {
+                padding-left: 20 * Theme.dp;
+                padding-right: 16 * Theme.dp;
+                spacing: 8 * Theme.dp;
+                Text {
+                    horizontal-stretch: 1;
+                    text: w.label;
+                    color: Theme.text;
+                    font-size: Theme.font-body;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+                for z in w.sizes: Rectangle {
+                    y: (parent.height - self.height) / 2;
+                    width: 64 * Theme.dp;
+                    height: 36 * Theme.dp;
+                    border-radius: self.height / 2;
+                    background: z-t.pressed ? Theme.pressed : Theme.card;
+                    border-width: max(1px, Theme.dp / 2);
+                    border-color: Theme.card-border;
+                    property <string> size-text: z == 1 ? "4 × 1" : z == 2 ? "4 × 2" : "2 × 2";
+                    accessible-role: button;
+                    accessible-label: "Add " + w.label + " " + self.size-text;
+                    accessible-action-default => { HomeModel.op("widget", root.page, w.widget, z, 0, w.key); }
+                    Text {
+                        text: parent.size-text;
+                        color: Theme.text;
+                        font-size: Theme.font-label;
+                        font-weight: 600;
+                    }
+                    z-t := TouchArea {
+                        clicked => { HomeModel.op("widget", root.page, w.widget, z, 0, w.key); }
+                    }
+                }
             }
         }
     }

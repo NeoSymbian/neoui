@@ -84,13 +84,24 @@ impl Widget {
     }
 }
 
-/// The widgets on offer: the widget, the app it opens, its sizes (the first is the one the picker adds), its label.
-/// shortcut: one size each, the one the shell draws today; 2 × 2 Clock/Agenda and 4 × 2 Media come with home.md Part 4.
+/// The widgets on offer: the widget, the app it opens, its sizes (the Add sheet offers each; the first is the one a
+/// version-1 layout knew), its label.
+/// shortcut: Media has no 4 × 2 yet, it comes with the media session (top-panel.md TP3).
 pub const CATALOGUE: &[(Widget, &str, &[Size], &str)] = &[
-    (Widget::Clock, "clock", &[Size::Tall], "Clock"),
-    (Widget::Agenda, "calendar", &[Size::Tall], "Agenda"),
-    (Widget::Favourites, "contacts", &[Size::Wide], "Favourites"),
-    (Widget::Media, "music", &[Size::Wide], "Music"),
+    (Widget::Clock, "clock", &[Size::Tall, Size::Square], "Clock"),
+    (
+        Widget::Agenda,
+        "calendar",
+        &[Size::Tall, Size::Square],
+        "Agenda",
+    ),
+    (
+        Widget::Favourites,
+        "contacts",
+        &[Size::Wide, Size::Square],
+        "Favourites",
+    ),
+    (Widget::Media, "music", &[Size::Wide, Size::Square], "Music"),
 ];
 
 /// The catalogue row of `w`.
@@ -504,10 +515,14 @@ impl Layout {
                 }
             }
         }
-        let v2 = self
-            .pages
-            .iter()
-            .any(|p| p.items.iter().any(|i| matches!(i, Item::AppWidget { .. })));
+        // an app's widget, or a built-in at a size a version-1 shell doesn't know (its catalogue had the first only)
+        let v2 = self.pages.iter().any(|p| {
+            p.items.iter().any(|i| match i {
+                Item::AppWidget { .. } => true,
+                Item::Widget { widget, size } => *size != entry(*widget).2[0],
+                Item::Shortcut(_) => false,
+            })
+        });
         let version = if v2 { VERSION } else { VERSION_1 };
         let mut out = alloc::vec![version, self.pages.len() as u8, keys.len() as u8];
         for k in &keys {
@@ -820,6 +835,30 @@ mod tests {
         let mut kind = b.clone();
         kind[size_at - 7] = 3;
         assert_eq!(Layout::decode(&kind), None);
+    }
+
+    #[test]
+    fn two_by_two_built_ins_pair_up_and_write_version_2() {
+        let mut l = Layout::default();
+        for w in [
+            Widget::Clock,
+            Widget::Agenda,
+            Widget::Favourites,
+            Widget::Media,
+        ] {
+            l.add_widget(w, Size::Square, 1).unwrap();
+        }
+        assert_eq!(
+            at(&pack(&l.pages[1].items).unwrap()),
+            [(0, 0), (2, 0), (0, 2), (2, 2)]
+        );
+        let b = l.encode().unwrap();
+        assert_eq!(b[0], VERSION, "a 2 × 2 built-in is unknown to version 1");
+        assert_eq!(Layout::decode(&b), Some(l));
+        assert_eq!(
+            Layout::default().add_widget(Widget::Media, Size::Tall, 1),
+            Err(Error::Invalid)
+        );
     }
 
     #[test]

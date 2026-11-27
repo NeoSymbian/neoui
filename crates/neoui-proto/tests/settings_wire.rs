@@ -496,7 +496,7 @@ fn features_golden_and_what_is_advertised() {
         &[1u8, 22, 0, 0][..], // 1.22 advertises nothing new: its shell side lands in W1–W3
         &[0xFE, 0x63, 0, 0, 0, 0, 0, 0], // INFO 1–7 (7 since 1.21), 8, 9, 13, 14
         &[0xFE, 0x02, 0, 0, 0, 0, 0, 0], // actions 1–7, 9 (D10's EDIT_HOME)
-        &[0xFE, 0xE7, 0xFF, 0x7F, 0x05, 0x3F, 0, 0], // opcodes 1–10, 13–30, 32, 34 (1.21), 40–45
+        &[0xFE, 0xE7, 0xFF, 0x7F, 0x05, 0x7F, 0, 0], // opcodes 1–10, 13–30, 32, 34 (1.21), 40–45, 46 (W1-E)
     ]
     .concat();
     assert_eq!(Features::SHELL.encode(), want);
@@ -532,6 +532,7 @@ fn features_golden_and_what_is_advertised() {
             && f.has_opcode(ipc::CONTROL_FEEDBACK)
     );
     assert!(f.has_info(ipc::INFO_CHANNELS) && f.has_opcode(ipc::CHANNEL));
+    assert!(f.has_opcode(ipc::WIDGET), "home Part 4 keeps app widgets");
 }
 
 #[test]
