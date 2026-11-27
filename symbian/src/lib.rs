@@ -716,7 +716,10 @@ fn main() -> i32 {
                 if ui.screen() == key && !host::LAUNCHERS.contains(&key) {
                     ui.show("home", "");
                 }
+                // the whole frame goes out, so the front app's surface must too (a hidden owner's exit, D4,
+                // left Settings with only its damage over the shell's frame)
                 repaint_all = true;
+                host.refresh = true;
             }
             if let Some(key) = host.requested_screen.take() {
                 match host.requested_from.take() {

@@ -415,8 +415,8 @@ impl Jobs {
         Ok(true)
     }
 
-    /// D4: the shell measured app `key` itself (it isn't an owner, `apps::owner_scope`): its queued measurement
-    /// `ticket` ends with `report` as an owner's would. Like any change, it stands once the shell saved the table.
+    /// D4: the shell measured app `key` itself (it isn't an owner, `apps::owner_scope`): its measurement `ticket`,
+    /// taken with [`Self::start_here`], ends with `report` as an owner's would. Like any change, it stands once the shell saved the table.
     ///
     /// # Errors
     /// `KErrNotFound` for a ticket that isn't a queued measurement of `key`; `KErrArgument` for a report that
@@ -429,10 +429,40 @@ impl Jobs {
         now_utc: i64,
     ) -> Result<(), i32> {
         let e = self.entry(key, ticket)?;
-        if e.job.state != state::QUEUED || e.work() != wire::WORK_MEASURE {
+        if e.job.state != state::RUNNING || e.claimed.is_some() || e.work() != wire::WORK_MEASURE {
             return Err(kerr::NOT_FOUND);
         }
         self.conclude(key, ticket, report, now_utc)
+    }
+
+    /// D4: the measurements the shell took ([`Self::start_here`]) and hasn't finished, oldest first.
+    #[must_use]
+    pub fn taken_here(&self) -> Vec<(&'static str, u32)> {
+        self.entries
+            .iter()
+            .filter(|e| e.job.state == state::RUNNING && e.claimed.is_none())
+            .filter_map(|e| e.key().map(|k| (k, e.job.ticket)))
+            .collect()
+    }
+
+    /// D4: the shell takes app `key`'s queued measurement `ticket` to do itself (on its worker): it runs, claimed by
+    /// no session, so no owner is started or woken for it and it doesn't expire; [`Self::finish_here`] ends it. A
+    /// restart leaves it interrupted like any running job. Taking it again changes nothing.
+    ///
+    /// # Errors
+    /// `KErrNotFound` for a ticket that isn't a measurement of `key` the shell can take.
+    pub fn start_here(&mut self, key: &'static str, ticket: u32) -> Result<(), i32> {
+        let e = self.entry(key, ticket)?;
+        match (e.job.state, e.claimed) {
+            _ if e.work() != wire::WORK_MEASURE => Err(kerr::NOT_FOUND),
+            (state::QUEUED, _) => {
+                e.job.state = state::RUNNING;
+                e.claimed = None;
+                Ok(())
+            }
+            (state::RUNNING, None) => Ok(()),
+            _ => Err(kerr::NOT_FOUND),
+        }
     }
 
     /// End the unfinished `ticket` of `key` with `report`. A report with a coverage is also `key`'s latest

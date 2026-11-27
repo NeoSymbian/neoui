@@ -62,8 +62,9 @@ fn total(d: &AppDetail) -> u64 {
 }
 
 /// The Apps list's subtitle after "ROM · ": "2.4 MB data on C:", "1.1 MB logs on E:", "no data", "at least …" for a
-/// partial count, "counting…", "not measured yet", "size unavailable"; Messages keeps "SMS kept by the modem server"
-/// while its texts aren't counted.
+/// partial count, "counting…", "not measured yet", "size unavailable" (only for a measurement that couldn't run);
+/// Messages keeps "SMS kept by the modem server" while its texts aren't counted. A measurement that ran and found
+/// nothing says "no data", partial or not.
 #[must_use]
 pub fn list_subtitle(key: &str, d: Option<&AppDetail>) -> String {
     let place = place(d);
@@ -77,11 +78,7 @@ pub fn list_subtitle(key: &str, d: Option<&AppDetail>) -> String {
         Some((c, d)) => {
             let sum = total(d);
             if sum == 0 {
-                String::from(if c == coverage::COMPLETE {
-                    "no data"
-                } else {
-                    "size unavailable"
-                })
+                String::from("no data")
             } else {
                 let kind = if d
                     .drives
@@ -139,8 +136,9 @@ pub fn storage_used(d: &AppDetail) -> (String, String) {
     let sum = total(d);
     let partial = d.coverage == coverage::PARTIAL;
     if sum == 0 {
+        // it ran and found nothing; partial: what it could look at holds nothing (no "0 B" for what it couldn't)
         return if partial {
-            plain("Size unavailable")
+            plain("No data found")
         } else {
             (String::from("No data"), size_text(0))
         };

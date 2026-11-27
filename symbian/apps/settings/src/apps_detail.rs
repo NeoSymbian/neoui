@@ -74,16 +74,23 @@ pub fn tick(ctx: &Ctx, ui: &SettingsApp, page: Page, read: bool) {
         outcome(ctx, ticket, name);
     }
     if read && matches!(page, Page::Apps | Page::AppDetail) {
-        match ctx.app.settings_records(proto::INFO_APP_DETAIL) {
-            Ok((_, records)) => match wire::decode_details(&records) {
-                Some(d) => *ctx.d4.details.borrow_mut() = Some(d),
-                None => dprintln!("settings: INFO 8 damaged"),
-            },
-            Err(wire::KERR_NOT_READY) => {} // it changed while read: the last one stays, read again next time
-            Err(_) => *ctx.d4.details.borrow_mut() = None, // a shell older than 1.20
-        }
-        show(ctx, ui);
+        refresh(ctx, ui);
     }
+}
+
+/// INFO 8 again (never a measurement) into the Apps list, the open app page and search's app rows: on Apps, an app's
+/// page, and when the root search starts (`row_model::refresh_sources`), so a cold search has the apps the shell
+/// found and their sizes.
+pub fn refresh(ctx: &Ctx, ui: &SettingsApp) {
+    match ctx.app.settings_records(proto::INFO_APP_DETAIL) {
+        Ok((_, records)) => match wire::decode_details(&records) {
+            Some(d) => *ctx.d4.details.borrow_mut() = Some(d),
+            None => dprintln!("settings: INFO 8 damaged"),
+        },
+        Err(wire::KERR_NOT_READY) => {} // it changed while read: the last one stays, read again next time
+        Err(_) => *ctx.d4.details.borrow_mut() = None, // a shell older than 1.20
+    }
+    show(ctx, ui);
 }
 
 /// INFO 13's word on the clear `ticket` once it ended, as a note.

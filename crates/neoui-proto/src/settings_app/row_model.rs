@@ -1693,6 +1693,23 @@ mod tests {
         assert_eq!(resolve_hit(0, &hits, &project_all(&f)), Err(Gone));
     }
 
+    /// D4: an app row's value is its Apps subtitle once INFO 8 was read (search entry reads it), nothing before
+    #[test]
+    fn an_apps_size_is_its_search_value() {
+        let mut f = facts();
+        let key = RowKey::with("apps.app", InstanceId::App(AppId::Native("devtools")));
+        assert_eq!(project_all(&f).get(&key).unwrap().value_text, "");
+        f.apps
+            .iter_mut()
+            .find(|a| a.id == AppId::Native("devtools"))
+            .unwrap()
+            .size = "ROM · 1.1 MB logs on E:".into();
+        assert_eq!(
+            project_all(&f).get(&key).unwrap().value_text,
+            "ROM · 1.1 MB logs on E:"
+        );
+    }
+
     #[test]
     fn drives_and_apps_keep_their_identity() {
         let mut f = facts();

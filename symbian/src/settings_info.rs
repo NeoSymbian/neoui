@@ -11,17 +11,20 @@
 //!
 //! D4 produces INFO 8 (`app_details`): per listed app its catalogue name and SID, the EXE the shell finds on C: or Z:
 //! (its installed bytes), the latest measurement (an owner's report, or the shell's own for an app that isn't one:
-//! `measure_here`, which stands like an owner's report once the table is saved) and the clear scope an owner offers
+//! `walks`: the request is answered with its ticket at once, and a worker thread counts the folder; the result stands
+//! like an owner's report once the table is saved) and the clear scope an owner offers
 //! (`apps::owner_scope`, once it registered with the clear capability). A version is only ever an owner's report.
 
 use super::{App, Host, read_bytes};
 use alloc::format;
 use alloc::string::String;
+use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
 use e32::dprintln;
 use e32::fs::{File, Fs, mode};
 use e32::server::Message;
+use e32::sync::Mutex;
 use e32::sys::err;
 use neoui_proto::apps::{self, LEGACY, SETTINGS};
 use neoui_proto::ipc::{self as proto, AppEvent};
@@ -59,6 +62,19 @@ pub struct Shelf {
     cycle: Option<wire::BatteryCycle>,
     /// D4: each listed app's EXE as found (drive, bytes), read at boot and again when the shell measures the app.
     found: Vec<(&'static str, Option<(u8, u64)>)>,
+    /// D4: the shell's own measurement counting now, on its worker thread.
+    walk: Option<Walk>,
+}
+
+/// What a walk finds: the app's EXE (drive, bytes) and the bytes in its private folder.
+type Found = (Option<(u8, u64)>, Result<u64, i32>);
+
+/// One measurement on its worker: the job, the thread, and where it puts what it found.
+struct Walk {
+    key: &'static str,
+    ticket: u32,
+    thread: e32::thread::JoinHandle,
+    out: Arc<Mutex<Option<Found>>>,
 }
 
 fn unix_s() -> i64 {
@@ -80,6 +96,7 @@ impl Shelf {
             tick_at: 0,
             cycle: None,
             found: apps::listed().map(|a| (a.key, find_exe(a.exe))).collect(),
+            walk: None,
         };
         s.load();
         s
@@ -208,21 +225,10 @@ impl Shelf {
             .collect()
     }
 
-    /// D4: the shell's own measurement of app `key` (not an owner): its EXE again, and its private folder on C:
-    /// as data, partial (an app can keep data elsewhere: Clock's are DTSRV's, Phone's call log MODEMD's).
-    fn measure_here(&mut self, key: &'static str) -> OwnerReport {
-        let Some(a) = apps::find(key) else {
-            return failed(kerr::ARGUMENT);
-        };
-        let exe = find_exe(a.exe);
-        if let Some(f) = self.found.iter_mut().find(|(k, _)| *k == key) {
-            f.1 = exe;
-        }
-        let Some(sid) = apps::sid(key) else {
-            return failed(kerr::NOT_SUPPORTED);
-        };
-        let dir = format!("C:\\private\\{sid:08x}\\");
-        match Fs::connect().and_then(|fs| folder_bytes(&fs, &dir)) {
+    /// D4: the report of the shell's own measurement of an app (not an owner): its private folder on C: as data,
+    /// partial (an app can keep data elsewhere: Clock's are DTSRV's, Phone's call log MODEMD's).
+    fn walk_report(key: &str, counted: Result<u64, i32>) -> OwnerReport {
+        match counted {
             Ok(bytes) => OwnerReport {
                 state: state::PARTIAL,
                 coverage: coverage::PARTIAL,
@@ -447,8 +453,8 @@ impl Host {
         if key == SETTINGS || key == LEGACY || apps::is_service(key) {
             return kerr::NOT_SUPPORTED;
         }
-        // D4: an app that isn't an owner (and isn't one registered now) is never started for a size: the shell
-        // measures it here, and the measurement stands with the ticket, once saved
+        // D4: an app that isn't an owner (and isn't one registered now) is never started for a size: the shell takes
+        // the measurement (saved with the ticket) and counts on its worker (`walks`)
         let here = action == proto::ACTION_MEASURE_APP
             && apps::owner_scope(key).is_none()
             && !self.shelf.jobs.registered(key);
@@ -461,18 +467,18 @@ impl Host {
             Ok(t) => t,
             Err(e) => return e,
         };
-        if here {
-            let report = self.shelf.measure_here(key);
-            if let Err(e) = self.shelf.jobs.finish_here(key, ticket, report, unix_s()) {
-                self.shelf.jobs = before;
-                return e;
-            }
+        if here && let Err(e) = self.shelf.jobs.start_here(key, ticket) {
+            self.shelf.jobs = before;
+            return e;
         }
         // the ticket exists once it is saved: a failed save answers its error and remembers nothing
         if let Err(e) = self.commit(before) {
             return e;
         }
         self.shelf.dedup.record(sid, nonce, request, ticket);
+        if here {
+            self.walks();
+        }
         dprintln!(
             "neoui: settings action {} for {}: ticket {}",
             action,
@@ -688,6 +694,7 @@ impl Host {
         if self.shelf.jobs.expire(now_ms, unix_s()) || self.shelf.dirty {
             self.pending();
         }
+        self.walks();
         let start = self.shelf.jobs.waiting_owners().into_iter().find(|&key| {
             self.apps
                 .find(|a| a.key == key && a.quit_at.is_none())
@@ -696,6 +703,73 @@ impl Host {
         if let Some(key) = start {
             dprintln!("neoui: starting {} for its owner work", key);
             self.launch(key);
+        }
+    }
+}
+
+// D4: the shell's own measurements, one at a time on a worker thread (never in an IPC handler)
+impl Host {
+    /// A finished walk ends its job (kept and saved like an owner's going away: `pending`); then the next taken
+    /// measurement starts its walk.
+    fn walks(&mut self) {
+        if let Some(w) = &self.shelf.walk {
+            let Some((exe, counted)) = w.out.lock().take() else {
+                return; // still counting
+            };
+            let w = self.shelf.walk.take().expect("a walk");
+            w.thread.join();
+            if let Some(f) = self.shelf.found.iter_mut().find(|(k, _)| *k == w.key) {
+                f.1 = exe;
+            }
+            let report = Shelf::walk_report(w.key, counted);
+            match self
+                .shelf
+                .jobs
+                .finish_here(w.key, w.ticket, report, unix_s())
+            {
+                Ok(()) => self.pending(),
+                Err(e) => dprintln!("neoui: measurement {} not recorded ({})", w.ticket, e),
+            }
+        }
+        let Some((key, ticket)) = self.shelf.jobs.taken_here().into_iter().next() else {
+            return;
+        };
+        let (Some(a), Some(sid)) = (apps::find(key), apps::sid(key)) else {
+            let _ = self
+                .shelf
+                .jobs
+                .finish_here(key, ticket, failed(kerr::NOT_SUPPORTED), unix_s());
+            self.pending();
+            return;
+        };
+        let started = Mutex::new(None).map(Arc::new).and_then(|out| {
+            let (o, exe, dir) = (out.clone(), a.exe, format!("C:\\private\\{sid:08x}\\"));
+            e32::thread::spawn(move || {
+                let found = (
+                    find_exe(exe),
+                    Fs::connect().and_then(|fs| folder_bytes(&fs, &dir)),
+                );
+                *o.lock() = Some(found);
+                0
+            })
+            .map(|thread| Walk {
+                key,
+                ticket,
+                thread,
+                out,
+            })
+        });
+        match started {
+            Ok(w) => self.shelf.walk = Some(w),
+            Err(e) => {
+                let _ = self.shelf.jobs.finish_here(
+                    key,
+                    ticket,
+                    Shelf::walk_report(key, Err(e)),
+                    unix_s(),
+                );
+                self.pending();
+            }
         }
     }
 }

@@ -126,6 +126,7 @@ fn refresh_sources(ctx: &Ctx, ui: &SettingsApp) {
     ctx.storage.drives(ui);
     ctx.storage.show(ui);
     ctx.old_apps(ui);
+    crate::apps_detail::refresh(ctx, ui); // D4: the apps found and their sizes, for search
     crate::notifications::refresh(&ctx.app, ui);
     d2::refresh(ui, Page::Developer);
     d2::refresh(ui, Page::About);

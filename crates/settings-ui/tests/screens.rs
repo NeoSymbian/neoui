@@ -412,7 +412,7 @@ fn subs(apps: &slint::ModelRc<AppRow>) -> slint::ModelRc<SharedString> {
                     "phone" => "ROM · at least 2.4 MB data on C:",
                     "messages" => "ROM · SMS kept by the modem server",
                     "browser" => "ROM · at least 12.6 MB data on C:",
-                    "contacts" => "ROM · size unavailable",
+                    "contacts" => "ROM · no data",
                     _ => "ROM · not measured yet",
                 })
             })
@@ -962,7 +962,7 @@ fn every_page() {
     s.set_app_current(s.get_apps().row_data(0).unwrap());
     s.set_app_clear("Alarms, timers, stopwatch, world clocks, its settings".into());
     s.set_app_identity("NEOCLOCK.EXE".into());
-    s.set_app_size_sub("Size unavailable".into());
+    s.set_app_size_sub("No data found".into());
     s.set_app_size("".into());
     page(&sh, 21, "Clock");
     sh.shoot("set2-app-detail-clock");

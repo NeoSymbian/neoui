@@ -7,7 +7,7 @@ use neoui_proto::settings::kerr;
 use neoui_proto::settings_app::app_detail::{
     identity, list_subtitle, size_text, storage_used, with_installed,
 };
-use neoui_proto::settings_app::jobs::Jobs;
+use neoui_proto::settings_app::jobs::{Jobs, OWNER_WAIT_MS};
 use neoui_proto::settings_app::wire::{
     AppDetail, AppRef, DriveUsage, OwnerReport, coverage, scope, state,
 };
@@ -110,7 +110,7 @@ fn the_boards_list_subtitles() {
         ),
         "ROM · at least 2.4 MB data on C:"
     );
-    // a partial zero says nothing about the app's data (Clock's live in DTSRV's folder)
+    // a measurement that ran and found nothing is "no data", partial or not; "unavailable" only when it couldn't run
     assert_eq!(
         list_subtitle(
             "clock",
@@ -120,8 +120,20 @@ fn the_boards_list_subtitles() {
                 vec![drive(2, Some(0), None, None)]
             ))
         ),
+        "ROM · no data"
+    );
+    assert_eq!(
+        list_subtitle("clock", Some(&d("clock", coverage::FAILED, vec![]))),
         "ROM · size unavailable"
     );
+    let mut nothing = d(
+        "devtools",
+        coverage::PARTIAL,
+        vec![drive(2, None, None, Some(0))],
+    );
+    assert_eq!(storage_used(&nothing), ("No data found".into(), "".into()));
+    nothing.coverage = coverage::COMPLETE;
+    assert_eq!(storage_used(&nothing), ("No data".into(), "0 B".into()));
     assert_eq!(list_subtitle("files", None), "ROM · not measured yet");
     assert_eq!(
         list_subtitle("files", Some(&d("files", coverage::MEASURING, vec![]))),
@@ -226,6 +238,32 @@ fn the_shell_measures_an_app_that_isnt_an_owner() {
     let mut j = Jobs::default();
     let t = j.submit(ipc::ACTION_MEASURE_APP, "files", 0, 0).unwrap();
     let r = measured(coverage::PARTIAL, vec![drive(2, Some(10), None, None)]);
+    assert_eq!(
+        j.finish_here("files", t, r.clone(), UTC),
+        Err(kerr::NOT_FOUND),
+        "not taken yet"
+    );
+    // the ticket is answered at once; the walk runs on the shell's worker: running, no owner started or woken,
+    // no expiry, the same ticket for another request meanwhile
+    assert_eq!(j.start_here("files", t), Ok(()));
+    assert_eq!(
+        j.start_here("files", t),
+        Ok(()),
+        "taken again: nothing changes"
+    );
+    assert_eq!(j.jobs().next().unwrap().state, state::RUNNING);
+    assert!(j.waiting_owners().is_empty() && j.wakes().is_empty());
+    assert!(
+        !j.expire(OWNER_WAIT_MS * 10, UTC),
+        "a running walk doesn't expire"
+    );
+    assert_eq!(j.submit(ipc::ACTION_MEASURE_APP, "files", 0, 0), Ok(t));
+    let restarted = Jobs::restore(&j.encode(), UTC).unwrap();
+    assert_eq!(
+        restarted.jobs().next().unwrap().state,
+        state::INTERRUPTED,
+        "a restart mid-walk"
+    );
     assert_eq!(j.finish_here("files", t, r.clone(), UTC), Ok(()));
     assert_eq!(j.measured("files"), Some(&r));
     assert_eq!(j.jobs().next().unwrap().state, state::PARTIAL);
@@ -244,7 +282,9 @@ fn the_shell_measures_an_app_that_isnt_an_owner() {
         j.finish_here("devtools", c, r.clone(), UTC),
         Err(kerr::NOT_FOUND)
     );
+    assert_eq!(j.start_here("devtools", c), Err(kerr::NOT_FOUND), "a clear");
     let m = j.submit(ipc::ACTION_MEASURE_APP, "clock", 0, 0).unwrap();
+    j.start_here("clock", m).unwrap();
     assert_eq!(
         j.finish_here("files", m, r.clone(), UTC),
         Err(kerr::PERMISSION_DENIED)
