@@ -31,6 +31,7 @@ use neoui_proto::ipc::{self as proto, AppEvent};
 use neoui_proto::settings::{Caller, access, kerr};
 use neoui_proto::settings_app::app_detail::with_installed;
 use neoui_proto::settings_app::jobs::Jobs;
+use neoui_proto::settings_app::permissions;
 use neoui_proto::settings_app::wire::{
     self, AppDetail, AppRef, ClearRequest, Dedup, DriveUsage, Features, MeasureRequest,
     OwnerReport, Revisions, capability, coverage, state,
@@ -64,6 +65,8 @@ pub struct Shelf {
     found: Vec<(&'static str, Option<(u8, u64)>)>,
     /// D4: the shell's own measurement counting now, on its worker thread.
     walk: Option<Walk>,
+    /// (D8) each app's capabilities as the kernel held them when its session last bound (`caps::of_process`)
+    caps: Vec<(&'static str, u64)>,
 }
 
 /// What a walk finds: the app's EXE (drive, bytes) and the bytes in its private folder.
@@ -97,6 +100,7 @@ impl Shelf {
             cycle: None,
             found: apps::listed().map(|a| (a.key, find_exe(a.exe))).collect(),
             walk: None,
+            caps: Vec::new(),
         };
         s.load();
         s
@@ -201,6 +205,14 @@ impl Shelf {
                     .iter()
                     .find(|(k, _)| *k == a.key)
                     .and_then(|(_, f)| *f);
+                // (D8) the kernel's word once it ran; a ROM EXE has them all (the ROM build's rule); else unknown
+                let (cap_source, caps) = match self.caps.iter().find(|(k, _)| *k == a.key) {
+                    Some((_, c)) => (permissions::source::KERNEL, *c),
+                    None if found.is_some_and(|(drive, _)| drive == 25) => {
+                        (permissions::source::IMAGE, permissions::ALL)
+                    }
+                    None => (permissions::source::UNKNOWN, 0),
+                };
                 AppDetail {
                     app: AppRef::Native(a.key),
                     caption: a.name.into(),
@@ -208,9 +220,8 @@ impl Shelf {
                     version: report.map(|r| r.version.clone()).unwrap_or_default(),
                     identity_source: if found.is_some() { 2 } else { 1 },
                     sid: apps::sid(a.key).unwrap_or(0),
-                    // D8 reads the capabilities
-                    cap_source: 0,
-                    caps: 0,
+                    cap_source,
+                    caps,
                     coverage: if measuring {
                         coverage::MEASURING
                     } else {
@@ -371,6 +382,21 @@ impl Host {
     fn find_session(&mut self, session: u32) -> Option<&mut App> {
         self.apps
             .find_mut(|a| a.session == Some(session) && a.quit_at.is_none())
+    }
+
+    /// (D8) App `key`'s session bound from process `pid`: its capabilities as the kernel holds them; INFO 8 moves on
+    /// when they changed.
+    pub(super) fn saw_caps(&mut self, key: &'static str, pid: u32) {
+        let Some(caps) = crate::caps::of_process(pid) else {
+            return;
+        };
+        match self.shelf.caps.iter_mut().find(|(k, _)| *k == key) {
+            Some((_, c)) if *c == caps => return,
+            Some((_, c)) => *c = caps,
+            None => self.shelf.caps.push((key, caps)),
+        }
+        dprintln!("neoui: {} runs with capabilities {:#x}", key, caps);
+        self.info_changed(proto::INFO_APP_DETAIL);
     }
 
     /// The legacy bridge's entries changed: INFO 8's revision (the thumbnails' catalogue) moves on.

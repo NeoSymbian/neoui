@@ -3,6 +3,7 @@
 import { Theme } from "../theme.slint";
 import { Kit } from "layers.slint";
 import { Glyph } from "frame.slint";
+import { Reveal } from "scroll.slint";
 
 export component Avatar inherits Rectangle {
     in property <string> initials;
@@ -136,6 +137,17 @@ export component ListRow inherits Rectangle {
     property <bool> long-fired;
     height: subtitle == "" ? Theme.list-row-h : Theme.list-row-double-h;
     background: touch.pressed ? Theme.pressed : checked ? Theme.selected : transparent;
+    // (D1) the row a search hit selected asks its list to show it (only where an app armed Reveal: Settings)
+    function reveal() {
+        if checked && !selecting && Reveal.armed {
+            Reveal.y = self.absolute-position.y;
+            Reveal.h = self.height;
+            Reveal.seq += 1;
+        }
+    }
+    changed checked => { root.reveal(); }
+    // a page opened on a hit: its row is checked from the start
+    init => { root.reveal(); }
     touch := TouchArea {
         changed pressed => {
             if self.pressed {

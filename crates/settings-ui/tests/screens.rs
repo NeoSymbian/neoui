@@ -12,8 +12,8 @@ use neoui_proto::settings_app::rows::{ROOT_LIST, Search};
 use neoui_proto::settings_app::sim_lock::{self as sl, Lock};
 use settings_ui::row_model as rm;
 use settings_ui::{
-    AppRow, ChannelRow, DriveRow, NotifyAppRow, PartRow, ProfileRow, SetState, WifiDetail,
-    WifiLink, WifiNet, WifiSaved, ZoneRow,
+    AppRow, BtDevice, ChannelRow, DriveRow, NotifyAppRow, PartRow, ProfileRow, SetState,
+    WifiDetail, WifiLink, WifiNet, WifiSaved, ZoneRow,
 };
 use slint::{ComponentHandle, Model, SharedString};
 
@@ -965,6 +965,9 @@ fn every_page() {
     s.set_app_size_shown(true);
     s.set_app_size_sub("Data 12.6 MB · cache 35.6 MB".into());
     s.set_app_size("48.2 MB".into());
+    // (SE4/D8) a ROM app: every capability
+    s.set_app_perm("All".into());
+    s.set_app_perm_sub("Every ROM app gets all of them".into());
     page(&sh, 21, "Browser");
     sh.shoot("set2-app-detail");
     // the identity opens it; Storage (Storage used, Clear data), App (its settings, Stop app); each asks the app
@@ -987,8 +990,13 @@ fn every_page() {
     s.set_app_identity("NEOCLOCK.EXE".into());
     s.set_app_size_sub("No data found".into());
     s.set_app_size("".into());
+    // (D8) as the kernel read it while it ran
+    s.set_app_perm("2 of 20".into());
+    s.set_app_perm_sub("Read from the kernel while it ran: NetworkServices, ReadUserData".into());
     page(&sh, 21, "Clock");
     sh.shoot("set2-app-detail-clock");
+    sh.tap(100.0, 470.0); // the capabilities are only a reading
+    assert!(sh.take_acts().is_empty());
     for (y, act) in [
         (84.0, "app-open"),
         (254.0, "app-clear"),
@@ -1091,9 +1099,14 @@ fn every_page() {
     sh.take_acts();
     sh.tap(321.0, 186.0);
     sh.tap(100.0, 292.0);
+    sh.tap(100.0, 292.0 + 34.0 + 72.0); // below the Apps header and its row
     assert_eq!(
         sh.take_acts(),
-        acts(&[("privacy.clip_notice", "0"), ("devtools", "console")])
+        acts(&[
+            ("privacy.clip_notice", "0"),
+            ("open", "13"), // (SE4/D8) App permissions: each app's page
+            ("devtools", "console")
+        ])
     );
     s.set_clip_notice(true);
 
@@ -1214,6 +1227,124 @@ fn every_page() {
     page(&sh, 2, "Mobile network");
     sh.draw();
     sim_lock(&s, Lock::On, "3");
+
+    // (D3) Storage → a drive: C: and E: open their own page (set2-storage-drive); D: and Z: aren't counted
+    page(&sh, 20, "Storage");
+    sh.draw();
+    sh.take_acts();
+    sh.tap(100.0, 48.0 + 34.0 + 38.0); // E:, the first drive under the header
+    sh.tap(100.0, 48.0 + 34.0 + 76.0 + 38.0); // C:
+    sh.tap(100.0, 48.0 + 34.0 + 2.0 * 76.0 + 38.0); // D:
+    assert_eq!(
+        sh.take_acts(),
+        acts(&[("storage-drive", "E"), ("storage-drive", "C")])
+    );
+    let e = s.get_drives().row_data(0).unwrap();
+    s.set_drive_current(e);
+    s.set_drive_used("12.4 GB".into());
+    s.set_drive_of("of 41.8 GB · 29.4 GB free".into());
+    let bar = |name: &str, size: &str, start: f32, share: f32| PartRow {
+        name: name.into(),
+        size: size.into(),
+        start,
+        share,
+    };
+    s.set_drive_kinds(model(vec![
+        bar("Images & video", "8.6 GB", 0.0, 0.206),
+        bar("Music", "2.1 GB", 0.206, 0.050),
+        bar("Documents", "0.4 GB", 0.256, 0.010),
+        bar("Other", "1.3 GB", 0.266, 0.031),
+    ]));
+    s.set_drive_fs("FAT32".into());
+    s.set_drive_size("41.8 GB".into());
+    s.set_drive_status("Last counted 06:50".into());
+    page(&sh, 31, "E: Mass memory");
+    sh.shoot("set2-storage-drive");
+    // Open in Files; Eject for USB is FS6's
+    sh.take_acts();
+    sh.tap(100.0, 550.0);
+    sh.tap(270.0, 550.0);
+    assert_eq!(sh.take_acts(), acts(&[("app-open", "files")]));
+
+    // (D14, not yet) a paired device's page and the pairing question, drawn for the stack to fill
+    s.set_bt_device(BtDevice {
+        name: "WH-1000XM4".into(),
+        address: "38:18:4C:9A:21:07".into(),
+        state: "Connected".into(),
+        code: "482 915".into(),
+    });
+    page(&sh, 32, "WH-1000XM4");
+    sh.shoot("set2-bt-device");
+    sh.take_acts();
+    for y in [140.0, 300.0, 400.0] {
+        sh.tap(100.0, y);
+    }
+    assert!(sh.take_acts().is_empty(), "every action waits for D14");
+    page(&sh, 3, "Bluetooth");
+    sheet(&sh, "bt-pair");
+    sh.shoot("set2-bt-pair");
+    page(&sh, 3, "Bluetooth");
+
+    // (D12, not yet) Add hidden network (Wi-Fi's row opens it): Save waits for the driver
+    page(&sh, 33, "Add network");
+    sh.shoot("set2-wifi-hidden");
+    sh.take_acts();
+
+    // (D7) Wallpaper's pictures: From Files opens Files' picker; From Photos waits for Photos
+    page(&sh, 25, "Wallpaper");
+    s.set_wallpaper_note("".into());
+    sh.draw();
+    sh.take_acts();
+    // the tiles under the colours (header 48, Colours 34 + 300, Pictures 34, the tile's middle 63)
+    sh.tap(54.0, 48.0 + 34.0 + 300.0 + 34.0 + 63.0);
+    sh.tap(138.0, 48.0 + 34.0 + 300.0 + 34.0 + 63.0);
+    assert_eq!(sh.take_acts(), acts(&[("wallpaper-pick", "")]));
+    // the installed picture rings From Files; NEOSET's word on a pick shows under the tiles
+    s.set_wallpaper("picture".into());
+    s.set_wallpaper_note("This picture is too large".into());
+    sh.shoot("set2-wallpaper-picture");
+    s.set_wallpaper("night".into());
+    s.set_wallpaper_note("".into());
+
+    // (D1) a search hit below the fold scrolls into view: the last of many saved networks
+    let many: Vec<WifiSaved> = (0..12)
+        .map(|i| WifiSaved {
+            name: format!("Net {i}").into(),
+            detail: "Secured · not in range".into(),
+            connected: false,
+        })
+        .collect();
+    s.set_wifi_saved(model(many));
+    page(&sh, 17, "Saved networks");
+    sh.draw();
+    sh.take_acts();
+    sh.tap(100.0, 635.0);
+    let before = sh.take_acts();
+    assert_ne!(
+        before,
+        acts(&[("wifi-saved-forget", "11")]),
+        "below the fold"
+    );
+    s.set_found("wifi.saved_net.Net 11".into());
+    sh.draw();
+    sh.tap(100.0, 635.0);
+    assert_eq!(sh.take_acts(), acts(&[("wifi-saved-forget", "11")]));
+    s.set_found("".into());
+    // as NEOSET opens a hit: the page and the hit set together, before the page is first drawn (its row is checked
+    // from the start)
+    page(&sh, 0, "Settings");
+    sh.draw();
+    page(&sh, 17, "Saved networks");
+    s.set_found("wifi.saved_net.Net 11".into());
+    sh.draw();
+    sh.take_acts();
+    sh.tap(100.0, 635.0);
+    assert_eq!(
+        sh.take_acts(),
+        acts(&[("wifi-saved-forget", "11")]),
+        "a page opened on a hit"
+    );
+    s.set_found("".into());
 
     // every row that shows a value has one for search, from the sample state above (D1's projection)
     let snap = project(&sh, Epochs::default());

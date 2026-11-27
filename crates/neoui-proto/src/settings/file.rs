@@ -30,6 +30,9 @@ pub struct Loaded {
     pub version: u16,
     /// Records in the file that were not loaded (damaged, or no longer valid).
     pub dropped: usize,
+    /// The framing broke: the records after the break couldn't even be found (a cut or overwritten file). Saving
+    /// over it would lose them, so the service treats the file as unread.
+    pub damaged: bool,
 }
 
 /// Encodes the stored (non-default) values.
@@ -77,10 +80,12 @@ pub fn decode(bytes: &[u8]) -> Result<Loaded, Error> {
     let mut store = Store::new();
     let mut rest = &bytes[HEADER_LEN..];
     let mut dropped = 0;
+    let mut damaged = false;
     for seen in 0..count {
         let Some((key, value, tail)) = record(rest) else {
             // damaged framing: nothing after it can be found
             dropped += count - seen;
+            damaged = true;
             break;
         };
         rest = tail;
@@ -98,6 +103,7 @@ pub fn decode(bytes: &[u8]) -> Result<Loaded, Error> {
         store,
         version,
         dropped,
+        damaged,
     })
 }
 
@@ -186,6 +192,10 @@ mod tests {
         let loaded = decode(&bytes[..bytes.len() - 1]).expect("header ok");
         assert_eq!(loaded.store.len(), 2);
         assert_eq!(loaded.dropped, 1);
+        assert!(
+            loaded.damaged,
+            "a cut file is damaged, not only short of a record"
+        );
         assert_eq!(
             loaded.store.get(keys::RADIO_WIFI),
             Ok(true),
@@ -204,6 +214,7 @@ mod tests {
         bytes[at] = 1;
         let loaded = decode(&bytes).expect("header ok");
         assert_eq!(loaded.dropped, 1);
+        assert!(!loaded.damaged, "a well-framed bad record is only dropped");
         assert_eq!(loaded.store.get(keys::RADIO_WIFI), Ok(false));
     }
 

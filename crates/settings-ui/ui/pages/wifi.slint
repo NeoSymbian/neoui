@@ -81,6 +81,7 @@ export component WifiPage inherits NeoList {
             value-bright: true;
             title: net.name;
             subtitle: net.detail;
+            checked: SetState.found == "wifi.ap." + net.bssid;
             has-icon: true;
             icon: @image-url("@neoui/icons/sys/wifi.svg");
             icon-tint: net.bars >= 3 ? Theme.text : net.bars >= 1 ? Theme.text-secondary : Theme.text-dim;
@@ -107,6 +108,8 @@ export component WifiPage inherits NeoList {
             subtitle: "Not yet (D12)";
             has-icon: true;
             icon: @image-url("@neoui/icons/sys/add.svg");
+            chevron: true;
+            clicked => { SetState.act("open", "33"); }
         }
         if !SetState.wifi: HorizontalLayout {
             padding-left: Theme.margin + 4 * Theme.dp;
@@ -142,6 +145,7 @@ export component WifiSavedPage inherits NeoList {
             value-bright: true;
             title: net.name;
             subtitle: net.detail;
+            checked: SetState.found == "wifi.saved_net." + net.name;
             has-icon: true;
             icon: @image-url("@neoui/icons/sys/wifi.svg");
             icon-tint: net.connected ? Theme.accent : Theme.text-secondary;

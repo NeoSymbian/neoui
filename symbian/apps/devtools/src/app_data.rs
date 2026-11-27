@@ -130,10 +130,25 @@ fn write_list(fs: &Fs, list: &[Export]) -> Result<(), i32> {
     fs.replace_file(exports::LIST_STAGING, exports::LIST_PATH)
 }
 
-/// Delete export `e` only if it is still the file written: moved aside in its folder (one rename on its volume),
-/// the moved file checked again, then deleted; a changed one is put back. `Ok(false)`: kept.
+/// Delete export `e` only if it is still the file written: moved into Dev tools' private quarantine on its drive
+/// (one rename on its volume; nobody else can write there), the moved file checked again, then deleted; a changed one
+/// is put back. `Ok(false)`: kept.
 fn delete_verified(fs: &Fs, e: &Export) -> Result<bool, i32> {
     let aside = exports::aside(&e.path);
+    let q = exports::quarantine(&e.path);
+    let drive = &q[..3]; // "E:\"
+    for dir in [
+        format!("{drive}private\\"),
+        format!("{drive}private\\e0002005\\"),
+        q.clone(),
+    ] {
+        match fs.mkdir(&dir) {
+            Ok(()) | Err(KERR_ALREADY_EXISTS) => {}
+            Err(err) => return Err(err),
+        }
+    }
+    // a file left there by an interrupted clear is ours: it goes first
+    let _ = fs.delete(&aside);
     fs.rename(&e.path, &aside)?;
     let same =
         fs.entry(&aside).is_ok_and(|f| f.size == e.len) && file_digest(fs, &aside) == Ok(e.digest);

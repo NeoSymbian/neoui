@@ -55,6 +55,8 @@ pub struct LoadReport {
     pub version: Option<u16>,
     /// Records skipped as damaged or no longer valid.
     pub dropped: usize,
+    /// The file's framing broke (records after it lost): like an error, nothing is saved over it.
+    pub damaged: bool,
     /// Why nothing could be loaded; the service then starts from defaults.
     pub error: Option<StorageError>,
 }
@@ -89,6 +91,7 @@ impl<B: Backend> Service<B> {
             keys: 0,
             version: None,
             dropped: 0,
+            damaged: false,
             error: None,
         };
         let store = match backend.load() {
@@ -98,10 +101,12 @@ impl<B: Backend> Service<B> {
                     store,
                     version,
                     dropped,
+                    damaged,
                 }) => {
                     report.keys = store.len();
                     report.version = Some(version);
                     report.dropped = dropped;
+                    report.damaged = damaged;
                     store
                 }
                 Err(e) => {
@@ -121,7 +126,8 @@ impl<B: Backend> Service<B> {
             dirty_at: None,
             watches: BTreeMap::new(),
             notified,
-            unread: report.error.is_some(),
+            // a partly read file is as unresolved as an unreadable one: what it lost would be saved over
+            unread: report.error.is_some() || report.damaged,
         };
         (service, report)
     }
@@ -353,6 +359,23 @@ mod tests {
             ..Mem::default()
         });
         let _ = s.set(Caller::Shell, keys::DISPLAY_DARK, false, 0).unwrap();
+        assert!(s.flush().unwrap().is_err());
+        assert_eq!(s.backend.saves, 0);
+        // a cut file (the framing breaks after two records): what loaded runs, nothing is saved over the rest
+        let mut whole = Store::new();
+        let _ = whole.set(keys::DISPLAY_DARK, false);
+        let _ = whole.set(keys::DISPLAY_BRIGHTNESS, 42);
+        let _ = whole.set(keys::RADIO_WIFI, false);
+        let bytes = file::encode(&whole).unwrap();
+        let (mut s, report) = Service::open(Mem {
+            bytes: Some(bytes[..bytes.len() - 1].to_vec()),
+            ..Mem::default()
+        });
+        assert!(report.damaged && report.error.is_none() && s.saves_refused());
+        assert_eq!(s.get(keys::DISPLAY_BRIGHTNESS), Ok(42));
+        let _ = s
+            .set(Caller::Shell, keys::DISPLAY_BRIGHTNESS, 7, 0)
+            .unwrap();
         assert!(s.flush().unwrap().is_err());
         assert_eq!(s.backend.saves, 0);
         // none saved yet: saving is fine

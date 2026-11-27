@@ -576,6 +576,28 @@ jobs:
           grep -a 'kit: saved C:\\note.txt 15 bytes' $s
           ! grep -aq 'K::Fault\|Kern::Fault\|\[EKERN\] panic\|rust panic' $s
 
+      # Settings leftovers (W1-H, docs neoui-shell/settings-data.md D3/D8): Settings (via Apps 485,973 and 270,805), search
+      # (🔍 426,73) "storage", its first result (270,214) -> Storage; the first drive row (E:, or C: where virt has no
+      # E:; 72 dp under the header: 270,217) opens the drive's own page (D3, set2-storage-drive), which counts it; ←.
+      # The shell read each app's capabilities from the kernel when its session bound (D8).
+      - name: Boot again; Settings → Storage → a drive
+        working-directory: build
+        run: |
+          cp out/serial.log out/serial-gestures.log
+          export SCREEN=539x1079 NAV=gestures
+          . ../neoui/symbian/taps.sh
+          tap 485 973; tap 270 805; expect "neoui: app settings surface"; wait_s 2
+          tap 426 73; wait_s 1; kb_type storage
+          tap 270 214; expect "settings: page storage"; wait_s 2
+          tap 270 217; expect "settings: drive page "; expect "settings: page drive"
+          wait_s 3; tap 36 73; expect "settings: back"
+          ui_run 150
+          s=out/serial.log
+          grep -aE 'settings: drive page [CE]' $s
+          grep -a 'settings: page drive' $s
+          grep -aE 'neoui: settings runs with capabilities 0x[0-9a-f]+' $s
+          ! grep -aq 'K::Fault\|Kern::Fault\|\[EKERN\] panic\|rust panic' $s
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -586,3 +608,4 @@ jobs:
             build/out/serial-main.log
             build/out/serial-legacy.log
             build/out/serial-home.log
+            build/out/serial-gestures.log

@@ -29,6 +29,10 @@ pub enum ProviderId {
     NotifyApps,
     /// (TP4) every app's declared channels (INFO 7), with its effective importance
     Channels,
+    /// (D1) the networks Wi-Fi sees now, one per access point
+    WifiAps,
+    /// (D1) the networks WIFID remembers, one per SSID
+    SavedNets,
 }
 
 /// What search may match a row by. Credentials, PINs, clipboard contents, message bodies and draft text are never
@@ -225,6 +229,21 @@ pub const ROWS: &[Row] = &[
         Wifi,
         ProviderId::WifiFields,
         &["link", "network details"],
+    ),
+    // (D1) every network in range (set2-wifi's list) and every saved one (set2-wifi-saved): each its own row
+    family(
+        "wifi.ap",
+        Wifi,
+        Wifi,
+        ProviderId::WifiAps,
+        &["network", "ssid", "access point"],
+    ),
+    family(
+        "wifi.saved_net",
+        WifiSaved,
+        WifiSaved,
+        ProviderId::SavedNets,
+        &["saved network", "known network"],
     ),
     // D12: a hidden network needs a directed scan the driver doesn't do yet (set2-wifi-hidden)
     action(
@@ -726,6 +745,21 @@ pub const ROWS: &[Row] = &[
         "Wallpaper",
         &["background", "home screen", "colour", "color"],
     ),
+    // (D7) a picture from Files (set2-wallpaper's Pictures): an action, it opens Files' picker only when tapped
+    action(
+        "display.wallpaper_files",
+        Wallpaper,
+        Wallpaper,
+        "From Files",
+        &["picture", "photo", "image", "wallpaper"],
+    ),
+    action(
+        "display.wallpaper_photos",
+        Wallpaper,
+        Wallpaper,
+        "From Photos",
+        &["picture", "gallery"],
+    ),
     row(
         "kb.display_language",
         Keyboard,
@@ -849,6 +883,14 @@ pub const ROWS: &[Row] = &[
         Privacy,
         "Show when an app reads it",
         &["clipboard", "paste", "toast"],
+    ),
+    // (SE4/D8) the capabilities view: each app's page
+    action(
+        "privacy.permissions",
+        Privacy,
+        Apps,
+        "App permissions",
+        &["capabilities", "permissions", "platsec"],
     ),
     action(
         "privacy.diagnostics",

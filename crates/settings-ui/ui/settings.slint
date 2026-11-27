@@ -7,8 +7,8 @@ import "@neoui/fonts/NeoSans-Medium.ttf";
 import "@neoui/fonts/NeoSans-SemiBold.ttf";
 import "@neoui/fonts/NeoSans-Bold.ttf";
 import "@neoui/fonts/DejaVuSans.ttf";
-import { Theme, Scroll, KeyboardFocus, Kit, Header, ChoiceSheet, Alphabets } from "@neoui/kit.slint";
-import { SetState, WifiNet, WifiLink, WifiDetail, WifiSaved, AppRow, ProfileRow, SearchHit, DriveRow, PartRow } from "state.slint";
+import { Theme, Scroll, KeyboardFocus, Kit, Header, ChoiceSheet, Alphabets, Reveal } from "@neoui/kit.slint";
+import { SetState, WifiNet, WifiLink, WifiDetail, WifiSaved, AppRow, ProfileRow, SearchHit, DriveRow, PartRow, BtDevice } from "state.slint";
 import { StoragePage } from "pages/storage.slint";
 import { RootPage, RootGridPage, SearchPage } from "pages/root.slint";
 import { LicencesPage } from "pages/licences.slint";
@@ -20,9 +20,12 @@ import { AppsPage, AppSheet, AppDetailPage, ResetPage, OldAppsPage, DeveloperPag
 import { WallpaperPage, FontSizePage } from "pages/appearance.slint";
 import { PanelPage, NotificationsPage, NotifyAppPage } from "pages/notifications.slint";
 import { SimLockPage, SimPinSheet } from "pages/sim-lock.slint";
+import { StorageDrivePage } from "pages/storage-drive.slint";
+import { BtDevicePage, BtPairDialog } from "pages/bluetooth.slint";
+import { WifiHiddenPage } from "pages/wifi-hidden.slint";
 import { Wallpapers } from "@neoui/components/wallpaper.slint";
 
-export { Theme, Scroll, KeyboardFocus, Kit, SetState, WifiNet, WifiLink, WifiDetail, SearchHit, DriveRow, PartRow, Wallpapers }
+export { Theme, Scroll, KeyboardFocus, Kit, SetState, WifiNet, WifiLink, WifiDetail, SearchHit, DriveRow, PartRow, Wallpapers, BtDevice }
 
 export component SettingsApp inherits Window {
     default-font-family: "NeoSans";
@@ -30,6 +33,8 @@ export component SettingsApp inherits Window {
     // the shell's keyboard covers the surface's bottom: a sheet with a field ends above it
     property <length> kb: KeyboardFocus.open && !KeyboardFocus.dismissed ? KeyboardFocus.text-h : 0;
 
+    // (D1) a search hit's row scrolls into view (the kit's Reveal; other apps leave it off)
+    init => { Reveal.armed = true; }
     // every letter the keyboard types gets baked in: the native names (Հայերեն, Русский), typed searches and names
     Alphabets { }
     // a tap no row or button takes lands here: the focused field lets go and the keyboard closes
@@ -103,6 +108,9 @@ export component SettingsApp inherits Window {
         if SetState.page == 28: NotificationsPage { }
         if SetState.page == 29: NotifyAppPage { }
         if SetState.page == 30: SimLockPage { }
+        if SetState.page == 31: StorageDrivePage { }
+        if SetState.page == 32: BtDevicePage { }
+        if SetState.page == 33: WifiHiddenPage { }
     }
 
     // the sheets: full size, last, so they cover the header and the page
@@ -146,6 +154,10 @@ export component SettingsApp inherits Window {
         kb: root.kb;
         open: true;
         dismissed => { SetState.sheet = ""; KeyboardFocus.open = false; }
+    }
+    // (D14, not yet) pairing's question, over Bluetooth
+    if SetState.sheet == "bt-pair": BtPairDialog {
+        dismissed => { SetState.sheet = ""; }
     }
     if SetState.sheet == "app": AppSheet {
         open: true;

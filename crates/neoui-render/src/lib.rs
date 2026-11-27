@@ -13,6 +13,7 @@ pub mod peek;
 mod settings;
 mod tiles;
 mod suggest;
+mod wallpaper;
 
 use alloc::boxed::Box;
 use alloc::rc::Rc;
@@ -1028,7 +1029,9 @@ impl Renderer {
         let ui = &self.ui;
         ui.set_query_open(query.is_some());
         if let Some(q) = query {
-            ui.set_query_text(q.text.as_str().into());
+            let (title, body) = q.title_body();
+            ui.set_query_title(title.into());
+            ui.set_query_text(body.into());
             let buttons: Vec<slint::SharedString> =
                 q.buttons.iter().map(|b| b.as_str().into()).collect();
             ui.set_query_buttons(Rc::new(slint::VecModel::from(buttons)).into());

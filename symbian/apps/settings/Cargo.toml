@@ -25,3 +25,5 @@ settings-ui.workspace = true
 wifi.workspace = true
 modem-ipc.workspace = true
 neoaudio.workspace = true
+# (D7) wallpaper pictures: decode, turn and shrink what Files picked (NeoSymbian/files, Apache-2.0)
+neo-format-image.workspace = true

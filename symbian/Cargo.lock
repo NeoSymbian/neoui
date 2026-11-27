@@ -1266,7 +1266,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ee8cfcc411d9adbbaba82fb72661cc1bcca13e8bba98b364e62b2dba8f960159"
 dependencies = [
  "color_quant",
- "weezl",
+ "weezl 0.1.12",
 ]
 
 [[package]]
@@ -2079,6 +2079,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "image-webp"
+version = "0.2.4"
+source = "git+https://github.com/NeoSymbian/image-webp?rev=687734dea2a3e3e2d7d002f6bef367ee08fb138c#687734dea2a3e3e2d7d002f6bef367ee08fb138c"
+dependencies = [
+ "byteorder-lite",
+]
+
+[[package]]
 name = "imagesize"
 version = "0.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2221,6 +2229,12 @@ dependencies = [
  "getrandom",
  "libc",
 ]
+
+[[package]]
+name = "jpeg-encoder"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a0370574b86f7eca156b9f298392b5e69a23f8c86f3f865add60bbc2e79467a6"
 
 [[package]]
 name = "js-sys"
@@ -2659,6 +2673,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "neo-format-image"
+version = "0.1.0"
+source = "git+https://github.com/NeoSymbian/files?rev=5817c61b489ac52daaf39e855491200a65e69f82#5817c61b489ac52daaf39e855491200a65e69f82"
+dependencies = [
+ "image-webp 0.2.4 (git+https://github.com/NeoSymbian/image-webp?rev=687734dea2a3e3e2d7d002f6bef367ee08fb138c)",
+ "jpeg-encoder",
+ "libm",
+ "miniz_oxide 0.9.1",
+ "tiny-skia",
+ "weezl 0.2.1",
+ "xmlparser",
+ "zune-core",
+ "zune-jpeg",
+ "zune-png",
+]
+
+[[package]]
 name = "neoapp"
 version = "0.1.0"
 dependencies = [
@@ -2702,6 +2733,7 @@ version = "0.1.0"
 dependencies = [
  "e32",
  "modem-ipc",
+ "neo-format-image",
  "neoapp",
  "neoaudio",
  "neoui-proto",
@@ -3636,7 +3668,7 @@ checksum = "67e3803f97b999e80cbf7c6ecdd07a8102204d92e1633cf48783720c521196bd"
 dependencies = [
  "bytemuck",
  "gif",
- "image-webp",
+ "image-webp 0.2.4 (registry+https://github.com/rust-lang/crates.io-index)",
  "log",
  "pico-args",
  "rgb",
@@ -4337,6 +4369,7 @@ checksum = "edca365c3faccca67d06593c5980fa6c57687de727a03131735bb85f01fdeeb9"
 dependencies = [
  "arrayref",
  "bytemuck",
+ "libm",
  "strict-num",
 ]
 
@@ -4756,6 +4789,12 @@ name = "weezl"
 version = "0.1.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a28ac98ddc8b9274cb41bb4d9d4d5c425b6020c50c46f25559911905610b4a88"
+
+[[package]]
+name = "weezl"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d4ca08e5ef825b65b056d9efbd95c8750683f0a6d0466d02e96dc2e4e360f3d2"
 
 [[package]]
 name = "wgpu"
@@ -5336,6 +5375,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e450f9b2ed1dff33c94c12589a87338689467b9c4f5d8a5710bd09a847d2c8a7"
 
 [[package]]
+name = "xmlparser"
+version = "0.13.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "66fee0b777b0f5ac1c69bb06d361268faafa61cd4682ae064a171c16c433e9e4"
+
+[[package]]
 name = "xmlwriter"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5555,12 +5600,31 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d56377fd46368984a170bc5aac5567e52ca5da874caa60bea39fcbca78fb658b"
 
 [[package]]
+name = "zune-inflate"
+version = "0.2.54"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "73ab332fe2f6680068f3582b16a24f90ad7096d5d39b974d1c0aff0125116f02"
+dependencies = [
+ "simd-adler32",
+]
+
+[[package]]
 name = "zune-jpeg"
 version = "0.5.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "27bc9d5b815bc103f142aa054f561d9187d191692ec7c2d1e2b4737f8dbd7296"
 dependencies = [
  "zune-core",
+]
+
+[[package]]
+name = "zune-png"
+version = "0.5.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5a321146329f7617ba0a5b26982cba45b7ce78163135aba78be25850aefcea80"
+dependencies = [
+ "zune-core",
+ "zune-inflate",
 ]
 
 [[package]]

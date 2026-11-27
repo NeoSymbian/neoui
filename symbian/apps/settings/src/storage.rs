@@ -101,6 +101,22 @@ pub struct Storage {
     /// The (letter, free) pairs last logged: the free bytes go to the log when they change (a phone run's proof that
     /// nothing was written).
     logged: core::cell::RefCell<Vec<(char, i64)>>,
+    /// (D3) each drive's mounted file system as the drive rows last read it ("FAT32", "Rofs")
+    fs_names: core::cell::RefCell<Vec<(char, String)>>,
+}
+
+/// (D3) One counted drive for its own page: its count (the running one while counting), its volume now, and how the
+/// count stands.
+pub struct DriveView {
+    pub tally: Tally,
+    pub used: u64,
+    pub free: u64,
+    pub size: u64,
+    pub counted: bool,
+    pub partial: bool,
+    pub counting: bool,
+    pub at: Option<String>,
+    pub fs: String,
 }
 
 impl Storage {
@@ -112,7 +128,38 @@ impl Storage {
             vols: core::cell::Cell::new([Vol::default(); 2]),
             ids: core::cell::Cell::new(None),
             logged: core::cell::RefCell::new(Vec::new()),
+            fs_names: core::cell::RefCell::new(Vec::new()),
         }
+    }
+
+    /// (D3) Drive `letter` (C or E) for its page; `None` for a drive that isn't counted.
+    pub fn drive(&self, letter: char) -> Option<DriveView> {
+        let k = COUNTED.iter().position(|&(l, _)| l == letter)?;
+        let now = self.vols.get()[k];
+        let fs = self
+            .fs_names
+            .borrow()
+            .iter()
+            .find(|(l, _)| *l == letter)
+            .map(|(_, f)| f.clone())
+            .unwrap_or_default();
+        let g = self.shared?.lock();
+        let kept = g.last[k];
+        Some(DriveView {
+            tally: if g.running {
+                g.tally[k]
+            } else {
+                kept.map(|c| c.tally).unwrap_or_default()
+            },
+            used: now.used,
+            free: now.free,
+            size: now.size,
+            counted: kept.is_some(),
+            partial: kept.is_some_and(|c| c.partial),
+            counting: g.running,
+            at: g.at.clone(),
+            fs,
+        })
     }
 
     /// The drive rows and the root's "C: N free"; emptied when the file server can't say.
@@ -132,6 +179,7 @@ impl Storage {
         let (fs, list) = list;
         let mut rows = Vec::new();
         let mut logged = Vec::new();
+        let mut fs_names = Vec::new();
         let mut vols = [Vol::default(); 2];
         let mut ids = [None; 2];
         // E: first (the board's order: the big drive), then the rest from C:
@@ -153,6 +201,7 @@ impl Storage {
             logged.push((letter, v.free));
             // the mounted file system (FAT32, or Rom/Rofs/Composite on Z:): unknown leaves the plain note
             let fs_name = fs.file_system_sub_type(i as i32).unwrap_or_default();
+            fs_names.push((letter, fs_name.clone()));
             let note = st::drive_note(letter, &fs_name);
             let vol = Vol::of(&v);
             let (size, used) = (vol.size, vol.used);
@@ -187,6 +236,7 @@ impl Storage {
             *self.logged.borrow_mut() = logged;
         }
         self.vols.set(vols);
+        *self.fs_names.borrow_mut() = fs_names;
         // another volume (or none) where the last look saw one: that drive's mount generation moves on (a count of
         // the old one can't land), its kept count goes, and Storage counts again when it is next shown
         if let (Some(old), Some(shared)) = (self.ids.replace(Some(ids)), self.shared) {

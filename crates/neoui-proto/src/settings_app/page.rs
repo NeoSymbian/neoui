@@ -47,9 +47,15 @@ pub enum Page {
     NotifyApp = 29,
     /// (D11) SIM card lock (set2-sim-lock): Use SIM PIN, Change SIM PIN, the attempts left.
     SimLock = 30,
+    /// (D3) One drive (set2-storage-drive): its kinds, file system and size; the drive is NEOSET's current one.
+    StorageDrive = 31,
+    /// (D14, not yet) A Bluetooth device (set2-bt-device); the device is NEOSET's current one.
+    BtDevice = 32,
+    /// (D12, not yet) Add a hidden Wi-Fi network (set2-wifi-hidden).
+    WifiHidden = 33,
 }
 
-pub const ALL: [Page; 31] = [
+pub const ALL: [Page; 34] = [
     Page::Root,
     Page::Wifi,
     Page::Mobile,
@@ -81,6 +87,9 @@ pub const ALL: [Page; 31] = [
     Page::Notifications,
     Page::NotifyApp,
     Page::SimLock,
+    Page::StorageDrive,
+    Page::BtDevice,
+    Page::WifiHidden,
 ];
 
 impl Page {
@@ -129,6 +138,9 @@ impl Page {
             Page::Notifications => "notifications",
             Page::NotifyApp => "notifyapp",
             Page::SimLock => "simlock",
+            Page::StorageDrive => "drive",
+            Page::BtDevice => "btdevice",
+            Page::WifiHidden => "wifihidden",
         }
     }
 
@@ -157,6 +169,8 @@ impl Page {
             Page::Ringtone => Page::Sounds,
             Page::TimeZone => Page::DateTime,
             Page::NotifyApp => Page::Notifications,
+            Page::StorageDrive => Page::Storage,
+            Page::BtDevice => Page::Bluetooth,
             p => p,
         }
     }
@@ -195,6 +209,9 @@ impl Page {
             Page::Panel => "Panel & notifications",
             Page::Notifications | Page::NotifyApp => "Notifications",
             Page::SimLock => "SIM card lock",
+            Page::StorageDrive => "Drive",
+            Page::BtDevice => "Bluetooth device",
+            Page::WifiHidden => "Add network",
         }
     }
 
@@ -216,6 +233,9 @@ impl Page {
             Page::Notifications => Some(Page::Panel),
             Page::NotifyApp => Some(Page::Notifications),
             Page::SimLock => Some(Page::Mobile),
+            Page::StorageDrive => Some(Page::Storage),
+            Page::BtDevice => Some(Page::Bluetooth),
+            Page::WifiHidden => Some(Page::Wifi),
             _ => Some(Page::Root),
         }
     }
@@ -232,7 +252,11 @@ mod tests {
             assert_eq!(Page::from_id(p.id()), Some(*p));
             assert_eq!(Page::from_name(p.name()), Some(*p));
         }
-        assert_eq!(Page::from_id(31), None);
+        assert_eq!(Page::from_id(34), None);
+        assert_eq!(Page::opened(31, "").from_outside(), Page::Storage);
+        assert_eq!(Page::opened(0, "btdevice").from_outside(), Page::Bluetooth);
+        assert_eq!(Page::WifiHidden.parent(), Some(Page::Wifi));
+        assert_eq!(Page::StorageDrive.parent(), Some(Page::Storage));
         assert_eq!(Page::SimLock.parent(), Some(Page::Mobile));
         assert_eq!(Page::opened(0, "simlock"), Page::SimLock);
         assert_eq!(Page::opened(29, "").from_outside(), Page::Notifications);

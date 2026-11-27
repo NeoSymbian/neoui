@@ -85,11 +85,20 @@ pub fn is_export_path(path: &str) -> bool {
         && is_export_name(&path[8..])
 }
 
-/// Where a clear moves an export before it checks it again and deletes it (the same folder, so the same volume:
-/// the move is one rename).
+/// Where a clear moves an export before it checks it again and deletes it: Dev tools' private quarantine on the
+/// export's own drive (`E:\private\e0002005\quarantine\kernel-1.txt`), so the move is one rename on its volume
+/// and no other app can put a file in its place meanwhile (a public `.del` name could be).
 #[must_use]
 pub fn aside(path: &str) -> String {
-    format!("{path}.del")
+    let name = path.rsplit('\\').next().unwrap_or(path);
+    format!("{}{name}", quarantine(path))
+}
+
+/// The quarantine folder [`aside`] moves `path` into (made before the move), ending in `\`.
+#[must_use]
+pub fn quarantine(path: &str) -> String {
+    let drive = path.get(..2).unwrap_or("C:");
+    format!("{drive}\\private\\e0002005\\quarantine\\")
 }
 
 /// The drive of an absolute path (`E:\logs\…` → 4), `None` for another kind of path.
@@ -173,8 +182,13 @@ mod tests {
         }
         assert_eq!(
             aside("E:\\logs\\kernel-1.txt"),
-            "E:\\logs\\kernel-1.txt.del"
+            "E:\\private\\e0002005\\quarantine\\kernel-1.txt"
         );
+        assert_eq!(
+            quarantine("E:\\logs\\kernel-1.txt"),
+            "E:\\private\\e0002005\\quarantine\\"
+        );
+        assert!(!is_export_path(&aside("C:\\logs\\kernel-1.txt")));
         assert!(
             !is_export_name("kernel-1.txt.del"),
             "aside isn't a lookalike"

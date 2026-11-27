@@ -306,7 +306,14 @@ impl Profiles {
     /// (D6) The lowest free id for a new sound of the user's; `None` when all twelve are taken.
     #[must_use]
     pub fn free_tone(&self) -> Option<u8> {
-        (tone::FIRST_YOURS..=tone::LAST).find(|id| self.your(*id).is_none())
+        self.free_tone_without(|_| false)
+    }
+
+    /// (D6) [`Self::free_tone`] for an import: an id `occupied` says still has a file (a delete that couldn't remove
+    /// it) is skipped, so the import never writes over it and a stale file never blocks imports.
+    #[must_use]
+    pub fn free_tone_without(&self, occupied: impl Fn(u8) -> bool) -> Option<u8> {
+        (tone::FIRST_YOURS..=tone::LAST).find(|id| self.your(*id).is_none() && !occupied(*id))
     }
 
     /// (D6) A ringtone's name: a built-in one's, or the user's name for theirs.
@@ -1517,6 +1524,9 @@ mod tests {
             assert_eq!(p.apply(bad, ON), Err(Refused::Argument));
         }
         assert_eq!(p.free_tone(), Some(5));
+        // a free id whose file stayed (a delete that couldn't remove it) is skipped, never written over
+        assert_eq!(p.free_tone_without(|id| id == 5), Some(6));
+        assert_eq!(p.free_tone_without(|id| id != 9), None);
         p.apply(use_it(GENERAL, 4), ON).unwrap();
         p.apply(use_it(MEETING, 4), ON).unwrap();
         p.apply(
