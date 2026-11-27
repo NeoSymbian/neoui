@@ -33,6 +33,9 @@ pub const BLOB_MAX: usize = 1024;
 const VERSION: u8 = 1;
 /// The longest `sound.tones` record: an id and a tones byte per profile.
 pub const TONES_MAX: usize = 2 * MAX_PROFILES;
+/// (D6) The longest `sound.feedback` record: a version, a count, an id and flags per profile.
+pub const FEEDBACK_MAX: usize = 2 + 2 * MAX_PROFILES;
+const FEEDBACK_VERSION: u8 = 1;
 
 /// One profile: what an incoming call does.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -47,6 +50,10 @@ pub struct Profile {
     /// (SE2b) the call's ringtone and a message's tone ([`tone`])
     pub ringtone: u8,
     pub message_tone: u8,
+    /// (D6) the dial keys sound (out of a call; in-call DTMF doesn't depend on it)
+    pub keypad: bool,
+    /// (D6) a short pulse for each control a touch works (not the system keyboard: `keyboard.vibrate` is its own)
+    pub touch: bool,
 }
 
 /// (SE2b) The tones, NeoAudio's `tones` and modem-ipc's `tone` ids (the shell passes them through unchanged).
@@ -57,15 +64,19 @@ pub mod tone {
     /// no sound: a call vibrates, a message buzzes
     pub const NONE: u8 = 3;
     pub const ALL: [u8; 4] = [BUILT_IN, BEEP, TWO_BEEPS, NONE];
+    /// (D6) the user's own sounds (modem-ipc 2.8, NeoAudio 1.1): the first and the last id
+    pub const FIRST_YOURS: u8 = 4;
+    pub const LAST: u8 = 15;
 
     /// A ringtone's name.
     #[must_use]
     pub fn ring_name(t: u8) -> &'static str {
         match t {
             BUILT_IN => "Built-in ringtone",
-            BEEP => "Beep",
+            BEEP => "Beep once",
             TWO_BEEPS => "Two beeps",
-            _ => "None (vibrate only)",
+            NONE => "None",
+            _ => "Your sound",
         }
     }
 
@@ -76,7 +87,8 @@ pub mod tone {
             BUILT_IN => "Built-in chime",
             BEEP => "Beep",
             TWO_BEEPS => "Two beeps",
-            _ => "None (buzz only)",
+            NONE => "None (buzz only)",
+            _ => "Your sound",
         }
     }
 }
@@ -134,6 +146,17 @@ pub enum Command {
         ring: u8,
         message: u8,
     },
+    /// (D6, SE2c-1) A sound of the user's, its file already in place: register it under `id` (4..=15, unused).
+    AddTone(u8, String),
+    RenameTone(u8, String),
+    /// Every profile that uses it goes back to the built-in tone; then NEOSET deletes its file.
+    DeleteTone(u8),
+    /// (D6) A profile's keypad tones and vibrate on touch (not Offline's: it uses General's).
+    SetFeedback {
+        id: u8,
+        keypad: bool,
+        touch: bool,
+    },
     Add(String),
     Rename(u8, String),
     Delete(u8),
@@ -161,7 +184,20 @@ pub struct Profiles {
     /// The radios as they were when Offline was entered.
     pub radios: Radios,
     pub list: Vec<Profile>,
+    /// (D6) The user's own sounds (`sound.your_tones`): tone ids [`tone::FIRST_YOURS`]..=[`tone::LAST`].
+    pub yours: Vec<YourTone>,
 }
+
+/// (D6, SE2c-1) A sound of the user's: its tone id and name. Its PCM is NEOSET's `tones\<id>.pcm` (NeoAudio
+/// `tones::file`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct YourTone {
+    pub id: u8,
+    pub name: String,
+}
+
+/// The longest `sound.your_tones` record.
+pub const YOURS_MAX: usize = 512;
 
 fn builtin(id: u8, name: &str, ring: bool, volume: u8, vibrate: bool) -> Profile {
     Profile {
@@ -172,6 +208,8 @@ fn builtin(id: u8, name: &str, ring: bool, volume: u8, vibrate: bool) -> Profile
         vibrate,
         ringtone: tone::BUILT_IN,
         message_tone: tone::BUILT_IN,
+        keypad: false,
+        touch: false,
     }
 }
 
@@ -202,6 +240,7 @@ impl Profiles {
             before_offline: GENERAL,
             radios: Radios::default(),
             list,
+            yours: Vec::new(),
         }
     }
 
@@ -252,10 +291,122 @@ impl Profiles {
             })
     }
 
+    /// (D6) A tone id that plays: a built-in one, or a sound of the user's that is in the catalogue.
+    #[must_use]
+    pub fn known(&self, t: u8) -> bool {
+        t <= tone::NONE || self.your(t).is_some()
+    }
+
+    /// (D6) A sound of the user's by its id.
+    #[must_use]
+    pub fn your(&self, id: u8) -> Option<&YourTone> {
+        self.yours.iter().find(|t| t.id == id)
+    }
+
+    /// (D6) The lowest free id for a new sound of the user's; `None` when all twelve are taken.
+    #[must_use]
+    pub fn free_tone(&self) -> Option<u8> {
+        (tone::FIRST_YOURS..=tone::LAST).find(|id| self.your(*id).is_none())
+    }
+
+    /// (D6) A ringtone's name: a built-in one's, or the user's name for theirs.
+    #[must_use]
+    pub fn ring_name(&self, t: u8) -> String {
+        self.your(t)
+            .map_or_else(|| String::from(tone::ring_name(t)), |y| y.name.clone())
+    }
+
+    /// (D6) A profile's row ("Morning bell · volume 7 · vibrate"), with the user's names for their sounds.
+    #[must_use]
+    pub fn summary(&self, p: &Profile) -> String {
+        p.summary_named(&self.ring_name(p.ringtone))
+    }
+
+    /// (D6) `sound.your_tones`: `[id][len][name]` per sound of the user's.
+    #[must_use]
+    pub fn encode_yours(&self) -> Vec<u8> {
+        let mut b = Vec::new();
+        for t in &self.yours {
+            b.extend_from_slice(&[t.id, t.name.len() as u8]);
+            b.extend_from_slice(t.name.as_bytes());
+        }
+        b
+    }
+
+    /// The sounds in `sound.your_tones`; a record with a bad id, a repeated id or a bad name is skipped, a cut one
+    /// ends the list.
+    pub fn apply_yours(&mut self, mut b: &[u8]) {
+        self.yours.clear();
+        if b.len() > YOURS_MAX {
+            return;
+        }
+        while let Some((&[id, len], rest)) = b.split_first_chunk::<2>() {
+            let Some(name) = rest.get(..usize::from(len)) else {
+                return;
+            };
+            b = &rest[usize::from(len)..];
+            if let Ok(name) = core::str::from_utf8(name)
+                && check_tone_name(name).is_ok()
+                && (tone::FIRST_YOURS..=tone::LAST).contains(&id)
+                && self.your(id).is_none()
+            {
+                self.yours.push(YourTone {
+                    id,
+                    name: String::from(name),
+                });
+            }
+        }
+    }
+
+    /// (D6) The active keypad tones and vibrate on touch (`sound.keypad_tones`, `sound.touch_vibrate`): the sound
+    /// profile's (Offline's is General's).
+    #[must_use]
+    pub fn feedback(&self) -> (bool, bool) {
+        let id = if self.active == OFFLINE {
+            GENERAL
+        } else {
+            self.active
+        };
+        self.get(id)
+            .or_else(|| self.get(GENERAL))
+            .map_or((false, false), |p| (p.keypad, p.touch))
+    }
+
+    /// (D6) `sound.feedback`, the profiles' feedback sidecar beside the v1 blob: `[1][n]` then n × `[id][keypad 1 |
+    /// touch 2]`, every profile, so its presence says the profiles have their feedback (an empty key: from before
+    /// D6, all off).
+    #[must_use]
+    pub fn encode_feedback(&self) -> Vec<u8> {
+        let mut b = alloc::vec![FEEDBACK_VERSION, self.list.len() as u8];
+        for p in &self.list {
+            b.extend_from_slice(&[p.id, u8::from(p.keypad) | u8::from(p.touch) << 1]);
+        }
+        b
+    }
+
+    /// The feedback in `sound.feedback` onto the profiles. A record with reserved bits or for a profile that isn't
+    /// there is skipped; a damaged key (another version, a wrong length) is ignored, leaving the feedback off.
+    pub fn apply_feedback(&mut self, b: &[u8]) {
+        let Some((&[FEEDBACK_VERSION, n], records)) = b.split_first_chunk::<2>() else {
+            return;
+        };
+        if records.len() != 2 * usize::from(n) || b.len() > FEEDBACK_MAX {
+            return;
+        }
+        for r in records.as_chunks::<2>().0 {
+            if r[1] & !3 != 0 {
+                continue;
+            }
+            if let Some(p) = self.get_mut(r[0]) {
+                (p.keypad, p.touch) = (r[1] & 1 != 0, r[1] & 2 != 0);
+            }
+        }
+    }
+
     /// (SE2b) Fold in a write to `sound.ringtone` / `sound.message_tone` by anyone but the reducer: into the sound
     /// profile. True when it changed something.
     pub fn reconcile_tones(&mut self, now: (u8, u8)) -> bool {
-        if now == self.tones() || now.0 > tone::NONE || now.1 > tone::NONE {
+        if now == self.tones() || !self.known(now.0) || !self.known(now.1) {
             return false;
         }
         let id = if self.active == OFFLINE {
@@ -306,7 +457,7 @@ impl Profiles {
                 Ok(None)
             }
             Command::SetTones { id, ring, message } => {
-                if ring > tone::NONE || message > tone::NONE {
+                if !self.known(ring) || !self.known(message) {
                     return Err(Refused::Argument);
                 }
                 if id == OFFLINE {
@@ -316,6 +467,45 @@ impl Profiles {
                 p.ringtone = ring;
                 p.message_tone = message;
                 p.keep_a_signal();
+                Ok(None)
+            }
+            Command::SetFeedback { id, keypad, touch } => {
+                if id == OFFLINE {
+                    return Err(Refused::NotFound);
+                }
+                let p = self.get_mut(id).ok_or(Refused::NotFound)?;
+                (p.keypad, p.touch) = (keypad, touch);
+                Ok(None)
+            }
+            Command::AddTone(id, name) => {
+                check_tone_name(&name)?;
+                if !(tone::FIRST_YOURS..=tone::LAST).contains(&id) || self.your(id).is_some() {
+                    return Err(Refused::Argument);
+                }
+                self.yours.push(YourTone { id, name });
+                self.yours.sort_by_key(|t| t.id);
+                Ok(None)
+            }
+            Command::RenameTone(id, name) => {
+                check_tone_name(&name)?;
+                let t = self.yours.iter_mut().find(|t| t.id == id);
+                t.ok_or(Refused::NotFound)?.name = name;
+                Ok(None)
+            }
+            Command::DeleteTone(id) => {
+                if self.your(id).is_none() {
+                    return Err(Refused::NotFound);
+                }
+                // every profile that uses it (active or not) goes back to the built-in tone first
+                self.yours.retain(|t| t.id != id);
+                for p in &mut self.list {
+                    if p.ringtone == id {
+                        p.ringtone = tone::BUILT_IN;
+                    }
+                    if p.message_tone == id {
+                        p.message_tone = tone::BUILT_IN;
+                    }
+                }
                 Ok(None)
             }
             Command::Add(name) => {
@@ -485,10 +675,30 @@ impl Profiles {
     /// (SE2b) `sound.tones`: `[id][ringtone | message tone << 4]` for each profile whose tones aren't the built-in
     /// ones. A key of its own, so a shell from before SE2b (which drops unknown keys) keeps every profile.
     #[must_use]
+    ///
+    /// (D6) The user's own sounds go in as the built-in tone (their fallback): a shell from before them, which skips
+    /// a record with an id it doesn't know, keeps the profile's other tone. The real ids are
+    /// [`Self::encode_tones_yours`], read after these.
     pub fn encode_tones(&self) -> Vec<u8> {
+        let legacy = |t: u8| if t > tone::NONE { tone::BUILT_IN } else { t };
         let mut b = Vec::new();
         for p in &self.list {
-            if (p.ringtone, p.message_tone) != (tone::BUILT_IN, tone::BUILT_IN) {
+            let (r, m) = (legacy(p.ringtone), legacy(p.message_tone));
+            if (r, m) != (tone::BUILT_IN, tone::BUILT_IN) {
+                b.extend_from_slice(&[p.id, r | m << 4]);
+            }
+        }
+        b
+    }
+
+    /// (D6) `sound.tones_yours`: `[id][ringtone | message tone << 4]`, the real pair, for each profile that uses a
+    /// sound of the user's. Read after `sound.tones` (the same records, [`Self::apply_tones`]), so they win; a record
+    /// naming a sound no longer in the catalogue is skipped and the fallback stays.
+    #[must_use]
+    pub fn encode_tones_yours(&self) -> Vec<u8> {
+        let mut b = Vec::new();
+        for p in &self.list {
+            if p.ringtone > tone::NONE || p.message_tone > tone::NONE {
                 b.extend_from_slice(&[p.id, p.ringtone | p.message_tone << 4]);
             }
         }
@@ -500,7 +710,7 @@ impl Profiles {
     pub fn apply_tones(&mut self, b: &[u8]) {
         for r in b.as_chunks::<2>().0 {
             let (ring, message) = (r[1] & 0xf, r[1] >> 4);
-            if ring > tone::NONE || message > tone::NONE {
+            if !self.known(ring) || !self.known(message) {
                 continue;
             }
             if let Some(p) = self.get_mut(r[0]) {
@@ -544,6 +754,8 @@ impl Profiles {
                     vibrate,
                     ringtone: tone::BUILT_IN,
                     message_tone: tone::BUILT_IN,
+                    keypad: false,
+                    touch: false,
                 });
             }
         }
@@ -556,6 +768,7 @@ impl Profiles {
             before_offline,
             radios: Radios::from_bits(radios),
             list,
+            yours: Vec::new(),
         };
         p.repair();
         Some(p)
@@ -565,14 +778,33 @@ impl Profiles {
 /// The profiles from the store's three inputs (`sound.profile`, `sound.profiles`, today's mirrors): the blob, or the
 /// upgrade when there is none yet or it is damaged. The shell and the Settings app read them the same way.
 #[must_use]
-pub fn read(active: i32, blob: &[u8], tones: &[u8], mirrors: Mirrors) -> Profiles {
+///
+/// (D6) `feedback` is `sound.feedback`: empty on a fresh phone (no blob either) gives General keypad tones (the
+/// board's defaults); empty beside a blob (profiles from before D6) leaves every profile silent and still, as they were.
+/// (D6) `yours` is `sound.your_tones`: tones that name a sound no longer in it play the built-in one.
+pub fn read(
+    active: i32,
+    blob: &[u8],
+    tones: &[u8],
+    feedback: &[u8],
+    yours: &[u8],
+    mirrors: Mirrors,
+) -> Profiles {
     let active = active.clamp(0, 254) as u8;
     let mut p = if blob.is_empty() {
         Profiles::upgrade(mirrors)
     } else {
         Profiles::decode(active, blob).unwrap_or_else(|| Profiles::upgrade(mirrors))
     };
+    p.apply_yours(yours);
     p.apply_tones(tones);
+    if feedback.is_empty() && blob.is_empty() {
+        if let Some(g) = p.get_mut(GENERAL) {
+            g.keypad = true;
+        }
+    } else {
+        p.apply_feedback(feedback);
+    }
     p
 }
 
@@ -589,6 +821,12 @@ impl Profile {
     /// "Airplane mode: radios off".
     #[must_use]
     pub fn summary(&self) -> String {
+        self.summary_named(tone::ring_name(self.ringtone))
+    }
+
+    /// [`Self::summary`] with the ringtone's name given (the user's name for a sound of theirs).
+    #[must_use]
+    pub fn summary_named(&self, ringtone: &str) -> String {
         if self.id == OFFLINE {
             return String::from("Airplane mode: radios off");
         }
@@ -600,15 +838,71 @@ impl Profile {
         if self.ring && self.ringtone == tone::NONE {
             alloc::format!("No ringtone · {vibrate}")
         } else if self.ring {
-            alloc::format!(
-                "{} · volume {} · {vibrate}",
-                tone::ring_name(self.ringtone),
-                self.volume
-            )
+            alloc::format!("{ringtone} · volume {} · {vibrate}", self.volume)
         } else {
             alloc::format!("No ringing · {vibrate}")
         }
     }
+}
+
+/// (D6) A preview's place: how far it played (NeoAudio `INFO`'s frames, capped at the clip's) and its line on the
+/// Ringtone page.
+pub mod preview {
+    /// Milliseconds played of a clip of `clip_frames` at `rate`.
+    #[must_use]
+    pub fn elapsed_ms(frames: u64, clip_frames: u64, rate: u32) -> u32 {
+        (frames.min(clip_frames) * 1000 / u64::from(rate.max(1))) as u32
+    }
+
+    /// "Playing · 0:01", "Paused · 0:01".
+    #[must_use]
+    pub fn label(paused: bool, ms: u32) -> alloc::string::String {
+        let s = ms / 1000;
+        let state = if paused { "Paused" } else { "Playing" };
+        alloc::format!("{state} · {}:{:02}", s / 60, s % 60)
+    }
+}
+
+/// (D6) Messages' alert setting as MODEMD keeps it (modem-ipc `sms::ALERT_*`, NeoModem `SMS_SETTINGS`).
+pub mod alert {
+    pub const TONE_VIBRATE: u8 = 0;
+    pub const VIBRATE: u8 = 1;
+    pub const SILENT: u8 = 2;
+}
+
+impl Profile {
+    /// (D6) What a new message does while this profile is active, as MODEMD alerts: two buzzes whatever the call's
+    /// Vibrate says, and with Messages' "tone and vibrate" the first 0.8 s of the message tone when the profile rings
+    /// at a volume above 0. `alert`: Messages' setting, `None` when MODEMD couldn't say.
+    #[must_use]
+    pub fn message_summary(&self, alert: Option<u8>) -> String {
+        const TONE: &str = "Two buzzes + the first 0.8 s";
+        let plays = self.ring && self.volume > 0 && self.message_tone != tone::NONE;
+        match alert {
+            _ if self.id == OFFLINE => String::from("No alerts in airplane mode"),
+            Some(alert::SILENT) => String::from("Silent"),
+            Some(alert::TONE_VIBRATE) if plays && self.message_tone == tone::BUILT_IN => {
+                String::from(TONE)
+            }
+            Some(alert::TONE_VIBRATE) if plays => {
+                alloc::format!("{TONE} of {}", tone::message_name(self.message_tone))
+            }
+            Some(alert::TONE_VIBRATE | alert::VIBRATE) => String::from("Two buzzes"),
+            _ => alloc::format!(
+                "{} · Message alert setting unavailable",
+                tone::message_name(self.message_tone)
+            ),
+        }
+    }
+}
+
+/// (D6) A sound's name: 1–24 bytes, not blank, no control characters.
+fn check_tone_name(name: &str) -> Result<(), Refused> {
+    check_name(name)?;
+    if name.chars().any(char::is_control) {
+        return Err(Refused::Argument);
+    }
+    Ok(())
 }
 
 fn check_name(name: &str) -> Result<(), Refused> {
@@ -640,6 +934,12 @@ impl Command {
             Command::Rename(id, name) => (3, *id, 0, 0, name.as_str()),
             Command::Delete(id) => (4, *id, 0, 0, ""),
             Command::SetTones { id, ring, message } => (5, *id, *ring, *message, ""),
+            Command::SetFeedback { id, keypad, touch } => {
+                (6, *id, u8::from(*keypad) | u8::from(*touch) << 1, 0, "")
+            }
+            Command::AddTone(id, name) => (7, *id, 0, 0, name.as_str()),
+            Command::RenameTone(id, name) => (8, *id, 0, 0, name.as_str()),
+            Command::DeleteTone(id) => (9, *id, 0, 0, ""),
         };
         let mut b = alloc::vec![op, id, flags, volume];
         b.extend_from_slice(name.as_bytes());
@@ -670,6 +970,14 @@ impl Command {
                 ring: flags,
                 message: volume,
             },
+            6 if plain && flags & !3 == 0 && volume == 0 => Command::SetFeedback {
+                id,
+                keypad: flags & 1 != 0,
+                touch: flags & 2 != 0,
+            },
+            7 if !plain && flags == 0 && volume == 0 => Command::AddTone(id, name),
+            8 if !plain && flags == 0 && volume == 0 => Command::RenameTone(id, name),
+            9 if plain && flags == 0 && volume == 0 => Command::DeleteTone(id),
             _ => return None,
         })
     }
@@ -701,11 +1009,24 @@ pub mod store {
     #[must_use]
     pub fn load<B: Backend>(s: &Service<B>) -> Profiles {
         let blob = s.get(keys::SOUND_PROFILES).map(|b| b.0).unwrap_or_default();
-        let tones = s.get(keys::SOUND_TONES).map(|b| b.0).unwrap_or_default();
+        // the fallbacks, then the user's own sounds over them
+        let mut tones = s.get(keys::SOUND_TONES).map(|b| b.0).unwrap_or_default();
+        tones.extend(
+            s.get(keys::SOUND_TONES_YOURS)
+                .map(|b| b.0)
+                .unwrap_or_default(),
+        );
+        let feedback = s.get(keys::SOUND_FEEDBACK).map(|b| b.0).unwrap_or_default();
+        let yours = s
+            .get(keys::SOUND_YOUR_TONES)
+            .map(|b| b.0)
+            .unwrap_or_default();
         super::read(
             s.get(keys::SOUND_PROFILE).unwrap_or(0),
             &blob,
             &tones,
+            &feedback,
+            &yours,
             mirrors(s),
         )
     }
@@ -722,6 +1043,32 @@ pub mod store {
         now_ms: u64,
     ) -> Result<(), Error> {
         let m = p.mirrors();
+        s.set(
+            Caller::Shell,
+            keys::SOUND_YOUR_TONES,
+            Bytes(p.encode_yours()),
+            now_ms,
+        )
+        .map(drop)?;
+        s.set(
+            Caller::Shell,
+            keys::SOUND_FEEDBACK,
+            Bytes(p.encode_feedback()),
+            now_ms,
+        )
+        .map(drop)?;
+        let (keypad, touch) = p.feedback();
+        s.set(Caller::Shell, keys::SOUND_KEYPAD_TONES, keypad, now_ms)
+            .map(drop)?;
+        s.set(Caller::Shell, keys::SOUND_TOUCH_VIBRATE, touch, now_ms)
+            .map(drop)?;
+        s.set(
+            Caller::Shell,
+            keys::SOUND_TONES_YOURS,
+            Bytes(p.encode_tones_yours()),
+            now_ms,
+        )
+        .map(drop)?;
         s.set(
             Caller::Shell,
             keys::SOUND_TONES,
@@ -810,6 +1157,8 @@ pub mod store {
             s.get(keys::SOUND_MESSAGE_TONE).unwrap_or(0).clamp(0, 255) as u8,
         );
         let tones_changed = p.reconcile_tones(tones);
+        // (D6) profiles from before the feedback sidecar read as all off, the mirrors' defaults: nothing to write at
+        // boot (the sidecar comes with the first explicit edit)
         match p.reconcile(mirrors(s), radios(s).airplane) {
             Some(set) => commit(s, &p, set, now_ms).is_ok(),
             // the upgrade's first write: the profiles go into the store as they were found
@@ -1078,6 +1427,291 @@ mod tests {
     }
 
     #[test]
+    fn feedback_per_profile_fresh_and_upgraded() {
+        let m = Mirrors {
+            silent: false,
+            vibrate: true,
+            volume: 7,
+        };
+        // a fresh phone: General's keypad tones on, no touch pulses (the board)
+        let fresh = read(0, &[], &[], &[], &[], m);
+        assert_eq!(fresh.feedback(), (true, false));
+        assert!(!fresh.get(MEETING).unwrap().keypad);
+        // profiles from before D6 (a blob, no sidecar): as silent and still as they were
+        let old = read(0, &fresh.encode(), &[], &[], &[], m);
+        assert_eq!(old.feedback(), (false, false));
+        // set, choose, round trip; Offline feels like General
+        let mut p = old;
+        p.apply(
+            Command::SetFeedback {
+                id: MEETING,
+                keypad: false,
+                touch: true,
+            },
+            ON,
+        )
+        .unwrap();
+        assert_eq!(
+            p.apply(
+                Command::SetFeedback {
+                    id: OFFLINE,
+                    keypad: true,
+                    touch: true
+                },
+                ON
+            ),
+            Err(Refused::NotFound)
+        );
+        p.apply(Command::Choose(MEETING), ON).unwrap();
+        assert_eq!(p.feedback(), (false, true));
+        p.apply(Command::Choose(OFFLINE), ON).unwrap();
+        assert_eq!(p.feedback(), (false, false));
+        let b = p.encode_feedback();
+        assert!(b.len() <= FEEDBACK_MAX);
+        assert_eq!(&b[..2], &[1, 5]);
+        let back = read(i32::from(p.active), &p.encode(), &[], &b, &[], m);
+        assert_eq!(back, p);
+        // an added profile takes General's
+        p.apply(Command::Add("Car".into()), ON).unwrap();
+        assert!(!p.list.last().unwrap().touch);
+        // damaged sidecars: reserved bits skip a record, another version or length leaves all off
+        let mut d = read(
+            0,
+            &p.encode(),
+            &[],
+            &[1, 2, GENERAL, 1, MEETING, 0x06],
+            &[],
+            m,
+        );
+        assert!(d.get(GENERAL).unwrap().keypad);
+        assert!(!d.get(MEETING).unwrap().touch);
+        d.apply_feedback(&[2, 1, GENERAL, 0]);
+        assert!(d.get(GENERAL).unwrap().keypad);
+        let d = read(0, &p.encode(), &[], &[1, 2, GENERAL, 1], &[], m);
+        assert!(!d.get(GENERAL).unwrap().keypad);
+    }
+
+    #[test]
+    fn your_sounds_register_play_and_go_back_to_built_in_when_deleted() {
+        let mut p = today(false);
+        assert_eq!(p.free_tone(), Some(tone::FIRST_YOURS));
+        // not registered: refused
+        let use_it = |id, ring| Command::SetTones {
+            id,
+            ring,
+            message: tone::BUILT_IN,
+        };
+        assert_eq!(p.apply(use_it(GENERAL, 4), ON), Err(Refused::Argument));
+        p.apply(Command::AddTone(4, "Morning bell".into()), ON)
+            .unwrap();
+        p.apply(Command::AddTone(9, "Gong".into()), ON).unwrap();
+        // ids are the user's, not consecutive; a taken id, one out of range, a bad name: refused
+        for bad in [
+            Command::AddTone(4, "Again".into()),
+            Command::AddTone(3, "Low".into()),
+            Command::AddTone(16, "High".into()),
+            Command::AddTone(5, " ".into()),
+            Command::AddTone(5, "a\nb".into()),
+            Command::AddTone(5, "x".repeat(25)),
+        ] {
+            assert_eq!(p.apply(bad, ON), Err(Refused::Argument));
+        }
+        assert_eq!(p.free_tone(), Some(5));
+        p.apply(use_it(GENERAL, 4), ON).unwrap();
+        p.apply(use_it(MEETING, 4), ON).unwrap();
+        p.apply(
+            Command::SetTones {
+                id: OUTDOOR,
+                ring: 9,
+                message: 4,
+            },
+            ON,
+        )
+        .unwrap();
+        assert_eq!(p.tones(), (4, tone::BUILT_IN));
+        assert_eq!(
+            p.summary(p.get(GENERAL).unwrap()),
+            "Morning bell · volume 6 · no vibration"
+        );
+        p.apply(Command::RenameTone(4, "Bell".into()), ON).unwrap();
+        assert_eq!(p.ring_name(4), "Bell");
+        assert_eq!(
+            p.apply(Command::RenameTone(5, "X".into()), ON),
+            Err(Refused::NotFound)
+        );
+        // the catalogue and the tones round trip; a catalogue without the sound drops its uses
+        let m = p.mirrors();
+        let both = [p.encode_tones(), p.encode_tones_yours()].concat();
+        let back = read(
+            0,
+            &p.encode(),
+            &both,
+            &p.encode_feedback(),
+            &p.encode_yours(),
+            m,
+        );
+        assert_eq!(back, p);
+        // a shell from before your sounds reads only sound.tones, and skips records with ids it doesn't know: each
+        // profile keeps its other tone, the user's sound reads as the built-in one
+        let old_decoder = |b: &[u8]| -> Vec<(u8, u8, u8)> {
+            b.as_chunks::<2>()
+                .0
+                .iter()
+                .filter(|r| r[1] & 0xf <= tone::NONE && r[1] >> 4 <= tone::NONE)
+                .map(|r| (r[0], r[1] & 0xf, r[1] >> 4))
+                .collect()
+        };
+        let mut q = p.clone();
+        q.apply(
+            Command::SetTones {
+                id: OUTDOOR,
+                ring: 9,
+                message: tone::BEEP,
+            },
+            ON,
+        )
+        .unwrap();
+        assert!(old_decoder(&q.encode_tones()).contains(&(OUTDOOR, tone::BUILT_IN, tone::BEEP)));
+        assert_eq!(
+            old_decoder(&p.encode_tones()).len(),
+            p.encode_tones().len() / 2
+        );
+        assert!(
+            p.encode_tones()
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .all(|r| r[1] & 0xf <= 3 && r[1] >> 4 <= 3)
+        );
+        let lost = read(0, &p.encode(), &p.encode_tones(), &[], &[], m);
+        assert_eq!(lost.get(GENERAL).unwrap().ringtone, tone::BUILT_IN);
+        // deleted: every profile, active or not, rings with the built-in tone again
+        p.apply(Command::DeleteTone(4), ON).unwrap();
+        assert_eq!(p.tones(), (tone::BUILT_IN, tone::BUILT_IN));
+        assert_eq!(p.get(MEETING).unwrap().ringtone, tone::BUILT_IN);
+        assert_eq!(
+            (
+                p.get(OUTDOOR).unwrap().ringtone,
+                p.get(OUTDOOR).unwrap().message_tone
+            ),
+            (9, tone::BUILT_IN)
+        );
+        assert_eq!(p.apply(Command::DeleteTone(4), ON), Err(Refused::NotFound));
+        // twelve at most
+        for id in tone::FIRST_YOURS..=tone::LAST {
+            let _ = p.apply(Command::AddTone(id, "S".into()), ON);
+        }
+        assert_eq!(p.yours.len(), 12);
+        assert_eq!(p.free_tone(), None);
+        assert!(p.encode_yours().len() <= YOURS_MAX);
+        // a damaged catalogue: bad records skipped, a cut one ends it
+        p.apply_yours(&[
+            4, 1, b'A', 4, 1, b'B', 2, 1, b'C', 7, 2, 0xff, 0xfe, 8, 9, b'x',
+        ]);
+        assert_eq!(
+            p.yours,
+            [YourTone {
+                id: 4,
+                name: "A".into()
+            }]
+        );
+        // the commands' bytes
+        for c in [
+            Command::AddTone(4, "Bell".into()),
+            Command::RenameTone(15, "Gong".into()),
+            Command::DeleteTone(9),
+        ] {
+            assert_eq!(Command::decode(&c.encode()), Some(c));
+        }
+        assert_eq!(Command::DeleteTone(9).encode(), [9, 9, 0, 0]);
+        assert_eq!(Command::decode(&[7, 4, 0, 0]), None); // no name
+        assert_eq!(Command::decode(&[9, 4, 0, 0, b'x']), None);
+        assert_eq!(Command::decode(&[8, 4, 1, 0, b'x']), None);
+    }
+
+    #[test]
+    fn a_preview_counts_what_played() {
+        // a 2 s clip at 48 kHz: frames past its end (the queue's padding) don't count
+        assert_eq!(preview::elapsed_ms(0, 96_000, 48_000), 0);
+        assert_eq!(preview::elapsed_ms(48_000, 96_000, 48_000), 1_000);
+        assert_eq!(preview::elapsed_ms(500_000, 96_000, 48_000), 2_000);
+        assert_eq!(preview::elapsed_ms(10, 96_000, 0), 10_000); // no rate: no division by zero
+        assert_eq!(preview::label(false, 1_999), "Playing · 0:01");
+        assert_eq!(preview::label(true, 63_000), "Paused · 1:03");
+    }
+
+    #[test]
+    fn the_message_summary_follows_modemd() {
+        let mut p = today(false);
+        let g = p.get(GENERAL).unwrap().clone();
+        assert_eq!(
+            g.message_summary(Some(alert::TONE_VIBRATE)),
+            "Two buzzes + the first 0.8 s"
+        );
+        assert_eq!(g.message_summary(Some(alert::VIBRATE)), "Two buzzes");
+        assert_eq!(g.message_summary(Some(alert::SILENT)), "Silent");
+        assert_eq!(
+            g.message_summary(None),
+            "Built-in chime · Message alert setting unavailable"
+        );
+        assert_eq!(
+            g.message_summary(Some(9)),
+            "Built-in chime · Message alert setting unavailable"
+        );
+        // no ring, volume 0 or the tone None: only the buzzes
+        let silent = p.get(SILENT).unwrap().clone();
+        assert_eq!(
+            silent.message_summary(Some(alert::TONE_VIBRATE)),
+            "Two buzzes"
+        );
+        p.apply(
+            Command::Set {
+                id: MEETING,
+                ring: true,
+                volume: 0,
+                vibrate: true,
+            },
+            ON,
+        )
+        .unwrap();
+        let meeting = p.get(MEETING).unwrap();
+        assert_eq!(
+            meeting.message_summary(Some(alert::TONE_VIBRATE)),
+            "Two buzzes"
+        );
+        p.apply(
+            Command::SetTones {
+                id: OUTDOOR,
+                ring: tone::BUILT_IN,
+                message: tone::BEEP,
+            },
+            ON,
+        )
+        .unwrap();
+        assert_eq!(
+            p.get(OUTDOOR)
+                .unwrap()
+                .message_summary(Some(alert::TONE_VIBRATE)),
+            "Two buzzes + the first 0.8 s of Beep"
+        );
+        p.apply(
+            Command::SetTones {
+                id: OUTDOOR,
+                ring: tone::BUILT_IN,
+                message: tone::NONE,
+            },
+            ON,
+        )
+        .unwrap();
+        assert_eq!(
+            p.get(OUTDOOR)
+                .unwrap()
+                .message_summary(Some(alert::TONE_VIBRATE)),
+            "Two buzzes"
+        );
+    }
+
+    #[test]
     fn tones_per_profile_keep_a_signal_and_old_blobs_read() {
         let mut p = today(false);
         p.apply(
@@ -1187,11 +1821,34 @@ mod tests {
                 ring: 1,
                 message: 3,
             },
+            Command::SetFeedback {
+                id: 0,
+                keypad: true,
+                touch: false,
+            },
+            Command::SetFeedback {
+                id: 6,
+                keypad: false,
+                touch: true,
+            },
         ] {
             assert_eq!(Command::decode(&c.encode()), Some(c));
         }
+        // (D6) feedback: [6, id, flags, 0], no reserved bits
+        assert_eq!(
+            Command::SetFeedback {
+                id: 2,
+                keypad: true,
+                touch: true
+            }
+            .encode(),
+            [6, 2, 3, 0]
+        );
+        assert_eq!(Command::decode(&[6, 0, 4, 0]), None);
+        assert_eq!(Command::decode(&[6, 0, 1, 1]), None);
+        assert_eq!(Command::decode(&[6, 0, 1, 0, b'x']), None);
         assert_eq!(Command::decode(&[0, 1, 0]), None);
-        assert_eq!(Command::decode(&[9, 0, 0, 0]), None);
+        assert_eq!(Command::decode(&[10, 0, 0, 0]), None);
         assert_eq!(Command::decode(&[0, 1, 0, 0, b'x']), None);
     }
 
@@ -1251,6 +1908,52 @@ mod tests {
             assert!(store::reconcile(&mut s, 1));
             assert_eq!(s.get(keys::SOUND_PROFILE).unwrap(), i32::from(GENERAL));
             assert!(!store::reconcile(&mut s, 2));
+        }
+
+        #[test]
+        fn the_feedback_mirrors_are_written_once_and_follow_the_profile() {
+            // a fresh store: the reducer's first write says General's keypad tones
+            let (mut s, _) = Service::open(Mem::default());
+            assert!(store::reconcile(&mut s, 1));
+            assert!(s.get(keys::SOUND_KEYPAD_TONES).unwrap());
+            assert!(!s.get(keys::SOUND_TOUCH_VIBRATE).unwrap());
+            assert!(!store::reconcile(&mut s, 2));
+            // profiles from before D6 (the owner's phone): all off, as the mirrors' defaults say, and nothing written
+            // at boot: the store stays clean until an explicit edit
+            let (mut s, _) = Service::open(Mem::default());
+            let blob = Profiles::upgrade(stored(&s)).encode();
+            s.set(
+                Caller::Shell,
+                keys::SOUND_PROFILES,
+                crate::settings::Bytes(blob),
+                0,
+            )
+            .map(drop)
+            .unwrap();
+            assert!(s.flush().unwrap().is_ok());
+            assert!(!store::reconcile(&mut s, 1));
+            assert!(!s.is_dirty());
+            assert!(s.get(keys::SOUND_FEEDBACK).unwrap().0.is_empty());
+            assert_eq!(store::load(&s).feedback(), (false, false));
+            assert!(!s.get(keys::SOUND_KEYPAD_TONES).unwrap());
+            store::apply(
+                &mut s,
+                Command::SetFeedback {
+                    id: GENERAL,
+                    keypad: true,
+                    touch: true,
+                },
+                3,
+            )
+            .unwrap();
+            assert!(s.get(keys::SOUND_TOUCH_VIBRATE).unwrap());
+            store::apply(&mut s, Command::Choose(SILENT), 4).unwrap();
+            assert!(!s.get(keys::SOUND_TOUCH_VIBRATE).unwrap());
+            // only the shell's reducer writes them
+            assert!(
+                s.set(Caller::Settings, keys::SOUND_TOUCH_VIBRATE, true, 5)
+                    .is_err()
+            );
         }
 
         #[test]

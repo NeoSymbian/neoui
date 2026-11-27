@@ -21,6 +21,15 @@ fn current() -> u32 {
     PLAYING.load(core::sync::atomic::Ordering::SeqCst)
 }
 
+use core::sync::atomic::Ordering::SeqCst;
+use core::sync::atomic::{AtomicBool, AtomicI32, AtomicU32};
+
+/// (D6) The preview the Ringtone page shows: its tone (-1: none), how far it played (ms), and whether the user wants
+/// it paused (the worker sends PAUSE between its writes).
+static PREVIEW_TONE: AtomicI32 = AtomicI32::new(-1);
+static PREVIEW_MS: AtomicU32 = AtomicU32::new(0);
+static WANT_PAUSE: AtomicBool = AtomicBool::new(false);
+
 pub struct Sound {
     state: Option<State>,
     shown: core::cell::Cell<i32>,
@@ -69,9 +78,22 @@ impl Sound {
         }
         let mine = PLAYING.fetch_add(1, core::sync::atomic::Ordering::SeqCst) + 1;
         *state.lock() = 1;
+        PREVIEW_TONE.store(i32::from(tone), SeqCst);
+        PREVIEW_MS.store(0, SeqCst);
+        WANT_PAUSE.store(false, SeqCst);
         if let Err(e) = e32::thread::spawn(move || {
-            let pcm = neoaudio::tones::pcm(tone, volume);
-            let r = open(neoaudio::tones::RATE, 1, false).and_then(|s| play(&s, &pcm, mine));
+            // a sound of the user's: its file (the built-in tone when it is missing, as AUDIOD rings then)
+            let pcm = match neoaudio::tones::file(tone) {
+                Some(_) => crate::tone_import::pcm(tone, volume)
+                    .unwrap_or_else(|| neoaudio::tones::pcm(neoaudio::tones::BUILT_IN, volume)),
+                None => neoaudio::tones::pcm(tone, volume),
+            };
+            let r =
+                open(neoaudio::tones::RATE, 1, false).and_then(|s| play_preview(&s, &pcm, mine));
+            // a newer preview owns the page's line now: an old one's end changes nothing
+            if current() == mine {
+                PREVIEW_TONE.store(-1, SeqCst);
+            }
             dprintln!(
                 "settings: preview tone {} volume {} -> {:?}",
                 tone,
@@ -88,6 +110,24 @@ impl Sound {
     /// Stop a preview (or test) that plays now.
     pub fn stop(&self) {
         PLAYING.fetch_add(1, core::sync::atomic::Ordering::SeqCst);
+        PREVIEW_TONE.store(-1, SeqCst);
+    }
+
+    /// (D6) Pause the preview that plays, or play on from where it paused.
+    pub fn toggle_pause(&self) {
+        if PREVIEW_TONE.load(SeqCst) >= 0 {
+            WANT_PAUSE.fetch_xor(true, SeqCst);
+        }
+    }
+
+    /// (D6) The preview now: its tone (-1: none), paused, milliseconds played.
+    pub fn preview_state(&self) -> (i32, bool, u32) {
+        // the pause as asked (the page answers the tap at once); the place as AUDIOD played it
+        (
+            PREVIEW_TONE.load(SeqCst),
+            WANT_PAUSE.load(SeqCst),
+            PREVIEW_MS.load(SeqCst),
+        )
     }
 
     /// The test's progress, when it changed since the last call.
@@ -168,6 +208,68 @@ fn play(s: &Session, pcm: &[u8], mine: u32) -> Result<(), i32> {
     }
     time::sleep(150_000);
     Ok(())
+}
+
+fn info(s: &Session) -> Result<neoaudio::Info, i32> {
+    let mut b = [0u8; neoaudio::Info::SIZE];
+    let mut des = TPtr8::new(&mut b);
+    let mut a = TIpcArgs::new();
+    a.des8(0, &mut des);
+    s.send_receive(neoaudio::op::INFO, &a)?;
+    Ok(neoaudio::Info::from_bytes(&b).unwrap_or_default())
+}
+
+/// (D6) A preview (48 kHz mono): written only as far as the queue has room, so the worker sees a pause, a stop or a
+/// call between bounded writes; the place played comes from INFO's frames. Ends when it played out, when
+/// [`PLAYING`] moves on from `mine` (STOP), or when a call preempts it.
+fn play_preview(s: &Session, pcm: &[u8], mine: u32) -> Result<(), i32> {
+    let rate = neoaudio::tones::RATE;
+    let room = (rate * neoaudio::QUEUE_MS / 1000 * 2) as usize;
+    let clip_frames = (pcm.len() / 2) as u64;
+    let (mut sent, mut paused) = (0, false);
+    loop {
+        if current() != mine {
+            let _ = s.send_receive(neoaudio::op::STOP, &TIpcArgs::new());
+            return Ok(());
+        }
+        let want = WANT_PAUSE.load(SeqCst);
+        if want != paused {
+            let mut a = TIpcArgs::new();
+            a.int(0, i32::from(want));
+            s.send_receive(neoaudio::op::PAUSE, &a)?;
+            paused = want;
+        }
+        let info = info(s)?;
+        if current() == mine {
+            let ms =
+                neoui_proto::sound_profile::preview::elapsed_ms(info.frames, clip_frames, rate);
+            PREVIEW_MS.store(ms, SeqCst);
+        }
+        if info.state == neoaudio::state::PREEMPTED {
+            let _ = s.send_receive(neoaudio::op::STOP, &TIpcArgs::new());
+            dprintln!("settings: preview preempted (a call)");
+            return Ok(());
+        }
+        let left = pcm.len() - sent;
+        let n = room
+            .saturating_sub(info.queued as usize)
+            .min(8_192)
+            .min(left)
+            & !1;
+        if !paused && n > 0 && (n >= 2_048 || n == left) {
+            let des = TPtrC8::new(&pcm[sent..sent + n]);
+            let mut a = TIpcArgs::new();
+            a.desc8(0, &des);
+            s.send_receive(neoaudio::op::WRITE, &a)?;
+            sent += n;
+            continue;
+        }
+        if left == 0 && info.queued == 0 && !paused {
+            time::sleep(150_000);
+            return Ok(());
+        }
+        time::sleep(40_000);
+    }
 }
 
 /// A short rising chime (C5 E5 G5 C6) at 44.1 kHz stereo: the resampler and the mixer on the way.

@@ -45,6 +45,9 @@ pub fn fill_fixed(ui: &SettingsApp) {
     s.set_pad_a_names(strings(choices::PAD_A));
     s.set_pad_b_names(strings(choices::PAD_B));
     s.set_build(strings(neoapp::build::lines()));
+    // D7: Font size's choices
+    s.set_font_sizes(strings(choices::FONT_SIZES.iter().map(|(n, _)| *n)));
+    s.set_font_scales(strings(choices::FONT_SIZES.iter().map(|(_, p)| *p)));
 }
 
 /// The shell's value, else the registry's default (a shell older than the key refuses it).
@@ -100,16 +103,38 @@ pub const ROOT_GRID: &str = "settings.root_grid";
 
 /// The sound profiles as the shell's reducer keeps them (read the same way, `sound_profile::read`).
 /// The keys come one IPC each: a commit between them (the power menu, the shade) shows as the active id changing,
-/// and they are read again.
+/// and they are read again. What can't be read shows as none (the pages); see [`read_profiles_checked`].
 pub fn read_profiles(app: &App) -> Profiles {
+    // lenient: every key reads, as empty at worst
+    read_with(app, true).unwrap_or_else(|_| unreachable!())
+}
+
+/// (D6) [`read_profiles`] for a change that must not mistake an unreadable key for an empty one (the catalogue of
+/// the user's sounds before an import or a delete).
+///
+/// # Errors
+/// The first key the shell couldn't give.
+pub fn read_profiles_checked(app: &App) -> Result<Profiles, i32> {
+    read_with(app, false)
+}
+
+/// `lenient`: an unreadable key reads as empty (never fails).
+fn read_with(app: &App, lenient: bool) -> Result<Profiles, i32> {
     let mut tries = 0;
     loop {
         let active = get(app, keys::SOUND_PROFILE);
         let bytes = |k| match app.setting_raw(k) {
-            Ok(Value::Bytes(b)) => b,
-            _ => Vec::new(),
+            Ok(Value::Bytes(b)) => Ok(b),
+            Ok(_) if lenient => Ok(Vec::new()),
+            Ok(_) => Err(-20), // KErrCorrupt: not the Bytes the registry says
+            Err(_) if lenient => Ok(Vec::new()),
+            Err(e) => Err(e),
         };
-        let (blob, tones) = (bytes("sound.profiles"), bytes("sound.tones"));
+        let (blob, mut tones) = (bytes("sound.profiles")?, bytes("sound.tones")?);
+        // the built-in fallbacks, then the user's own sounds over them (sound_profile::Profiles::encode_tones_yours)
+        tones.extend(bytes("sound.tones_yours")?);
+        let feedback = bytes("sound.feedback")?;
+        let yours = bytes("sound.your_tones")?;
         let mirrors = Mirrors {
             silent: get(app, keys::SOUND_SILENT),
             vibrate: get(app, keys::SOUND_VIBRATE),
@@ -117,7 +142,9 @@ pub fn read_profiles(app: &App) -> Profiles {
         };
         tries += 1;
         if get(app, keys::SOUND_PROFILE) == active || tries == 3 {
-            return sound_profile::read(active, &blob, &tones, mirrors);
+            return Ok(sound_profile::read(
+                active, &blob, &tones, &feedback, &yours, mirrors,
+            ));
         }
     }
 }
@@ -132,12 +159,15 @@ pub fn profiles(app: &App, ui: &SettingsApp) {
         .map(|x| ProfileRow {
             id: i32::from(x.id),
             name: x.name.as_str().into(),
-            summary: x.summary().into(),
+            summary: p.summary(x).into(),
+            tone_name: p.ring_name(x.ringtone).into(),
             ring: x.ring,
             volume: i32::from(x.volume),
             vibrate: x.vibrate,
             ringtone: i32::from(x.ringtone),
             message_tone: i32::from(x.message_tone),
+            keypad: x.keypad,
+            touch: x.touch,
         })
         .collect();
     s.set_active_profile(i32::from(p.active));
@@ -148,7 +178,7 @@ pub fn profiles(app: &App, ui: &SettingsApp) {
     );
     s.set_active_profile_summary(
         p.get(p.active)
-            .map(|x| x.summary())
+            .map(|x| p.summary(x))
             .unwrap_or_default()
             .into(),
     );
@@ -162,6 +192,8 @@ pub fn profiles(app: &App, ui: &SettingsApp) {
         s.set_profile_current(r);
     }
     s.set_profiles(ModelRc::new(VecModel::from(rows)));
+    crate::profile_audio::summary(ui);
+    crate::tone_import::show(ui, &p);
 }
 
 /// Every setting a page shows.
@@ -209,6 +241,10 @@ pub fn load(app: &App, ui: &SettingsApp) {
     s.set_pad_b(get(app, keys::LEGACY_PAD_B));
     s.set_pad_lefty(get(app, keys::LEGACY_PAD_LEFTY));
     s.set_pad_console(get(app, keys::LEGACY_PAD_CONSOLE));
+    crate::appearance::load(app, ui);
+    crate::notifications::refresh(app, ui);
+    crate::navigation::load(app, ui);
+    s.set_clip_notice(get(app, keys::PRIVACY_CLIP_NOTICE));
 }
 
 /// A page's write: `value` as the pages send it ("1"/"0", a number, text), typed by the key's registry row. A refused

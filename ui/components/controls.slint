@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Controls: buttons, text and search fields, tabs, slider, card, page dots, the Options menu.
 import { Theme } from "../theme.slint";
+import { Kit } from "layers.slint";
 import { Glyph } from "frame.slint";
 import { KeyboardFocus } from "keyboard/focus.slint";
 
@@ -173,6 +174,7 @@ export component Button inherits Rectangle {
     touch := TouchArea {
         enabled: root.enabled;
         clicked => {
+            Kit.accept();
             root.clicked();
         }
     }
@@ -211,6 +213,7 @@ export component RoundButton inherits Rectangle {
     }
     touch := TouchArea {
         clicked => {
+            Kit.accept();
             root.clicked();
         }
     }
@@ -293,6 +296,7 @@ export component TabBar inherits Rectangle {
             TouchArea {
                 clicked => {
                     root.current = i;
+                    Kit.accept();
                     root.tab-clicked(i);
                 }
             }
@@ -436,6 +440,7 @@ export component OptionsMenu inherits Rectangle {
 
                 t := TouchArea {
                     clicked => {
+                        Kit.accept();
                         root.selected(item);
                         root.picked(i);
                     }
@@ -548,6 +553,6 @@ export component Fab inherits Rectangle {
         colorize: white;
     }
     touch := TouchArea {
-        clicked => { root.clicked(); }
+        clicked => { Kit.accept(); root.clicked(); }
     }
 }

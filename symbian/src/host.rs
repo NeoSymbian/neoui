@@ -32,9 +32,19 @@ use neoui_proto::recents::Recents;
 use neoui_proto::settings::value::ENCODED_MAX;
 use neoui_proto::settings::{Caller, KEY_MAX, Value, access, kerr, keys};
 use neoui_proto::settings_app::info::{OldApps, encode_running};
+use neoui_proto::settings_app::privacy::{self, ClipNotices};
 use neoui_proto::sound_profile;
 use neoui_proto::{InputEvent, TouchPhase};
 use neoui_render::{LauncherEntry, Nav, Note, Notification, Page, Query};
+
+// 1.20's paged Settings kinds, owner work and thumbnails (a child module: it works on the apps here)
+#[path = "notifications.rs"]
+pub mod notifications;
+#[path = "settings_info.rs"]
+mod settings_info;
+// (D10) Settings' Edit home and Open apps' thumbnails
+#[path = "home.rs"]
+mod home;
 
 /// Apps whose shell screen is a launcher grid until they request FRONT(1).
 // shortcut: a fixed table like APPS; apps declare launcher support when apps are installable.
@@ -53,6 +63,10 @@ pub const PAGES: &[(&str, &str, u16)] = &[
     ("settings", "wifi", 1),
     ("settings", "display", 5),
     ("settings", "navigation", 6),
+    // D7: home's long-press Wallpaper opens the picker itself
+    ("settings", "wallpaper", 25),
+    // TP4: the shade's Manage opens Panel & notifications
+    ("settings", "panel", 27),
 ];
 
 /// Apps started (hidden) at boot, in this order, and never closed for room: DTSRV (a service, 1.19) rings alarms
@@ -65,6 +79,8 @@ const PORTAL_PAGE: u16 = 5;
 /// The id of the shell's "Sign in to Wi-Fi network" entry (posted as the browser's; the browser numbers its own
 /// download entries from 1)
 const PORTAL_ENTRY: u32 = 0xE000_0001;
+/// The clipboard toast's key in `Host::note`: the shell's own, so no app's NOTE or action touches it (D8).
+const CLIP_NOTE: &str = "clipboard";
 /// A resident app that ended is started again after this long.
 const RESIDENT_RETRY_MS: u64 = 10_000;
 
@@ -121,6 +137,10 @@ pub struct App {
 
 impl App {
     fn send(&mut self, e: AppEvent) {
+        // an older decoder refuses a newer event, and its app ends
+        if self.minor < e.needs_minor() {
+            return;
+        }
         match self.waiting.take() {
             Some(m) => deliver(m, e),
             None => {
@@ -140,6 +160,16 @@ impl App {
                     && matches!(last, AppEvent::Input(InputEvent::Touch { id: q, .. }) if *q == id)
                 {
                     *last = e;
+                    return;
+                }
+                // one hint per kind is enough: it carries the newest revision
+                if let AppEvent::SettingsInfo { kind, .. } = e
+                    && let Some(old) = self
+                        .queue
+                        .iter_mut()
+                        .find(|q| matches!(q, AppEvent::SettingsInfo { kind: k, .. } if *k == kind))
+                {
+                    *old = e;
                     return;
                 }
                 self.queue.push_back(e);
@@ -208,6 +238,11 @@ pub struct Host {
     pub requested_from: Option<&'static str>,
     /// A service's `OPEN` with `OPEN_WAKE` (1.19): the main loop turns the screen on.
     pub wake: bool,
+    /// (D6) Finger 0's presses delivered to an app, and which app got the last one: a `CONTROL_FEEDBACK` answers one.
+    presses: neoui_proto::effects::PressGate,
+    press_app: Option<&'static str>,
+    /// (D6) An accepted control the main loop answers (`[kind, key]` as `CONTROL_FEEDBACK` carries them).
+    pub feedback: Option<(i32, u8)>,
     /// What the Settings app reads with `SETTINGS_INFO` (kinds `INFO_BATTERY`, `INFO_NET`, `INFO_CLOCK` at 0..=2,
     /// `INFO_BATTERY_USAGE` at 4; `INFO_APPS` is answered from the bridge's entries),
     /// kept fresh by the main loop ([`Self::set_info`]).
@@ -222,10 +257,14 @@ pub struct Host {
     /// Entries refused for want of room (`ENTRIES_MAX`), by app key and id: Settings says "64 of N".
     refused: Vec<(&'static str, u32)>,
     next_session: u32,
+    /// Sessions connected but not yet bound to their app, with their protocol minor ([`Host::bind`]).
+    unbound: Vec<(u32, u8)>,
     /// The foreground app's damage not yet shown (surface coordinates).
     pub blits: Vec<Rect>,
     /// Show the foreground app's whole surface on the next compose (it just came back).
     pub refresh: bool,
+    /// Copy the shell's whole frame to the screen at the next frame (`proto::REPAINT`: the kernel console drew over it).
+    pub repaint: bool,
     /// The foreground app's `DAMAGE` calls (with their session), answered once that frame is on screen
     /// ([`Self::release_frames`]): the app doesn't draw over pixels the server hasn't copied yet.
     frames: Vec<(u32, Message)>,
@@ -249,6 +288,17 @@ pub struct Host {
     clipboard: String,
     /// What the clipboard holds (`proto::CLIP_TEXT`, `CLIP_PATHS_COPY`, `CLIP_PATHS_MOVE`; `CLIP_KIND`).
     clip_kind: i32,
+    /// 1.20: revisions, Settings' subscriptions, owner work and thumbnails ([`settings_info`]).
+    shelf: settings_info::Shelf,
+    /// (D8) The "Files read the clipboard" toasts (`privacy.clip_notice`): readers cooling down and waiting.
+    clip_notices: ClipNotices,
+    /// The clipboard toast on show hasn't reached the screen yet: its time starts when it does
+    /// ([`Self::note_displayed`]), and a toast that replaces it first sends it back to the queue.
+    clip_unseen: bool,
+    /// (TP4) The apps' channels, the rate limit and the newest card's alert ([`notifications`]).
+    pub policies: notifications::Policies,
+    /// (D10) the home editor asked for, thumbnails taken ([`home`])
+    pub d10: home::D10,
 }
 
 impl Host {
@@ -272,6 +322,9 @@ impl Host {
             requested_screen: None,
             requested_from: None,
             wake: false,
+            presses: neoui_proto::effects::PressGate::default(),
+            press_app: None,
+            feedback: None,
             info: Default::default(),
             portal: None,
             leave: false,
@@ -279,8 +332,10 @@ impl Host {
             entries_changed: false,
             refused: Vec::new(),
             next_session: 1,
+            unbound: Vec::new(),
             blits: Vec::new(),
             refresh: false,
+            repaint: false,
             frames: Vec::new(),
             power: None,
             settings,
@@ -292,7 +347,40 @@ impl Host {
             badges_changed: false,
             clipboard: String::new(),
             clip_kind: proto::CLIP_TEXT,
+            shelf: settings_info::Shelf::boot(),
+            clip_notices: ClipNotices::default(),
+            clip_unseen: false,
+            policies: notifications::Policies::boot(),
+            d10: home::D10::default(),
         }
+    }
+
+    /// Session `id`'s first message binds it to its app: the started app without a session whose process sent it,
+    /// by the kernel's word twice: its process ID is the one SYSSTART started (`Process::id` against
+    /// `Message::client_process_id`), and its secure ID fits the app's EXE (`apps::sid_fits`). So the kit and the
+    /// legacy bridge, which share a SID, can't take each other's session, whatever order the starts connect in. False
+    /// when it fits none (it stays unbound and everything it sends is refused).
+    fn bind(&mut self, id: u32, m: &Message) -> bool {
+        let Some(i) = self.unbound.iter().position(|(s, _)| *s == id) else {
+            return true;
+        };
+        let (sid, minor) = (m.client_sid(), self.unbound[i].1);
+        let pid = m.client_process_id();
+        let Some(app) = self.apps.iter_mut().rev().find(|a| {
+            a.session.is_none() && apps::sid_fits(a.key, sid) && pid == Ok(a.process.id())
+        }) else {
+            dprintln!(
+                "neoui: session {} (SID {:#x}, process {:?}) is no started app",
+                id,
+                sid,
+                pid
+            );
+            return false;
+        };
+        app.session = Some(id);
+        app.minor = minor;
+        self.unbound.remove(i);
+        true
     }
 
     /// The header the shell draws over the legacy bridge, in pixels (48 dp).
@@ -325,6 +413,9 @@ impl Host {
     pub fn badges(&self) -> Vec<(&'static str, u32)> {
         let mut out: Vec<(&'static str, u32)> = Vec::new();
         for (key, _, n) in &self.badges {
+            if !self.badge_allowed(key) {
+                continue;
+            }
             match out.iter_mut().find(|(k, _)| k == key) {
                 Some((_, sum)) => *sum = sum.saturating_add(*n),
                 None => out.push((key, *n)),
@@ -335,6 +426,7 @@ impl Host {
 
     /// The toast's time is up: take it away. Call once per frame.
     pub fn expire_note(&mut self, now_ms: u64) {
+        // a clipboard toast not shown yet has no deadline (`privacy::UNSEEN`) until `note_displayed` gives it one
         if self
             .note
             .as_ref()
@@ -342,6 +434,35 @@ impl Host {
         {
             self.note = None;
             self.notes_changed = true;
+        }
+        self.clip_notice();
+    }
+
+    /// (D8) The next waiting clipboard toast, once no toast shows (it never covers another app's toast and its
+    /// action); with the notice turned off, the waiting ones go.
+    fn clip_notice(&mut self) {
+        if !self.settings.get(keys::PRIVACY_CLIP_NOTICE).unwrap_or(true) {
+            self.clip_notices.clear();
+        } else if self.note.is_none()
+            && let Some(text) = self.clip_notices.take_next()
+        {
+            let note = Note {
+                text,
+                action: String::new(),
+            };
+            // its time starts when it reaches the screen, so a covered one neither expires nor wakes the loop
+            self.note = Some((CLIP_NOTE, note, privacy::UNSEEN));
+            self.clip_unseen = true;
+            self.notes_changed = true;
+        }
+    }
+
+    /// A frame with the toast reached the screen, over the app (the main loop): the clipboard toast's time starts.
+    pub fn note_displayed(&mut self, now_ms: u64) {
+        if core::mem::take(&mut self.clip_unseen)
+            && let Some((CLIP_NOTE, _, until)) = self.note.as_mut()
+        {
+            *until = now_ms + proto::NOTE_MS;
         }
     }
 
@@ -680,6 +801,7 @@ impl Host {
         if self.front == key {
             return;
         }
+        self.take_thumb(); // (G3) before its frame is released below
         if let Some(old) = self.front.take()
             && let Some(app) = self.apps.find_mut(|a| a.key == old && a.quit_at.is_none())
         {
@@ -900,6 +1022,17 @@ impl Host {
         );
         use sound_profile::{Refused, store::ApplyError};
         match r {
+            // (D6) a sound of the user's goes only once no profile names it on disk: Settings deletes its file after
+            // this answer, so the store is saved now (an unsaved or unsavable store answers an error, the file stays)
+            Ok(()) if matches!(cmd, sound_profile::Command::DeleteTone(_)) => {
+                match self.settings.flush() {
+                    Some(Err(e)) => {
+                        dprintln!("neoui: settings save for a deleted sound failed ({:?})", e);
+                        err::KERR_NOT_READY
+                    }
+                    _ => 0,
+                }
+            }
             Ok(()) => 0,
             Err(ApplyError::Refused(Refused::NotFound)) => err::KERR_NOT_FOUND,
             Err(ApplyError::Refused(Refused::Full)) => kerr::OVERFLOW,
@@ -965,6 +1098,15 @@ impl Host {
 
     pub fn send(&mut self, e: AppEvent) {
         let Some(key) = self.front else { return };
+        if let AppEvent::Input(InputEvent::Touch {
+            id: 0,
+            phase: TouchPhase::Down,
+            ..
+        }) = e
+        {
+            self.presses.pressed();
+            self.press_app = Some(key);
+        }
         if let Some(app) = self.apps.find_mut(|a| a.key == key && a.quit_at.is_none()) {
             app.send(e);
         }
@@ -1125,8 +1267,10 @@ fn notify(
         list[i].1 = n;
         return Ok(0);
     }
-    if list.iter().filter(|(k, _)| *k == key).count() >= proto::NOTIFICATIONS_MAX
-        && let Some(oldest) = list.iter().rposition(|(k, _)| *k == key)
+    // the shell's own card under the app's key (the Wi-Fi login's) isn't in the app's quota, nor pushed out by it
+    let mine = |(k, o): &(&'static str, Notification)| *k == key && !Host::shell_card(k, o);
+    if list.iter().filter(|e| mine(e)).count() >= proto::NOTIFICATIONS_MAX
+        && let Some(oldest) = list.iter().rposition(mine)
     {
         list.remove(oldest);
     }
@@ -1218,20 +1362,20 @@ impl Service for Host {
         if version.major != proto::VERSION.0 {
             return Err(err::KERR_NOT_SUPPORTED);
         }
-        // The newest app without a session is the one connecting: apps start one at a time.
-        // shortcut: identify the client's process (MessageClient) if two launches ever overlap.
-        let id = self.next_session;
-        let app = self.apps.iter_mut().rev().find(|a| a.session.is_none());
-        let Some(app) = app else {
+        if self.apps.find(|a| a.session.is_none()).is_none() {
             return Err(err::KERR_NOT_SUPPORTED);
-        };
-        app.session = Some(id);
-        app.minor = version.minor;
+        }
+        // bound to its app at its first message, by the secure ID the kernel gives that message ([`Host::bind`])
+        let id = self.next_session;
+        self.unbound.push((id, version.minor));
         self.next_session += 1;
         Ok(id)
     }
 
     fn message(&mut self, id: &mut u32, m: Message) {
+        if !self.bind(*id, &m) {
+            return m.complete(err::KERR_NOT_SUPPORTED);
+        }
         let (body, dp256, keyboard_h, front) = (self.body, self.dp256, self.keyboard_h, self.front);
         let header = self.compat_header();
         let screen_h = self.screen_h;
@@ -1337,6 +1481,13 @@ impl Service for Host {
                             self.note = None;
                         }
                     } else {
+                        // a clipboard toast not yet seen waits for this one, first in line (D8)
+                        if self.clip_unseen
+                            && let Some((CLIP_NOTE, clip, _)) = self.note.take()
+                        {
+                            self.clip_notices.requeue(clip.text);
+                        }
+                        self.clip_unseen = false;
                         let until = e32::time::millis() + proto::NOTE_MS;
                         self.note = Some((app.key, n, until));
                     }
@@ -1347,7 +1498,7 @@ impl Service for Host {
             },
             // cards and badges only from the app's own EXE (1.18, top-panel TP2a "Step 0"): the session binding
             // ("the newest app without a session") is checked against the caller's secure ID
-            proto::NOTIFY | proto::NOTIFY_CLEAR | proto::BADGE
+            proto::NOTIFY | proto::NOTIFY_CLEAR | proto::BADGE | proto::CHANNEL
                 if apps::sid(app.key).is_some_and(|sid| sid != m.client_sid()) =>
             {
                 dprintln!(
@@ -1360,13 +1511,34 @@ impl Service for Host {
             }
             proto::NOTIFY => {
                 let key = app.key;
+                let now = e32::time::millis();
                 let r = read_bytes(&m, 0, NOTIFICATION_MAX)
                     .and_then(|b| Notification::decode(&b).map_err(|_| kerr::ARGUMENT))
-                    .and_then(|n| notify(&mut self.notifications, key, n, unix_ms()));
+                    .and_then(|n| {
+                        // the shell's card id under this key is reserved: the app can't replace or remove it
+                        if Self::shell_card(key, &n) {
+                            return Err(kerr::PERMISSION_DENIED);
+                        }
+                        // (TP4) the user's policy: an app or channel turned off refuses it; a removal always goes
+                        if !n.title.is_empty() {
+                            let old = self
+                                .notifications
+                                .iter()
+                                .find(|(k, o)| *k == key && o.id == n.id)
+                                .map(|(_, o)| o.clone());
+                            self.admit(key, &n, old.as_ref(), now)?;
+                        }
+                        notify(&mut self.notifications, key, n, unix_ms())
+                    });
                 if r.is_ok() {
                     self.notes_changed = true;
                 }
                 m.complete(r.unwrap_or_else(|e| e));
+            }
+            proto::CHANNEL => {
+                let key = app.key;
+                let r = self.channel(key, &m);
+                m.complete(r);
             }
             proto::NOTIFY_CLEAR => {
                 let key = app.key;
@@ -1405,6 +1577,15 @@ impl Service for Host {
             }),
             proto::CLIP_GET => {
                 let r = clip_get(&self.clipboard, &m);
+                // (D8) a read that gave the app something: the toast names it by its process's secure ID
+                if r.is_ok_and(|n| n > 0)
+                    && self.settings.get(keys::PRIVACY_CLIP_NOTICE).unwrap_or(true)
+                {
+                    let now = e32::time::millis();
+                    if self.clip_notices.read(m.client_sid(), now) {
+                        self.clip_notice();
+                    }
+                }
                 m.complete(r.unwrap_or_else(|e| e));
             }
             proto::POWER => {
@@ -1444,6 +1625,26 @@ impl Service for Host {
                     .collect();
                 let r = write_info(&m, &encode_running(&running));
                 m.complete(r.unwrap_or_else(|e| e));
+            }
+            proto::SETTINGS_INFO if m.int(0) > proto::INFO_RUNNING => {
+                let key = app.key;
+                let r = self.paged_info(key, *id, &m);
+                m.complete(r);
+            }
+            // D6: an accepted control of the app in front, for the last press it got
+            proto::CONTROL_FEEDBACK => {
+                let (key, kind, code) = (app.key, m.int(0), m.int(1));
+                let r = if app.minor < 20 {
+                    err::KERR_NOT_SUPPORTED
+                } else if !matches!(kind, proto::FEEDBACK_CONTROL | proto::FEEDBACK_DIAL_KEY) {
+                    kerr::ARGUMENT
+                } else if front == Some(key) && self.press_app == Some(key) && self.presses.take() {
+                    self.feedback = Some((kind, u8::try_from(code).unwrap_or(0)));
+                    0
+                } else {
+                    err::KERR_NOT_READY
+                };
+                m.complete(r);
             }
             proto::SETTINGS_INFO => {
                 let r = settings_info(&self.info, &m);
@@ -1485,24 +1686,51 @@ impl Service for Host {
                         }
                     }
                     // Settings → Apps → an app (SE4a): Settings only, by its secure ID
-                    proto::ACTION_STOP | proto::ACTION_CLEAR | proto::ACTION_RESET
+                    proto::ACTION_STOP
+                    | proto::ACTION_CLEAR
+                    | proto::ACTION_RESET
+                    | proto::ACTION_MEASURE_APP
                         if access::caller(app.key, m.client_sid()) != Caller::Settings =>
                     {
                         kerr::PERMISSION_DENIED
                     }
                     proto::ACTION_STOP => self.stop_action(&m),
+                    // 1.20: a confirmed clear is acknowledged by its owner, never downgraded to the 1.17 event
+                    proto::ACTION_CLEAR if settings_info::is_confirmed_clear(&m) => {
+                        self.confirmed_clear(&m)
+                    }
                     proto::ACTION_CLEAR => self.clear_action(&m),
+                    proto::ACTION_MEASURE_APP => self.measure_action(&m),
                     proto::ACTION_RESET => self.reset_action(&m),
+                    // (D10) the home editor
+                    proto::ACTION_EDIT_HOME => {
+                        let key = app.key;
+                        self.edit_home_action(key, &m)
+                    }
                     _ => kerr::ARGUMENT,
                 };
                 m.complete(r);
             }
             proto::ENTRY => {
-                let r = entry(&mut self.entries, &mut self.refused, app.key, &m);
+                let key = app.key;
+                let r = entry(&mut self.entries, &mut self.refused, key, &m);
                 if r.is_ok() {
                     self.entries_changed = true;
+                    if key == LEGACY {
+                        self.legacy_entries_changed();
+                    }
                 }
                 m.complete(r.unwrap_or_else(|e| e));
+            }
+            proto::OWNER_REPORT => {
+                let (key, minor) = (app.key, app.minor);
+                let r = self.owner_report(key, minor, *id, &m);
+                m.complete(r);
+            }
+            proto::ENTRY_THUMB => {
+                let key = app.key;
+                let r = self.entry_thumb(key, &m);
+                m.complete(r);
             }
             proto::FRONT if apps::is_service(app.key) => m.complete(err::KERR_NOT_SUPPORTED),
             proto::FRONT => {
@@ -1605,6 +1833,11 @@ impl Service for Host {
                 };
                 m.complete(r.unwrap_or_else(|e| e));
             }
+            proto::REPAINT => {
+                self.repaint = true;
+                self.refresh = true; // the app's surface too, whole
+                m.complete(0);
+            }
             proto::HAPTIC => {
                 let ms = m.int(0).clamp(0, proto::HAPTIC_MS_MAX);
                 let amp = m.int(1).clamp(0, 127);
@@ -1627,7 +1860,9 @@ impl Service for Host {
     }
 
     fn disconnect(&mut self, id: u32) -> ControlFlow<()> {
+        self.unbound.retain(|(s, _)| *s != id);
         self.settings.drop_session(id);
+        self.settings_session_gone(id);
         // Complete what the session still has outstanding before its disconnect completes.
         let (gone, kept): (Vec<_>, Vec<_>) = self.frames.drain(..).partition(|(s, _)| *s == id);
         self.frames = kept;

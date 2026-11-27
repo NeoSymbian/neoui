@@ -19,6 +19,7 @@ extern crate alloc;
 
 pub mod build;
 pub mod hal;
+pub mod settings_info;
 pub mod sys;
 
 use alloc::boxed::Box;
@@ -34,6 +35,7 @@ use e32::sys::{TPtr8, TPtrC8};
 use e32::time;
 use neoui_proto::ipc as proto;
 pub use neoui_proto::ipc::AppEvent;
+pub use neoui_proto::notification_policy;
 /// Which apps open which files, and the pages of Files other apps open (protocol 1.12).
 pub use neoui_proto::open;
 pub use neoui_proto::page::{Note, Notification, Page, Query};
@@ -719,6 +721,13 @@ impl App {
         })
     }
 
+    /// (1.21, TP4) Declare one of this app's notification channels (`proto::CHANNEL`); its cards name it in
+    /// `Notification::channel`. Declare after every connect, before the first card on it; the same declaration
+    /// again changes nothing. A 1.20 shell answers `KErrNotSupported` (its cards still show, as channel 0).
+    pub fn channel(&self, c: &neoui_proto::notification_policy::Channel) -> Result<(), i32> {
+        self.send_bytes(proto::CHANNEL, &c.encode())
+    }
+
     /// The badge counter `id` on the app's launcher icon (`proto::BADGE`; the counters are summed); 0 removes it.
     pub fn badge(&self, id: u32, count: u32) -> Result<(), i32> {
         let mut args = TIpcArgs::new();
@@ -785,6 +794,26 @@ impl App {
             .map(drop)
     }
 
+    /// (D6) A control accepted a touch (`proto::CONTROL_FEEDBACK`): the shell pulses as the profile says (`key`:
+    /// 0). The kit's controls
+    /// report through [`kit_feedback!`]; an app's own touch control can call this from its click.
+    pub fn control_feedback(&self, key: u8) -> Result<(), i32> {
+        self.feedback(proto::FEEDBACK_CONTROL, key)
+    }
+
+    /// (D6) [`Self::control_feedback`] for a dial pad key (`key`: its ASCII digit, `*` or `#`).
+    pub fn dial_key_feedback(&self, key: u8) -> Result<(), i32> {
+        self.feedback(proto::FEEDBACK_DIAL_KEY, key)
+    }
+
+    fn feedback(&self, kind: i32, key: u8) -> Result<(), i32> {
+        let mut args = TIpcArgs::new();
+        args.int(0, kind).int(1, i32::from(key));
+        self.server
+            .send_receive(proto::CONTROL_FEEDBACK, &args)
+            .map(drop)
+    }
+
     /// The argument of the `OPEN` that sent the last `AppEvent::Open` (empty: none); reading takes it.
     pub fn arg(&self) -> Result<alloc::string::String, i32> {
         let mut buf = alloc::vec![0u8; proto::ARG_MAX];
@@ -803,6 +832,15 @@ impl App {
     pub fn done(&self) -> Result<(), i32> {
         self.server
             .send_receive(proto::DONE, &TIpcArgs::new())
+            .map(drop)
+    }
+
+    /// Something drew straight onto the screen (the kernel console overlay, turned off): the shell shows its frame
+    /// and this app's surface whole again at the next frame (`proto::REPAINT`; `KErrNotSupported` from an older
+    /// shell).
+    pub fn repaint_screen(&self) -> Result<(), i32> {
+        self.server
+            .send_receive(proto::REPAINT, &TIpcArgs::new())
             .map(drop)
     }
 
@@ -959,6 +997,26 @@ impl App {
             }
         }
     }
+}
+
+/// (D6) Tell the shell about the kit's controls that acted since the last call (`Kit.accepted`, `Kit.dialled`), one
+/// `CONTROL_FEEDBACK` each kind: the shell answers one press once. Call it after each event, in the app's crate where
+/// its generated `Kit` global is: `neoapp::kit_feedback!(ui, app);`. Errors (an older shell) are dropped.
+#[macro_export]
+macro_rules! kit_feedback {
+    ($ui:expr, $app:expr) => {{
+        let ui = &$ui;
+        let kit = ui.global::<Kit>();
+        if kit.get_dialled() != kit.get_dialled_sent() {
+            kit.set_dialled_sent(kit.get_dialled());
+            kit.set_accepted_sent(kit.get_accepted());
+            let key = kit.get_dial_key().as_bytes().first().copied().unwrap_or(0);
+            let _ = $app.dial_key_feedback(key);
+        } else if kit.get_accepted() != kit.get_accepted_sent() {
+            kit.set_accepted_sent(kit.get_accepted());
+            let _ = $app.control_feedback(0);
+        }
+    }};
 }
 
 /// Back through the kit's layers first (Navigation v2 rule 10): with a menu, sheet, search or selection open, the top

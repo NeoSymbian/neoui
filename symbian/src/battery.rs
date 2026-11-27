@@ -1,19 +1,56 @@
 // SPDX-License-Identifier: GPL-3.0-only
-//! Five-second observations and private, bounded battery-history snapshots.
+//! Five-second observations and private, bounded battery-history snapshots; the charge cycle's recorder (D5:
+//! `neoui_proto::battery::cycle`, INFO 9) with its own alternating checkpoint.
 use alloc::vec;
 use alloc::vec::Vec;
+use core::sync::atomic::{AtomicU64, Ordering};
 use e32::{
     dprintln,
     fs::{File, Fs, mode},
     sys::err,
     time,
 };
+use neoui_proto::battery::cycle::{Checkpoint, Keeper, Sample, SlotRead, widen};
 use neoui_proto::battery::{FILE_MAX, History};
+use neoui_proto::settings_app::wire::BatteryCycle;
 use neoui_render::Renderer;
 const PATHS: [&str; 2] = [
     "C:\\private\\e0002001\\battery-a.dat",
     "C:\\private\\e0002001\\battery-b.dat",
 ];
+// D5
+const CYCLE_PATHS: [&str; 2] = [
+    "C:\\private\\e0002001\\cycle-a.dat",
+    "C:\\private\\e0002001\\cycle-b.dat",
+];
+
+/// The tick counter widened past its 32-bit wrap (`time::ticks` wraps after 49.7 days at 1 ms).
+pub fn ticks() -> u64 {
+    static WIDE: AtomicU64 = AtomicU64::new(0);
+    let t = widen(WIDE.load(Ordering::Relaxed), time::ticks());
+    WIDE.store(t, Ordering::Relaxed);
+    t
+}
+
+/// Milliseconds since boot from [`ticks`]: no wrap (`time::millis` wraps with the counter).
+pub fn mono_ms() -> u64 {
+    let us = match time::tick_period_us() {
+        0 => 1000,
+        us => u64::from(us),
+    };
+    ticks() * us / 1000
+}
+
+fn private_dir(fs: &Fs) -> Result<(), i32> {
+    for dir in ["C:\\private\\", "C:\\private\\e0002001\\"] {
+        match fs.mkdir(dir) {
+            Ok(()) | Err(err::KERR_ALREADY_EXISTS) => {}
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(())
+}
+
 pub struct Battery {
     history: History,
     next: u64,
@@ -21,6 +58,9 @@ pub struct Battery {
     storage_error: bool,
     previous: Option<(i64, u64)>,
     last_state: Option<(u32, u32, u32, u32)>,
+    // D5: the charge cycle with its checkpoint slots, and whether the last save failed
+    cycle: Keeper,
+    cycle_error: bool,
 }
 impl Battery {
     pub fn boot() -> Self {
@@ -56,13 +96,24 @@ impl Battery {
             history.points().len(),
             storage_error
         );
+        let now = mono_ms();
+        let mut cycle = Keeper::new(now, super::display_state());
+        read_cycle(&mut cycle, now);
+        dprintln!(
+            "battery: cycle restored gen={} window={} slots read={}",
+            cycle.rec.generation,
+            cycle.rec.cycle.window,
+            cycle.resolved()
+        );
         Self {
             history,
             next: 0,
-            save_at: time::millis() + 300_000,
+            save_at: now + 300_000,
             storage_error,
             previous: None,
             last_state: None,
+            cycle,
+            cycle_error: false,
         }
     }
     /// Every loop; a new observation (every 5 s) returns true.
@@ -109,6 +160,21 @@ impl Battery {
         }
         self.previous = Some(observed);
         self.history.observe(observed.0, sample);
+        // a slot that couldn't be read is read again at every sample, before anything is saved
+        if !self.cycle.resolved() {
+            read_cycle(&mut self.cycle, now);
+        }
+        let moved = self.cycle.sample(Sample {
+            mono_ms: now,
+            utc: observed.0,
+            rtc: time::rtc_seconds(),
+            battery: sample,
+            display: super::display_state(),
+        });
+        if moved {
+            dprintln!("battery: cycle starts (full charge, then discharge)");
+            self.save_cycle();
+        }
         if now >= self.save_at {
             self.save();
             self.save_at = now.saturating_add(300_000);
@@ -131,14 +197,10 @@ impl Battery {
         neoui_proto::settings_app::info::encode_usage(self.history.usage().as_ref())
     }
     pub fn save(&mut self) {
+        self.save_cycle();
         let result = || -> Result<u64, i32> {
             let fs = Fs::connect()?;
-            for dir in ["C:\\private\\", "C:\\private\\e0002001\\"] {
-                match fs.mkdir(dir) {
-                    Ok(()) | Err(err::KERR_ALREADY_EXISTS) => {}
-                    Err(e) => return Err(e),
-                }
-            }
+            private_dir(&fs)?;
             let generation = self.history.generation.checked_add(1).ok_or(-22)?;
             let bytes = self.history.encode(generation);
             File::replace(&fs, PATHS[(generation & 1) as usize], mode::SHARE_EXCLUSIVE)?
@@ -160,5 +222,72 @@ impl Battery {
                 dprintln!("battery: history save failed ({})", e);
             }
         }
+    }
+}
+
+// D5
+impl Battery {
+    /// The screen was set on or off: the display HAL now says `state` (`None`: its read failed).
+    pub fn display(&mut self, state: Option<bool>) {
+        self.cycle.display(mono_ms(), state);
+    }
+
+    /// INFO 9's record (`None` before the first valid reading).
+    pub fn cycle(&self) -> Option<BatteryCycle> {
+        self.cycle.record(self.cycle_error)
+    }
+
+    /// The next checkpoint into the other slot: written, flushed and closed before its generation counts. Nothing is
+    /// written while a slot can't be read (it may hold the newest one).
+    fn save_cycle(&mut self) {
+        let Some((slot, cp)) = self.cycle.next_save(time::rtc_seconds()) else {
+            dprintln!("battery: cycle not saved (a checkpoint slot is unread)");
+            return;
+        };
+        let result = || -> Result<(), i32> {
+            let fs = Fs::connect()?;
+            private_dir(&fs)?;
+            let f = File::replace(&fs, CYCLE_PATHS[slot], mode::SHARE_EXCLUSIVE)?;
+            f.write(&cp.encode())?;
+            f.flush()
+        }();
+        match result {
+            Ok(()) => {
+                self.cycle.saved(slot, cp);
+                self.cycle_error = false;
+            }
+            Err(e) => {
+                self.cycle_error = true;
+                dprintln!("battery: cycle save failed ({})", e);
+            }
+        }
+    }
+}
+
+/// Read the slots the keeper still needs (each read tried twice). A missing or damaged slot (a torn write) is known
+/// empty; an error leaves it unread, for the next sample.
+fn read_cycle(k: &mut Keeper, now: u64) {
+    let fs = Fs::connect();
+    for (i, path) in CYCLE_PATHS.iter().enumerate() {
+        if !k.unread()[i] {
+            continue;
+        }
+        let read = || -> Result<Vec<u8>, i32> {
+            let fs = fs.as_ref().map_err(|e| *e)?;
+            let f = File::open(fs, path, mode::READ | mode::SHARE_READERS_ONLY)?;
+            let mut b = vec![0; Checkpoint::LEN + 1];
+            let n = f.read_at(0, &mut b)?;
+            b.truncate(n);
+            Ok(b)
+        };
+        let r = match read().or_else(|_| read()) {
+            Ok(b) => Checkpoint::decode(&b).map_or(SlotRead::Empty, SlotRead::Valid),
+            Err(err::KERR_NOT_FOUND | err::KERR_PATH_NOT_FOUND) => SlotRead::Empty,
+            Err(e) => {
+                dprintln!("battery: {} unreadable ({})", path, e);
+                SlotRead::Failed
+            }
+        };
+        k.read(i, r, now, super::display_state());
     }
 }

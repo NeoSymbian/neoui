@@ -67,8 +67,69 @@ pub const KEYBOARDS: [(&str, &str, &str); 3] = [
     ("keyboard.ru", "Russian", "Русский · ЙЦУКЕН"),
 ];
 
+/// (D7) Display → Wallpaper's colours (`display.wallpaper`): the stored name and the shown one, in the board's order
+/// (set2-wallpaper). `ui/components/wallpaper.slint` draws each and lists them in the same order.
+pub const WALLPAPERS: [(&str, &str); 8] = [
+    ("night", "Night"),
+    ("black", "Black"),
+    ("graphite", "Graphite"),
+    ("blue", "Blue"),
+    ("green", "Green"),
+    ("plum", "Plum"),
+    ("amber", "Amber"),
+    ("dusk", "Dusk"),
+];
+
+/// The wallpaper a stored name draws: itself, or Night (the default) for an unknown one, as the shell draws it.
+#[must_use]
+pub fn wallpaper_key(stored: &str) -> &'static str {
+    WALLPAPERS
+        .iter()
+        .find(|(k, _)| *k == stored)
+        .map_or(WALLPAPERS[0].0, |(k, _)| k)
+}
+
+/// The shown name of a stored wallpaper; an unknown one is drawn as Night (the default).
+#[must_use]
+pub fn wallpaper_name(stored: &str) -> &'static str {
+    WALLPAPERS
+        .iter()
+        .find(|(k, _)| *k == stored)
+        .map_or(WALLPAPERS[0].1, |(_, n)| n)
+}
+
+/// (D7) Display → Font size (`display.font_size` 0..=3): the name and its scale (set2-fontsize).
+pub const FONT_SIZES: [(&str, &str); 4] = [
+    ("Small", "87.5 %"),
+    ("Medium", "100 %"),
+    ("Large", "112.5 %"),
+    ("Largest", "125 %"),
+];
+
+/// (D10) Home & navigation → Home style (`home.style` 0..=1): the name and what it is.
+pub const HOME_STYLES: [(&str, &str); 2] = [
+    ("Pages", "Widget pages you swipe between"),
+    ("Lanes", "Events, Home and Open apps side by side"),
+];
+
+/// (D10) Home & navigation → Open apps columns (`nav.switcher_cols` 2..=3).
+pub const SWITCHER_COLS: [&str; 2] = ["2", "3"];
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn wallpapers() {
+        assert_eq!(wallpaper_name("dusk"), "Dusk");
+        assert_eq!(wallpaper_name(""), "Night");
+        assert_eq!(wallpaper_name("picture-a"), "Night");
+        assert_eq!(wallpaper_key("picture-a"), "night");
+        assert_eq!(wallpaper_key("plum"), "plum");
+        let spec = crate::settings::registry::lookup("display.wallpaper").unwrap();
+        for (k, _) in WALLPAPERS {
+            assert_eq!(spec.check(&crate::settings::Value::Str(k.into())), Ok(()));
+        }
+    }
+
     use super::*;
 
     #[test]

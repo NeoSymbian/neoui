@@ -1,0 +1,35 @@
+// SPDX-License-Identifier: Apache-2.0
+// The heads-up banner (top-panel TP4, nt-headsup): an Urgent card slides down under the status bar over whatever is
+// in front, for notify.bannert seconds. It is the shade's card: a tap opens it, its actions act (Mark read in place),
+// a swipe sideways or up puts it away and the card stays in the shade. The UI server never shows it over a
+// full-screen call or while the keyboard's field has the input, nor under Do not disturb.
+import { Theme } from "../theme.slint";
+import { Card, ShadeNote } from "shade.slint";
+
+export component NotificationBanner inherits Rectangle {
+    in property <ShadeNote> note;
+    // (card, 0) for the card itself, (card, i + 1) for its action i
+    callback opened(int);
+    callback closed();
+    height: card.height + 8 * Theme.dp;
+    // a soft edge under it over the app
+    Rectangle {
+        y: 6 * Theme.dp;
+        height: card.height;
+        border-radius: 16 * Theme.dp;
+        background: #00000080;
+    }
+    card := Card {
+        y: 0;
+        note: root.note;
+        opened(a) => { root.opened(a); }
+        dismissed => { root.closed(); }
+        toggled => { root.opened(0); }
+        // a swipe up hides it (the card stays in the shade); a swipe down does nothing
+        scrolled(d) => {
+            if d < -12 * Theme.dp {
+                root.closed();
+            }
+        }
+    }
+}

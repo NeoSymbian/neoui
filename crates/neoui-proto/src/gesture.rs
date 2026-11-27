@@ -3,7 +3,9 @@
 //! - the Thumb map (Gestures, the default): in from either side for Back; up from the bottom for Home, up and hold
 //!   still (about 300 ms, [`Recognizer::tick`]) for Open apps; along the bottom band for the previous / next app;
 //! - the N9 map (N9 gestures): in from the left for Back; from the right a drag for Open apps, a quick flick for the
-//!   last app; up from the bottom for Home and on past half the screen for the Apps menu.
+//!   last app; up from the bottom for Home and on past half the screen for the Apps menu;
+//! - in either map with `nav.swipe_close` (D10, G4): down from the status bar over an app, released strictly beyond
+//!   half the screen's height, closes it ([`Gesture::Close`]); a tap on the bar is replayed (the shade).
 //!
 //! The UI server feeds every touch of the screen to [`Recognizer::feed`] and acts on the [`Step`] it returns. A
 //! press in an edge zone is held back until it either turns into an inward swipe (the gesture) or not (it is replayed
@@ -17,6 +19,8 @@ pub enum Edge {
     Left,
     Right,
     Bottom,
+    /// (G4) The status bar, live only over an app with `nav.swipe_close` on.
+    Top,
 }
 
 /// Which gestures the edges make (the `nav.mode` setting: 1 Thumb, 2 N9; Buttons has none).
@@ -39,6 +43,8 @@ pub enum Gesture {
     /// Thumb: along the bottom band, rightwards (the older app) and leftwards (the newer one).
     PrevApp,
     NextApp,
+    /// (G4) Down from the top past half the screen: close the app in front.
+    Close,
 }
 
 impl Gesture {
@@ -52,6 +58,7 @@ impl Gesture {
             Gesture::LastApp => "last",
             Gesture::PrevApp => "prev",
             Gesture::NextApp => "next",
+            Gesture::Close => "close",
         }
     }
 }
@@ -82,6 +89,8 @@ const SLOP_DP: i32 = 8;
 const SIDE_DP: i32 = 72;
 const HOME_DP: i32 = 80;
 const FLING_DP: i32 = 24;
+/// (G4) The top edge's zone: the status bar.
+const TOP_DP: i32 = 25;
 /// Thumb: up from the bottom past Home's point and still this long = Open apps.
 const PAUSE_MS: u64 = 300;
 /// A fling: the last segment moved inward at 0.5 dp/ms or more, written as `d * 512 >= dt * dp256`.
@@ -122,6 +131,7 @@ pub struct Recognizer {
     w: i32,
     h: i32,
     zone: i32,
+    top: i32,
     slop: i32,
     side: i32,
     home: i32,
@@ -144,6 +154,7 @@ impl Recognizer {
             w: w as i32,
             h: h as i32,
             zone: px(ZONE_DP),
+            top: px(TOP_DP),
             slop: px(SLOP_DP),
             side: px(SIDE_DP),
             home: px(HOME_DP),
@@ -190,6 +201,7 @@ impl Recognizer {
                 Edge::Left => x < self.zone,
                 Edge::Right => x >= self.w - self.zone,
                 Edge::Bottom => y >= self.h - self.zone,
+                Edge::Top => y < self.top,
             };
             if hit { m | bit(e) } else { m }
         })
@@ -201,6 +213,7 @@ impl Recognizer {
             Edge::Left => (dx, dy),
             Edge::Right => (-dx, dy),
             Edge::Bottom => (-dy, dx),
+            Edge::Top => (dy, dx),
         }
     }
 
@@ -212,6 +225,8 @@ impl Recognizer {
         let d = d.max(0) as i64;
         let p = match edge {
             Edge::Left | Edge::Right => d * 256 / self.side as i64,
+            // 256 at exactly half the height: closing takes more than that
+            Edge::Top => d * 256 / (self.h / 2).max(1) as i64,
             Edge::Bottom if d <= self.home as i64 || self.map == Map::Thumb => {
                 (d * 256 / self.home as i64).min(256)
             }
@@ -275,7 +290,7 @@ impl Recognizer {
                     return Step::Hold;
                 }
                 // the edge whose inward direction this move mostly follows
-                let locked = [Edge::Left, Edge::Right, Edge::Bottom]
+                let locked = [Edge::Left, Edge::Right, Edge::Bottom, Edge::Top]
                     .into_iter()
                     .filter(|&e| edges & bit(e) != 0)
                     .find(|&e| {
@@ -380,6 +395,9 @@ impl Recognizer {
                 self.state = State::Idle;
                 let flung = fast && d >= self.fling;
                 match (self.map, edge) {
+                    // strictly beyond half the height; no fling
+                    (_, Edge::Top) if d > self.h / 2 => Step::Commit(Gesture::Close),
+                    (_, Edge::Top) => Step::Cancel,
                     (Map::Thumb, Edge::Bottom) if paused => Step::Commit(Gesture::OpenApps),
                     (Map::N9, Edge::Bottom) if d >= self.menu => Step::Commit(Gesture::AppsMenu),
                     // no fling from the bottom: a press near the bottom that slips up fast must not go home
@@ -764,5 +782,61 @@ mod tests {
             ],
         );
         assert_eq!(drag, Step::Commit(Gesture::OpenApps));
+    }
+
+    /// (G4) Down from the status bar: strictly beyond half the height closes; exactly half, a short drag or a tap don't.
+    #[test]
+    fn the_top_edge_closes_past_half_the_screen() {
+        const TOP: &[Edge] = &[Edge::Left, Edge::Right, Edge::Bottom, Edge::Top];
+        use alloc::vec::Vec;
+        let swipe = |to: i32| {
+            let mut r = pixel();
+            let steps: Vec<Step> = [
+                (Down, 540, 30, 0),
+                (Move, 540, 30 + 40, 10),
+                (Move, 540, 30 + to, 400),
+                (Up, 540, 30 + to, 410),
+            ]
+            .iter()
+            .map(|&(p, x, y, ms)| r.feed(p, x, y, ms, TOP))
+            .collect();
+            assert!(!r.busy());
+            steps
+        };
+        // the bar is 25 dp = 75 px; half of 2160 is 1080
+        let past = swipe(1081);
+        assert_eq!(
+            past[1],
+            Step::Track {
+                edge: Edge::Top,
+                progress: 40 * 256 / 1080
+            }
+        );
+        assert_eq!(past[3], Step::Commit(Gesture::Close));
+        assert_eq!(swipe(1080)[3], Step::Cancel);
+        assert_eq!(swipe(300)[3], Step::Cancel);
+        // a quick flick is no close (no fling from the top)
+        let mut r = pixel();
+        let flick = [(Down, 540, 30, 0), (Move, 540, 400, 10), (Up, 540, 400, 11)]
+            .iter()
+            .map(|&(p, x, y, ms)| r.feed(p, x, y, ms, TOP))
+            .last();
+        assert_eq!(flick, Some(Step::Cancel));
+        // a tap on the bar is replayed (it opens the shade); below the bar, or without the live edge, nothing is held
+        assert_eq!(
+            run_on(&mut r, TOP, &[(Down, 540, 30, 0), (Up, 541, 31, 80)]),
+            Step::Replay
+        );
+        assert_eq!(r.feed(Down, 540, 80, 0, TOP), Step::Pass);
+        r.feed(Up, 540, 80, 1, TOP);
+        assert_eq!(r.feed(Down, 540, 30, 0, ALL), Step::Pass);
+    }
+
+    fn run_on(r: &mut Recognizer, live: &[Edge], touches: &[(TouchPhase, i32, i32, u64)]) -> Step {
+        touches
+            .iter()
+            .map(|&(p, x, y, ms)| r.feed(p, x, y, ms, live))
+            .last()
+            .unwrap()
     }
 }

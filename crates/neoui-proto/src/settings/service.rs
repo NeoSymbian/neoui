@@ -59,6 +59,9 @@ pub struct LoadReport {
     pub error: Option<StorageError>,
 }
 
+/// A save's error while the saved settings couldn't be read (`KErrNotReady`).
+pub const SAVE_REFUSED: i32 = -18;
+
 /// A save's result: the bytes written, or why it failed (the service stays dirty and retries).
 pub type SaveOutcome = Result<usize, StorageError>;
 
@@ -73,10 +76,14 @@ pub struct Service<B: Backend> {
     watches: BTreeMap<SessionId, Vec<String>>,
     /// The store's change counter as of the last [`Service::take_notifications`].
     notified: u32,
+    /// The saved settings couldn't be read or decoded: the defaults run in memory, and nothing is saved over the file
+    /// (it may hold everything the user set; a save would replace it with defaults).
+    unread: bool,
 }
 
 impl<B: Backend> Service<B> {
-    /// Loads the saved settings. Never fails: unreadable or invalid storage starts from defaults, as reported.
+    /// Loads the saved settings. Never fails: unreadable or invalid storage starts from defaults, as reported, and
+    /// then this service never saves (see [`Self::saves_refused`]).
     pub fn open(mut backend: B) -> (Self, LoadReport) {
         let mut report = LoadReport {
             keys: 0,
@@ -114,6 +121,7 @@ impl<B: Backend> Service<B> {
             dirty_at: None,
             watches: BTreeMap::new(),
             notified,
+            unread: report.error.is_some(),
         };
         (service, report)
     }
@@ -217,7 +225,16 @@ impl<B: Backend> Service<B> {
         Some(self.save())
     }
 
+    /// The saved settings couldn't be read at start: changes stay in memory, the file is never written.
+    #[must_use]
+    pub fn saves_refused(&self) -> bool {
+        self.unread
+    }
+
     fn save(&mut self) -> SaveOutcome {
+        if self.unread {
+            return Err(StorageError::Backend(SAVE_REFUSED));
+        }
         let bytes = file::encode(&self.store).map_err(StorageError::Format)?;
         self.backend.save(&bytes).map_err(StorageError::Backend)?;
         self.dirty_at = None;
@@ -284,11 +301,13 @@ mod tests {
         bytes: Option<Vec<u8>>,
         saves: usize,
         fail: Option<i32>,
+        /// only the load fails
+        load_fail: Option<i32>,
     }
 
     impl Backend for Mem {
         fn load(&mut self) -> Result<Option<Vec<u8>>, i32> {
-            match self.fail {
+            match self.fail.or(self.load_fail) {
                 Some(e) => Err(e),
                 None => Ok(self.bytes.clone()),
             }
@@ -305,6 +324,42 @@ mod tests {
 
     fn fresh() -> Service<Mem> {
         Service::open(Mem::default()).0
+    }
+
+    #[test]
+    fn an_unread_store_is_never_saved_over() {
+        // an I/O error at start: defaults in memory, the file untouched however often it is due
+        let mem = Mem {
+            bytes: Some(vec![1, 2, 3]),
+            load_fail: Some(-20),
+            ..Mem::default()
+        };
+        let (mut s, report) = Service::open(mem);
+        assert!(report.error.is_some() && s.saves_refused());
+        let _ = s.set(Caller::Shell, keys::DISPLAY_DARK, false, 0).unwrap();
+        assert!(!s.get(keys::DISPLAY_DARK).unwrap()); // works in memory
+        assert!(matches!(
+            s.tick(SAVE_DELAY_MS * 3),
+            Some(Err(StorageError::Backend(SAVE_REFUSED)))
+        ));
+        assert!(s.flush().unwrap().is_err());
+        assert_eq!(
+            (s.backend.saves, s.backend.bytes.as_deref()),
+            (0, Some(&[1u8, 2, 3][..]))
+        );
+        // a file that doesn't decode: the same
+        let (mut s, _) = Service::open(Mem {
+            bytes: Some(vec![0xde, 0xad]),
+            ..Mem::default()
+        });
+        let _ = s.set(Caller::Shell, keys::DISPLAY_DARK, false, 0).unwrap();
+        assert!(s.flush().unwrap().is_err());
+        assert_eq!(s.backend.saves, 0);
+        // none saved yet: saving is fine
+        let mut s = fresh();
+        assert!(!s.saves_refused());
+        let _ = s.set(Caller::Shell, keys::DISPLAY_DARK, false, 0).unwrap();
+        assert!(s.flush().unwrap().is_ok());
     }
 
     #[test]

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // The root, List variant (set2-root-list, S01): Connections · Device · Personal · Apps · System, colour tiles, live
-// values; Wi-Fi and Bluetooth carry their switch (S02). Notifications, Storage and Lock screen come with their stages
+// values (D1: row i shows SetState.summaries[i], the projection of rows::ROOT_LIST[i], the same value search finds);
+// Wi-Fi and Bluetooth carry their switch (S02). Notifications, Storage and Lock screen come with their stages
 // (SE3-SE6), so they are not drawn yet.
 import { Theme, NeoList, SectionHeader, ListRow } from "@neoui/kit.slint";
 import { SettingRow } from "../parts.slint";
@@ -12,7 +13,7 @@ export component RootPage inherits NeoList {
         SectionHeader { text: "Connections"; }
         SettingRow {
             title: "Wi-Fi";
-            value: !SetState.wifi ? "Off" : SetState.wifi-link.connected ? SetState.wifi-link.name : "Not connected";
+            value: SetState.summaries[0];
             icon: @image-url("@neoui/icons/sys/wifi.svg");
             tint: #2f80ed;
             has-switch: true;
@@ -23,7 +24,7 @@ export component RootPage inherits NeoList {
 
         SettingRow {
             title: "Mobile network";
-            value: SetState.airplane ? "Off" : SetState.rat == "" ? "No service" : SetState.rat;
+            value: SetState.summaries[1];
             icon: @image-url("@neoui/icons/sys/signal.svg");
             tint: #22b46a;
             clicked => { SetState.act("open", "2"); }
@@ -31,7 +32,7 @@ export component RootPage inherits NeoList {
 
         SettingRow {
             title: "Bluetooth";
-            value: SetState.bluetooth ? "On" : "Off";
+            value: SetState.summaries[2];
             icon: @image-url("@neoui/icons/sys/bluetooth.svg");
             tint: #2f80ed;
             has-switch: true;
@@ -54,7 +55,7 @@ export component RootPage inherits NeoList {
         SectionHeader { text: "Device"; }
         SettingRow {
             title: "Display";
-            value: SetState.dark ? "Dark" : "Light";
+            value: SetState.summaries[4];
             icon: @image-url("@neoui/icons/sys/brightness.svg");
             tint: #e2a92a;
             clicked => { SetState.act("open", "5"); }
@@ -62,7 +63,7 @@ export component RootPage inherits NeoList {
 
         SettingRow {
             title: "Home & navigation";
-            value: SetState.nav-modes.length > SetState.nav-mode ? SetState.nav-modes[SetState.nav-mode] : "";
+            value: SetState.summaries[5];
             icon: @image-url("@neoui/icons/sys/home.svg");
             tint: #3d8bfd;
             clicked => { SetState.act("open", "6"); }
@@ -70,15 +71,24 @@ export component RootPage inherits NeoList {
 
         SettingRow {
             title: "Sounds & profiles";
-            value: SetState.active-profile-name;
+            value: SetState.summaries[6];
             icon: @image-url("@neoui/icons/sys/volume.svg");
             tint: #e5484d;
             clicked => { SetState.act("open", "7"); }
         }
 
+        // TP4: Panel & notifications (tp-settings), its line from the policy (Do not disturb, the apps allowed)
+        SettingRow {
+            title: "Notifications";
+            value: SetState.summaries[7];
+            icon: @image-url("@neoui/icons/sys/bell.svg");
+            tint: #e2467c;
+            clicked => { SetState.act("open", "27"); }
+        }
+
         SettingRow {
             title: "Battery";
-            value: SetState.battery-text;
+            value: SetState.summaries[8];
             icon: @image-url("@neoui/icons/sys/battery_saver.svg");
             tint: #14a37f;
             clicked => { SetState.act("open", "8"); }
@@ -86,16 +96,25 @@ export component RootPage inherits NeoList {
 
         SettingRow {
             title: "Storage";
-            value: SetState.storage-free;
+            value: SetState.summaries[9];
             icon: @image-url("@neoui/icons/sys/phone_storage.svg");
             tint: #8656e8;
             clicked => { SetState.act("open", "20"); }
         }
 
         SectionHeader { text: "Personal"; }
+        // D15: no lock screen or PIN yet; the row says so and opens nothing
+        SettingRow {
+            title: "Lock screen & security";
+            value: SetState.summaries[10];
+            icon: @image-url("@neoui/icons/sys/lock.svg");
+            tint: #2bb0a0;
+            chevron: false;
+        }
+
         SettingRow {
             title: "Date & time";
-            value: SetState.time-auto ? "Automatic" : "Manual";
+            value: SetState.summaries[11];
             icon: @image-url("@neoui/icons/sys/stopwatch.svg");
             tint: #3d8bfd;
             clicked => { SetState.act("open", "9"); }
@@ -103,7 +122,7 @@ export component RootPage inherits NeoList {
 
         SettingRow {
             title: "Language & keyboard";
-            value: SetState.keyboard-names.length > SetState.keyboard ? SetState.keyboard-names[SetState.keyboard] : "";
+            value: SetState.summaries[12];
             icon: @image-url("@neoui/icons/sys/language.svg");
             tint: #1fa9c4;
             clicked => { SetState.act("open", "10"); }
@@ -119,7 +138,7 @@ export component RootPage inherits NeoList {
         SectionHeader { text: "Apps"; }
         SettingRow {
             title: "Apps";
-            value: "Phone, old apps";
+            value: SetState.summaries[14];
             icon: @image-url("@neoui/icons/sys/apps.svg");
             tint: #8656e8;
             clicked => { SetState.act("open", "13"); }
@@ -128,7 +147,7 @@ export component RootPage inherits NeoList {
         SectionHeader { text: "System"; }
         SettingRow {
             title: "Developer options";
-            value: SetState.usb-debugging ? "USB debugging" : SetState.show-touches ? "Show touches" : "Off";
+            value: SetState.summaries[15];
             icon: @image-url("@neoui/icons/sys/usb.svg");
             tint: #5b6472;
             clicked => { SetState.act("open", "11"); }
@@ -149,15 +168,20 @@ component GridTile inherits Rectangle {
     in property <image> icon;
     in property <color> tint;
     in property <int> page;
+    // D1: the summary of the root row it stands for (rows::ROOT_GRID), read out only
+    in property <string> summary;
     // three equal columns whatever the labels' widths
     horizontal-stretch: 1;
     preferred-width: 0px;
     min-width: 0px;
     height: 104 * Theme.dp;
+    // an empty label keeps a short row's columns (the grid's last row): drawn as nothing
+    visible: root.label != "";
     background: t.pressed ? Theme.pressed : transparent;
     border-radius: 12 * Theme.dp;
     accessible-role: button;
     accessible-label: root.label;
+    accessible-description: root.summary;
     accessible-action-default => { SetState.act("open", root.page); }
     t := TouchArea {
         clicked => { SetState.act("open", root.page); }
@@ -192,7 +216,7 @@ component GridTile inherits Rectangle {
 }
 
 // The root, Nokia grid variant (set2-root-grid, S01): the categories in 3 columns; the pages are the list's. Only
-// categories with a page today, in the board's order (Notifications and Security come with TP4 and SE6); Mobile
+// categories with a page today, in the board's order (Security comes with SE6); Mobile
 // network is under Connectivity, as the board groups it.
 export component RootGridPage inherits NeoList {
     VerticalLayout {
@@ -200,18 +224,19 @@ export component RootGridPage inherits NeoList {
         padding: 12 * Theme.dp;
         spacing: 4 * Theme.dp;
         for r in [
-            [{ l: "Connectivity", i: @image-url("@neoui/icons/sys/wifi.svg"), c: #2f80ed, p: 4 },
-             { l: "Display", i: @image-url("@neoui/icons/sys/brightness.svg"), c: #e2a92a, p: 5 },
-             { l: "Sounds", i: @image-url("@neoui/icons/sys/volume.svg"), c: #e5484d, p: 7 }],
-            [{ l: "Navigation", i: @image-url("@neoui/icons/sys/home.svg"), c: #3d8bfd, p: 6 },
-             { l: "Battery", i: @image-url("@neoui/icons/sys/battery_saver.svg"), c: #14a37f, p: 8 },
-             { l: "Storage", i: @image-url("@neoui/icons/sys/phone_storage.svg"), c: #8656e8, p: 20 }],
-            [{ l: "Privacy", i: @image-url("@neoui/icons/sys/privacy.svg"), c: #5b6472, p: 15 },
-             { l: "Time", i: @image-url("@neoui/icons/sys/stopwatch.svg"), c: #3d8bfd, p: 9 },
-             { l: "Language", i: @image-url("@neoui/icons/sys/language.svg"), c: #1fa9c4, p: 10 }],
-            [{ l: "Apps", i: @image-url("@neoui/icons/sys/apps.svg"), c: #8656e8, p: 13 },
-             { l: "Developer", i: @image-url("@neoui/icons/sys/usb.svg"), c: #5b6472, p: 11 },
-             { l: "About", i: @image-url("@neoui/icons/sys/info.svg"), c: #5b6472, p: 12 }],
+            [{ l: "Connectivity", i: @image-url("@neoui/icons/sys/wifi.svg"), c: #2f80ed, p: 4, s: -1 },
+             { l: "Display", i: @image-url("@neoui/icons/sys/brightness.svg"), c: #e2a92a, p: 5, s: 4 },
+             { l: "Sounds", i: @image-url("@neoui/icons/sys/volume.svg"), c: #e5484d, p: 7, s: 6 }],
+            [{ l: "Navigation", i: @image-url("@neoui/icons/sys/home.svg"), c: #3d8bfd, p: 6, s: 5 },
+             { l: "Notifications", i: @image-url("@neoui/icons/sys/bell.svg"), c: #e2467c, p: 27, s: 7 },
+             { l: "Battery", i: @image-url("@neoui/icons/sys/battery_saver.svg"), c: #14a37f, p: 8, s: 8 }],
+            [{ l: "Storage", i: @image-url("@neoui/icons/sys/phone_storage.svg"), c: #8656e8, p: 20, s: 9 },
+             { l: "Privacy", i: @image-url("@neoui/icons/sys/privacy.svg"), c: #5b6472, p: 15, s: -1 },
+             { l: "Time", i: @image-url("@neoui/icons/sys/stopwatch.svg"), c: #3d8bfd, p: 9, s: 11 }],
+            [{ l: "Language", i: @image-url("@neoui/icons/sys/language.svg"), c: #1fa9c4, p: 10, s: 12 },
+             { l: "Apps", i: @image-url("@neoui/icons/sys/apps.svg"), c: #8656e8, p: 13, s: 14 },
+             { l: "Developer", i: @image-url("@neoui/icons/sys/usb.svg"), c: #5b6472, p: 11, s: 15 }],
+            [{ l: "About", i: @image-url("@neoui/icons/sys/info.svg"), c: #5b6472, p: 12, s: -1 }, { l: "", i: @image-url("@neoui/icons/sys/info.svg"), c: #5b6472, p: 0, s: -1 }, { l: "", i: @image-url("@neoui/icons/sys/info.svg"), c: #5b6472, p: 0, s: -1 }],
         ]: HorizontalLayout {
             spacing: 4 * Theme.dp;
             for t in r: GridTile {
@@ -219,6 +244,7 @@ export component RootGridPage inherits NeoList {
                 icon: t.i;
                 tint: t.c;
                 page: t.p;
+                summary: t.s >= 0 ? SetState.summaries[t.s] : "";
             }
         }
     }
@@ -263,6 +289,8 @@ component PageTile inherits Rectangle {
 // One result (set2-search): the page's tile; "Page › " then the title with the match in the accent; the value under it.
 component ResultRow inherits Rectangle {
     in property <SearchHit> hit;
+    // the result Back came back to (D1)
+    in property <bool> selected;
     callback clicked;
     // the line's pieces measured, not drawn (whether the highlighted line fits)
     m-path := Text { visible: false; text: hit.path; font-size: Theme.font-value; }
@@ -271,7 +299,7 @@ component ResultRow inherits Rectangle {
     m-mark := Text { visible: false; text: hit.mark; font-size: Theme.font-body; font-weight: 500; }
     m-post := Text { visible: false; text: hit.post; font-size: Theme.font-body; font-weight: 500; }
     height: Theme.list-row-double-h;
-    background: t.pressed ? Theme.pressed : transparent;
+    background: t.pressed ? Theme.pressed : selected ? Theme.selected : transparent;
     accessible-role: button;
     accessible-label: hit.path + ", " + hit.title;
     accessible-description: hit.value;
@@ -390,8 +418,9 @@ component ResultRow inherits Rectangle {
 }
 
 // Search (set2-search): every row whose title, other names or page matches, with where it is and its value; a tap
-// opens its page.
+// opens its page. Its scroll is kept in SetState while a result's page is open (D1: Back comes back to it).
 export component SearchPage inherits NeoList {
+    content-y <=> SetState.search-scroll;
     VerticalLayout {
         alignment: start;
         if SetState.results.length > 0: SectionHeader {
@@ -399,7 +428,8 @@ export component SearchPage inherits NeoList {
         }
         for hit in SetState.results: ResultRow {
             hit: hit;
-            clicked => { SetState.act("found", hit.id); }
+            selected: hit.token == SetState.search-selected;
+            clicked => { SetState.act("found", hit.token); }
         }
         if SetState.results.length == 0: Text {
             x: Theme.margin;

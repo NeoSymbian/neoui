@@ -1,0 +1,248 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// (D7) Display's own pages: Wallpaper (set2-wallpaper: the colours; a tap applies one to home at once) and Font size
+// (set2-fontsize: a preview at the chosen size and the four sizes). Pictures from Files wait for the shell's
+// wallpaper install (protocol 1.20+), so they aren't offered yet.
+import { Theme, NeoList, SectionHeader } from "@neoui/kit.slint";
+import { Wallpapers } from "@neoui/components/wallpaper.slint";
+import { Note } from "../parts.slint";
+import { SetState } from "../state.slint";
+
+// one colour: the swatch (the chosen one ringed in the accent, with a tick) and its name under it
+component Swatch inherits Rectangle {
+    in property <string> key;
+    in property <string> name;
+    in property <bool> on;
+    width: 76 * Theme.dp;
+    height: 140 * Theme.dp;
+    accessible-role: button;
+    accessible-label: root.name;
+    accessible-checkable: true;
+    accessible-checked: root.on;
+    accessible-action-default => { SetState.act("display.wallpaper", root.key); }
+    t := TouchArea {
+        clicked => { SetState.act("display.wallpaper", root.key); }
+    }
+
+    Rectangle {
+        y: 0;
+        height: 118 * Theme.dp;
+        border-radius: 10 * Theme.dp;
+        background: Wallpapers.fill(root.key);
+        opacity: t.pressed ? 0.8 : 1;
+        // the hairline on its own: the software renderer draws a gradient with a border square-cornered
+        if !root.on: Rectangle {
+            border-radius: 10 * Theme.dp;
+            border-width: 1px;
+            border-color: Theme.hairline;
+        }
+        if root.on: Rectangle {
+            x: parent.width - self.width - 6 * Theme.dp;
+            y: 6 * Theme.dp;
+            width: 22 * Theme.dp;
+            height: self.width;
+            border-radius: self.width / 2;
+            background: Theme.accent;
+            Image {
+                width: 16 * Theme.dp;
+                height: self.width;
+                source: @image-url("@neoui/icons/sys/check.svg");
+                colorize: Theme.text;
+            }
+        }
+    }
+    // the software renderer fills a gradient square-cornered: a band of the page's black rounds its corners
+    Rectangle {
+        x: -6 * Theme.dp;
+        y: -6 * Theme.dp;
+        width: root.width + 12 * Theme.dp;
+        height: 118 * Theme.dp + 12 * Theme.dp;
+        border-radius: 16 * Theme.dp;
+        border-width: 6 * Theme.dp;
+        border-color: Theme.bg;
+    }
+    Text {
+        y: 124 * Theme.dp;
+        width: root.width;
+        text: root.name;
+        color: Theme.text-secondary;
+        font-size: 12.5 * Theme.dp;
+        horizontal-alignment: center;
+        overflow: elide;
+    }
+}
+
+export component WallpaperPage inherits NeoList {
+    VerticalLayout {
+        alignment: start;
+        SectionHeader { text: "Colours"; }
+        // four across (360 dp: 16 dp sides, 8 dp between), 10 dp between the rows
+        Rectangle {
+            height: 300 * Theme.dp;
+            for w[i] in Wallpapers.all: Swatch {
+                x: 16 * Theme.dp + mod(i, 4) * 84 * Theme.dp;
+                y: 6 * Theme.dp + floor(i / 4) * 150 * Theme.dp;
+                key: w.key;
+                name: w.name;
+                on: SetState.wallpaper == w.key;
+            }
+            // the chosen one's ring (2 dp of black, then 2 dp of the accent), over every swatch's corner band
+            for w[i] in Wallpapers.all: Rectangle {
+                x: 12 * Theme.dp + mod(i, 4) * 84 * Theme.dp;
+                y: 2 * Theme.dp + floor(i / 4) * 150 * Theme.dp;
+                width: 84 * Theme.dp;
+                height: 126 * Theme.dp;
+                visible: SetState.wallpaper == w.key;
+                border-radius: 14 * Theme.dp;
+                border-width: 2 * Theme.dp;
+                border-color: Theme.accent;
+            }
+        }
+
+        Note { text: "A tap applies it to home at once."; }
+    }
+}
+
+export component FontSizePage inherits NeoList {
+    // the preview draws at the chosen size itself (unscaled tokens times the size's scale), so it shows the choice
+    property <float> scale: SetState.font-size == 0 ? 0.875 : SetState.font-size == 2 ? 1.125 : SetState.font-size == 3 ? 1.25 : 1;
+    VerticalLayout {
+        alignment: start;
+        SectionHeader { text: "Preview"; }
+        HorizontalLayout {
+            padding-left: Theme.margin;
+            padding-right: Theme.margin;
+            padding-top: 6 * Theme.dp;
+            padding-bottom: 4 * Theme.dp;
+            Rectangle {
+                background: Theme.card;
+                border-radius: Theme.radius;
+                border-width: 1px;
+                border-color: Theme.card-border;
+                accessible-role: text;
+                accessible-label: "Preview at " + (SetState.font-sizes.length > SetState.font-size ? SetState.font-sizes[SetState.font-size] : "");
+                VerticalLayout {
+                    padding: 14 * Theme.dp;
+                    spacing: 10 * Theme.dp;
+                    Text {
+                        text: (SetState.font-sizes.length > SetState.font-size ? SetState.font-sizes[SetState.font-size] : "").to-uppercase() + " · " + (SetState.font-scales.length > SetState.font-size ? SetState.font-scales[SetState.font-size] : "");
+                        color: Theme.text-dim;
+                        font-size: 12 * Theme.dp;
+                        font-weight: 600;
+                        letter-spacing: 0.78 * Theme.dp;
+                    }
+                    HorizontalLayout {
+                        spacing: 12 * Theme.dp;
+                        VerticalLayout {
+                            alignment: center;
+                            Rectangle {
+                                width: Theme.avatar;
+                                height: self.width;
+                                border-radius: self.width / 2;
+                                background: Theme.bubble-out;
+                                Text {
+                                    text: "AL";
+                                    color: Theme.text;
+                                    font-size: 16 * Theme.dp;
+                                    font-weight: 600;
+                                }
+                            }
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            horizontal-stretch: 1;
+                            spacing: 3 * Theme.dp;
+                            Text {
+                                text: "Ava Lindqvist";
+                                color: Theme.text;
+                                font-size: 16 * Theme.dp * root.scale;
+                                font-weight: 600;
+                                overflow: elide;
+                            }
+                            Text {
+                                text: "Running late, see you at 7?";
+                                color: Theme.text-secondary;
+                                font-size: 13.5 * Theme.dp * root.scale;
+                                overflow: elide;
+                            }
+                        }
+                        VerticalLayout {
+                            alignment: center;
+                            Text {
+                                text: "10:05";
+                                color: Theme.text-dim;
+                                font-size: 13 * Theme.dp * root.scale;
+                            }
+                        }
+                    }
+                    Text {
+                        text: "Lists, messages and settings follow this size.";
+                        color: Theme.text;
+                        font-size: 16 * Theme.dp * root.scale;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+        }
+
+        SectionHeader { text: "Size"; }
+        // each size's name drawn at that size (14, 16, 18, 20 dp), whatever size is chosen
+        for name[i] in SetState.font-sizes: Rectangle {
+            height: Theme.list-row-h;
+            background: t.pressed ? Theme.pressed : transparent;
+            accessible-role: button;
+            accessible-label: name + ", " + SetState.font-scales[i];
+            accessible-checkable: true;
+            accessible-checked: i == SetState.font-size;
+            accessible-action-default => { SetState.act("display.font_size", i); }
+            t := TouchArea {
+                clicked => { SetState.act("display.font_size", i); }
+            }
+
+            HorizontalLayout {
+                padding-left: Theme.margin + 4 * Theme.dp;
+                padding-right: Theme.margin + 4 * Theme.dp;
+                spacing: 16 * Theme.dp;
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 22 * Theme.dp;
+                        height: self.width;
+                        border-radius: self.width / 2;
+                        border-width: 2 * Theme.dp;
+                        border-color: i == SetState.font-size ? Theme.accent : Theme.text-dim;
+                        if i == SetState.font-size: Rectangle {
+                            width: 10 * Theme.dp;
+                            height: self.width;
+                            border-radius: self.width / 2;
+                            background: Theme.accent;
+                        }
+                    }
+                }
+                Text {
+                    text: name;
+                    color: Theme.text;
+                    font-size: (14 + 2 * i) * Theme.dp;
+                    font-weight: 500;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+                Text {
+                    text: SetState.font-scales[i];
+                    color: Theme.text-dim;
+                    font-size: 13 * Theme.dp;
+                    vertical-alignment: center;
+                }
+            }
+
+            Rectangle {
+                x: 54 * Theme.dp;
+                y: parent.height - self.height;
+                width: parent.width - self.x;
+                height: max(1px, Theme.dp / 2);
+                background: Theme.hairline;
+            }
+        }
+
+        Note { text: "The status bar and the keys keep their size. Settings, home and the shade follow at once; other apps when they update."; }
+    }
+}

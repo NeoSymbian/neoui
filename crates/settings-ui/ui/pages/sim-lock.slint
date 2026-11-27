@@ -1,0 +1,115 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// D11, SIM card lock (set2-sim-lock): Use SIM PIN, Change SIM PIN, the card's attempts left, and the PIN sheets. Every
+// value is what MODEMD reports (sim_lock.rs); the PIN fields are masked number fields that NEOSET empties after use.
+import { Theme, NeoList, ListRow, Sheet, TextField, Button } from "@neoui/kit.slint";
+import { Note } from "../parts.slint";
+import { SetState } from "../state.slint";
+
+export component SimLockPage inherits NeoList {
+    VerticalLayout {
+        alignment: start;
+        ListRow {
+            title: "Use SIM PIN";
+            checked: SetState.found == "sim.pin";
+            subtitle: SetState.sim-can-toggle ? "Ask for the PIN when the phone starts" : SetState.sim-lock-text;
+            has-switch: SetState.sim-can-toggle;
+            switch-on <=> SetState.sim-pin-on;
+            // the switch shows the card's state until the card confirms the change: the sheet asks for the PIN
+            switch-toggled(v) => {
+                SetState.sim-pin-on = !v;
+                SetState.act("sim-toggle", v ? "1" : "0");
+            }
+            clicked => { SetState.act("sim-toggle", SetState.sim-pin-on ? "0" : "1"); }
+        }
+
+        ListRow {
+            title: "Change SIM PIN";
+            checked: SetState.found == "sim.change";
+            subtitle: SetState.sim-can-change ? "4 to 8 digits" : SetState.sim-can-toggle ? "Turn on Use SIM PIN first" : SetState.sim-lock-text;
+            chevron: SetState.sim-can-change;
+            clicked => { SetState.act("sim-change", ""); }
+        }
+
+        ListRow {
+            title: "PIN attempts left";
+            checked: SetState.found == "sim.attempts";
+            value: SetState.sim-attempts == "" ? "Unknown" : SetState.sim-attempts;
+        }
+
+        if SetState.sim-busy: Note { text: "Waiting for the SIM's answer…"; }
+        if !SetState.sim-busy && SetState.sim-outcome != "": Note { text: SetState.sim-outcome; }
+        Note { text: SetState.sim-note; }
+    }
+}
+
+// Use SIM PIN's sheet (the current PIN) and Change SIM PIN's (current, new, new again). The attempts left come first;
+// at one left the first press only warns. No PUK here.
+export component SimPinSheet inherits Sheet {
+    in property <bool> change;
+    in property <length> kb;
+    title-start: true;
+    title-large: true;
+    title: root.change ? "Change SIM PIN" : SetState.sim-want-on ? "Turn on SIM PIN" : "Turn off SIM PIN";
+    VerticalLayout {
+        padding-left: 20 * Theme.dp;
+        padding-right: 20 * Theme.dp;
+        spacing: 14 * Theme.dp;
+        Text {
+            text: (SetState.sim-attempts == "" ? "The SIM doesn't say how many attempts are left." : SetState.sim-attempts == "1" ? "1 attempt left." : SetState.sim-attempts + " attempts left.") + " A wrong PIN uses one; with none left the SIM needs your carrier's PUK, which Settings can't enter.";
+            font-size: Theme.font-label;
+            color: Theme.text-secondary;
+            wrap: word-wrap;
+        }
+
+        TextField {
+            placeholder: root.change ? "Current PIN" : "SIM PIN";
+            password: true;
+            keys: 3;
+            autofocus: true;
+            text <=> SetState.sim-old;
+            accessible-label: root.change ? "Current SIM PIN" : "SIM PIN";
+        }
+
+        if root.change: TextField {
+            placeholder: "New PIN (4 to 8 digits)";
+            password: true;
+            keys: 3;
+            text <=> SetState.sim-new;
+            accessible-label: "New SIM PIN";
+        }
+        if root.change: TextField {
+            placeholder: "New PIN again";
+            password: true;
+            keys: 3;
+            text <=> SetState.sim-again;
+            accessible-label: "New SIM PIN again";
+        }
+        if SetState.sim-warning != "" || SetState.sim-outcome != "": Text {
+            text: SetState.sim-warning != "" ? SetState.sim-warning : SetState.sim-outcome;
+            font-size: Theme.font-label;
+            color: Theme.danger;
+            wrap: word-wrap;
+        }
+        HorizontalLayout {
+            spacing: 12 * Theme.dp;
+            Button {
+                text: "Cancel";
+                primary: false;
+                clicked => {
+                    SetState.act("sim-cancel", "");
+                    root.close();
+                }
+            }
+
+            Button {
+                text: SetState.sim-busy ? "Checking…" : root.change ? "Change" : SetState.sim-want-on ? "Turn on" : "Turn off";
+                enabled: !SetState.sim-busy;
+                clicked => { SetState.act("sim-submit", ""); }
+            }
+        }
+
+        if root.kb > 0: Rectangle {
+            height: root.kb;
+        }
+    }
+}

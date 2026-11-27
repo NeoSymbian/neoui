@@ -205,8 +205,8 @@ fn cards_by_section_group_swipe_and_clear() {
     common::frame(&mut r, &mut buf, w, "scrolled from a gap");
     assert_ne!(buf, before, "a drag in a gap scrolls the list");
 
-    // Clear all, at the list's end
-    common::tap(&mut r, (w / 2) as i32, (CLEAR_Y * d) as i32);
+    // Clear all, at the list's end (left of TP4's Manage)
+    common::tap(&mut r, (CLEAR_X * d) as i32, (CLEAR_Y * d) as i32);
     common::frame(&mut r, &mut buf, w, "cleared");
     assert!(r.take_notes_cleared(), "Clear all reported");
 }
@@ -221,3 +221,4 @@ const GROUP_Y: f32 = 291.0;
 const LIVE_Y: f32 = 162.0;
 const ALERT_Y: f32 = 515.0;
 const CLEAR_Y: f32 = 666.0;
+const CLEAR_X: f32 = 125.0;

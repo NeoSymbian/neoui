@@ -104,7 +104,7 @@ impl Wifi {
             s.set_wifi_message(message.into());
         }
         let b = link.bssid;
-        let this = alloc::format!(
+        let bssid = alloc::format!(
             "{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
             b[0],
             b[1],
@@ -112,7 +112,8 @@ impl Wifi {
             b[3],
             b[4],
             b[5]
-        ) == current.as_str();
+        );
+        let this = bssid == current.as_str();
         s.set_wifi_join(match link.state {
             LinkState::Connected if this => 2,
             LinkState::Joining | LinkState::Handshake if this || ours => 1,
@@ -174,6 +175,7 @@ impl Wifi {
         s.set_wifi_link(WifiLink {
             shown: view.shown,
             connected: view.connected,
+            bssid: bssid.into(),
             name: view.name.as_str().into(),
             subtitle: view.subtitle.as_str().into(),
             bars: i32::from(view.bars),

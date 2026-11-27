@@ -2,6 +2,7 @@
 // The frame every screen shares (Navigation v2): the status bar, and the bottom: the key row (Buttons) or the gesture
 // band (Gestures, N9). The app's header and footer are the kit's (header.slint, footer.slint).
 import { Theme } from "../theme.slint";
+import { Kit } from "layers.slint";
 
 export component Glyph inherits Image {
     in property <length> size: Theme.row-icon;
@@ -43,6 +44,8 @@ export component StatusBar inherits Rectangle {
     in property <bool> alarm;
     // Settings -> Battery -> Battery saver: the fill turns amber
     in property <bool> battery-saver;
+    // (TP4) Do not disturb: the moon
+    in property <bool> dnd;
     callback tapped;
     // a swipe down on the bar (the shade opens)
     callback pulled;
@@ -94,6 +97,14 @@ export component StatusBar inherits Rectangle {
             alignment: center;
             Glyph {
                 source: vibrate ? @image-url("../icons/sys/vibrate.svg") : @image-url("../icons/sys/silent.svg");
+                size: Theme.status-icon;
+                colorize: Theme.text;
+            }
+        }
+        if dnd: VerticalLayout {
+            alignment: center;
+            Glyph {
+                source: @image-url("../icons/sys/dnd.svg");
                 size: Theme.status-icon;
                 colorize: Theme.text;
             }
@@ -281,6 +292,7 @@ component Key inherits Rectangle {
 
     touch := TouchArea {
         clicked => {
+            Kit.accept();
             root.clicked();
         }
     }

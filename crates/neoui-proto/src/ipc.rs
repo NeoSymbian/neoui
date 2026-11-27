@@ -46,13 +46,25 @@
 //! Since 1.19 (datetime DT1) an app can be a service (`crate::apps::App::service`: DTSRV, no screen): the shell starts
 //! it at boot and keeps it alive, its cards' taps and actions all arrive in place, and its [`OPEN`] carries flags
 //! ([`OPEN_WAKE`]: the screen comes on for a ringing alarm).
+//! Since 1.20 (Settings contracts) `SETTINGS_INFO` kinds from 7 up are paged and revisioned
+//! ([`crate::settings_app::wire`]: [`INFO_APP_DETAIL`], [`INFO_BATTERY_CYCLE`], [`INFO_JOBS`], [`INFO_FEATURES`]),
+//! Settings learns of a change with [`AppEvent::SettingsInfo`], asks an app to measure itself
+//! ([`ACTION_MEASURE_APP`]) or to clear exactly what it confirmed ([`ACTION_CLEAR`]'s confirmed form), and the app
+//! does it as a registered owner ([`OWNER_REPORT`], [`AppEvent::OwnerWork`], [`AppEvent::ClearTicket`];
+//! [`crate::settings_app::jobs`]). Settings reads an old app's small icon with [`ENTRY_THUMB`]. These events go only
+//! to 1.20 clients ([`AppEvent::needs_minor`]).
+//! Since 1.21 (top-panel TP4) an app declares its notification channels ([`CHANNEL`],
+//! [`crate::notification_policy::Channel`]) and a card names one; the shell applies the user's policy (`n.<app>`,
+//! `notify.*`: [`crate::notification_policy::effective`]) to the badge, the shade, a banner and its sound, refuses a
+//! card of an app or channel turned off (`KErrPermissionDenied`), and Settings reads the channels and the policy
+//! ([`INFO_CHANNELS`], paged).
 
 use crate::{InputEvent, TouchPhase};
 
 /// The server's name (no leading `!`: that needs ProtServ).
 pub const SERVER: &str = "NeoUi";
 /// Protocol version (major, minor); a connect with another major is refused.
-pub const VERSION: (u8, u8) = (1, 19);
+pub const VERSION: (u8, u8) = (1, 21);
 
 /// `[Des8 out: GEOMETRY_LEN bytes = width, height, dp × 256 (u32 LE)]` → 0. `dp` is the shell's design unit in
 /// pixels (`min(screen w, h) / 360`), so apps size things like the shell does.
@@ -191,6 +203,12 @@ pub const CLIP_KIND: i32 = 30;
 /// [`crate::settings_app::info`] ([`INFO_BATTERY`], [`INFO_NET`], [`INFO_CLOCK`], [`INFO_APPS`],
 /// [`INFO_BATTERY_USAGE`]). `KErrOverflow` when `out` is
 /// too short, `KErrArgument` for an unknown kind. Opcodes 31–39 are reserved (docs neoui-shell/protocol.md).
+///
+/// 1.20: kinds 7 and up are paged, Settings only: `[kind, first_record, Des8 out, expected_rev]` → the page's length
+/// ([`crate::settings_app::wire::page`]: a 16-byte header and whole records, at most 4096 bytes). A first read sends
+/// `0, 0` and subscribes the session to [`AppEvent::SettingsInfo`] for the kind; a continuation sends the page's
+/// `next` and `rev`. `KErrNotReady` (-18) when the revision changed (start again at 0), `KErrOverflow` when not even
+/// one record fits, `KErrNotSupported` for a kind this shell doesn't build. Kinds 1–6 are unchanged.
 pub const SETTINGS_INFO: i32 = 40;
 /// `[kind, Des8 request]` → 0: ask the shell to act. [`ACTION_SIGN_IN`]: open the browser on the current Wi-Fi
 /// network's sign-in page (`KErrNotReady` when there is no captive portal now). [`ACTION_OPEN_ENTRY`] (1.14,
@@ -210,10 +228,32 @@ pub const INFO_BATTERY_USAGE: i32 = 5;
 /// 1.17 (SE4a): the running apps ([`crate::settings_app::info::encode_running`]): each app's key and whether it is
 /// resident (started at boot and restarted, so it can't be stopped).
 pub const INFO_RUNNING: i32 = 6;
+/// 1.21 (TP4), paged, Settings only: per policy owner an app record, then its channels
+/// ([`crate::notification_policy::Record`]; a General row for an app that declared none).
+pub const INFO_CHANNELS: i32 = 7;
+/// 1.20 (D4/D8), paged: one [`crate::settings_app::wire::AppDetail`] per listed app (`apps::listed`), from the
+/// catalogue, the EXE SYSSTART finds and the latest measurement (D4); capabilities wait for D8.
+pub const INFO_APP_DETAIL: i32 = 8;
+/// 1.20 (D5), paged singleton: [`crate::settings_app::wire::BatteryCycle`], from SYSSTART's recorder
+/// ([`crate::battery::cycle`]); an empty collection before the first valid battery reading.
+pub const INFO_BATTERY_CYCLE: i32 = 9;
+/// Reserved (D17): E:'s volume state.
+pub const INFO_VOLUME_STATE: i32 = 10;
+/// Reserved (D18): the update check's status.
+pub const INFO_UPDATE_STATUS: i32 = 11;
+/// Reserved (TP7, 1.21): the control centre's tiles.
+pub const INFO_TILES: i32 = 12;
+/// 1.20, paged: the acknowledged jobs and their receipts ([`crate::settings_app::wire::Job`]).
+pub const INFO_JOBS: i32 = 13;
+/// 1.20, paged singleton: what this shell implements ([`crate::settings_app::wire::Features`]).
+pub const INFO_FEATURES: i32 = 14;
+/// Reserved (D16): the battery's energy shares, once calibrated.
+pub const INFO_ENERGY_SHARES: i32 = 15;
 /// [`SETTINGS_ACTION`] kinds.
 pub const ACTION_SIGN_IN: i32 = 1;
 pub const ACTION_OPEN_ENTRY: i32 = 2;
-/// 1.15 (SE2a): a sound profile command ([`crate::sound_profile::Command`]: choose, set, add, rename, delete), Settings
+/// 1.15 (SE2a): a sound profile command ([`crate::sound_profile::Command`]: choose, set, add, rename, delete; tones
+/// (tag 5, SE2b); keypad tones and vibrate on touch (tag 6, D6: `[6, id, keypad 1 | touch 2, 0]`)), Settings
 /// only (`KErrPermissionDenied`); `KErrNotFound` for a profile that isn't there (or can't be changed that way),
 /// `KErrOverflow` when there is no room for another, `KErrArgument` for a malformed request.
 pub const ACTION_PROFILE: i32 = 3;
@@ -232,9 +272,69 @@ pub const RESET_SETTINGS: u8 = 1;
 /// 1.17 (SE4a), Settings only: request = an app's key. The shell sends that app [`AppEvent::ClearData`], starting it
 /// hidden if it isn't running. `KErrNotSupported` for an app that doesn't clear its own data
 /// ([`crate::apps::clears_data`]).
+///
+/// 1.20: the confirmed form ([`crate::settings_app::wire::ClearRequest`], first byte 0xff) → a ticket (> 0): the app's
+/// registered owner clears exactly `scope`, which its INFO 8 offers (`KErrNotSupported` otherwise); INFO 13 has the
+/// outcome. The same nonce and request again gives the same ticket; the nonce with another request
+/// `KErrAlreadyExists`.
 pub const ACTION_CLEAR: i32 = 6;
+/// 1.20, Settings only: [`crate::settings_app::wire::MeasureRequest`] → a ticket: the app's owner measures its storage
+/// (started hidden if needed); measurements of an app already pending share the ticket.
+pub const ACTION_MEASURE_APP: i32 = 7;
+/// Reserved (D7): install a wallpaper from an RGB888 file.
+pub const ACTION_INSTALL_WALLPAPER: i32 = 8;
+/// 1.20 (D10), Settings only: an empty request ([`crate::settings_app::wire::edit_home_request`]) → 0: home comes to
+/// the front in its editor (again: the draft stays); the editor's own Done or Back saves `home.layout`. Another caller
+/// `KErrPermissionDenied`, a nonempty request `KErrArgument`.
+pub const ACTION_EDIT_HOME: i32 = 9;
+/// Reserved (D17): dismount, remount or export E:.
+pub const ACTION_VOLUME: i32 = 10;
+/// Reserved (D18): check for an update.
+pub const ACTION_CHECK_UPDATE: i32 = 11;
+/// Reserved (TP7, 1.21): open the control centre's editor.
+pub const ACTION_EDIT_TILES: i32 = 12;
+/// Reserved (1.21): open the notification history.
+pub const ACTION_OPEN_HISTORY: i32 = 13;
+/// Reserved (TP9): the trusted screen-lock PIN dialog.
+pub const ACTION_LOCK_DIALOG: i32 = 14;
+/// Reserved (D19): [`ACTION_RESET`]'s recovery-mediated erase of C: (unsupported until its gates pass).
+pub const RESET_ERASE_C: u8 = 2;
 /// 1.18 (TP2a): no arguments → 0: every card of the calling app goes, ongoing ones too (as an empty NOTIFY each).
 pub const NOTIFY_CLEAR: i32 = 32;
+/// 1.21 (TP4): `[Des8 declaration]` ([`crate::notification_policy::Channel`]) → 0: declare (or update) one of the
+/// caller's notification channels. The same declaration again changes nothing; a new one keeps the user's choices.
+/// Only from the app's own EXE and an app with a policy key ([`crate::notification_policy::OWNERS`]):
+/// `KErrPermissionDenied`; `KErrArgument` for a malformed one, `KErrOverflow` past
+/// [`crate::notification_policy::CHANNELS_MAX`]. Its cards name it in `Notification::channel`.
+pub const CHANNEL: i32 = 34;
+/// Reserved (TP4, 1.21): `[card_id, Des8 out]` the text of an inline reply.
+pub const REPLY_TEXT: i32 = 35;
+/// Reserved (TP7, 1.21): `[Des8 offer]` a control-centre tile.
+pub const TILE: i32 = 37;
+/// 1.20: `[mode, ticket, descriptor, 0]`, an app as the owner of its data ([`crate::settings_app::jobs`]). Mode 0
+/// `OWNER_REGISTER` `[0, 0, Des8 payload]` (`[1, capabilities]`) → 0; mode 1 `OWNER_CLAIM` `[1, ticket, Des8 out]` →
+/// the [`crate::settings_app::wire::OwnerWork`]'s length; mode 2 `OWNER_FINISH` `[2, ticket, Des8 report]` → 0 once
+/// the receipt is saved. Only from the app's own EXE (its SID), on its current session, from 1.20 clients
+/// (`KErrPermissionDenied`).
+pub const OWNER_REPORT: i32 = 42;
+/// 1.20, Settings only: `[entry_id, Des8 out, expected_rev, 0]` → the length of an old app's launcher icon cut to at
+/// most 32 × 32 ([`crate::settings_app::wire::thumb`]; 0 bytes: the generic icon). `KErrNotFound` for an entry the
+/// bridge doesn't have, `KErrNotReady` when `expected_rev` isn't 0 and isn't INFO 8's revision now.
+pub const ENTRY_THUMB: i32 = 43;
+/// 1.20 (D6): `[kind, key]` → 0: a control of the app in front accepted a
+/// touch (the kit's controls say so through `neoapp::kit_feedback!`). The shell answers at most once per press it
+/// delivered (finger 0 going down): a short pulse with `sound.touch_vibrate` on, and for [`FEEDBACK_DIAL_KEY`] (key =
+/// the ASCII digit, `*` or `#`) the key's tone with `sound.keypad_tones` on, out of a call, in an audible profile.
+/// `KErrNotReady` when the caller isn't in front or has no press left to answer, `KErrArgument` for an unknown kind,
+/// `KErrNotSupported` from a client older than 1.20 (and from an older shell).
+pub const CONTROL_FEEDBACK: i32 = 44;
+/// [`CONTROL_FEEDBACK`] kinds: a control (button, row, switch…), a dial pad key.
+pub const FEEDBACK_CONTROL: i32 = 0;
+pub const FEEDBACK_DIAL_KEY: i32 = 1;
+/// Settings D2: no arguments → 0: something drew straight onto the screen (the kernel console overlay, just turned
+/// off), so at the next frame the shell copies its whole frame and the front app's whole surface again. Any app may
+/// ask; a shell without it answers `KErrNotSupported` and the stale pixels stay until they are drawn over.
+pub const REPAINT: i32 = 45;
 /// [`AppEvent::NotifyGone`]'s `why`: the user swiped the card away.
 pub const GONE_SWIPED: u8 = 0;
 /// [`AppEvent::NotifyGone`]'s `why`: the user cleared the shade (Clear all).
@@ -315,6 +415,13 @@ pub enum AppEvent {
     /// 1.18: the user removed the app's card `id` ([`GONE_SWIPED`], [`GONE_CLEARED`], [`GONE_OFF`]). Only a running
     /// app hears it: the shell doesn't start one for this.
     NotifyGone { id: u32, why: u8 },
+    /// 1.20, to Settings: `SETTINGS_INFO` kind `kind`, which it read, is at revision `rev` now (read it again).
+    SettingsInfo { kind: u8, rev: u32 },
+    /// 1.20, to a registered owner: claim the work `ticket` ([`OWNER_REPORT`] mode 1). The wake alone allows nothing.
+    OwnerWork { ticket: u32 },
+    /// 1.20, to a registered owner: a confirmed clear `ticket` (`[28, ticket]`, nonzero; [`AppEvent::ClearData`] is
+    /// `[28, 0]`). Claim it before deleting anything.
+    ClearTicket { ticket: u32 },
 }
 
 const KIND_TOUCH: u32 = 1;
@@ -336,10 +443,25 @@ const KIND_OPEN: u32 = 19;
 const KIND_NOTIFIED: u32 = 20;
 const KIND_INPUT_RESET: u32 = 21;
 const KIND_NOTIFY_GONE: u32 = 22;
-// 23–27 are reserved (docs neoui-shell/protocol.md: Media, NotifyReply, ActivityTap, Tile, SettingsInfo)
+// 23–26 are reserved (docs neoui-shell/protocol.md: Media, NotifyReply, ActivityTap, Tile)
+const KIND_SETTINGS_INFO: u32 = 27;
 const KIND_CLEAR_DATA: u32 = 28;
+const KIND_OWNER_WORK: u32 = 29;
 
 impl AppEvent {
+    /// The protocol minor a client must have connected with to get this event (an older decoder refuses it and its
+    /// app ends): 18 for `NotifyGone`, 20 for 1.20's events, 0 for the rest (sent as before 1.18).
+    #[must_use]
+    pub fn needs_minor(&self) -> u8 {
+        match self {
+            AppEvent::NotifyGone { .. } => 18,
+            AppEvent::SettingsInfo { .. }
+            | AppEvent::OwnerWork { .. }
+            | AppEvent::ClearTicket { .. } => 20,
+            _ => 0,
+        }
+    }
+
     /// `[kind, a, b, c]` as little-endian u32s: touch = (phase | id << 8, x, y), key = (down, code, 0).
     pub fn encode(&self) -> [u8; EVENT_LEN] {
         let w: [u32; 4] = match *self {
@@ -368,6 +490,9 @@ impl AppEvent {
             AppEvent::InputReset => [KIND_INPUT_RESET, 0, 0, 0],
             AppEvent::ClearData => [KIND_CLEAR_DATA, 0, 0, 0],
             AppEvent::NotifyGone { id, why } => [KIND_NOTIFY_GONE, id, u32::from(why), 0],
+            AppEvent::SettingsInfo { kind, rev } => [KIND_SETTINGS_INFO, u32::from(kind), rev, 0],
+            AppEvent::OwnerWork { ticket } => [KIND_OWNER_WORK, ticket, 0, 0],
+            AppEvent::ClearTicket { ticket } => [KIND_CLEAR_DATA, ticket, 0, 0],
         };
         let mut out = [0u8; EVENT_LEN];
         for (i, v) in w.iter().enumerate() {
@@ -417,7 +542,24 @@ impl AppEvent {
                 action: u16::try_from(w(2)).ok()?,
             },
             KIND_INPUT_RESET => AppEvent::InputReset,
-            KIND_CLEAR_DATA => AppEvent::ClearData,
+            // 1.20's words are exact: a reserved word that isn't 0, a zero revision or a ticket outside
+            // 1..=i32::MAX is no event; [28, 0, 0, 0] is the only 1.17 clear
+            KIND_CLEAR_DATA if w(2) != 0 || w(3) != 0 => return None,
+            KIND_CLEAR_DATA => match w(1) {
+                0 => AppEvent::ClearData,
+                ticket => AppEvent::ClearTicket {
+                    ticket: valid_ticket(ticket)?,
+                },
+            },
+            KIND_SETTINGS_INFO if w(2) == 0 || w(3) != 0 => return None,
+            KIND_SETTINGS_INFO => AppEvent::SettingsInfo {
+                kind: u8::try_from(w(1)).ok()?,
+                rev: w(2),
+            },
+            KIND_OWNER_WORK if w(2) != 0 || w(3) != 0 => return None,
+            KIND_OWNER_WORK => AppEvent::OwnerWork {
+                ticket: valid_ticket(w(1))?,
+            },
             KIND_NOTIFY_GONE => AppEvent::NotifyGone {
                 id: w(1),
                 why: u8::try_from(w(2)).ok()?,
@@ -425,6 +567,11 @@ impl AppEvent {
             _ => return None,
         })
     }
+}
+
+/// A 1.20 ticket: `1..=i32::MAX` (it travels as a positive completion).
+fn valid_ticket(t: u32) -> Option<u32> {
+    (1..=i32::MAX as u32).contains(&t).then_some(t)
 }
 
 #[cfg(test)]
@@ -477,6 +624,11 @@ mod tests {
             AppEvent::Notified {
                 id: u32::MAX,
                 action: 2,
+            },
+            AppEvent::SettingsInfo { kind: 13, rev: 7 },
+            AppEvent::OwnerWork { ticket: 1 },
+            AppEvent::ClearTicket {
+                ticket: 0x7fff_ffff,
             },
         ];
         for e in all {

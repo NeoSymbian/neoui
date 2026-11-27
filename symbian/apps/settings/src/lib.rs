@@ -6,15 +6,26 @@
 //! - what only the shell knows (`App::settings_info`: battery history, the link's IP, the clock's sync) and the
 //!   captive portal's sign-in (`App::settings_action`).
 //!
-//! Pages poll only while shown: a 1 s timer reads what the open page shows.
+//! Pages poll only while shown: a 1 s timer reads what the open page shows. Search reads every owner when it opens
+//! (`row_model`, D1: the root, search and the pages show one projection).
 #![no_std]
 
 extern crate alloc;
 
+mod appearance;
+mod apps_detail;
+mod battery_cycle;
+mod d2;
 mod modem;
+mod navigation;
+mod notifications;
+mod profile_audio;
+mod row_model;
+mod sim_lock;
 mod sound;
 mod storage;
 mod store;
+mod tone_import;
 mod wifi;
 
 use alloc::rc::Rc;
@@ -32,12 +43,8 @@ use neoui_proto::settings_app::choices::{KEYBOARDS, TIMEOUTS};
 use neoui_proto::settings_app::info::OldApps;
 use neoui_proto::settings_app::info::{Battery, Clock};
 use neoui_proto::settings_app::page::Page;
-use neoui_proto::settings_app::rows;
 use neoui_proto::sound_profile;
-use settings_ui::{
-    AppRow, KeyboardFocus, Kit, SearchHit, SetState, SettingsApp, Theme, ZoneRow, live_value,
-    split_match,
-};
+use settings_ui::{AppRow, KeyboardFocus, Kit, SetState, SettingsApp, Theme, ZoneRow};
 use slint::{ComponentHandle, Model, ModelRc, SharedString, Timer, TimerMode, VecModel};
 
 e32::main!(main);
@@ -63,6 +70,8 @@ enum Asked {
     /// Apps → an app → Stop / Clear data, for this app's key (SE4a)
     Stop(&'static str),
     Clear(&'static str),
+    /// D4: the confirmed clear of this app's owner's scope, as the question named it
+    ClearScope(&'static str, u32),
     /// Reset → network settings or settings (`proto::RESET_*`)
     Reset(u8),
 }
@@ -82,14 +91,11 @@ struct Ctx {
     cities: RefCell<Vec<&'static str>>,
     /// What the open QUERY asks (the shell keeps one per app, the latest replaces it): its answer does that
     asked: RefCell<Option<Asked>>,
-    /// the root search's query (results are refreshed with it while searching), and the hits shown (the model is
-    /// replaced only when they change: a new model drops a row's press, and with it the tap)
-    query: RefCell<String>,
-    hits: RefCell<Vec<SearchHit>>,
-    /// the pages Back returns through (a page opened from another page, not from the root, returns there)
-    trail: RefCell<Vec<Page>>,
+    /// D1: the row model's projection, search and the frames Back returns through
+    rows: row_model::Rows,
     /// the keyboard as last asked of the shell (KeyboardFocus open, seq, mode)
     kb: Cell<(bool, i32, i32)>,
+    d4: apps_detail::D4,
 }
 
 fn run() -> Result<(), i32> {
@@ -110,9 +116,8 @@ fn run() -> Result<(), i32> {
         cities: RefCell::default(),
         asked: RefCell::default(),
         kb: Cell::new((false, 0, 0)),
-        query: RefCell::default(),
-        hits: RefCell::default(),
-        trail: RefCell::default(),
+        rows: row_model::Rows::default(),
+        d4: apps_detail::D4::default(),
     });
     // watch first: a change between the first read and the watch would be missed
     if let Err(e) = app.watch_settings("") {
@@ -149,14 +154,17 @@ fn run() -> Result<(), i32> {
             AppEvent::Back => ctx.back(),
             AppEvent::Open { page } => {
                 let arg = app.arg().unwrap_or_default();
-                ctx.trail.borrow_mut().clear();
+                row_model::fresh(&ctx);
                 ctx.open(Page::opened(page, &arg).from_outside());
             }
             AppEvent::Page { page } => {
-                ctx.trail.borrow_mut().clear();
+                row_model::fresh(&ctx);
                 ctx.open(Page::from_id(page).unwrap_or(Page::Root).from_outside());
             }
             AppEvent::Settings { .. } => store::load(&app, &ui),
+            // TP4: the shell's policy (INFO 7) moved on
+            AppEvent::SettingsInfo { kind: 7, .. } => notifications::refresh(&app, &ui),
+            AppEvent::SettingsInfo { .. } => apps_detail::tick(&ctx, &ui, ctx.page.get(), true),
             // the shell's keyboard: its height (0 while a field keeps the focus: the user put it away)
             AppEvent::Keyboard { h } => {
                 let kf = ui.global::<KeyboardFocus>();
@@ -214,6 +222,9 @@ fn run() -> Result<(), i32> {
                     );
                     ctx.tick(true);
                 }
+                Some(Asked::ClearScope(key, scope)) if i == 0 => {
+                    apps_detail::clear(&ctx, key, scope)
+                }
                 Some(Asked::Reset(what)) if i == 0 => {
                     let r = app.settings_action_with(proto::ACTION_RESET, &[what]);
                     dprintln!("settings: reset {} ({:?})", what, r);
@@ -226,18 +237,23 @@ fn run() -> Result<(), i32> {
             AppEvent::Visible(v) => {
                 ctx.visible.set(v);
                 if v {
+                    tone_import::resumed(&ctx.app, &ui); // D6: a WAV picked in Files
+                    row_model::resume(&ctx);
                     if ctx.page.get() == Page::Storage {
                         ctx.storage.ensure();
                     }
                     ctx.tick(true);
                 } else {
                     ctx.sound.stop(); // a tone's preview ends with the app hidden
+                    sim_lock::clear(&ui);
                     ctx.storage.stop(); // hidden: no scan in the background
                 }
             }
             _ => {}
         }
+        neoapp::kit_feedback!(ui, app); // D6: the kit's controls pulse as the profile says
         ctx.keyboard();
+        row_model::publish(&ctx);
         ctx.describe()?;
         Ok(true)
     })
@@ -294,6 +310,7 @@ impl Ctx {
         s.set_title(page.title().into());
         s.set_sheet(SharedString::new());
         s.set_found(SharedString::new());
+        sim_lock::clear(&ui); // (D11) a typed PIN never outlives its sheet
         ui.global::<KeyboardFocus>().set_open(false);
         dprintln!("settings: page {}", page.name());
         // a tone's preview stops when the page changes (Back included)
@@ -309,9 +326,11 @@ impl Ctx {
             store::profiles(&self.app, &ui);
             s.set_title(s.get_profile_current().name);
         }
+        notifications::opened(&s, page);
         if page == Page::AppDetail {
             s.set_title(s.get_app_current().name);
             s.set_app_clear(asks::clear_what(s.get_app_current().key.as_str()).into());
+            apps_detail::opened(self, s.get_app_current().key.as_str());
         }
         self.tick(true);
     }
@@ -321,11 +340,11 @@ impl Ctx {
         let s = ui.global::<SetState>();
         if !s.get_sheet().is_empty() {
             s.set_sheet(SharedString::new());
+            sim_lock::clear(&ui);
             // the sheet's field went with it: let its keyboard go too (else it comes back on resume)
             ui.global::<KeyboardFocus>().set_open(false);
-        } else if let Some(prev) = self.trail.borrow_mut().pop().or(self.page.get().parent()) {
-            dprintln!("settings: back");
-            self.open(prev);
+        } else {
+            row_model::back(self);
         }
     }
 
@@ -343,6 +362,9 @@ impl Ctx {
         let page = self.page.get();
         let ms = e32::time::millis();
         let every = |k: u32| n.is_multiple_of(k);
+        if now {
+            d2::refresh(&ui, page);
+        }
         match page {
             Page::Wifi => {
                 self.wifi.borrow_mut().poll(&self.app, &ui, ms, true, false);
@@ -365,7 +387,7 @@ impl Ctx {
         }
         if matches!(
             page,
-            Page::Root | Page::Mobile | Page::Connectivity | Page::Sounds
+            Page::Root | Page::Mobile | Page::Connectivity | Page::Sounds | Page::SimLock
         ) && every(2)
         {
             self.modem.borrow_mut().poll(&ui);
@@ -377,10 +399,14 @@ impl Ctx {
             self.storage.drives(&ui);
         }
         if page == Page::Storage {
+            self.storage.recount_changed(); // a changed volume is counted again (D3)
             self.storage.show(&ui);
         }
-        if page == Page::BatteryUsage && every(5) {
-            self.battery_usage(&ui);
+        if page == Page::Profile && every(5) {
+            profile_audio::refresh(&mut self.modem.borrow_mut(), &ui);
+        }
+        if matches!(page, Page::Battery | Page::BatteryUsage) && (now || every(5)) {
+            battery_cycle::refresh(&self.app, &ui);
         }
         if page == Page::Apps && every(5) {
             self.old_apps(&ui);
@@ -388,59 +414,33 @@ impl Ctx {
         if page == Page::AppDetail && every(2) {
             self.running(&ui);
         }
+        apps_detail::tick(self, &ui, page, every(2));
         if page == Page::DateTime && every(5) {
             store::dates(&self.app, &ui);
         }
-        if matches!(page, Page::DateTime | Page::Root)
-            && every(5)
-            && let Some(c) = self
-                .app
-                .settings_info(proto::INFO_CLOCK)
-                .ok()
-                .and_then(|b| Clock::decode(&b))
+        if matches!(page, Page::DateTime | Page::Root) && every(5) {
+            self.clock(&ui);
+        }
+        row_model::tick(self, &ui, n);
+        profile_audio::show_preview(&self.sound, &ui);
+        tone_import::poll(&self.app, &ui); // D6: a WAV converted on its worker
+        if let Some(text) = self.sound.changed() {
+            ui.global::<SetState>().set_sound_feedback(text.into());
+        }
+        row_model::publish(self);
+    }
+
+    /// The zone and when the clock last synced (the shell's `INFO_CLOCK`).
+    fn clock(&self, ui: &SettingsApp) {
+        if let Some(c) = self
+            .app
+            .settings_info(proto::INFO_CLOCK)
+            .ok()
+            .and_then(|b| Clock::decode(&b))
         {
             let s = ui.global::<SetState>();
             s.set_zone(c.zone.into());
             s.set_synced(c.synced.into());
-        }
-        if page == Page::Root && ui.global::<SetState>().get_searching() && every(2) {
-            self.search(&ui);
-        }
-        if let Some(text) = self.sound.changed() {
-            ui.global::<SetState>().set_sound_feedback(text.into());
-        }
-    }
-
-    /// The root's search results for the last query, values as they are now (again each tick while searching).
-    fn search(&self, ui: &SettingsApp) {
-        let s = ui.global::<SetState>();
-        let query = self.query.borrow();
-        let hits: Vec<SearchHit> = rows::search_with(&query, |r| live_value(&s, r.id))
-            .into_iter()
-            .map(|r| {
-                let m = split_match(r.title, &query);
-                SearchHit {
-                    id: r.id.into(),
-                    title: r.title.into(),
-                    pre: m.pre.into(),
-                    mark: m.mark.into(),
-                    post: m.post.into(),
-                    gap_before: m.gap_before,
-                    gap_after: m.gap_after,
-                    path: if r.on == Page::Root {
-                        "Settings"
-                    } else {
-                        r.on.title()
-                    }
-                    .into(),
-                    value: live_value(&s, r.id).into(),
-                    page: i32::from(r.opens.id()),
-                }
-            })
-            .collect();
-        if *self.hits.borrow() != hits {
-            s.set_results(ModelRc::new(VecModel::from(hits.clone())));
-            *self.hits.borrow_mut() = hits;
         }
     }
 
@@ -540,11 +540,7 @@ impl Ctx {
 
     /// A page opened from this app's own pages: Back comes back here.
     fn go(&self, page: Page) {
-        let here = self.page.get();
-        if here != page {
-            self.trail.borrow_mut().push(here);
-        }
-        self.open(page);
+        row_model::go(self, page);
     }
 
     fn battery(&self, ui: &SettingsApp) {
@@ -571,25 +567,6 @@ impl Ctx {
         s.set_battery_storage(storage.into());
         let bars = history.map(|h| h.bars).unwrap_or_default();
         s.set_battery_history(ModelRc::new(VecModel::from(bars)));
-    }
-
-    /// Battery usage (SE3a): the shell's `INFO_BATTERY_USAGE` as text; "No data yet" before the first reading or when
-    /// the shell can't say (an older shell, a damaged record).
-    fn battery_usage(&self, ui: &SettingsApp) {
-        let s = ui.global::<SetState>();
-        let usage = self
-            .app
-            .settings_info(proto::INFO_BATTERY_USAGE)
-            .ok()
-            .and_then(|b| neoui_proto::settings_app::info::decode_usage(&b))
-            .flatten();
-        s.set_usage_known(usage.is_some());
-        if let Some(t) = usage.map(|u| u.text()) {
-            s.set_usage_title(t.title.into());
-            s.set_usage_levels(t.levels.into());
-            s.set_usage_on_battery(t.on_battery.into());
-            s.set_usage_gaps(t.gaps.into());
-        }
     }
 
     /// What a page asked for (`SetState.act`; the list is in settings-ui's state.slint).
@@ -729,30 +706,9 @@ impl Ctx {
                 dprintln!("settings: root grid {} ({:?})", value, r);
                 store::load(app, &ui);
             }
-            "search" => {
-                self.query.replace(String::from(value));
-                self.search(&ui);
-            }
-            // a search result: its page opens with the row selected, and search closes
-            "found" => {
-                if let Some(r) = rows::ROWS.iter().find(|r| r.id == value) {
-                    s.set_searching(false);
-                    s.set_query(SharedString::new());
-                    self.query.borrow_mut().clear();
-                    self.hits.borrow_mut().clear();
-                    s.set_results(ModelRc::new(VecModel::from(Vec::<SearchHit>::new())));
-                    if r.opens == Page::Profile {
-                        // search shows the active profile's values: its page opens on that profile
-                        let mut p = s.get_profile_current();
-                        p.id = -1;
-                        s.set_profile_current(p);
-                    }
-                    self.go(r.opens);
-                    if r.on != Page::Root {
-                        s.set_found(r.id.into());
-                    }
-                }
-            }
+            "search" => row_model::search(self, &ui, value),
+            // a search result: its page opens on its instance, with the row selected; Back returns to the results
+            "found" => row_model::found(self, &ui, value),
             // Dev tools on one of its pages ("console", "tools")
             "devtools" => {
                 let r = app.open("devtools", 0, value);
@@ -778,6 +734,9 @@ impl Ctx {
                 if let Ok(id) = value.parse::<u8>() {
                     let _ = self.profile(sound_profile::Command::Choose(id));
                 }
+            }
+            "profile-feedback" => {
+                let _ = profile_audio::feedback_command(&ui, value).map(|c| self.profile(c));
             }
             "profile-set" => {
                 let p = s.get_profile_current();
@@ -813,7 +772,13 @@ impl Ctx {
                     let p = s.get_profile_current();
                     self.sound.preview(t, p.volume.clamp(0, 10) as u8);
                 }
+                profile_audio::show_preview(&self.sound, &ui);
             }
+            // D6: the playing tone's ⏸ / ▶ (set2-ringtone)
+            "tone-add" => tone_import::add(app, &ui),
+            "tone-delete" => tone_import::delete(app, &ui),
+            "tone-rename" => tone_import::rename(app, &ui, value),
+            "tone-pause" => profile_audio::toggle_pause(&self.sound, &ui),
             "profile-add" => {
                 let _ = self.profile(sound_profile::Command::Add(String::from(value.trim())));
             }
@@ -840,17 +805,11 @@ impl Ctx {
             }
             // an app itself (Apps page)
             "storage-recount" => self.storage.recount(),
+            "console" => d2::set_console(app, &ui, value == "1"),
+            "edit-home" => navigation::edit_home(app),
             // a ROM app's page (SE4a)
             "app-detail" => {
-                if let Some(a) = neoui_proto::apps::find(value) {
-                    s.set_app_current(AppRow {
-                        key: a.key.into(),
-                        name: a.name.into(),
-                        old: false,
-                        settings: a.settings.is_some(),
-                    });
-                    s.set_app_running(false);
-                    s.set_app_stoppable(false);
+                if row_model::app_current(&s, value) {
                     self.go(Page::AppDetail);
                 }
             }
@@ -861,6 +820,7 @@ impl Ctx {
             }
             "app-clear" => {
                 if let Some(a) = neoui_proto::apps::find(value)
+                    && !apps_detail::ask_clear(self, a.key, a.name)
                     && !asks::clear_what(a.key).is_empty()
                 {
                     self.ask(asks::clear(a.name, a.key), "Delete", Asked::Clear(a.key));
@@ -897,6 +857,8 @@ impl Ctx {
                     store::write(app, &ui, "radio.bt", "0");
                 }
             }
+            a if a.starts_with("notify-") => notifications::act(self, &ui, a, value),
+            a if a.starts_with("sim-") => self.modem.borrow().sim.act(&ui, a, value),
             // a setting: its key and value
             key if key.contains('.') => {
                 store::write(app, &ui, key, value);
@@ -910,6 +872,7 @@ impl Ctx {
         }
         if self.ui().is_some() {
             self.keyboard();
+            row_model::publish(self);
             let _ = self.describe();
         }
     }

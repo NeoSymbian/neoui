@@ -6,24 +6,31 @@
 export struct WifiNet { name: string, detail: string, bars: int, secured: bool, band: string, signal: string, channel: int, bssid: string }
 // the current link (neoui-proto wifi::LinkView, with the shell's IP rows)
 export struct WifiDetail { label: string, value: string }
-// a search result (set2-search): the row's title, where it is ("Date & time"), its live value, the page it opens
-// a search result: the row, its title split around the match (pre, mark, post; a space before/after the match) for the
-// highlight, the page it is on,
-// its value now, and the page it opens
-export struct SearchHit { id: string, title: string, pre: string, mark: string, post: string, gap-before: bool, gap-after: bool, path: string, value: string, page: int }
+// a search result (set2-search): its token (what a tap sends back: the app maps it to the row and checks it is still
+// there), its title split around the match (pre, mark, post; a space before/after the match) for the highlight, where
+// it is ("Date & time", a profile's name), its value now, and the page it opens (its tile)
+export struct SearchHit { token: int, title: string, pre: string, mark: string, post: string, gap-before: bool, gap-after: bool, path: string, value: string, page: int }
 // a network WIFID remembers (Saved networks): its name, "Connected · Secured" / "Secured · not in range"
 // a city on Time zone (set2-timezone): its name, its offset now ("UTC+04:00"), whether it is the phone's zone
 export struct ZoneRow { name: string, offset: string, current: bool }
 export struct WifiSaved { name: string, detail: string, connected: bool }
 // an app on the Apps page: a ROM app by its screen key, or an old app (old: true) by its id in hex
 // a sound profile (neoui-proto sound_profile): its row's summary and what the profile page edits
-export struct ProfileRow { id: int, name: string, summary: string, ring: bool, volume: int, vibrate: bool, ringtone: int, message-tone: int }
-// a drive on the Storage page (SE3b): "E: Mass memory", "12.4 of 41.8 GB", what it holds, how full (0..1, -1 unknown)
-export struct DriveRow { title: string, used: string, note: string, fill: float }
+export struct ProfileRow { id: int, name: string, summary: string, ring: bool, volume: int, vibrate: bool, ringtone: int, message-tone: int, keypad: bool, touch: bool, tone-name: string }
+// D6: a sound of the user's (sound_profile::YourTone): its tone id (4..=15) and name
+export struct YourTone { id: int, name: string }
+// a drive on the Storage page (SE3b): its letter ("E"; its identity, D1), "E: Mass memory", "12.4 of 41.8 GB", what it
+// holds, how full (0..1, -1 unknown)
+export struct DriveRow { letter: string, title: string, used: string, note: string, fill: float }
 // a part of the Storage bar or a kind: its name, size text, and for a bar part where it starts and its share (0..1)
 export struct PartRow { name: string, size: string, start: float, share: float }
 export struct AppRow { key: string, name: string, old: bool, settings: bool }
-export struct WifiLink { shown: bool, connected: bool, name: string, subtitle: string, bars: int, band: string, details: [WifiDetail], sign-in: bool }
+// TP4: an app on Notifications (its policy key, caption, line, its notifications allowed) and a channel of an app
+// (its id, name, description, effective importance's name and number 0 off..4, whether it is the General row)
+export struct NotifyAppRow { key: string, name: string, summary: string, allowed: bool }
+export struct ChannelRow { owner: string, id: int, name: string, description: string, value: string, level: int, general: bool }
+// bssid: the access point ("02:00:00:00:00:01"; the details' identity, D1)
+export struct WifiLink { shown: bool, connected: bool, bssid: string, name: string, subtitle: string, bars: int, band: string, details: [WifiDetail], sign-in: bool }
 
 export global SetState {
     // the page (neoui-proto settings_app::Page ids: 0 root, 1 Wi-Fi, 2 Mobile, 3 Bluetooth, 4 Connectivity, 5 Display,
@@ -37,8 +44,16 @@ export global SetState {
     in-out property <bool> searching;
     in property <[SearchHit]> results;
     in-out property <string> query;
-    // the row a search result opened (settings_app::rows id): it shows selected until the page changes
+    // the row a search result opened (row_model::RowKey::alias: "display.timeout", "sounds.p2", "storage.drive.E"): it
+    // shows selected until the page changes
     in property <string> found;
+
+    // D1 — row catalogue, projected values and navigation (neoui-proto settings_app::row_model, settings-ui row_model):
+    // the root list's values in rows::ROOT_LIST order (root row i shows summaries[i]; the grid reads them out), the
+    // result Back restored (its token, shown selected; -1 none), and the results' scroll, kept while a hit is open
+    in property <[string]> summaries;
+    in property <int> search-selected: -1;
+    in-out property <length> search-scroll;
 
     // the settings the pages show, as stored (the app reloads them on AppEvent::Settings)
     in-out property <bool> wifi;
@@ -123,6 +138,14 @@ export global SetState {
     in property <bool> app-running;
     in property <bool> app-stoppable;
     in property <string> app-clear;
+    // D4: INFO 8 (symbian/apps/settings/src/apps_detail.rs). Each listed app's subtitle in `apps`' order ("ROM · 2.4 MB
+    // data on C:"; "" = the shell can't say: the plain one); the app page's identity line ("NEOWEB.EXE · Servo 0.8.0";
+    // "" = "In the phone's ROM") and its Storage used row (shown when the shell measures apps: subtitle and value)
+    in property <[string]> app-subs;
+    in property <string> app-identity;
+    in property <bool> app-size-shown;
+    in property <string> app-size-sub;
+    in property <string> app-size;
 
     // Sounds & profiles (SE2a): every profile, the active one, the one a sheet or the profile page is about, and the
     // name typed for Add / Rename
@@ -157,9 +180,16 @@ export global SetState {
     in-out property <bool> show-percent: true;
     in property <bool> usage-known;
     in property <string> usage-title;
-    in property <string> usage-levels;
     in property <string> usage-on-battery;
     in property <string> usage-gaps;
+    // D5: the charge cycle (INFO 9; INFO 5 on an older shell) fills the usage-* texts above, the levels at its ends
+    // ("100%", "72%"), its length ("9 h 40 min") and the screen-on time ("2 h 14 min since charged"; "" = not read)
+    in property <string> usage-from;
+    in property <string> usage-to;
+    in property <string> usage-span;
+    in property <string> screen-on;
+    // the checkpoint can't be read or written ("" = it saves)
+    in property <string> usage-warning;
     // SE3b: Storage. The drives at once; the scan's parts (Apps, Files, Other, Free: sizes and their bar), the kinds,
     // its state ("Counting… 120 folders", "Last counted 06:50") and the folders it couldn't read
     in property <[DriveRow]> drives;
@@ -170,10 +200,102 @@ export global SetState {
     in property <string> storage-status;
     in property <string> storage-unreadable;
     in property <string> storage-free;
+    // D3: C:'s own Apps, Files and Other from its last whole count (shares of its size); empty: the plain used bar
+    in property <[PartRow]> storage-c-parts;
+    // D3: a drive's kept count is partial (folders it couldn't read): the by-kind readings say so
+    in property <bool> storage-partial;
 
     // About phone: the kernel's, the ROM's and neoui's build lines; Sounds: the test's progress
     in property <[string]> build;
     in property <string> sound-feedback;
+
+    // D2: the kernel console drawn over the screen (HAL 0x4e03, as read back: console-read once asked, console-ok when
+    // the kernel answered; no row otherwise), and the booted A/B slot ("a", "b"; "" = no reading, no row)
+    in property <bool> console-read;
+    in property <bool> console-ok;
+    in-out property <bool> console-shown;
+    in property <string> slot;
+
+    // D7: home's wallpaper (display.wallpaper, a colour's name: @neoui components/wallpaper.slint) and the text size
+    // (display.font_size 0..3) with the sizes' names and scales (choices::FONT_SIZES)
+    in property <string> wallpaper: "night";
+    in property <string> wallpaper-name: "Night";
+    in property <int> font-size: 1;
+    in property <[string]> font-sizes;
+    in property <[string]> font-scales;
+
+    // D8: the clipboard toast (privacy.clip_notice)
+    in-out property <bool> clip-notice: true;
+
+    // D6: Messages' alert setting as MODEMD keeps it (modem-ipc sms::ALERT_*, -1 = MODEMD couldn't say) and what a new
+    // message does with the profile page's profile (sound_profile::Profile::message_summary)
+    in property <int> sms-alert: -1;
+    in property <string> message-summary;
+    // the tone a preview plays (-1: none), whether it is paused, "Playing · 0:01" (NeoAudio INFO's frames)
+    in property <int> preview-tone: -1;
+    in property <bool> preview-paused;
+    in property <string> preview-text;
+    // Your sounds (SE2c-1): the user's, whether all twelve ids are taken, the one its sheet is about, and the last
+    // import's or delete's outcome ("Added Morning bell.", "Use a 16-bit PCM WAV")
+    in property <[YourTone]> your-tones;
+    in property <bool> your-tones-full;
+    in-out property <YourTone> your-current;
+    in property <string> import-note;
+
+    // TP4 (notifications.rs): the shell's policy (INFO 7) — false: this shell doesn't answer it; Do not disturb
+    // (notify.dnd) and what it holds, the root's line, the swipe on home (shell.swipehome), the banner's seconds
+    // (notify.bannert) and their choices; the apps, every app's channels, the app its page is about and its switches
+    // (n.<app>: allow, banners, sound, badge); whether its sound is the shell's (else MODEMD or Clock ring it); the
+    // channel the importance sheet is for, and the importances' names and descriptions
+    in property <bool> notify-ok: true;
+    in-out property <bool> dnd;
+    in property <string> dnd-text;
+    in property <string> notify-root;
+    in-out property <bool> swipe-home: true;
+    in property <int> banner-time: 5;
+    in property <string> banner-text: "5 s";
+    in property <[string]> banner-times;
+    in property <int> banner-index;
+    in property <[NotifyAppRow]> notify-apps;
+    in property <[ChannelRow]> channels;
+    in-out property <NotifyAppRow> notify-current;
+    in-out property <bool> notify-allow: true;
+    in-out property <bool> notify-banner: true;
+    in-out property <bool> notify-sound: true;
+    in-out property <bool> notify-badge: true;
+    in property <bool> notify-sound-ours: true;
+    in property <string> notify-sound-text;
+    in-out property <ChannelRow> channel-current;
+    in property <[string]> importances: ["Urgent", "Default", "Low", "Silent", "Off"];
+    in property <[string]> importance-hints: ["Sound, pop-up banner", "Sound, status bar glyph, in the shade", "No sound, no glyph, in the shade", "Folded under Silent at the bottom", "Nothing from this channel"];
+
+    // D10: Home & navigation: swipe down closes apps (nav.swipe_close), Open apps' columns (nav.switcher_cols, 2..3)
+    // and their names, home's style (home.style: 0 Pages, 1 Lanes) with its names and lines; "edit-home" opens the
+    // shell's home editor (SETTINGS_ACTION 9), sheets "nav-cols" and "home-style"
+    in-out property <bool> swipe-close;
+    in property <int> switcher-cols: 2;
+    in property <[string]> switcher-col-names: ["2", "3"];
+    in property <int> home-style;
+    in property <[string]> home-styles: ["Pages", "Lanes"];
+    in property <[string]> home-style-hints;
+    // D11 (sim_lock.rs): the SIM PIN as MODEMD reports it (settings_app::sim_lock's summary and note), Use SIM PIN's
+    // switch (on = asked for at start) and whether it and Change SIM PIN can be used, the card's tries ("" = it doesn't
+    // say), the last request's outcome, a request with the card, the sheet's warning (one try left, a refusal) and the
+    // protection the toggle sheet asks for. sim-old/new/again are the sheets' masked fields: never stored, logged,
+    // searched or sent through act; NEOSET copies and empties them on submit, Back, hide and another page.
+    in property <string> sim-lock-text;
+    in-out property <bool> sim-pin-on;
+    in property <bool> sim-can-toggle;
+    in property <bool> sim-can-change;
+    in property <string> sim-attempts;
+    in property <string> sim-note;
+    in property <string> sim-outcome;
+    in property <bool> sim-busy;
+    in property <string> sim-warning;
+    in property <bool> sim-want-on;
+    in-out property <string> sim-old;
+    in-out property <string> sim-new;
+    in-out property <string> sim-again;
 
     // the open sheet: "" none, "timeout", "date-format", "zone", "pad-strength", "pad-default", "pad-dirs", "pad-a",
     // "pad-b", "wifi-join", "wifi-details"; the network the join sheet is for, and what is typed in it
@@ -189,13 +311,19 @@ export global SetState {
     //   "wifi-saved-forget" + a saved network's row (the app asks to confirm first);
     // - "profile-choose" + an id; "profile-set" + "ring,volume,vibrate" (0/1, 0..10, 0/1) for profile-current;
     //   "profile-tone" + "r,<id>" (ringtone) or "m,<id>" (message tone) for profile-current, previewed;
+    //   "profile-feedback" + "keypad,touch" (0/1, D6) for profile-current;
+    //   "tone-preview" + a tone id (plays it), "tone-pause" (the playing one pauses or plays on, D6);
+    //   "tone-add" (Files' picker for a WAV), "tone-rename" + a name, "tone-delete" (your-current, D6);
     //   "profile-add" / "profile-rename" (new-name); "profile-delete" (the app asks to confirm first);
     // - "app-open" + a ROM app's key; "old-open" + an old app's id (hex); "app" + an app's key (its own settings);
     //   "app-detail" + a ROM app's key (its page); "app-stop", "app-clear" for app-current (the app asks first);
     //   "reset" + "network" | "settings" (the app asks first; the phone restarts);
+    // - (D11) "sim-toggle" + "1"/"0" (the switch's wish: the PIN sheet), "sim-change" (its sheet), "sim-submit" (the
+    //   sheet's fields, read by NEOSET), "sim-cancel";
     // - "sound" + "test" | "record"; "keyboard" + an index to turn on or off ("+0"/"-0"); "keyboard-next";
     // - "city-query" + the search text; "pad-reset" (QUERY first); "clip-clear";
     // - "app" + "phone" | "messages" | "devtools" (another app's settings); "devtools" + a page ("console", "tools");
+    // - "console" + "1" | "0" (the kernel console over the screen, D2);
     // - "search" + the query; "root-grid" + "1" | "0".
     callback act(string, string);
 }

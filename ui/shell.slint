@@ -24,16 +24,21 @@ import { QueryDialog, Button, TextField } from "components/controls.slint";
 import { Header } from "components/header.slint";
 import { Toast } from "components/feedback.slint";
 import { Shade, ShadeNote } from "components/shade.slint";
+import { NotificationBanner } from "components/notification-banner.slint";
 export { ShadeNote } from "components/shade.slint";
 export { Apps } from "screens/menu.slint";
+export { HomeModel } from "screens/home-edit.slint";
 import { Keyboard } from "components/keyboard/keyboard.slint";
 import { Alphabets } from "components/keyboard/glyphs.slint";
 export { Layouts } from "components/keyboard/layouts.slint";
 export { Layout } from "components/keyboard/types.slint";
 export { KeyboardFocus } from "components/keyboard/focus.slint";
+// D6: the shell's own kit controls that acted (vibrate on touch)
+export { Kit } from "components/layers.slint";
 import { KeyboardFocus } from "components/keyboard/focus.slint";
 import { PowerMenu, PowerProfile } from "components/powermenu.slint";
 import { HomeScreen } from "screens/home.slint";
+import { HomeModel } from "screens/home-edit.slint";
 import { MenuScreen } from "screens/menu.slint";
 import { OldAppsScreen, OldApp } from "screens/oldapps.slint";
 import { CameraScreen } from "screens/camera.slint";
@@ -100,9 +105,23 @@ export component Shell inherits Window {
     property <length> bottom-h: buttons ? Theme.key-row-h : Theme.band-h;
     // out: the Symbian UI server places app processes' surfaces in this body rectangle (NeoSymbian R6)
     out property <length> body-y: Theme.status-h;
+    // where the toast is (screen pixels) while one shows
+    out property <length> toast-x: toast.x;
+    out property <length> toast-y: toast.y;
+    out property <length> toast-w: toast.width;
+    out property <length> toast-h: toast.height;
+    // (TP4) the banner where it is drawn (0 high while none shows): the UI server puts it back over the app's surface
+    // and keeps the touches in it from the app
+    out property <bool> banner-on: banner-card.visible;
+    out property <length> banner-x: banner-card.x;
+    out property <length> banner-y: banner-card.y;
+    out property <length> banner-w: banner-card.width;
+    out property <length> banner-h: banner-card.height;
     // the home screen's pages, for the UI server's swipe (smooth-ui S2c): which one shows, and the band they fill
     in-out property <int> home-page <=> home.page;
     out property <length> home-strip-h: home.strip-h;
+    // (D10) home's pages (or Lanes' three lanes) side by side
+    out property <int> home-page-count: home.page-count;
     // one rule for the shell's screens and apps (rule 16): Buttons 720 - 25 - 56 = 639, Gestures 720 - 25 - 16 = 679;
     // a mode switch resizes running apps once (AppEvent::Area)
     out property <length> body-h: self.height - Theme.status-h - bottom-h;
@@ -150,9 +169,10 @@ export component Shell inherits Window {
     callback note-dismissed(int);
     callback notes-cleared();
     callback group-toggled(int);
-    in property <bool> app-unread;
     // in: the apps the UI server keeps running, most recent first (R10); out: the switcher's close button
     in property <[string]> running;
+    // (G3) their thumbnails, in the same order (an empty image: none)
+    in property <[image]> thumbs;
     callback close-app(string);
     // Open apps' ⋮ Close all (the resident Phone stays)
     callback close-all();
@@ -174,7 +194,7 @@ export component Shell inherits Window {
     // the current link: the status bar's Wi-Fi icon (the Settings app, NEOSET, shows the rest itself)
     in property <WifiLink> wifi-link;
     // in: the modem (telephony C5, from MODEMD's NeoModem server): signal bars (-1 = no modem), operator, technology,
-    // and whether a call is up (the shade's "return to call"); out: what the SIM prompt and the Retry banner asked
+    // out: what the SIM prompt and the Retry banner asked
     // ("pin", "sim-dismiss", "dial", "retry"). The Phone app (NEOPHONE) draws the calls themselves.
     in property <int> bars: -1;
     in property <string> operator;
@@ -187,13 +207,17 @@ export component Shell inherits Window {
     // and how many apps more
     in property <[int]> status-glyphs;
     in property <int> status-more;
-    in property <bool> in-call;
     in property <bool> phone-pending;
     in property <string> phone-feedback;
+    // missed calls and unread messages (MODEMD, C9): Phone's and Messages' badges while they post none of their own
     in property <int> missed-calls;
-    // unread messages (MODEMD, C9) and the shade's line for the newest ("+374 91 234567: Running late…")
     in property <int> unread-messages;
-    in property <string> unread-line;
+    // (TP4) the heads-up banner: its card, shown (the UI server times it out), a tap on it or an action (as the
+    // shade's note-opened, by the banner's own card); Do not disturb's moon in the status bar
+    in property <ShadeNote> banner;
+    in-out property <bool> banner-shown;
+    callback banner-opened(int);
+    in property <bool> dnd;
     in property <bool> sim-pin-required;
     in property <bool> sim-blocked;
     in property <int> pin-attempts: -1;
@@ -227,6 +251,11 @@ export component Shell inherits Window {
     public function back() {
         if (root.shade-open) {
             root.shade-open = false;
+        } else if (root.screen == "home" && HomeModel.sheet != "") {
+            HomeModel.sheet = "";
+        } else if (root.screen == "home" && HomeModel.editing) {
+            // the home editor's Back is its Done (D10): saved once
+            HomeModel.op("done", 0, 0, 0, 0, "");
         } else if (root.view != "") {
             root.view = "";
         } else if (root.screen == "menu") {
@@ -349,6 +378,11 @@ export component Shell inherits Window {
         Slot {
             active: screen == "home";
             home := HomeScreen {
+                notes: root.notes;
+                running: root.running;
+                thumbs: root.thumbs;
+                note-opened(i) => { root.note-opened(i, 0); }
+                close-app(a) => { root.close-app(a); }
                 open-app(a) => { root.open(a); }
                 open-view(a, v) => { root.open(a); root.view = v; }
             }
@@ -397,6 +431,8 @@ export component Shell inherits Window {
             active: screen == "switcher";
             SwitcherScreen {
                 running: root.running;
+                thumbs: root.thumbs;
+                shown: screen == "switcher";
                 open-app(a) => { root.open(a); }
                 close-app(a) => { root.close-app(a); }
             }
@@ -441,6 +477,7 @@ export component Shell inherits Window {
         vibrate: SystemSettings.vibrate;
         alarm: Now.next-alarm != "";
         battery-saver: SystemSettings.battery-saver;
+        dnd: root.dnd;
         visible: !root.full;
         tapped => {
             root.shade-open = !root.shade-open;
@@ -453,7 +490,7 @@ export component Shell inherits Window {
     // the bottom (rule 06 / D17): Buttons' key row (also for 3 s over a full-screen page after a tap), or the band
     if root.buttons && (!root.full || root.key-row-peek): KeyRow {
         y: root.height - Theme.key-row-h;
-        can-back: root.shade-open || (root.app-front ? root.app-back : root.screen != "home");
+        can-back: root.shade-open || (root.app-front ? root.app-back : root.screen != "home" || HomeModel.editing);
         keyboard: kb.visible;
         back => {
             root.nav-back();
@@ -471,8 +508,10 @@ export component Shell inherits Window {
         y: root.height - Theme.band-h;
     }
 
-    // the app's toast (ipc NOTE), 12 dp above the bottom or the keyboard
-    if root.note-text != "": Toast {
+    // the app's toast (ipc NOTE), 12 dp above the bottom or the keyboard; the UI server copies it back over the app's
+    // surface (`toast-*`), which it composes over this frame
+    toast := Toast {
+        visible: root.note-text != "";
         x: 12 * Theme.dp;
         width: root.width - 24 * Theme.dp;
         y: (kb.visible ? kb.y : root.height - (root.full ? 0 : root.bottom-h)) - self.height - 12 * Theme.dp;
@@ -481,6 +520,20 @@ export component Shell inherits Window {
         acted => {
             root.app-nav("note", 0);
         }
+    }
+
+    // (TP4) an Urgent card's banner under the status bar, over the app; never over the shade or the Power menu
+    banner-card := NotificationBanner {
+        visible: root.banner-shown && !root.shade-open && !root.power-open;
+        x: 8 * Theme.dp;
+        width: root.width - 16 * Theme.dp;
+        y: (root.full ? 0 : Theme.status-h) + 6 * Theme.dp;
+        note: root.banner;
+        opened(a) => {
+            root.banner-shown = false;
+            root.banner-opened(a);
+        }
+        closed => { root.banner-shown = false; }
     }
 
     // the key row stays usable under a dialog: its ← answers the last button (rule 15)
@@ -513,12 +566,6 @@ export component Shell inherits Window {
             }
             root.note-opened(i, a);
         }
-        app-unread: root.app-unread;
-        missed: root.missed-calls;
-        unread: root.unread-messages;
-        unread-line: root.unread-line;
-        active-call: root.in-call;
-        return-call => { root.open("phone"); root.view = "call"; }
         open-view(a, v) => { root.open(a); root.view = v; }
         dismissed => { root.shade-open = false; }
         open-app(a) => { root.open(a); }

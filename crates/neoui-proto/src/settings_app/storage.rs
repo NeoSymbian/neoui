@@ -8,7 +8,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 /// What a file is, by its extension (the families Files' viewers use).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Kind {
     Images = 0,
     Video = 1,
@@ -98,6 +98,8 @@ pub struct Tally {
     pub folders: u32,
     /// Folders that couldn't be listed (access denied, the medium removed): skipped, counted.
     pub unreadable: u32,
+    /// Of those, drive roots: nothing on that drive was counted.
+    pub roots_unread: u32,
     /// Folders not entered: deeper than [`DEPTH_MAX`], or past [`PENDING_MAX`] waiting.
     pub skipped: u32,
     /// The whole walk ran (not cancelled).
@@ -108,6 +110,22 @@ impl Tally {
     #[must_use]
     pub fn files_total(&self) -> u64 {
         self.files.iter().sum()
+    }
+
+    /// `self` and `b` together (C: and E:'s counts for the overview); whole only when both are.
+    #[must_use]
+    pub fn plus(&self, b: &Tally) -> Tally {
+        let mut t = *self;
+        for (f, g) in t.files.iter_mut().zip(b.files) {
+            *f += g;
+        }
+        t.apps += b.apps;
+        t.folders += b.folders;
+        t.unreadable += b.unreadable;
+        t.roots_unread += b.roots_unread;
+        t.skipped += b.skipped;
+        t.done = self.done && b.done;
+        t
     }
 }
 
@@ -145,6 +163,9 @@ pub fn scan(
             }
             let Ok(entries) = list(&dir) else {
                 t.unreadable += 1;
+                if depth == 0 {
+                    t.roots_unread += 1;
+                }
                 progress(&t);
                 continue;
             };
@@ -170,11 +191,99 @@ pub fn scan(
     t
 }
 
+/// How one drive's count ended (D3), so a count never puts files it couldn't see under Other as if it had.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Outcome {
+    /// every folder read, the same mount throughout
+    Complete,
+    /// done, but some folders couldn't be read: shown marked partial only while the drive has no complete count
+    Partial,
+    /// stopped, remounted, gone or its root unreadable: nothing of it is kept
+    Dropped,
+}
+
+impl Tally {
+    /// This count's [`Outcome`]; `remounted`: the drive's mount changed while it was counted.
+    #[must_use]
+    pub fn outcome(&self, remounted: bool) -> Outcome {
+        if !self.done || remounted || self.roots_unread > 0 {
+            Outcome::Dropped
+        } else if self.unreadable > 0 {
+            Outcome::Partial
+        } else {
+            Outcome::Complete
+        }
+    }
+}
+
+/// Whether a drive's new count with outcome `o` replaces the one kept for it (`kept`: `None`, or whether that one
+/// is partial): a complete count always, a partial one only over nothing or another partial one, a dropped one never.
+#[must_use]
+pub fn replaces(kept: Option<bool>, o: Outcome) -> bool {
+    match o {
+        Outcome::Complete => true,
+        Outcome::Partial => kept.is_none_or(|partial| partial),
+        Outcome::Dropped => false,
+    }
+}
+
+/// The drive rows saw each counted drive's volume ID (`None`: absent or unreadable) as `new`, last time as `old`:
+/// where it changed (another medium, a format, the drive came or went) that drive's mount generation moves on, so a
+/// count of the old volume can't land, and its kept count (the old volume's) goes. Returns whether any changed: then
+/// the changed volume is due a recount.
+pub fn volumes_changed<T>(
+    old: &[Option<u32>],
+    new: &[Option<u32>],
+    mounts: &mut [u32],
+    kept: &mut [Option<T>],
+) -> bool {
+    let mut any = false;
+    for (k, (o, n)) in old.iter().zip(new).enumerate() {
+        if o != n {
+            mounts[k] = mounts[k].wrapping_add(1);
+            kept[k] = None;
+            any = true;
+        }
+    }
+    any
+}
+
 /// "Other (system and app data)": what the drives use besides the counted files and apps. Never below zero: the
 /// skipped folders, unreadable ones and the file system's cluster slack aren't counted, so the parts can disagree.
 #[must_use]
 pub fn other(used: u64, t: &Tally) -> u64 {
     used.saturating_sub(t.files_total().saturating_add(t.apps))
+}
+
+/// One drive's bar (D3, the C: row of `set2-storage`): Apps, Files and Other bytes that add up to `used` exactly, so
+/// the parts end where the drive's used fill does: counted bytes past `used` (files deleted since the count) are cut,
+/// and Other is the rest.
+#[must_use]
+pub fn drive_parts(used: u64, t: &Tally) -> [u64; 3] {
+    let apps = t.apps.min(used);
+    let files = t.files_total().min(used - apps);
+    [apps, files, used - apps - files]
+}
+
+/// What a drive holds, with its mounted file system (D3): `fs` is `RFs::FileSystemSubType` (`FAT32`, or the name of
+/// a file system without sub types: `Rom`, `Rofs`, `Composite`), empty when unknown. The read-only Z: says what makes
+/// it up instead.
+#[must_use]
+pub fn drive_note(letter: char, fs: &str) -> String {
+    let (_, note) = drive_names(letter);
+    if letter.eq_ignore_ascii_case(&'Z') {
+        return String::from(match fs {
+            "Composite" => "ROFS + core ROM · read-only",
+            "Rom" => "Core ROM · read-only",
+            "Rofs" => "ROFS · read-only",
+            _ => note,
+        });
+    }
+    match (note, fs) {
+        (n, "") => String::from(n),
+        ("", f) => String::from(f),
+        (n, f) => format!("{n} · {f}"),
+    }
 }
 
 /// A drive as the page names it: (name, what it holds), by its letter.
@@ -362,6 +471,118 @@ mod tests {
         assert_eq!(t.skipped, 10);
         assert_eq!(t.folders as usize, 2 + PENDING_MAX);
         assert_eq!(kind_of("budget.TSV"), Kind::Documents);
+    }
+
+    #[test]
+    fn a_drive_bar_ends_at_its_used_bytes() {
+        let t = Tally {
+            files: [100, 0, 50, 0, 0],
+            apps: 300,
+            ..Tally::default()
+        };
+        assert_eq!(drive_parts(1000, &t), [300, 150, 550]);
+        // files deleted since the count: Files is cut, nothing is negative
+        assert_eq!(drive_parts(400, &t), [300, 100, 0]);
+        assert_eq!(drive_parts(200, &t), [200, 0, 0]);
+        // not counted yet: all of it is Other
+        assert_eq!(drive_parts(7, &Tally::default()), [0, 0, 7]);
+        // two drives' counts add up, whole only when both are
+        let c = Tally { done: true, ..t };
+        let both = c.plus(&Tally {
+            apps: 1,
+            folders: 2,
+            ..Tally::default()
+        });
+        assert_eq!(
+            (both.apps, both.folders, both.files_total(), both.done),
+            (301, 2, 150, false)
+        );
+        assert!(c.plus(&c).done);
+    }
+
+    #[test]
+    fn a_drive_keeps_its_last_complete_count() {
+        let f = fs();
+        // an unreadable root (E:\ here) is dropped, not a drive of Other
+        let e = scan(
+            &["E:\\"],
+            |p| f.get(p).cloned().ok_or(-12),
+            || false,
+            |_| {},
+        );
+        assert_eq!((e.roots_unread, e.outcome(false)), (1, Outcome::Dropped));
+        // C:\Data\Gone couldn't be read: partial
+        let c = scan(
+            &["C:\\"],
+            |p| f.get(p).cloned().ok_or(-12),
+            || false,
+            |_| {},
+        );
+        assert_eq!((c.roots_unread, c.outcome(false)), (0, Outcome::Partial));
+        assert_eq!(c.outcome(true), Outcome::Dropped); // remounted while counted
+        let whole = Tally {
+            done: true,
+            ..Tally::default()
+        };
+        assert_eq!(whole.outcome(false), Outcome::Complete);
+        assert_eq!(Tally::default().outcome(false), Outcome::Dropped); // stopped
+        // what replaces the kept count
+        assert!(replaces(Some(false), Outcome::Complete));
+        assert!(!replaces(Some(false), Outcome::Partial));
+        assert!(replaces(Some(true), Outcome::Partial));
+        assert!(replaces(None, Outcome::Partial));
+        assert!(!replaces(None, Outcome::Dropped));
+        assert!(!replaces(Some(true), Outcome::Dropped));
+    }
+
+    #[test]
+    fn another_volume_drops_the_old_ones_count() {
+        let (mut mounts, mut kept) = ([7u32, u32::MAX], [Some("C: count"), Some("E: count")]);
+        // the same volumes: nothing moves
+        assert!(!volumes_changed(
+            &[Some(1), Some(2)],
+            &[Some(1), Some(2)],
+            &mut mounts,
+            &mut kept
+        ));
+        assert_eq!(
+            (mounts, kept),
+            ([7, u32::MAX], [Some("C: count"), Some("E: count")])
+        );
+        // E: another volume: its generation moves on (wrapping), its count goes, C:'s stays
+        assert!(volumes_changed(
+            &[Some(1), Some(2)],
+            &[Some(1), Some(3)],
+            &mut mounts,
+            &mut kept
+        ));
+        assert_eq!((mounts, kept), ([7, 0], [Some("C: count"), None]));
+        // E: gone, then back
+        kept[1] = Some("E: new count");
+        assert!(volumes_changed(
+            &[Some(1), Some(3)],
+            &[Some(1), None],
+            &mut mounts,
+            &mut kept
+        ));
+        assert_eq!((mounts[1], kept[1]), (1, None));
+        assert!(volumes_changed(
+            &[Some(1), None],
+            &[Some(1), Some(3)],
+            &mut mounts,
+            &mut kept
+        ));
+        assert_eq!(mounts[1], 2);
+    }
+
+    #[test]
+    fn notes_name_the_file_system() {
+        assert_eq!(drive_note('E', "FAT32"), "Media and documents · FAT32");
+        assert_eq!(drive_note('C', ""), "Settings, installed apps, app data");
+        assert_eq!(drive_note('Q', "FAT16"), "FAT16");
+        assert_eq!(drive_note('Z', "Composite"), "ROFS + core ROM · read-only");
+        assert_eq!(drive_note('z', "Rom"), "Core ROM · read-only");
+        assert_eq!(drive_note('Z', ""), "Read-only");
     }
 
     #[test]

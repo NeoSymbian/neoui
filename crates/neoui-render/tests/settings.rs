@@ -50,4 +50,18 @@ fn settings_binding() {
     common::frame(&mut r, &mut buf, w, "shade");
     assert_eq!(r.take_setting_edits(), [("radio.wifi", Value::Bool(true))]);
     assert_eq!(r.setting("radio.wifi"), Some(Value::Bool(true)));
+
+    // D8: the toast's place, which the UI server copies back over the app's surface: on screen, above the bottom
+    assert_eq!(r.toast_rect(), None);
+    let note = neoui_render::Note {
+        text: "Browser read the clipboard".into(),
+        action: String::new(),
+    };
+    r.set_note(Some(&note));
+    common::frame(&mut r, &mut buf, w, "home");
+    let t = r.toast_rect().expect("a toast shows");
+    assert!(t.x > 0 && t.y > 0 && t.w > 0 && t.h > 0, "{t:?}");
+    assert!(t.x as u32 + t.w <= w && t.y as u32 + t.h <= h, "{t:?}");
+    r.set_note(None);
+    assert_eq!(r.toast_rect(), None);
 }

@@ -4,7 +4,8 @@
 //! descriptor pointers in `Phone`.
 //! The Phone app (NEOPHONE, NeoSymbian/phone) draws the dialer, Recents, Contacts and the calls, and talks to MODEMD
 //! itself. The shell keeps what is the system's: the status bar's network, the SIM prompt, the "Modem unavailable"
-//! banner, the shade's missed calls and "return to call", bringing the app up on its call page when a call comes,
+//! banner, Phone's and Messages' badges while they post none (their shade cards are their own, TP2b), bringing the
+//! app up on its call page when a call comes,
 //! the screen (wake on ring, on during a call), the volume keys in a call, the radio and ring settings, the network
 //! time.
 
@@ -122,12 +123,12 @@ pub struct Phone {
     rang: bool,
     /// the SIM state whose PIN/blocked prompt the user put away ("Not now", or an emergency call)
     sim_dismissed: Option<u8>,
-    /// the call log as MODEMD last sent it (for the shade's missed calls) and its revision
+    /// the call log as MODEMD last sent it (for Phone's badge of missed calls) and its revision
     log: Vec<LogEntry>,
     log_revision: Option<u32>,
     /// (modem failed, new missed calls) as last shown
     availability: Option<(bool, u32)>,
-    /// the SMS revision the shade's unread line was read at (C9)
+    /// the SMS revision the unread count was shown at (C9)
     sms_revision: Option<u32>,
 }
 
@@ -213,11 +214,11 @@ impl Phone {
         };
         // (SE2b) the profile's tones, sent with modem_ipc::tone::PRESENT so MODEMD takes them
         let tones = (
-            settings.get(keys::SOUND_RINGTONE).unwrap_or(0).clamp(0, 3) as u8,
+            settings.get(keys::SOUND_RINGTONE).unwrap_or(0).clamp(0, 15) as u8,
             settings
                 .get(keys::SOUND_MESSAGE_TONE)
                 .unwrap_or(0)
-                .clamp(0, 3) as u8,
+                .clamp(0, 15) as u8,
         );
         let desired = (status.generation, airplane, ring, tones);
         if self.preferences == Some(desired) {
@@ -225,16 +226,29 @@ impl Phone {
         }
         // the ring first: entering or leaving Offline (a sound profile) changes both, and MODEMD must never have the
         // radio back with the old profile's ring (SE2a)
-        let ring_result = self.session.as_ref().map_or(-18, |session| {
-            let mut args = TIpcArgs::new();
-            args.int(0, i32::from(ring.volume));
-            args.int(1, i32::from(ring.silent));
-            args.int(2, i32::from(ring.vibrate));
-            args.int(3, modem_ipc::tone::pack(tones.0, tones.1));
-            session
-                .send_receive(op::RING_SETTINGS, &args)
-                .unwrap_or_else(|e| e)
-        });
+        let send = |tones: (u8, u8)| {
+            self.session.as_ref().map_or(-18, |session| {
+                let mut args = TIpcArgs::new();
+                args.int(0, i32::from(ring.volume));
+                args.int(1, i32::from(ring.silent));
+                args.int(2, i32::from(ring.vibrate));
+                args.int(3, modem_ipc::tone::pack(tones.0, tones.1));
+                session
+                    .send_receive(op::RING_SETTINGS, &args)
+                    .unwrap_or_else(|e| e)
+            })
+        };
+        let mut ring_result = send(tones);
+        // (D6) a 2.7 MODEMD refuses the user's own sounds (ids 4..=15): the built-in tone in their place until it
+        // restarts (a new generation sends the real ones again)
+        let built_in = |t: u8| if t > 3 { 0 } else { t };
+        if ring_result == -6 && (built_in(tones.0), built_in(tones.1)) != tones {
+            ring_result = send((built_in(tones.0), built_in(tones.1)));
+            dprintln!(
+                "neoui: MODEMD refused your sounds: the built-in tone ({})",
+                ring_result
+            );
+        }
         let radio_result = self.request("airplane", if airplane { "1" } else { "0" });
         dprintln!(
             "neoui: modem ring volume {} silent {} vibrate {} tones {:#04x}, airplane {} ({}, {})",
@@ -270,7 +284,6 @@ impl Phone {
         if self.disconnected {
             self.disconnected = false;
             self.shown = None;
-            ui.set_in_call(false);
             ui.set_network(0, "No service", "");
             ui.set_network_state("No service", false);
             ui.set_phone_feedback(false, "Modem connection lost");
@@ -306,7 +319,6 @@ impl Phone {
         if rings || (starts && !app_in_front) {
             ui.show("phone", "call");
         }
-        ui.set_in_call(live(&s));
         self.volume = None;
         // Registration and RAT survive a failed stop/recovery in MODEMD's cached protocol status. They describe
         // the previous radio session until the currently available modem confirms that it is online again.
@@ -369,17 +381,10 @@ impl Phone {
             self.log_revision = Some(s.log_revision);
         }
         // (no earpiece blanking until there is a proximity sensor: the screen is main's screen.rs alone)
-        // unread messages (C9): the envelope and the shade's line for the newest one
+        // unread messages (C9): Messages' badge while it posts none (its cards are its own since TP2b)
         if self.sms_revision != Some(s.sms_revision) {
-            let line = if s.sms_unread > 0 {
-                self.newest_unread()
-            } else {
-                Some(alloc::string::String::new())
-            };
-            if let Some(line) = line {
-                self.sms_revision = Some(s.sms_revision);
-                ui.set_unread_messages(u32::from(s.sms_unread), &line);
-            }
+            self.sms_revision = Some(s.sms_revision);
+            ui.set_unread_messages(u32::from(s.sms_unread));
         }
         self.shown = Some(s);
     }
@@ -423,37 +428,6 @@ impl Phone {
             }
             _ => {}
         }
-    }
-
-    /// "+374 91 234567: Running late…" for the newest unread message; `None` when it couldn't be read.
-    fn newest_unread(&mut self) -> Option<alloc::string::String> {
-        if self.session.is_none() {
-            self.session = connect().ok();
-        }
-        let session = self.session.as_ref()?;
-        let mut bytes = alloc::vec![0u8; modem_ipc::SmsEntry::HEAD + 2 + modem_ipc::sms::MAX_TEXT];
-        let mut d = TPtr8::new(&mut bytes);
-        let mut args = TIpcArgs::new();
-        args.des8(0, &mut d);
-        args.int(1, 0);
-        args.int(2, modem_ipc::sms::READ_NEWEST_UNREAD);
-        if session
-            .send_receive(op::SMS_READ, &args)
-            .unwrap_or_else(|e| e)
-            < 0
-        {
-            return None;
-        }
-        let n = d.len();
-        let Some((e, text, _)) = modem_ipc::SmsEntry::read(&bytes[..n]) else {
-            return Some(alloc::string::String::new());
-        };
-        let line: alloc::string::String = text
-            .chars()
-            .map(|c| if c.is_control() { ' ' } else { c })
-            .take(60)
-            .collect();
-        Some(format!("{}: {line}", e.number.as_str()))
     }
 
     /// MODEMD's call log (C8); false when it couldn't be read.

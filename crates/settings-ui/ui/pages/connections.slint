@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Connectivity / Airplane mode (set2-airplane), Mobile network (set2-mobile) and Bluetooth (set2-bluetooth). Values
-// are what MODEMD reports: no "4G" or data usage it doesn't measure (D4).
+// are what MODEMD reports: no "4G" or data usage it doesn't measure (D4). Rows whose stage hasn't landed (D13, D14)
+// say "Not yet" and do nothing.
 import { Theme, NeoList, SectionHeader, ListRow } from "@neoui/kit.slint";
 import { Note } from "../parts.slint";
 import { SetState } from "../state.slint";
@@ -82,6 +83,16 @@ export component MobilePage inherits NeoList {
             icon: @image-url("@neoui/icons/sys/signal.svg");
         }
 
+        // D11: the SIM PIN as MODEMD reports it
+        ListRow {
+            value-bright: true;
+            title: "SIM card lock";
+            checked: SetState.found == "mobile.sim_lock";
+            subtitle: SetState.sim-lock-text;
+            chevron: true;
+            clicked => { SetState.act("open", "30"); }
+        }
+
         SectionHeader { text: "Data"; }
         ListRow {
             value-bright: true;
@@ -93,10 +104,41 @@ export component MobilePage inherits NeoList {
             has-switch: true;
             switch-on <=> SetState.mobile-data;
             switch-toggled(v) => { SetState.act("radio.data", v ? "1" : "0"); }
-            divider: false;
         }
 
-        Note { text: "Network mode, roaming, access point names and data usage come with mobile data (C10)."; }
+        // D13: these need the data bearer (C10); drawn, but they do nothing yet
+        ListRow {
+            value-bright: true;
+            title: "Network mode";
+            checked: SetState.found == "mobile.mode";
+            subtitle: "Not yet (D13)";
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/signal.svg");
+        }
+
+        ListRow {
+            value-bright: true;
+            title: "Roaming";
+            checked: SetState.found == "mobile.roaming";
+            subtitle: "Not yet (D13)";
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/world.svg");
+        }
+
+        ListRow {
+            value-bright: true;
+            title: "Access point names";
+            checked: SetState.found == "mobile.apn";
+            subtitle: "Not yet (D13)";
+        }
+
+        ListRow {
+            value-bright: true;
+            title: "Data usage";
+            checked: SetState.found == "mobile.usage";
+            subtitle: "Not yet (D13)";
+            divider: false;
+        }
     }
 }
 
@@ -113,6 +155,21 @@ export component BluetoothPage inherits NeoList {
             has-switch: true;
             switch-on <=> SetState.bluetooth;
             switch-toggled(v) => { SetState.act("radio.bt", v ? "1" : "0"); }
+        }
+
+        // D14: no driver yet
+        ListRow {
+            value-bright: true;
+            title: "Visible to nearby devices";
+            checked: SetState.found == "bt.visible";
+            subtitle: "Not yet (D14)";
+        }
+
+        ListRow {
+            value-bright: true;
+            title: "Paired devices";
+            checked: SetState.found == "bt.paired";
+            subtitle: "Not yet (D14)";
             divider: false;
         }
 

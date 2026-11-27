@@ -14,6 +14,7 @@ use e32::{dprintln, time};
 use modem_ipc::{Status, op};
 use neoapp::{hal, sys};
 use neoui_proto::devtools::device::{Device, KernelDevice, Probe, State, parse_kernel_list};
+use neoui_proto::devtools::exports::Export;
 use neoui_proto::devtools::stats::format_bytes;
 
 /// KErrNotSupported: the kernel or board has no such function.
@@ -863,11 +864,25 @@ pub fn save_logs(build: &[String]) -> String {
                 continue;
             }
             let path = format!("{dir}{name}-{stamp}.txt");
-            let file = File::replace(&fs, &path, e32::fs::mode::WRITE)?;
+            // a new file only: an export already there (the same ms) is never overwritten
+            let file = File::create(&fs, &path, e32::fs::mode::WRITE)?;
             let mut head = build.join("\n");
             head.push_str("\n\n");
             file.write(head.as_bytes())?;
             file.write(&bytes)?;
+            file.flush()?;
+            // D4: Settings counts and clears only the exports in this list
+            let (len, digest) = crate::app_data::digest_of(&[head.as_bytes(), &bytes]);
+            if let Err(e) = crate::app_data::track(
+                &fs,
+                Export {
+                    path: path.clone(),
+                    len,
+                    digest,
+                },
+            ) {
+                dprintln!("devtools: {} not listed ({})", path, e);
+            }
             names.push(path);
         }
         Ok(names.join(", "))

@@ -59,6 +59,18 @@ export component DisplayPage inherits NeoList {
             switch-toggled(v) => { SetState.act("display.dark", v ? "1" : "0"); }
         }
 
+        // D7: the text size's page
+        ListRow {
+            value-bright: true;
+            title: "Font size";
+            checked: SetState.found == "display.font_size";
+            value: SetState.font-sizes.length > SetState.font-size ? SetState.font-sizes[SetState.font-size] : "";
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/text_size.svg");
+            chevron: true;
+            clicked => { SetState.act("open", "26"); }
+        }
+
         ListRow {
 
             value-bright: true;
@@ -68,8 +80,20 @@ export component DisplayPage inherits NeoList {
             has-icon: true;
             icon: @image-url("@neoui/icons/sys/stopwatch.svg");
             chevron: true;
-            divider: false;
             clicked => { SetState.sheet = "timeout"; }
+        }
+
+        // D7: home's wallpaper (the colours' page)
+        ListRow {
+            value-bright: true;
+            title: "Wallpaper";
+            checked: SetState.found == "display.wallpaper";
+            value: SetState.wallpaper-name;
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/image.svg");
+            chevron: true;
+            divider: false;
+            clicked => { SetState.act("open", "25"); }
         }
     }
 }
@@ -94,7 +118,51 @@ export component NavigationPage inherits NeoList {
                 clicked => { SetState.act("nav.mode", i); }
             }
         }
-        Note { text: "The top edge opens the shade in every mode. Switching may resize open apps once."; }
+
+        // D10: the gesture rows (set2-navigation) and the shell's home editor
+        SectionHeader { text: "Gestures"; }
+        ListRow {
+            value-bright: true;
+            title: "Swipe down closes apps";
+            checked: SetState.found == "nav.swipe_close";
+            subtitle: SetState.nav-mode == 0 ? "Gestures and N9 gestures only" : "Top edge on an app";
+            has-switch: true;
+            switch-on <=> SetState.swipe-close;
+            switch-toggled(v) => { SetState.act("nav.swipe_close", v ? "1" : "0"); }
+        }
+
+        ListRow {
+            value-bright: true;
+            title: "Open apps columns";
+            checked: SetState.found == "nav.switcher_cols";
+            value: SetState.switcher-cols;
+            chevron: true;
+            clicked => { SetState.sheet = "nav-cols"; }
+        }
+
+        ListRow {
+            value-bright: true;
+            title: "Home style";
+            checked: SetState.found == "home.style";
+            value: SetState.home-styles.length > SetState.home-style ? SetState.home-styles[SetState.home-style] : "";
+            chevron: true;
+            clicked => { SetState.sheet = "home-style"; }
+        }
+
+        ListRow {
+            title: "Edit home";
+            checked: SetState.found == "home.edit";
+            subtitle: "Or long-press home";
+            chevron: true;
+            divider: false;
+            clicked => { SetState.act("edit-home", ""); }
+        }
+
+        Note {
+            text: SetState.nav-mode != 0 && SetState.swipe-close
+                ? "The top edge over an app closes it; a tap on the status bar opens the shade. Switching may resize open apps once."
+                : "The top edge opens the shade in every mode. Switching may resize open apps once.";
+        }
     }
 }
 
@@ -324,7 +392,7 @@ export component BatteryPage inherits NeoList {
         value-bright: true;
         title: "Battery usage";
         checked: SetState.found == "battery.usage";
-        subtitle: "Level and time on battery";
+        subtitle: SetState.screen-on != "" ? "Screen-on time: " + SetState.screen-on : "Level and time on battery";
         chevron: true;
         divider: false;
         clicked => { SetState.act("open", "19"); }
@@ -332,49 +400,90 @@ export component BatteryPage inherits NeoList {
     }
 }
 
-// Battery usage (set2-battery-usage, SE3a): only what the shell's history holds, the level and the charge state once
-// a minute. No per-app shares (D4): nothing accounts for them yet.
+// Battery usage (set2-battery-usage): the charge cycle (D5, the shell's INFO 9; SE3a's INFO 5 history on an older
+// shell) in the board's card, then its screen-on time. No per-app shares: they need D16's calibrated energy model.
 export component BatteryUsagePage inherits NeoList {
     VerticalLayout {
         alignment: start;
-        SectionHeader { text: SetState.usage-known ? SetState.usage-title : "Battery usage"; }
         VerticalLayout {
-            alignment: start;
-            spacing: 10 * Theme.dp;
-            padding-left: Theme.margin;
-            padding-right: Theme.margin;
-            padding-bottom: Theme.margin;
-            if !SetState.usage-known: Text {
-                text: "No data yet. The history starts with the first readings after the phone starts.";
-                font-size: Theme.font-body;
-                color: Theme.text-secondary;
-                wrap: word-wrap;
-            }
-            if SetState.usage-known: Text {
-                text: SetState.usage-levels;
-                font-size: Theme.font-title;
-                font-weight: 700;
-                color: Theme.text;
-                wrap: word-wrap;
-            }
-            if SetState.usage-known: Text {
-                text: SetState.usage-on-battery;
-                font-size: Theme.font-body;
-                color: Theme.text;
-            }
-            if SetState.usage-known && SetState.usage-gaps != "": Text {
-                text: SetState.usage-gaps;
-                font-size: Theme.font-label;
-                color: Theme.text-secondary;
-                wrap: word-wrap;
-            }
-            Text {
-                text: "Per-app use needs accounting that doesn't exist yet; screen time isn't recorded.";
-                font-size: Theme.font-status;
-                color: Theme.text-dim;
-                wrap: word-wrap;
+            padding-left: 12 * Theme.dp;
+            padding-right: 12 * Theme.dp;
+            padding-top: 12 * Theme.dp;
+            Rectangle {
+                border-radius: 14 * Theme.dp;
+                background: Theme.card;
+                border-width: 1px;
+                border-color: Theme.card-border;
+                VerticalLayout {
+                    padding-left: 14 * Theme.dp;
+                    padding-right: 14 * Theme.dp;
+                    padding-top: 12 * Theme.dp;
+                    padding-bottom: 12 * Theme.dp;
+                    spacing: 4 * Theme.dp;
+                    Text {
+                        text: SetState.usage-known ? SetState.usage-title : "Battery usage";
+                        font-size: Theme.font-status;
+                        color: Theme.text-dim;
+                        wrap: word-wrap;
+                    }
+                    if SetState.usage-known: HorizontalLayout {
+                        alignment: start;
+                        spacing: 4 * Theme.dp;
+                        for t in [SetState.usage-from, "→", SetState.usage-to]: Text {
+                            text: t;
+                            font-size: Theme.font-title;
+                            font-weight: 600;
+                            color: Theme.text;
+                            vertical-alignment: bottom;
+                        }
+                        Text {
+                            text: "· " + SetState.usage-span;
+                            font-size: 15 * Theme.dp;
+                            color: Theme.text-secondary;
+                            vertical-alignment: bottom;
+                        }
+                    }
+                    if SetState.usage-known: Text {
+                        text: SetState.usage-on-battery;
+                        font-size: Theme.font-status;
+                        color: Theme.text-dim;
+                    }
+                    if SetState.usage-known && SetState.usage-gaps != "": Text {
+                        text: SetState.usage-gaps;
+                        font-size: Theme.font-status;
+                        color: Theme.text-dim;
+                        wrap: word-wrap;
+                    }
+                    if SetState.usage-known && SetState.usage-warning != "": Text {
+                        text: SetState.usage-warning;
+                        font-size: Theme.font-status;
+                        color: Theme.warn;
+                        wrap: word-wrap;
+                    }
+                    if !SetState.usage-known: Text {
+                        text: "No data yet. The record starts with the first readings after the phone starts.";
+                        font-size: Theme.font-status;
+                        color: Theme.text-dim;
+                        wrap: word-wrap;
+                    }
+                }
             }
         }
+
+        Rectangle { height: 8 * Theme.dp; }
+        ListRow {
+            title: "Screen-on time";
+            checked: SetState.found == "battery.screen_on";
+            subtitle: SetState.screen-on != "" ? SetState.screen-on : "Not recorded yet";
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/brightness.svg");
+            icon-tint: #ffffff;
+            tile: #e2a92a;
+            divider: false;
+        }
+
+        SectionHeader { text: "By app"; }
+        Note { text: "Not yet (D16): shares per app need a calibrated energy model."; }
     }
 }
 
@@ -402,7 +511,7 @@ export component ProfilePage inherits NeoList {
             icon-tint: Theme.text-secondary;
             title: "Ringtone";
             checked: SetState.found == "profile.tone";
-            value: SetState.ring-tones.length > p.ringtone ? SetState.ring-tones[p.ringtone] : "";
+            value: p.tone-name;
             chevron: true;
             clicked => { SetState.act("open", "23"); }
         }
@@ -492,7 +601,8 @@ export component ProfilePage inherits NeoList {
             switch-on: p.vibrate;
             switch-toggled(v) => { SetState.act("profile-set", (p.ring ? "1" : "0") + "," + p.volume + "," + (v ? "1" : "0")); }
         }
-        if !offline: SectionHeader { text: "Messages"; }
+        if !offline: SectionHeader { text: "Messages & touch"; }
+        // D6: what a new message really does (MODEMD's buzzes and the tone's first 0.8 s); the sheet picks the tone
         if !offline: ListRow {
             value-bright: true;
             has-icon: true;
@@ -500,10 +610,33 @@ export component ProfilePage inherits NeoList {
             icon-tint: Theme.text-secondary;
             title: "Message tone";
             checked: SetState.found == "profile.message";
-            value: SetState.message-tones.length > p.message-tone ? SetState.message-tones[p.message-tone] : "";
+            subtitle: SetState.message-summary;
             chevron: true;
-            divider: false;
             clicked => { SetState.sheet = "message-tone"; }
+        }
+        // D6: dial keys sound out of a call (in-call DTMF doesn't depend on it); a pulse per control a touch works
+        if !offline: ListRow {
+            value-bright: true;
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/keypad.svg");
+            icon-tint: Theme.text-secondary;
+            title: "Keypad tones";
+            checked: SetState.found == "profile.keypad";
+            has-switch: true;
+            switch-on: p.keypad;
+            switch-toggled(v) => { SetState.act("profile-feedback", (v ? "1" : "0") + "," + (p.touch ? "1" : "0")); }
+        }
+        if !offline: ListRow {
+            value-bright: true;
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/vibrate.svg");
+            icon-tint: Theme.text-secondary;
+            title: "Vibrate on touch";
+            checked: SetState.found == "profile.touch";
+            has-switch: true;
+            switch-on: p.touch;
+            divider: false;
+            switch-toggled(v) => { SetState.act("profile-feedback", (p.keypad ? "1" : "0") + "," + (v ? "1" : "0")); }
         }
         if added: HorizontalLayout {
             padding: Theme.margin;
@@ -605,88 +738,267 @@ export component ProfileNameSheet inherits Sheet {
     }
 }
 
-// A profile's ringtone (set2-ringtone): the built-in tones, the chosen one's radio on; a tap chooses it (and plays it
-// once), ▶ only plays it. Leaving the page stops a preview. Your sounds from Files come with SE2c (D6).
+// A ringtone's row (set2-ringtone): its radio, name and line, and ▶ (⏸ while it plays). A tap chooses it, ▶ only
+// plays it; a long press asks for the sound's sheet (the user's sounds: Rename, Delete).
+component ToneRow inherits Rectangle {
+    in property <string> name;
+    in property <string> line;
+    in property <bool> chosen;
+    in property <bool> playable: true;
+    in property <bool> playing;
+    in property <bool> paused;
+    // one of the user's sounds: a ⋮ button (focusable, labelled) opens its sheet as a long press does
+    in property <bool> managed;
+    callback choose;
+    callback play;
+    callback pause;
+    callback long-pressed;
+    property <bool> long-fired;
+    height: Theme.list-row-h + 8 * Theme.dp;
+    background: t.pressed ? Theme.pressed : transparent;
+    accessible-role: radio-button;
+    accessible-checkable: true;
+    accessible-checked: root.chosen;
+    accessible-label: root.name;
+    accessible-action-default => { root.choose(); }
+    t := TouchArea {
+        pointer-event(e) => {
+            if e.kind == PointerEventKind.down {
+                root.long-fired = false;
+            }
+        }
+        clicked => {
+            if !root.long-fired {
+                root.choose();
+            }
+        }
+    }
+
+    Timer {
+        interval: 500ms;
+        running: t.pressed && !root.long-fired;
+        triggered => {
+            root.long-fired = true;
+            root.long-pressed();
+        }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.margin + 4 * Theme.dp;
+        padding-right: Theme.margin;
+        spacing: 16 * Theme.dp;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 22 * Theme.dp;
+                height: self.width;
+                border-radius: self.width / 2;
+                border-width: 2 * Theme.dp;
+                border-color: root.chosen ? Theme.accent : Theme.text-dim;
+                if root.chosen: Rectangle {
+                    width: 10 * Theme.dp;
+                    height: self.width;
+                    border-radius: self.width / 2;
+                    background: Theme.accent;
+                }
+            }
+        }
+
+        // D6: the tone that plays says how far ("Playing · 0:01"); None says what it does
+        VerticalLayout {
+            alignment: center;
+            spacing: 2 * Theme.dp;
+            horizontal-stretch: 1;
+            Text {
+                text: root.name;
+                color: Theme.text;
+                font-size: Theme.font-body;
+                font-weight: 500;
+                overflow: elide;
+            }
+
+            if root.line != "": Text {
+                text: root.line;
+                color: Theme.text-secondary;
+                font-size: Theme.font-label;
+                overflow: elide;
+            }
+        }
+
+        if root.managed: VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 40 * Theme.dp;
+                height: self.width;
+                border-radius: self.width / 2;
+                background: more.pressed ? Theme.pressed : transparent;
+                accessible-role: button;
+                accessible-label: "Rename or delete " + root.name;
+                accessible-action-default => { root.long-pressed(); }
+                Image {
+                    width: 20 * Theme.dp;
+                    height: self.width;
+                    source: @image-url("@neoui/icons/sys/more.svg");
+                    colorize: Theme.text-secondary;
+                }
+                more := TouchArea {
+                    clicked => { root.long-pressed(); }
+                }
+            }
+        }
+
+        if root.playable: VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 40 * Theme.dp;
+                height: self.width;
+                border-radius: self.width / 2;
+                background: play.pressed ? Theme.pressed : root.playing ? Theme.accent : #2a2e35;
+                accessible-role: button;
+                accessible-label: (root.playing && !root.paused ? "Pause " : "Play ") + root.name;
+                accessible-action-default => {
+                    if root.playing {
+                        root.pause();
+                    } else {
+                        root.play();
+                    }
+                }
+                Image {
+                    width: 18 * Theme.dp;
+                    height: self.width;
+                    source: root.playing && !root.paused ? @image-url("@neoui/icons/sys/pause.svg") : @image-url("@neoui/icons/sys/play.svg");
+                    colorize: white;
+                }
+                play := TouchArea {
+                    clicked => {
+                        if root.playing {
+                            root.pause();
+                        } else {
+                            root.play();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Rectangle {
+        x: Theme.margin + 4 * Theme.dp + 22 * Theme.dp + 16 * Theme.dp;
+        y: parent.height - self.height;
+        width: parent.width - self.x;
+        height: max(1px, Theme.dp / 2);
+        background: Theme.hairline;
+    }
+}
+
+// A profile's ringtone (set2-ringtone): the built-in tones and the user's own sounds (SE2c-1), the chosen one's radio
+// on; a tap chooses it (and plays it once), ▶ only plays it, ⏸ pauses it. Leaving the page stops a preview.
 export component RingtonePage inherits NeoList {
     property <ProfileRow> p: SetState.profile-current;
     VerticalLayout {
         alignment: start;
         SectionHeader { text: "Built in"; }
-        for name[i] in SetState.ring-tones: Rectangle {
-            height: Theme.list-row-h + 8 * Theme.dp;
-            background: t.pressed ? Theme.pressed : transparent;
-            accessible-role: radio-button;
-            accessible-checkable: true;
-            accessible-checked: i == p.ringtone;
-            accessible-label: name;
-            accessible-action-default => { SetState.act("profile-tone", "r," + i); }
-            t := TouchArea {
-                clicked => { SetState.act("profile-tone", "r," + i); }
-            }
-
-            HorizontalLayout {
-                padding-left: Theme.margin + 4 * Theme.dp;
-                padding-right: Theme.margin;
-                spacing: 16 * Theme.dp;
-                VerticalLayout {
-                    alignment: center;
-                    Rectangle {
-                        width: 22 * Theme.dp;
-                        height: self.width;
-                        border-radius: self.width / 2;
-                        border-width: 2 * Theme.dp;
-                        border-color: i == p.ringtone ? Theme.accent : Theme.text-dim;
-                        if i == p.ringtone: Rectangle {
-                            width: 10 * Theme.dp;
-                            height: self.width;
-                            border-radius: self.width / 2;
-                            background: Theme.accent;
-                        }
-                    }
-                }
-
-                Text {
-                    text: name;
-                    color: Theme.text;
-                    font-size: Theme.font-body;
-                    font-weight: 500;
-                    vertical-alignment: center;
-                    horizontal-stretch: 1;
-                    overflow: elide;
-                }
-
-                // the last tone is silence (vibrate only): nothing to play
-                if i < SetState.ring-tones.length - 1: VerticalLayout {
-                    alignment: center;
-                    Rectangle {
-                        width: 40 * Theme.dp;
-                        height: self.width;
-                        border-radius: self.width / 2;
-                        background: play.pressed ? Theme.pressed : #2a2e35;
-                        accessible-role: button;
-                        accessible-label: "Play " + name;
-                        accessible-action-default => { SetState.act("tone-preview", i); }
-                        Image {
-                            width: 18 * Theme.dp;
-                            height: self.width;
-                            source: @image-url("@neoui/icons/sys/play.svg");
-                            colorize: white;
-                        }
-                        play := TouchArea {
-                            clicked => { SetState.act("tone-preview", i); }
-                        }
-                    }
-                }
-            }
-
-            Rectangle {
-                x: Theme.margin + 4 * Theme.dp + 22 * Theme.dp + 16 * Theme.dp;
-                y: parent.height - self.height;
-                width: parent.width - self.x;
-                height: max(1px, Theme.dp / 2);
-                background: Theme.hairline;
+        for name[i] in SetState.ring-tones: ToneRow {
+            name: name;
+            line: i == SetState.preview-tone ? SetState.preview-text : i == SetState.ring-tones.length - 1 ? "Vibrate only" : "";
+            chosen: i == p.ringtone;
+            // the last tone is silence (vibrate only): nothing to play
+            playable: i < SetState.ring-tones.length - 1;
+            playing: i == SetState.preview-tone;
+            paused: SetState.preview-paused;
+            choose => { SetState.act("profile-tone", "r," + i); }
+            play => { SetState.act("tone-preview", i); }
+            pause => { SetState.act("tone-pause", ""); }
+        }
+        SectionHeader { text: "Your sounds"; }
+        for t in SetState.your-tones: ToneRow {
+            name: t.name;
+            line: t.id == SetState.preview-tone ? SetState.preview-text : "";
+            chosen: t.id == p.ringtone;
+            playing: t.id == SetState.preview-tone;
+            paused: SetState.preview-paused;
+            choose => { SetState.act("profile-tone", "r," + t.id); }
+            play => { SetState.act("tone-preview", t.id); }
+            pause => { SetState.act("tone-pause", ""); }
+            managed: true;
+            long-pressed => {
+                SetState.your-current = t;
+                SetState.sheet = "your-tone";
             }
         }
-        Note { text: "▶ plays a tone at the profile's ring volume (the media volume applies too); leaving the page stops it. A tap chooses it."; }
+        if !SetState.your-tones-full: ListRow {
+            value-bright: true;
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/folder.svg");
+            icon-tint: Theme.accent;
+            title: "Add from Files";
+            subtitle: "WAV from C: or E:";
+            chevron: true;
+            divider: false;
+            clicked => { SetState.act("tone-add", ""); }
+        }
+        if SetState.import-note != "": Note { text: SetState.import-note; }
+        Note { text: "▶ plays a tone at the profile's ring volume (the media volume applies too); leaving the page stops it. A tap chooses it; on your sounds the More button (or a long press) renames or deletes one. Your sounds ring for 2 s, then again."; }
+    }
+}
+
+// One of the user's sounds (a long press on Ringtone): Rename, or Delete (the profiles using it go back to the
+// built-in ringtone).
+export component YourToneSheet inherits Sheet {
+    title-start: true;
+    in property <length> kb;
+    property <bool> renaming;
+    title: SetState.your-current.name;
+    VerticalLayout {
+        padding-left: 20 * Theme.dp;
+        padding-right: 20 * Theme.dp;
+        spacing: 14 * Theme.dp;
+        if renaming: TextField {
+            placeholder: "Name";
+            autofocus: true;
+            text <=> SetState.new-name;
+        }
+        if !renaming: Text {
+            text: "Deleting it puts the profiles that use it back on the built-in ringtone.";
+            font-size: Theme.font-label;
+            color: Theme.text-secondary;
+            wrap: word-wrap;
+        }
+        HorizontalLayout {
+            spacing: 12 * Theme.dp;
+            Button {
+                text: "Cancel";
+                primary: false;
+                clicked => { root.close(); }
+            }
+
+            if !renaming: Button {
+                text: "Rename";
+                primary: false;
+                clicked => {
+                    SetState.new-name = SetState.your-current.name;
+                    root.renaming = true;
+                }
+            }
+            if !renaming: Button {
+                text: "Delete";
+                clicked => {
+                    SetState.act("tone-delete", "");
+                    root.close();
+                }
+            }
+            if renaming: Button {
+                text: "Rename";
+                enabled: SetState.new-name != "";
+                clicked => {
+                    SetState.act("tone-rename", SetState.new-name);
+                    root.close();
+                }
+            }
+        }
+
+        if root.kb > 0: Rectangle {
+            height: root.kb;
+        }
     }
 }

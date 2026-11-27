@@ -6,7 +6,7 @@ import { Note } from "../parts.slint";
 import { SetState } from "../state.slint";
 
 // an app's icon by its screen key, from the one-colour system set the rows tint (old apps share one)
-global AppIcon {
+export global AppIcon {
     public pure function of(key: string, old: bool) -> image {
         if old { return @image-url("@neoui/icons/sys/keypad.svg"); }
         if key == "clock" { return @image-url("@neoui/icons/sys/clock.svg"); }
@@ -22,17 +22,17 @@ global AppIcon {
     }
 }
 
-// Apps (set2-apps, SE1d): every ROM app and every old app, each opening a sheet (Open, its own settings). Data sizes
-// wait for Storage (SE3, D4).
+// Apps (set2-apps, SE1d): every ROM app and every old app, each opening a sheet (Open, its own settings). D4: each ROM
+// app's subtitle says where it is and what it stores, as last measured.
 export component AppsPage inherits NeoList {
     VerticalLayout {
         alignment: start;
         SectionHeader { text: SetState.apps.length + " apps"; }
-        for a in SetState.apps: ListRow {
+        for a[i] in SetState.apps: ListRow {
             value-bright: true;
             title: a.name;
             checked: SetState.found == "apps." + a.key;
-            subtitle: a.settings ? "ROM · has its own settings" : "ROM";
+            subtitle: SetState.app-subs[i] != "" ? SetState.app-subs[i] : a.settings ? "ROM · has its own settings" : "ROM";
             has-icon: true;
             icon: AppIcon.of(a.key, false);
             chevron: true;
@@ -84,62 +84,74 @@ export component AppsPage inherits NeoList {
     }
 }
 
-// One ROM app (SE4a, the per-app hub; set2-app-browser): its header, then Storage (Clear data) and App (Open, its
-// own settings, Stop). The EXE/version line and sizes come with D4, Notifications with TP4.
+// One ROM app (SE4a, the per-app hub; set2-app-browser): its identity (a tap opens it), then Storage (D4: Storage
+// used, Clear data) and App (its own settings, Stop). Notifications come with TP4.
 export component AppDetailPage inherits NeoList {
     VerticalLayout {
         alignment: start;
-        HorizontalLayout {
-            padding-left: Theme.margin;
-            padding-right: Theme.margin;
-            padding-top: 12 * Theme.dp;
-            padding-bottom: 8 * Theme.dp;
-            spacing: 14 * Theme.dp;
-            Rectangle {
-                width: 40 * Theme.dp;
-                height: self.width;
-                border-radius: 10 * Theme.dp;
-                background: Theme.pill;
-                Glyph {
-                    source: AppIcon.of(SetState.app-current.key, SetState.app-current.old);
-                    size: 24 * Theme.dp;
-                    colorize: Theme.text;
-                }
+        Rectangle {
+            height: 72 * Theme.dp;
+            background: open.pressed ? Theme.pressed : transparent;
+            accessible-role: button;
+            accessible-label: "Open " + SetState.app-current.name;
+            accessible-action-default => { SetState.act("app-open", SetState.app-current.key); }
+            open := TouchArea {
+                clicked => { SetState.act("app-open", SetState.app-current.key); }
             }
-            VerticalLayout {
-                alignment: center;
-                spacing: 2 * Theme.dp;
-                Text {
-                    text: SetState.app-current.name;
-                    color: Theme.text;
-                    font-size: Theme.font-body;
-                    font-weight: 600;
-                    overflow: elide;
+            HorizontalLayout {
+                padding-left: Theme.margin + 4 * Theme.dp;
+                padding-right: Theme.margin;
+                spacing: 12 * Theme.dp;
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 40 * Theme.dp;
+                        height: self.width;
+                        border-radius: 10 * Theme.dp;
+                        background: Theme.pill;
+                        Glyph {
+                            source: AppIcon.of(SetState.app-current.key, SetState.app-current.old);
+                            size: 24 * Theme.dp;
+                            colorize: Theme.text;
+                        }
+                    }
                 }
-                Text {
-                    text: "In the phone's ROM";
-                    color: Theme.text-dim;
-                    font-size: Theme.font-label;
-                    overflow: elide;
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 2 * Theme.dp;
+                    Text {
+                        text: SetState.app-current.name;
+                        color: Theme.text;
+                        font-size: Theme.font-body;
+                        font-weight: 500;
+                        overflow: elide;
+                    }
+                    Text {
+                        text: SetState.app-identity != "" ? SetState.app-identity : "In the phone's ROM";
+                        color: Theme.text-dim;
+                        font-size: Theme.font-label;
+                        overflow: elide;
+                    }
                 }
             }
         }
-        if SetState.app-clear != "": SectionHeader { text: "Storage"; }
+        if SetState.app-size-shown || SetState.app-clear != "": SectionHeader { text: "Storage"; }
+        if SetState.app-size-shown: ListRow {
+            value-bright: true;
+            title: "Storage used";
+            subtitle: SetState.app-size-sub;
+            value: SetState.app-size;
+            divider: SetState.app-clear != "";
+        }
+        // what it deletes is in the question (app-clear)
         if SetState.app-clear != "": ListRow {
             value-bright: true;
             title: "Clear data";
             danger: true;
-            subtitle: SetState.app-clear;
             divider: false;
             clicked => { SetState.act("app-clear", SetState.app-current.key); }
         }
         SectionHeader { text: "App"; }
-        ListRow {
-            value-bright: true;
-            title: "Open";
-            chevron: true;
-            clicked => { SetState.act("app-open", SetState.app-current.key); }
-        }
         if SetState.app-current.settings: ListRow {
             value-bright: true;
             title: "Open app settings";
@@ -160,8 +172,8 @@ export component AppDetailPage inherits NeoList {
     }
 }
 
-// Reset (SE4a, set2-reset): each asks first, naming what goes and what stays; the phone restarts after. Erase C:
-// waits for SE7 (D19).
+// Reset (SE4a, set2-reset): each asks first, naming what goes and what stays; the phone restarts after. Erase C: and
+// the network reset's Bluetooth and APN parts wait for SE7 (D19): the row says so and does nothing.
 export component ResetPage inherits NeoList {
     VerticalLayout {
         alignment: start;
@@ -173,7 +185,7 @@ export component ResetPage inherits NeoList {
             value-bright: true;
             title: "Reset network settings";
             checked: SetState.found == "reset.network";
-            subtitle: "Forgets every saved Wi-Fi network";
+            subtitle: "Wi-Fi networks · BT, APN not yet (D19)";
             has-icon: true;
             icon: @image-url("@neoui/icons/sys/wifi.svg");
             chevron: true;
@@ -189,6 +201,17 @@ export component ResetPage inherits NeoList {
             chevron: true;
             divider: false;
             clicked => { SetState.act("reset", "settings"); }
+        }
+
+        SectionHeader { text: "Erase"; }
+        ListRow {
+            value-bright: true;
+            title: "Erase C:";
+            checked: SetState.found == "reset.erase";
+            subtitle: "Not yet (D19) · needs the recovery step";
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/phone_storage.svg");
+            divider: false;
         }
     }
 }
@@ -369,6 +392,17 @@ export component DeveloperPage inherits NeoList {
             clicked => { SetState.act("devtools", "tools"); }
         }
 
+        // D2: Dev tools can change it too; the app reads it back on open and resume
+        if SetState.console-ok: ListRow {
+            value-bright: true;
+            title: "Console overlay";
+            checked: SetState.found == "dev.console";
+            subtitle: "The kernel console over the screen";
+            has-switch: true;
+            switch-on <=> SetState.console-shown;
+            switch-toggled(v) => { SetState.act("console", v ? "1" : "0"); }
+        }
+
         SectionHeader { text: "Input"; }
         ListRow {
             value-bright: true;
@@ -393,6 +427,29 @@ export component DeveloperPage inherits NeoList {
             divider: false;
             clicked => { SetState.act("app-open", "devtools"); }
         }
+    }
+}
+
+// one of About's 36 dp key/value rows
+component AboutRow inherits HorizontalLayout {
+    in property <string> key;
+    in property <string> value;
+    height: 36 * Theme.dp;
+    padding-left: 4 * Theme.dp;
+    padding-right: 4 * Theme.dp;
+    Text {
+        text: root.key;
+        color: Theme.text-dim;
+        font-size: Theme.font-body;
+        vertical-alignment: center;
+        horizontal-stretch: 1;
+    }
+
+    Text {
+        text: root.value;
+        color: Theme.text;
+        font-size: Theme.font-body;
+        vertical-alignment: center;
     }
 }
 
@@ -433,24 +490,14 @@ export component AboutPage inherits NeoList {
 
             // set2-about: 36 dp key/value rows, the build lines close together
             VerticalLayout {
-                for kv in [["Model", "Pixel 3a XL (bonito)"], ["Kernel", "EKA2, AArch64 ILP32"], ["User side", "Symbian^3 (2010), ARMv8-A"], ["UI", "neoui (Rust + Slint)"]]: HorizontalLayout {
-                    height: 36 * Theme.dp;
-                    padding-left: 4 * Theme.dp;
-                    padding-right: 4 * Theme.dp;
-                    Text {
-                        text: kv[0];
-                        color: Theme.text-dim;
-                        font-size: Theme.font-body;
-                        vertical-alignment: center;
-                        horizontal-stretch: 1;
-                    }
-
-                    Text {
-                        text: kv[1];
-                        color: Theme.text;
-                        font-size: Theme.font-body;
-                        vertical-alignment: center;
-                    }
+                for kv in [["Model", "Pixel 3a XL (bonito)"], ["Kernel", "EKA2, AArch64 ILP32"], ["User side", "Symbian^3 (2010), ARMv8-A"], ["UI", "neoui (Rust + Slint)"]]: AboutRow {
+                    key: kv[0];
+                    value: kv[1];
+                }
+                // D2: the booted A/B slot, only when the kernel read it
+                if SetState.slot != "": AboutRow {
+                    key: "Active slot";
+                    value: SetState.slot;
                 }
             }
 
@@ -480,6 +527,13 @@ export component AboutPage inherits NeoList {
             subtitle: "Apache-2.0 · EPL · GPL-3.0 (Slint) · fonts";
             chevron: true;
             clicked => { SetState.act("open", "16"); }
+        }
+        // D18: no update feed or signed release metadata exists, so it never checks; the slot as D2 read it
+        ListRow {
+            value-bright: true;
+            title: "Check for updates";
+            checked: SetState.found == "about.updates";
+            subtitle: (SetState.slot != "" ? "Slot " + SetState.slot : "Slot unavailable") + " · Update service unavailable";
         }
         ListRow {
             value-bright: true;

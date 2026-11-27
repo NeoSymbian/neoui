@@ -4,6 +4,15 @@
 //! writes a file). The scan runs only while the page is open and the app shown; its last whole result is kept with
 //! the time it finished and the drives' totals then, and Recount runs it again.
 //!
+//! D3: C: and E: are counted one after the other, each with its own tally and the volume's used/free taken when its
+//! count starts, and each drive keeps its own last count: a complete one replaces it, a partial one (folders it
+//! couldn't read) only stands in while the drive has none, and one that was stopped, remounted, gone or whose root
+//! couldn't be read is dropped (`storage::Outcome`). A drive's mount generation guards the publication: a disk change
+//! F32 reports while it is counted (ENotifyDisk: mount, dismount, media change, format), another volume ID, or the
+//! drive rows seeing another volume, moves it on, and a count only lands under the generation it started with.
+//! C:'s row draws its own Apps/Files/Other from its last complete count, the notes name the mounted file system, and
+//! the root summary is C:'s free space.
+//!
 //! Every change to the scan's state happens under one lock, and a scan only writes while its generation is the
 //! current one: stopping or starting another moves the generation on, so a superseded scan can't land over a newer
 //! one, and stopping clears "Counting…" at once.
@@ -11,10 +20,13 @@ use alloc::boxed::Box;
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
+use core::future::Future;
+use core::pin::Pin;
+use core::task::{Context, Poll, Waker};
 use e32::dprintln;
-use e32::fs::Fs;
+use e32::fs::{Fs, NotifyChange, notify};
 use e32::sync::Mutex;
-use neoui_proto::settings_app::storage::{self as st, KINDS, Tally};
+use neoui_proto::settings_app::storage::{self as st, KINDS, Outcome, Tally};
 use settings_ui::{DriveRow, PartRow, SetState, SettingsApp};
 use slint::{ComponentHandle, ModelRc, VecModel};
 
@@ -23,27 +35,69 @@ const PRIORITY_MUCH_LESS: i32 = -20;
 /// `KCurrentThreadHandle`.
 const CURRENT_THREAD: u32 = 0xFFFF_8001;
 
+/// The drives counted, by (letter, drive number): C: and E:, each with its own tally.
+const COUNTED: [(char, usize); 2] = [('C', 2), ('E', 4)];
+
+/// A counted drive's volume: zero when it isn't there.
+#[derive(Clone, Copy, Default)]
+struct Vol {
+    used: u64,
+    free: u64,
+    size: u64,
+    /// `TVolumeInfo::iUniqueID`: another value is another medium or a format.
+    id: u32,
+}
+
+impl Vol {
+    fn of(v: &e32::fs::Volume) -> Self {
+        let size = v.size.max(0) as u64;
+        let free = v.free.clamp(0, v.size.max(0)) as u64;
+        Vol {
+            used: size - free,
+            free,
+            size,
+            id: v.unique_id,
+        }
+    }
+}
+
+/// A drive's kept count, with its volume when the count started.
+#[derive(Clone, Copy)]
+struct Count {
+    tally: Tally,
+    vol: Vol,
+    /// some folders couldn't be read ([`Outcome::Partial`])
+    partial: bool,
+}
+
 #[derive(Default)]
 struct Shared {
     /// The scan allowed to write: bumped by every start and stop.
     generation: u32,
     /// A scan is running (the current generation's).
     running: bool,
-    /// Its running count.
-    tally: Tally,
-    /// The last whole count, with C: and E:'s (used, free) when it was made (kept through a stopped or a new scan).
-    last: Tally,
-    last_totals: (u64, u64),
-    /// When the last whole scan ended (local "HH:MM"); `None` before the first.
+    /// Its running counts, by [`COUNTED`].
+    tally: [Tally; 2],
+    /// Each drive's kept count (kept through a stopped or a new scan); `None`: none yet, or the drive went away.
+    last: [Option<Count>; 2],
+    /// Each drive's mount generation (see the module's notes).
+    mounts: [u32; 2],
+    /// A drive's volume changed since its count (its count was dropped): the next [`Storage::ensure`] counts again.
+    stale: bool,
+    /// When a count was last kept (local "HH:MM"); `None` before the first.
     at: Option<String>,
     /// Why the last scan couldn't count (a file server error), shown until the next one.
     error: Option<i32>,
+    /// The drives the last scan dropped, and why ("changed while it was counted").
+    dropped: Vec<(char, &'static str)>,
 }
 
 pub struct Storage {
     shared: Option<&'static Mutex<Shared>>,
-    /// C: and E: together (used, free), from the drive rows.
-    totals: core::cell::Cell<(u64, u64)>,
+    /// C: and E:'s volumes now, from the drive rows.
+    vols: core::cell::Cell<[Vol; 2]>,
+    /// C: and E:'s volume IDs the drive rows last saw (`None` absent or unreadable); `None` before the first look.
+    ids: core::cell::Cell<Option<[Option<u32>; 2]>>,
     /// The (letter, free) pairs last logged: the free bytes go to the log when they change (a phone run's proof that
     /// nothing was written).
     logged: core::cell::RefCell<Vec<(char, i64)>>,
@@ -55,16 +109,18 @@ impl Storage {
             shared: Mutex::new(Shared::default())
                 .ok()
                 .map(|m| &*Box::leak(Box::new(m))),
-            totals: core::cell::Cell::new((0, 0)),
+            vols: core::cell::Cell::new([Vol::default(); 2]),
+            ids: core::cell::Cell::new(None),
             logged: core::cell::RefCell::new(Vec::new()),
         }
     }
 
-    /// The drive rows and the root's "N free" (E:'s free space, else C:'s); emptied when the file server can't say.
+    /// The drive rows and the root's "C: N free"; emptied when the file server can't say.
     pub fn drives(&self, ui: &SettingsApp) {
         let s = ui.global::<SetState>();
         let Ok(list) = Fs::connect().and_then(|fs| fs.drives().map(|l| (fs, l))) else {
             s.set_drives(ModelRc::new(VecModel::from(alloc::vec![row(
+                None,
                 "Drives".into(),
                 "Not available".into(),
                 "",
@@ -76,24 +132,34 @@ impl Storage {
         let (fs, list) = list;
         let mut rows = Vec::new();
         let mut logged = Vec::new();
-        let (mut used_ce, mut free_ce, mut root_free) = (0u64, 0u64, None);
+        let mut vols = [Vol::default(); 2];
+        let mut ids = [None; 2];
         // E: first (the board's order: the big drive), then the rest from C:
         let order = core::iter::once(4).chain((0..26).filter(|&i| i != 4));
         for i in order.filter(|&i| list[i] != 0) {
             let letter = char::from(b'A' + i as u8);
-            let (name, note) = st::drive_names(letter);
+            let (name, plain) = st::drive_names(letter);
             let title = format!("{letter}: {name}");
             let Ok(v) = fs.volume(i as i32) else {
-                rows.push(row(title, "Not available".into(), note, -1.0));
+                rows.push(row(
+                    Some(letter),
+                    title,
+                    "Not available".into(),
+                    plain,
+                    -1.0,
+                ));
                 continue;
             };
             logged.push((letter, v.free));
-            let (size, free) = (v.size.max(0) as u64, v.free.clamp(0, v.size.max(0)) as u64);
-            let used = size - free;
+            // the mounted file system (FAT32, or Rom/Rofs/Composite on Z:): unknown leaves the plain note
+            let fs_name = fs.file_system_sub_type(i as i32).unwrap_or_default();
+            let note = st::drive_note(letter, &fs_name);
+            let vol = Vol::of(&v);
+            let (size, used) = (vol.size, vol.used);
             // the ROM: its size (nothing is free on a read-only drive); the rest: used of total
             // a composite ROM file system can report no size at all: then only "Read-only"
             if letter == 'Z' && size == 0 {
-                rows.push(row(title, note.into(), "", -1.0));
+                rows.push(row(Some(letter), title, plain.into(), &note, -1.0));
                 continue;
             }
             let (shown, fill) = if letter == 'Z' {
@@ -108,13 +174,10 @@ impl Storage {
                     },
                 )
             };
-            rows.push(row(title, shown, note, fill));
-            if matches!(letter, 'C' | 'E') {
-                used_ce += used;
-                free_ce += free;
-                if letter == 'E' || root_free.is_none() {
-                    root_free = Some(free);
-                }
+            rows.push(row(Some(letter), title, shown, &note, fill));
+            if let Some(k) = COUNTED.iter().position(|&(_, n)| n == i) {
+                vols[k] = vol;
+                ids[k] = Some(vol.id);
             }
         }
         if *self.logged.borrow() != logged {
@@ -123,23 +186,49 @@ impl Storage {
             }
             *self.logged.borrow_mut() = logged;
         }
-        self.totals.set((used_ce, free_ce));
+        self.vols.set(vols);
+        // another volume (or none) where the last look saw one: that drive's mount generation moves on (a count of
+        // the old one can't land), its kept count goes, and Storage counts again when it is next shown
+        if let (Some(old), Some(shared)) = (self.ids.replace(Some(ids)), self.shared) {
+            let g = &mut *shared.lock();
+            if st::volumes_changed(&old, &ids, &mut g.mounts, &mut g.last) {
+                dprintln!("settings: storage: a drive's volume changed, its count dropped");
+                g.stale = true;
+            }
+        }
         s.set_drives(ModelRc::new(VecModel::from(rows)));
+        // C: explicitly (the board's "C: 3.1 GB free"): the drive the phone runs out of
         s.set_storage_free(
-            root_free
-                .map_or_else(String::new, |f| format!("{} free", st::size_text(f)))
-                .into(),
+            if list[2] != 0 && vols[0].size > 0 {
+                format!("C: {} free", st::size_text(vols[0].free))
+            } else {
+                String::new()
+            }
+            .into(),
         );
     }
 
-    /// The page opened, shown: count once if nothing is counted yet (a kept result isn't redone).
+    /// The page opened, shown: count once if nothing is counted yet or a drive's volume changed (a kept result isn't
+    /// redone).
     pub fn ensure(&self) {
         let Some(shared) = self.shared else { return };
         let idle = {
             let g = shared.lock();
-            !g.running && g.at.is_none()
+            !g.running && (g.at.is_none() || g.stale)
         };
         if idle {
+            self.start();
+        }
+    }
+
+    /// Each tick of the open page: count again once a drive's volume changed (not after an error: Recount does that).
+    pub fn recount_changed(&self) {
+        let Some(shared) = self.shared else { return };
+        let due = {
+            let g = shared.lock();
+            !g.running && g.stale
+        };
+        if due {
             self.start();
         }
     }
@@ -159,13 +248,14 @@ impl Storage {
 
     fn start(&self) {
         let Some(shared) = self.shared else { return };
-        let totals = self.totals.get();
         let mine = {
             let mut g = shared.lock();
             g.generation = g.generation.wrapping_add(1);
             g.running = true;
-            g.tally = Tally::default();
+            g.stale = false;
+            g.tally = [Tally::default(); 2];
             g.error = None;
+            g.dropped.clear();
             g.generation
         };
         // every write below is the current generation's only
@@ -201,23 +291,75 @@ impl Storage {
                     return 0;
                 }
             };
-            let roots: Vec<&str> = if list[4] != 0 {
-                alloc::vec!["C:\\", "E:\\"]
-            } else {
-                alloc::vec!["C:\\"]
+            // each drive on its own: its mount generation and volume first, then its count, kept only if it is
+            // still the same mount when it lands
+            let mut t = Tally {
+                done: true,
+                ..Tally::default()
             };
-            let t = st::scan(
-                &roots,
-                |dir| {
-                    fs.read_dir(dir).map(|v| {
-                        v.into_iter()
-                            .map(|e| (e.name.clone(), e.is_dir(), e.size))
-                            .collect()
-                    })
-                },
-                || shared.lock().generation != mine,
-                |t| finish(&mut |g| g.tally = *t),
-            );
+            for (k, &(letter, n)) in COUNTED.iter().enumerate() {
+                if list[n] == 0 {
+                    // absent (no E:): nothing there to keep
+                    finish(&mut |g| g.last[k] = None);
+                    continue;
+                }
+                let mount = shared.lock().mounts[k];
+                let Ok(before) = fs.volume(n as i32) else {
+                    finish(&mut |g| g.dropped.push((letter, "couldn't be read")));
+                    continue;
+                };
+                let root = format!("{letter}:\\");
+                // F32 completes this on a mount, dismount, media change or format of the drive; armed now, polled at
+                // the end and at the publication. If it can't be armed, the volume ID check below still stands.
+                let mut watch = fs.notify_change(notify::DISK, &root).ok().map(Box::pin);
+                // the first poll sends it: Ready there is an error, so no watch
+                if watch.as_mut().is_some_and(|w| fired(w)) {
+                    watch = None;
+                }
+                let ts = st::scan(
+                    &[root.as_str()],
+                    |dir| {
+                        fs.read_dir(dir).map(|v| {
+                            v.into_iter()
+                                .map(|e| (e.name.clone(), e.is_dir(), e.size))
+                                .collect()
+                        })
+                    },
+                    || shared.lock().generation != mine,
+                    |t| finish(&mut |g| g.tally[k] = *t),
+                );
+                if !ts.done {
+                    t.done = false;
+                    break; // stopped: nothing lands (the generation moved on)
+                }
+                t = t.plus(&ts);
+                let remounted = fs.volume(n as i32).map(|v| v.unique_id) != Ok(before.unique_id);
+                finish(&mut |g| {
+                    // through the publication: a disk change seen until now moves the generation on
+                    if remounted || watch.as_mut().is_some_and(|w| fired(w)) {
+                        g.mounts[k] = g.mounts[k].wrapping_add(1);
+                    }
+                    let o = ts.outcome(g.mounts[k] != mount);
+                    if st::replaces(g.last[k].map(|c| c.partial), o) {
+                        g.last[k] = Some(Count {
+                            tally: ts,
+                            vol: Vol::of(&before),
+                            partial: o == Outcome::Partial,
+                        });
+                        let now = e32::time::now();
+                        g.at = Some(format!("{:02}:{:02}", now.hour, now.minute));
+                    }
+                    if o == Outcome::Dropped {
+                        let why = if ts.roots_unread > 0 {
+                            "couldn't be read"
+                        } else {
+                            "changed while it was counted"
+                        };
+                        dprintln!("settings: storage scan: {}: {}, not kept", letter, why);
+                        g.dropped.push((letter, why));
+                    }
+                });
+            }
             let ms = e32::time::millis() - started;
             dprintln!(
                 "settings: storage scan {} in {} ms: {} folders, {} unreadable, {} skipped, files {} apps {} (priority {})",
@@ -230,15 +372,7 @@ impl Storage {
                 t.apps,
                 p as i32
             );
-            finish(&mut |g| {
-                g.running = false;
-                if t.done {
-                    let now = e32::time::now();
-                    g.at = Some(format!("{:02}:{:02}", now.hour, now.minute));
-                    g.last = t;
-                    g.last_totals = totals;
-                }
-            });
+            finish(&mut |g| g.running = false);
             0
         });
         if let Err(e) = spawned {
@@ -255,17 +389,44 @@ impl Storage {
     pub fn show(&self, ui: &SettingsApp) {
         let Some(shared) = self.shared else { return };
         let s = ui.global::<SetState>();
-        let (t, totals, running, at, error) = {
+        let now = self.vols.get();
+        let (ts, vols, running, at, error, dropped, kept) = {
             let g = shared.lock();
-            // while counting, the running totals against the drives now; else the last whole count with its own
-            if g.running {
-                (g.tally, self.totals.get(), true, g.at.clone(), g.error)
+            // while counting, the running counts against the drives now; else each drive's kept count with its own
+            // volume (a drive without one adds nothing: its bytes aren't put under Other)
+            let (ts, vols) = if g.running {
+                (g.tally, now)
             } else {
-                (g.last, g.last_totals, false, g.at.clone(), g.error)
-            }
+                let mut ts = [Tally::default(); 2];
+                let mut vols = [Vol::default(); 2];
+                for (k, c) in g.last.iter().enumerate() {
+                    if let Some(c) = c {
+                        (ts[k], vols[k]) = (c.tally, c.vol);
+                    }
+                }
+                (ts, vols)
+            };
+            (
+                ts,
+                vols,
+                g.running,
+                g.at.clone(),
+                g.error,
+                g.dropped.clone(),
+                g.last,
+            )
         };
-        let (used, free) = totals;
-        let other = st::other(used, &t);
+        let counted = kept.iter().any(Option::is_some);
+        let partial: Vec<char> = COUNTED
+            .iter()
+            .zip(&kept)
+            .filter(|(_, c)| c.is_some_and(|c| c.partial))
+            .map(|(&(l, _), _)| l)
+            .collect();
+        let t = ts[0].plus(&ts[1]);
+        // Other is reconciled per drive with its used bytes, then added
+        let other = st::other(vols[0].used, &ts[0]) + st::other(vols[1].used, &ts[1]);
+        let free = vols[0].free + vols[1].free;
         let total = (t.apps + t.files_total() + other + free).max(1) as f32;
         let mut start = 0.0;
         let mut parts = Vec::new();
@@ -294,16 +455,54 @@ impl Storage {
             })
             .collect();
         s.set_storage_parts(ModelRc::new(VecModel::from(parts)));
+        // C:'s row: its last complete count against its size now (none, or partial: the plain used fill); the names
+        // and sizes are its accessible label
+        let c = now[0];
+        let mut c_parts = Vec::new();
+        if let Some(Count {
+            tally,
+            partial: false,
+            ..
+        }) = kept[0]
+            && c.size > 0
+        {
+            let mut start = 0.0;
+            for (name, bytes) in ["Apps", "Files", "Other"]
+                .into_iter()
+                .zip(st::drive_parts(c.used, &tally))
+            {
+                let share = bytes as f32 / c.size as f32;
+                c_parts.push(PartRow {
+                    name: name.into(),
+                    size: st::size_text(bytes).into(),
+                    start,
+                    share,
+                });
+                start += share;
+            }
+        }
+        s.set_storage_c_parts(ModelRc::new(VecModel::from(c_parts)));
         s.set_storage_kinds(ModelRc::new(VecModel::from(kinds)));
         s.set_storage_counting(running);
-        s.set_storage_counted(at.is_some() && !running);
+        s.set_storage_counted(counted && !running);
+        s.set_storage_partial(!partial.is_empty());
         s.set_storage_status(
             if running {
                 format!("Counting… {} folders", t.folders)
             } else if let Some(e) = error {
                 format!("Couldn't count ({e}); Recount tries again")
-            } else if let Some(at) = &at {
-                format!("Last counted {at}")
+            } else if !dropped.is_empty() {
+                let mut text = String::new();
+                for (d, why) in &dropped {
+                    text += &format!("{d}: {why}; ");
+                }
+                text + "Recount tries again"
+            } else if let (true, Some(at)) = (counted, &at) {
+                let mut text = format!("Last counted {at}");
+                for d in &partial {
+                    text += &format!(" · {d}: partial");
+                }
+                text
             } else {
                 String::from("Not counted yet")
             }
@@ -323,8 +522,17 @@ impl Storage {
     }
 }
 
-fn row(title: String, used: String, note: &str, fill: f32) -> DriveRow {
+/// The watch saw a disk change (or failed): polled without waiting, a no-op waker (nothing awaits it).
+fn fired(w: &mut Pin<Box<NotifyChange<'_>>>) -> bool {
+    matches!(
+        w.as_mut().poll(&mut Context::from_waker(Waker::noop())),
+        Poll::Ready(_)
+    )
+}
+
+fn row(letter: Option<char>, title: String, used: String, note: &str, fill: f32) -> DriveRow {
     DriveRow {
+        letter: letter.map_or_else(String::new, String::from).into(),
         title: title.into(),
         used: used.into(),
         note: note.into(),

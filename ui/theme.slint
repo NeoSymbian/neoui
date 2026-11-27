@@ -28,11 +28,16 @@ export global Theme {
 
     // Type (dp). Belle labels ~17, titles ~19 (text panes 32/42/41 at 360x640)
     out property <length> font-status: 13 * dp;
-    out property <length> font-label: 13.5 * dp;
+    // (D7) display.font_size, set by the shell and each app from the setting: 0 Small 87.5 %, 1 Medium, 2 Large
+    // 112.5 %, 3 Largest 125 %. It scales the four text tokens below; the status bar (font-status), the clock digits,
+    // key faces, hit targets and dp stay.
+    in-out property <int> font-size: 1;
+    out property <float> font-scale: font-size == 0 ? 0.875 : font-size == 2 ? 1.125 : font-size == 3 ? 1.25 : 1;
+    out property <length> font-label: 13.5 * dp * font-scale;
     // a row's trailing value where it is the point of the row (Settings)
-    out property <length> font-value: 14 * dp;
-    out property <length> font-body: 16 * dp;
-    out property <length> font-title: 19 * dp;
+    out property <length> font-value: 14 * dp * font-scale;
+    out property <length> font-body: 16 * dp * font-scale;
+    out property <length> font-title: 19 * dp * font-scale;
     out property <length> font-clock-large: 56 * dp;
 
     // Colour: Belle's black canvas and graphite toolbar, softened

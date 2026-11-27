@@ -2,6 +2,7 @@
 // The notification shade: tap or pull the status bar. Its first stop (tp-shade, TP1): the time and date with ⚙ and
 // ⏻, the quick tiles, brightness, then the notifications.
 import { Theme } from "../theme.slint";
+import { Kit } from "layers.slint";
 import { Glyph } from "frame.slint";
 import { ListRow } from "lists.slint";
 import { Slider } from "controls.slint";
@@ -95,7 +96,7 @@ component Toggle inherits Rectangle {
 
 // One card (nt-anatomy): the app's glyph and name with when, the group's count and ▾; the avatar, title and two lines;
 // the progress; up to 3 actions. A swipe sideways past a third of its width removes it (not an ongoing one).
-component Card inherits Rectangle {
+export component Card inherits Rectangle {
     in property <ShadeNote> note;
     callback opened(int);
     callback dismissed();
@@ -213,6 +214,7 @@ component Card inherits Rectangle {
                     clicked => {
                         if abs(self.mouse-x - self.pressed-x) < 10 * Theme.dp
                             && abs(self.mouse-y - self.pressed-y) < 10 * Theme.dp {
+                            Kit.accept();
                             root.toggled();
                         }
                     }
@@ -231,23 +233,24 @@ component Card inherits Rectangle {
             }
             VerticalLayout {
                 spacing: 2 * Theme.dp;
+                // the title and text follow display.font_size (D7)
                 Text {
                     text: note.title;
                     color: Theme.text;
-                    font-size: 15 * Theme.dp;
+                    font-size: 15 * Theme.dp * Theme.font-scale;
                     font-weight: 600;
                     overflow: elide;
                 }
                 if note.earlier != "": Text {
                     text: note.earlier;
                     color: Theme.text-dim;
-                    font-size: 13.5 * Theme.dp;
+                    font-size: 13.5 * Theme.dp * Theme.font-scale;
                     overflow: elide;
                 }
                 if note.text != "": Text {
                     text: note.text;
                     color: Theme.text-secondary;
-                    font-size: 13.5 * Theme.dp;
+                    font-size: 13.5 * Theme.dp * Theme.font-scale;
                     overflow: elide;
                 }
             }
@@ -304,7 +307,7 @@ component HeaderButton inherits Rectangle {
         colorize: Theme.text;
     }
     ta := TouchArea {
-        clicked => { root.clicked(); }
+        clicked => { Kit.accept(); root.clicked(); }
     }
 }
 
@@ -312,18 +315,10 @@ export component Shade inherits Rectangle {
     in property <bool> open;
     callback dismissed;
     callback open-app(string);
-    in property <int> missed;
-    // unread messages and the newest one's line
-    in property <int> unread;
-    in property <string> unread-line;
-    in property <bool> active-call;
-    callback return-call;
     // the apps' entries (ipc NOTIFY), newest first; a tap opens the app on its page
     in property <[ShadeNote]> notes;
     // (entry, 0) for the entry itself, (entry, i + 1) for its action i
     callback note-opened(int, int);
-    // an app posts its own entries for these (Messages: one per conversation): the shell's summary row hides
-    in property <bool> app-unread;
     // an app on one of its pages (app key, view: host::PAGES)
     callback open-view(string, string);
     // the header's ⏻: the Power menu (the UI server opens it, as for a held Power key)
@@ -522,38 +517,12 @@ export component Shade inherits Rectangle {
                             }
                         }
                     }
-                    // the shell's own rows (until Phone and Messages post cards, TP2b), in the list so they scroll
-                    // with it
-                    if active-call: ListRow {
-                        title: "Call in progress";
-                        subtitle: "Return to call controls";
-                        icon: @image-url("../icons/sys/call.svg");
-                        has-icon: true;
-                        clicked => { root.return-call(); }
-                    }
-
-                    if missed > 0: ListRow {
-                        title: missed == 1 ? "Missed call" : missed + " missed calls";
-                        subtitle: "Since this phone session started";
-                        icon: @image-url("../icons/sys/missed_call.svg");
-                        has-icon: true;
-                        icon-tint: Theme.danger;
-                        clicked => { root.open-view("phone", "recents"); }
-                    }
-
-                    if unread > 0 && !root.app-unread: ListRow {
-                        title: unread == 1 ? "New message" : unread + " new messages";
-                        subtitle: unread-line;
-                        icon: @image-url("../icons/sys/message.svg");
-                        has-icon: true;
-                        icon-tint: Theme.accent;
-                        clicked => { root.open-app("messages"); }
-                    }
                 }
             }
 
             if root.all: HorizontalLayout {
                 alignment: center;
+                spacing: 10 * Theme.dp;
                 Rectangle {
                     height: 40 * Theme.dp;
                     width: clear-text.preferred-width + 36 * Theme.dp;
@@ -570,6 +539,25 @@ export component Shade inherits Rectangle {
                             root.notes-cleared();
                             root.all = false;
                         }
+                    }
+                }
+                // TP4: Settings → Panel & notifications
+                Rectangle {
+                    height: 40 * Theme.dp;
+                    width: manage-text.preferred-width + 36 * Theme.dp;
+                    border-radius: self.height / 2;
+                    background: manage-touch.pressed ? Theme.pressed : Theme.field;
+                    accessible-role: button;
+                    accessible-label: "Manage notifications";
+                    accessible-action-default => { root.open-view("settings", "panel"); }
+                    manage-text := Text {
+                        text: "Manage";
+                        color: Theme.text;
+                        font-size: 14 * Theme.dp;
+                        font-weight: 600;
+                    }
+                    manage-touch := TouchArea {
+                        clicked => { root.open-view("settings", "panel"); }
                     }
                 }
             }

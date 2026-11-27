@@ -6,6 +6,7 @@
 
 extern crate alloc;
 
+mod home;
 pub mod keyboard;
 pub mod layer;
 mod settings;
@@ -29,8 +30,8 @@ use slint::platform::software_renderer::{
 use slint::platform::{Platform, PointerEventButton, WindowAdapter, WindowEvent};
 use slint::{ComponentHandle, LogicalPosition, Model, PhysicalSize, PlatformError};
 
-/// The home screen's page count (`ui/screens/home.slint`).
-pub const HOME_PAGES: i32 = 3;
+/// The most pages home has (`neoui_proto::home::MAX_PAGES`); [`Renderer::home_pages`] has how many it has now.
+pub const HOME_PAGES: i32 = neoui_proto::home::MAX_PAGES as i32;
 
 slint::include_modules!();
 
@@ -155,16 +156,13 @@ pub fn touch_ring_pixel(x: i32, y: i32, d: i32, under: u32) -> Option<u32> {
 /// At most this many app glyphs in the status bar; more apps show as "+n" (tp-statusbar).
 pub const STATUS_APPS_MAX: usize = 3;
 
-/// The status bar's app glyphs (tp-statusbar, TP1): one per app with cards in the shade, `keys` newest first, then
-/// the shell's own rows (missed calls for Phone, unread SMS for Messages) for an app that posts none. Gives at most
-/// [`STATUS_APPS_MAX`] glyph ids (0 bell, 1 message, 2 missed call, 3 folder, 4 alarm; `StatusBar` draws them) and
-/// how many more apps there are.
+/// The status bar's app glyphs (tp-statusbar, TP1): one per app with cards in the shade, `keys` newest first (Phone
+/// and Messages post their own cards since TP2b). Gives at most [`STATUS_APPS_MAX`] glyph ids (0 bell, 1 message,
+/// 2 missed call, 3 folder, 4 alarm; `StatusBar` draws them) and how many more apps there are.
 #[must_use]
-pub fn status_apps(keys: &[&str], missed: bool, unread: bool) -> (Vec<i32>, i32) {
+pub fn status_apps(keys: &[&str]) -> (Vec<i32>, i32) {
     let mut apps: Vec<&str> = Vec::new();
-    let shell = [("phone", missed), ("messages", unread)];
-    let rows = shell.iter().filter(|(_, on)| *on).map(|(k, _)| *k);
-    for k in keys.iter().copied().chain(rows) {
+    for k in keys.iter().copied() {
         if !apps.contains(&k) {
             apps.push(k);
         }
@@ -185,6 +183,78 @@ pub fn status_apps(keys: &[&str], missed: bool, unread: bool) -> (Vec<i32>, i32)
     (shown, i32::try_from(more).unwrap_or(i32::MAX))
 }
 
+/// App `key`'s launcher badge: its own count, else for Phone and Messages MODEMD's (missed, unread); none when the
+/// user turned its badge off (applied after the counts are combined, so the fallback can't bring it back).
+fn badge_count(key: &str, own: i32, (missed, unread): (i32, i32), off: bool) -> i32 {
+    if off {
+        return 0;
+    }
+    match (key, own) {
+        ("phone", 0) => missed,
+        ("messages", 0) => unread,
+        (_, n) => n,
+    }
+}
+
+#[cfg(test)]
+mod badge_tests {
+    use super::badge_count;
+
+    #[test]
+    fn a_badge_turned_off_stays_off_with_the_fallback() {
+        assert_eq!(badge_count("messages", 0, (2, 3), false), 3);
+        assert_eq!(badge_count("messages", 0, (2, 3), true), 0);
+        assert_eq!(badge_count("phone", 0, (2, 3), true), 0);
+        assert_eq!(badge_count("phone", 4, (2, 3), false), 4);
+        assert_eq!(badge_count("files", 1, (2, 3), true), 0);
+    }
+}
+
+/// Card `n` of app `key` as the shade draws it (one on its own; the shade's rows set their section and group), its
+/// time against `clock` (now unix ms, the UTC offset in s, 24-hour).
+fn shade_note(key: &str, n: &Notification, clock: (u64, i32, bool)) -> ShadeNote {
+    let (now, offset, h24) = clock;
+    // two lines: the earlier one dim over the newest
+    let (earlier, text) = n.text.rsplit_once('\n').unwrap_or(("", n.text.as_str()));
+    let strings = |v: &[String]| {
+        slint::ModelRc::from(Rc::new(slint::VecModel::from(
+            v.iter()
+                .map(|s| s.as_str().into())
+                .collect::<Vec<slint::SharedString>>(),
+        )))
+    };
+    ShadeNote {
+        app_key: key.into(),
+        app: neoui_proto::apps::find(key).map_or(key, |a| a.name).into(),
+        group: n.group.as_str().into(),
+        title: n.title.as_str().into(),
+        earlier: earlier.into(),
+        text: text.into(),
+        actions: strings(&n.actions),
+        kinds: slint::ModelRc::from(Rc::new(slint::VecModel::from(
+            n.action_kinds
+                .iter()
+                .map(|k| i32::from(*k))
+                .collect::<Vec<i32>>(),
+        ))),
+        initials: n.initials.as_str().into(),
+        tint: slint::Color::from_argb_encoded(0xff00_0000 | n.tint),
+        // an old record's own text; a 1.18 one's time as the shade writes it
+        time: if n.when == 0 || !n.time.is_empty() {
+            n.time.as_str().into()
+        } else {
+            neoui_proto::shade::when_text(n.when, now, offset, h24).into()
+        },
+        expanded: true,
+        progress: n.progress.map_or(-1.0, |p| f32::from(p) / 100.0),
+        section: "".into(),
+        count: 1,
+        open: false,
+        member: false,
+        ongoing: n.ongoing(),
+    }
+}
+
 #[cfg(test)]
 mod status_apps_tests {
     use super::status_apps;
@@ -192,17 +262,16 @@ mod status_apps_tests {
 
     #[test]
     fn one_glyph_per_app_newest_first_then_plus_n() {
-        assert_eq!(status_apps(&[], false, false), (vec![], 0));
-        // Messages twice (two conversations) is one app; the shell's unread row adds nothing while it posts
+        assert_eq!(status_apps(&[]), (vec![], 0));
+        // Messages twice (two conversations) is one app
         assert_eq!(
-            status_apps(&["messages", "files", "messages"], false, true),
+            status_apps(&["messages", "files", "messages"]),
             (vec![1, 3], 0)
         );
-        // the shell's rows count for apps that post nothing, after the apps' own cards
-        assert_eq!(status_apps(&["browser"], true, true), (vec![0, 2, 1], 0));
+        assert_eq!(status_apps(&["browser", "phone"]), (vec![0, 2], 0));
         assert_eq!(
-            status_apps(&["clock", "files", "store", "kit"], true, false),
-            (vec![4, 3, 0], 2)
+            status_apps(&["clock", "files", "store", "kit"]),
+            (vec![4, 3, 0], 1)
         );
     }
 }
@@ -251,6 +320,9 @@ pub struct Renderer {
     open_group: Rc<RefCell<Option<(String, String)>>>,
     notes_gone: Rc<RefCell<Vec<(String, u32)>>>,
     notes_cleared: Rc<Cell<bool>>,
+    /// (TP4) the cards under Silent (a Min channel) and the card on the heads-up banner (app key, id)
+    silent_cards: Vec<(String, u32)>,
+    banner: Rc<RefCell<Option<(String, u32)>>>,
     relayout: Rc<Cell<bool>>,
     closed: Rc<RefCell<Vec<alloc::string::String>>>,
     power: Rc<RefCell<Vec<i32>>>,
@@ -260,11 +332,17 @@ pub struct Renderer {
     edited: Rc<RefCell<Vec<String>>>,
     /// the apps' badge counts (BADGE) as last given, merged with what the shell knows itself
     app_badges: Vec<(String, u32)>,
+    /// (TP4) apps whose badge the user turned off (their Badge or Allow switch): no count, the shell's fallback either
+    badges_off: Vec<String>,
     /// The apps with cards in the shade, newest first (the status bar's glyphs, TP1).
     status_keys: Vec<String>,
     /// lists scrolled by shifting pixels (smooth-ui S2d), and how many frames did so
     scrolling: Scrolling,
     shifts: u32,
+    /// (D10) home's saved layout and the editor's draft
+    home: Rc<RefCell<home::State>>,
+    /// (G3) the switcher's thumbnails, by app key
+    thumbs: Vec<(String, slint::Image)>,
 }
 
 /// Slint's lines for a scrolled list's frame (smooth-ui S2d): the rows of `list` outside `draw` were moved into place
@@ -359,6 +437,14 @@ impl Renderer {
         let notes_cleared: Rc<Cell<bool>> = Rc::default();
         let sink = notes_cleared.clone();
         ui.on_notes_cleared(move || sink.set(true));
+        // the banner's card acts as the shade's does
+        let banner: Rc<RefCell<Option<(String, u32)>>> = Rc::default();
+        let (sink, shown) = (notes_opened.clone(), banner.clone());
+        ui.on_banner_opened(move |a| {
+            if let Some((key, id)) = shown.borrow_mut().take() {
+                sink.borrow_mut().push((key, id, a as u16));
+            }
+        });
         let open_group: Rc<RefCell<Option<(String, String)>>> = Rc::default();
         let relayout: Rc<Cell<bool>> = Rc::default();
         let (open, again, weak) = (open_group.clone(), relayout.clone(), ui.as_weak());
@@ -413,6 +499,7 @@ impl Renderer {
         let sink = edited.clone();
         ui.global::<SystemSettings>()
             .on_edited(move |k| sink.borrow_mut().push(k.as_str().into()));
+        let home = home::wire(&ui, edited.clone());
         Ok(Self {
             window,
             ui,
@@ -427,6 +514,8 @@ impl Renderer {
             open_group,
             notes_gone,
             notes_cleared,
+            silent_cards: Vec::new(),
+            banner,
             relayout,
             closed,
             power,
@@ -434,9 +523,12 @@ impl Renderer {
             phone,
             edited,
             app_badges: Vec::new(),
+            badges_off: Vec::new(),
             status_keys: Vec::new(),
             scrolling: Scrolling::default(),
             shifts: 0,
+            home,
+            thumbs: Vec::new(),
         })
     }
 
@@ -524,6 +616,34 @@ impl Renderer {
         )
     }
 
+    /// The toast (`NOTE`) while one shows, in physical pixels: it lies over the app's body, so the UI server copies it
+    /// from the frame again after composing the app's surface.
+    pub fn toast_rect(&self) -> Option<Rect> {
+        (!self.ui.get_note_text().is_empty()).then(|| {
+            Rect::new(
+                self.ui.get_toast_x() as i32,
+                self.ui.get_toast_y() as i32,
+                // a pixel more each way: its edges may fall between pixels (it sits 12 dp clear of the screen's sides)
+                self.ui.get_toast_w() as u32 + 1,
+                self.ui.get_toast_h() as u32 + 1,
+            )
+        })
+    }
+
+    /// (TP4) The heads-up banner while it shows, in physical pixels: it lies over the app's body, so the UI server
+    /// copies it from the frame again after composing the app's surface, and keeps touches in it from the app.
+    pub fn banner_rect(&self) -> Option<Rect> {
+        self.ui.get_banner_on().then(|| {
+            Rect::new(
+                self.ui.get_banner_x() as i32,
+                self.ui.get_banner_y() as i32,
+                // a pixel more each way: its edges may fall between pixels
+                self.ui.get_banner_w() as u32 + 1,
+                self.ui.get_banner_h() as u32 + 1,
+            )
+        })
+    }
+
     /// The home screen's pages band, where its swipe works (physical pixels; smooth-ui S2c).
     pub fn home_strip(&self) -> Rect {
         Rect::new(
@@ -534,14 +654,73 @@ impl Renderer {
         )
     }
 
-    /// The home page on show (0..`HOME_PAGES`).
+    /// The home page on show (0..[`Renderer::home_pages`]).
     pub fn home_page(&self) -> i32 {
         self.ui.get_home_page()
     }
 
     /// Show home page `n` (at once with server transitions on).
     pub fn set_home_page(&mut self, n: i32) {
-        self.ui.set_home_page(n.clamp(0, HOME_PAGES - 1));
+        self.ui.set_home_page(n.clamp(0, self.home_pages() - 1));
+    }
+
+    /// (D10) How many pages home has now (1..=5), or Lanes' three lanes.
+    pub fn home_pages(&self) -> i32 {
+        self.ui.get_home_page_count().max(1)
+    }
+
+    /// (D10) Home comes up in its editor (Settings' Edit home, `ipc::ACTION_EDIT_HOME`); asked again while editing,
+    /// the draft stays.
+    pub fn edit_home(&mut self) {
+        self.show("home", "");
+        self.ui
+            .global::<HomeModel>()
+            .invoke_op("enter".into(), 0, 0, 0, 0, "".into());
+    }
+
+    /// (D10) Is home's editor on? The UI server's page slide and pull to the shade stay off meanwhile.
+    pub fn home_editing(&self) -> bool {
+        self.home.borrow().editing()
+    }
+
+    /// (G3) The thumbnail of app `key` for Open apps: `w` × `h` XRGB8888 pixels (`layer::downsample`'s).
+    pub fn set_thumb(&mut self, key: &str, w: usize, h: usize, px: &[u32]) {
+        let (Ok(w32), Ok(h32)) = (u32::try_from(w), u32::try_from(h)) else {
+            return;
+        };
+        if w == 0 || h == 0 || px.len() < w * h {
+            return;
+        }
+        let mut buf = slint::SharedPixelBuffer::<slint::Rgb8Pixel>::new(w32, h32);
+        for (d, &p) in buf.make_mut_slice().iter_mut().zip(px) {
+            *d = slint::Rgb8Pixel::new((p >> 16) as u8, (p >> 8) as u8, p as u8);
+        }
+        self.thumbs.retain(|(k, _)| k != key);
+        self.thumbs.push((key.into(), slint::Image::from_rgb8(buf)));
+        self.show_thumbs();
+    }
+
+    /// The thumbnails in the order of the running apps; those of apps no longer running go.
+    fn show_thumbs(&mut self) {
+        let running: Vec<String> = self
+            .ui
+            .get_running()
+            .iter()
+            .map(|k| k.as_str().into())
+            .collect();
+        self.thumbs.retain(|(k, _)| running.contains(k));
+        let model: Vec<slint::Image> = running
+            .iter()
+            .map(|k| {
+                self.thumbs
+                    .iter()
+                    .find(|(t, _)| t == k)
+                    .map(|(_, i)| i.clone())
+                    .unwrap_or_default()
+            })
+            .collect();
+        self.ui
+            .set_thumbs(slint::ModelRc::from(Rc::new(slint::VecModel::from(model))));
     }
 
     /// The UI server animates screen changes itself, from snapshots (smooth-ui S2): Slint switches screens at once.
@@ -587,6 +766,17 @@ impl Renderer {
         self.keyboard_heights()[mode as usize]
     }
 
+    /// (D11) The number pad is up (an app's or a shell field's): its taps may be PIN digits, so the shell logs no
+    /// tap coordinates and draws no Show touches rings meanwhile.
+    pub fn number_pad_up(&self) -> bool {
+        let focus = self.ui.global::<KeyboardFocus>();
+        let mode = match self.ui.get_keyboard_mode() {
+            0 if focus.get_open() => focus.get_mode(),
+            m => m,
+        };
+        mode == 3 && self.keyboard_h() > 0
+    }
+
     /// The user put the keyboard away with the toolbar's keyboard button: the app in front gets its body back.
     pub fn keyboard_dismissed(&self) -> bool {
         self.ui.global::<KeyboardFocus>().get_dismissed()
@@ -606,6 +796,15 @@ impl Renderer {
     /// How many keys of the system keyboard were pressed since the last call (for its vibration).
     pub fn take_key_presses(&mut self) -> u32 {
         self.presses.replace(0)
+    }
+
+    /// (D6) Whether one of the shell's own kit controls (a shade tile, a button, a row) acted since the last call: one
+    /// pulse with vibrate on touch. The system keyboard isn't one (`keyboard.vibrate` is its own).
+    pub fn take_accepted(&mut self) -> bool {
+        let kit = self.ui.global::<Kit>();
+        let (now, sent) = (kit.get_accepted(), kit.get_accepted_sent());
+        kit.set_accepted_sent(now);
+        now != sent
     }
 
     /// An app process is in front (the shell hides its own mock of the screen; the strip shows the app's page).
@@ -669,46 +868,23 @@ impl Renderer {
             .map(|(k, n)| (k.as_str(), n))
             .collect();
         let open = self.open_group.borrow().clone();
-        let rows =
-            neoui_proto::shade::layout(&list, open.as_ref().map(|(k, g)| (k.as_str(), g.as_str())));
-        let (now, offset, h24) = self.shade_clock;
+        let silent = |i: usize| {
+            let (k, n) = list[i];
+            self.silent_cards
+                .iter()
+                .any(|(sk, id)| sk == k && *id == n.id)
+        };
+        let rows = neoui_proto::shade::layout_with(
+            &list,
+            open.as_ref().map(|(k, g)| (k.as_str(), g.as_str())),
+            silent,
+        );
+        let clock = self.shade_clock;
         let model: Vec<ShadeNote> = rows
             .iter()
             .map(|r| {
                 let (key, n) = list[r.index];
-                // two lines: the earlier one dim over the newest
-                let (earlier, text) = n.text.rsplit_once('\n').unwrap_or(("", n.text.as_str()));
-                let strings = |v: &[String]| {
-                    slint::ModelRc::from(Rc::new(slint::VecModel::from(
-                        v.iter()
-                            .map(|s| s.as_str().into())
-                            .collect::<Vec<slint::SharedString>>(),
-                    )))
-                };
                 ShadeNote {
-                    app_key: key.into(),
-                    app: neoui_proto::apps::find(key).map_or(key, |a| a.name).into(),
-                    group: n.group.as_str().into(),
-                    title: n.title.as_str().into(),
-                    earlier: earlier.into(),
-                    text: text.into(),
-                    actions: strings(&n.actions),
-                    kinds: slint::ModelRc::from(Rc::new(slint::VecModel::from(
-                        n.action_kinds
-                            .iter()
-                            .map(|k| i32::from(*k))
-                            .collect::<Vec<i32>>(),
-                    ))),
-                    initials: n.initials.as_str().into(),
-                    tint: slint::Color::from_argb_encoded(0xff00_0000 | n.tint),
-                    // an old record's own text; a 1.18 one's time as the shade writes it
-                    time: if n.when == 0 || !n.time.is_empty() {
-                        n.time.as_str().into()
-                    } else {
-                        neoui_proto::shade::when_text(n.when, now, offset, h24).into()
-                    },
-                    expanded: true,
-                    progress: n.progress.map_or(-1.0, |p| f32::from(p) / 100.0),
                     section: if r.first { r.section.label() } else { "" }.into(),
                     count: i32::try_from(r.count).unwrap_or(i32::MAX),
                     open: open
@@ -716,10 +892,19 @@ impl Renderer {
                         .is_some_and(|(k, g)| k == key && *g == n.group)
                         && r.count > 1,
                     member: r.member,
-                    ongoing: n.ongoing(),
+                    ..shade_note(key, n, clock)
                 }
             })
             .collect();
+        // the banner's card as it is now (gone from the shade: the banner goes too)
+        let shown = self.banner.borrow().clone();
+        match shown.and_then(|(k, id)| list.iter().find(|(lk, n)| *lk == k && n.id == id)) {
+            Some((k, n)) => self.ui.set_banner(shade_note(k, n, clock)),
+            None => {
+                *self.banner.borrow_mut() = None;
+                self.ui.set_banner_shown(false);
+            }
+        }
         *self.shade_rows.borrow_mut() = rows
             .iter()
             .map(|r| (String::from(list[r.index].0), list[r.index].1.id))
@@ -728,6 +913,30 @@ impl Renderer {
             .set_cards(i32::try_from(list.len()).unwrap_or(i32::MAX));
         self.ui
             .set_notes(slint::ModelRc::from(Rc::new(slint::VecModel::from(model))));
+    }
+
+    /// (TP4) The cards of a Min channel, (app key, id): the shade folds them under Silent. Before [`Self::set_notes`].
+    pub fn set_silent_notes(&mut self, cards: &[(&str, u32)]) {
+        self.silent_cards = cards.iter().map(|(k, id)| ((*k).into(), *id)).collect();
+    }
+
+    /// (TP4) The heads-up banner shows card (app key, id) of the shade's cards, or nothing; a tap or an action on it
+    /// comes back with [`Self::take_notes_opened`], a swipe only hides it.
+    pub fn set_banner(&mut self, card: Option<(&str, u32)>) {
+        *self.banner.borrow_mut() = card.map(|(k, id)| (k.into(), id));
+        self.ui.set_banner_shown(card.is_some());
+        self.lay_out_notes();
+    }
+
+    /// The banner is on screen (the user didn't put it away).
+    #[must_use]
+    pub fn banner_shown(&self) -> bool {
+        self.ui.get_banner_shown()
+    }
+
+    /// (TP4) Do not disturb's moon in the status bar.
+    pub fn set_dnd(&mut self, on: bool) {
+        self.ui.set_dnd(on);
     }
 
     /// The cards swiped away since the last call: (app key, id).
@@ -746,11 +955,6 @@ impl Renderer {
         core::mem::take(&mut *self.notes_opened.borrow_mut())
     }
 
-    /// Messages posts its own entries (one per conversation): the shade hides its summary row of unread messages.
-    pub fn set_app_unread(&mut self, on: bool) {
-        self.ui.set_app_unread(on);
-    }
-
     /// The apps with cards in the shade, newest first (app keys, repeats allowed): the status bar's app glyphs.
     pub fn set_status_apps(&mut self, keys: &[&str]) {
         self.status_keys = keys.iter().map(|k| (*k).into()).collect();
@@ -759,11 +963,7 @@ impl Renderer {
 
     fn update_status_apps(&mut self) {
         let keys: Vec<&str> = self.status_keys.iter().map(String::as_str).collect();
-        let (glyphs, more) = status_apps(
-            &keys,
-            self.ui.get_missed_calls() > 0,
-            self.ui.get_unread_messages() > 0,
-        );
+        let (glyphs, more) = status_apps(&keys);
         self.ui
             .set_status_glyphs(slint::ModelRc::from(Rc::new(slint::VecModel::from(glyphs))));
         self.ui.set_status_more(more);
@@ -790,13 +990,22 @@ impl Renderer {
         let model: Vec<i32> = apps
             .get_all()
             .iter()
-            .map(|a| match (a.key.as_str(), own(a.key.as_str())) {
-                ("phone", 0) => missed,
-                ("messages", 0) => unread,
-                (_, n) => n,
+            .map(|a| {
+                let key = a.key.as_str();
+                let off = self.badges_off.iter().any(|k| k == key);
+                badge_count(key, own(key), (missed, unread), off)
             })
             .collect();
         apps.set_badges(slint::ModelRc::from(Rc::new(slint::VecModel::from(model))));
+    }
+
+    /// (TP4) The apps whose badge the user turned off: they show none, MODEMD's counts included.
+    pub fn set_badges_off(&mut self, keys: &[&str]) {
+        let keys: Vec<String> = keys.iter().map(|k| (*k).into()).collect();
+        if keys != self.badges_off {
+            self.badges_off = keys;
+            self.update_badges();
+        }
     }
 
     /// How long until a Slint timer is due (a long press, a toast's end), so the server wakes for it.
@@ -844,7 +1053,22 @@ impl Renderer {
                 .and_then(|i| running.get(i)),
             _ => None,
         };
+        // the home editor: going home or to the apps is its Done (D10)
+        if screen == "home" && self.home_editing() && g != Gesture::Back {
+            self.ui
+                .global::<HomeModel>()
+                .invoke_op("done".into(), 0, 0, 0, 0, "".into());
+            return;
+        }
+        let lanes = self.ui.global::<SystemSettings>().get_home_style() == 1;
         match g {
+            // Lanes (G5): Open apps is home's third lane
+            Gesture::OpenApps if lanes => {
+                self.show("home", "");
+                self.ui.set_home_page(2);
+            }
+            // the UI server closes the app (G4); home comes up
+            Gesture::Close => self.show("home", ""),
             Gesture::Back => self.ui.invoke_nav_back(),
             Gesture::OpenApps if screen != "switcher" => self.ui.invoke_open("switcher".into()),
             Gesture::Home if screen != "home" => self.show("home", ""),
@@ -868,6 +1092,7 @@ impl Renderer {
         let model: Vec<slint::SharedString> = keys.iter().map(|k| (*k).into()).collect();
         self.ui
             .set_running(slint::ModelRc::from(Rc::new(slint::VecModel::from(model))));
+        self.show_thumbs();
     }
 
     /// Apps the switcher's × asked to close since the last call.
@@ -917,18 +1142,29 @@ impl Renderer {
     /// The registry keys of the settings the shell shows, for the UI server to fill at boot with
     /// [`Renderer::apply_setting`].
     pub fn shown_settings() -> impl Iterator<Item = &'static str> {
-        settings::BINDINGS.iter().map(|b| b.key)
+        settings::BINDINGS
+            .iter()
+            .map(|b| b.key)
+            .chain(core::iter::once(home::KEY))
     }
 
     /// Shows a setting's value (from the UI server's store). False when the shell doesn't show `key` or `value` has
     /// another type than the key's.
     pub fn apply_setting(&mut self, key: &str, value: &Value) -> bool {
+        if key == home::KEY {
+            let Value::Bytes(b) = value else { return false };
+            home::stored(&self.ui, &mut self.home.borrow_mut(), b);
+            return true;
+        }
         let global = self.ui.global::<SystemSettings>();
         settings::binding(key).is_some_and(|b| (b.write)(&global, value))
     }
 
     /// The UI's current value of a shown setting.
     pub fn setting(&self, key: &str) -> Option<Value> {
+        if key == home::KEY {
+            return Some(Value::Bytes(self.home.borrow().saved_bytes()));
+        }
         let global = self.ui.global::<SystemSettings>();
         settings::binding(key).map(|b| (b.read)(&global))
     }
@@ -940,10 +1176,16 @@ impl Renderer {
         keys.sort_unstable();
         keys.dedup();
         let global = self.ui.global::<SystemSettings>();
-        keys.iter()
+        let mut edits: Vec<(&'static str, Value)> = keys
+            .iter()
             .filter_map(|k| settings::binding(k))
             .map(|b| (b.key, (b.read)(&global)))
-            .collect()
+            .collect();
+        // the home editor's Done (D10)
+        if let Some(bytes) = self.home.borrow_mut().take_save() {
+            edits.push((home::KEY, Value::Bytes(bytes)));
+        }
+        edits
     }
 
     /// The clock face the shell shows (the home clock widget): the time, the date and the next alarm.
@@ -1023,11 +1265,6 @@ impl Renderer {
         self.ui.set_roaming(roaming);
     }
 
-    /// A call is up (ringing, dialling or connected): the shade offers to return to it.
-    pub fn set_in_call(&mut self, on: bool) {
-        self.ui.set_in_call(on);
-    }
-
     pub fn set_phone_feedback(&mut self, pending: bool, feedback: &str) {
         self.ui.set_phone_pending(pending);
         self.ui.set_phone_feedback(feedback.into());
@@ -1039,20 +1276,18 @@ impl Renderer {
         self.ui.set_pin_attempts(attempts.map_or(-1, i32::from));
     }
 
+    /// The modem failed; `missed` new missed calls: Phone's badge while it posts no count of its own.
     pub fn set_phone_availability(&mut self, failed: bool, missed: u32) {
         self.ui.set_modem_failed(failed);
         self.ui.set_missed_calls(missed.min(i32::MAX as u32) as i32);
         self.update_badges();
-        self.update_status_apps();
     }
 
-    /// Unread messages (C9): the status bar's envelope and the shade's row with the newest one's `line`.
-    pub fn set_unread_messages(&mut self, count: u32, line: &str) {
+    /// Unread messages (C9): Messages' badge while it posts no count of its own.
+    pub fn set_unread_messages(&mut self, count: u32) {
         self.ui
             .set_unread_messages(count.min(i32::MAX as u32) as i32);
-        self.ui.set_unread_line(line.into());
         self.update_badges();
-        self.update_status_apps();
     }
 
     /// What the SIM prompt and the modem banner asked since the last call: "pin" + PIN, "sim-dismiss", "dial" +

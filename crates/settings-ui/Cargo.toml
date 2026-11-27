@@ -10,11 +10,11 @@ publish = false
 
 [dependencies]
 slint.workspace = true
+# the row model the pages, search and the root share (D1)
+neoui-proto.workspace = true
 
 [build-dependencies]
 neoui-kit = { path = "../neoui-kit" }
 
 [dev-dependencies]
 png.workspace = true
-# the search table the pages must match (tests/rows.rs)
-neoui-proto.workspace = true

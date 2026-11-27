@@ -14,11 +14,15 @@ import { RootPage, RootGridPage, SearchPage } from "pages/root.slint";
 import { LicencesPage } from "pages/licences.slint";
 import { WifiPage, WifiSavedPage, WifiJoinSheet, WifiDetailsSheet } from "pages/wifi.slint";
 import { ConnectivityPage, MobilePage, BluetoothPage } from "pages/connections.slint";
-import { DisplayPage, NavigationPage, SoundsPage, BatteryPage, BatteryUsagePage, ProfilePage, ProfileSheet, ProfileNameSheet, RingtonePage } from "pages/device.slint";
+import { DisplayPage, NavigationPage, SoundsPage, BatteryPage, BatteryUsagePage, ProfilePage, ProfileSheet, ProfileNameSheet, RingtonePage, YourToneSheet } from "pages/device.slint";
 import { DateTimePage, TimeZonePage, KeyboardPage, PrivacyPage } from "pages/personal.slint";
 import { AppsPage, AppSheet, AppDetailPage, ResetPage, OldAppsPage, DeveloperPage, AboutPage } from "pages/system.slint";
+import { WallpaperPage, FontSizePage } from "pages/appearance.slint";
+import { PanelPage, NotificationsPage, NotifyAppPage } from "pages/notifications.slint";
+import { SimLockPage, SimPinSheet } from "pages/sim-lock.slint";
+import { Wallpapers } from "@neoui/components/wallpaper.slint";
 
-export { Theme, Scroll, KeyboardFocus, Kit, SetState, WifiNet, WifiLink, WifiDetail, SearchHit, DriveRow, PartRow }
+export { Theme, Scroll, KeyboardFocus, Kit, SetState, WifiNet, WifiLink, WifiDetail, SearchHit, DriveRow, PartRow, Wallpapers }
 
 export component SettingsApp inherits Window {
     default-font-family: "NeoSans";
@@ -93,6 +97,12 @@ export component SettingsApp inherits Window {
         if SetState.page == 24: TimeZonePage {
             kb: root.kb;
         }
+        if SetState.page == 25: WallpaperPage { }
+        if SetState.page == 26: FontSizePage { }
+        if SetState.page == 27: PanelPage { }
+        if SetState.page == 28: NotificationsPage { }
+        if SetState.page == 29: NotifyAppPage { }
+        if SetState.page == 30: SimLockPage { }
     }
 
     // the sheets: full size, last, so they cover the header and the page
@@ -100,6 +110,13 @@ export component SettingsApp inherits Window {
         kb: root.kb;
         open: true;
         dismissed => { SetState.sheet = ""; SetState.password = ""; KeyboardFocus.open = false; }
+    }
+    // D11: the SIM PIN's sheets; their fields go empty when they close
+    if SetState.sheet == "sim-pin" || SetState.sheet == "sim-change": SimPinSheet {
+        kb: root.kb;
+        change: SetState.sheet == "sim-change";
+        open: true;
+        dismissed => { SetState.sheet = ""; SetState.act("sim-cancel", ""); KeyboardFocus.open = false; }
     }
     if SetState.sheet == "message-tone": ChoiceSheet {
         open: true;
@@ -121,6 +138,12 @@ export component SettingsApp inherits Window {
     if SetState.sheet == "profile-add" || SetState.sheet == "profile-rename": ProfileNameSheet {
         kb: root.kb;
         rename: SetState.sheet == "profile-rename";
+        open: true;
+        dismissed => { SetState.sheet = ""; KeyboardFocus.open = false; }
+    }
+    // D6: one of the user's sounds (Ringtone's long press)
+    if SetState.sheet == "your-tone": YourToneSheet {
+        kb: root.kb;
         open: true;
         dismissed => { SetState.sheet = ""; KeyboardFocus.open = false; }
     }
@@ -151,6 +174,28 @@ export component SettingsApp inherits Window {
         descriptions: ["Weekday, day and month", "Day.month.year", "Year-month-day (ISO 8601)", "Month/day/year"];
         current: SetState.date-format;
         chosen(i) => { SetState.act("time.date_format", i); }
+        dismissed => { SetState.sheet = ""; }
+    }
+    // TP4: the banner's time, and a channel's importance (nt-settings' choices)
+    if SetState.sheet == "banner-time": ChoiceSheet {
+        open: true;
+        radio-left: true;
+        title-start: true;
+        title: "Pop-up time";
+        choices: SetState.banner-times;
+        current: SetState.banner-index;
+        chosen(i) => { SetState.sheet = ""; SetState.act("notify-bannert", i); }
+        dismissed => { SetState.sheet = ""; }
+    }
+    if SetState.sheet == "channel": ChoiceSheet {
+        open: true;
+        radio-left: true;
+        title-start: true;
+        title: SetState.channel-current.name;
+        choices: SetState.importances;
+        descriptions: SetState.importance-hints;
+        current: SetState.channel-current.level == 0 ? 4 : 4 - SetState.channel-current.level;
+        chosen(i) => { SetState.sheet = ""; SetState.act("notify-importance", i); }
         dismissed => { SetState.sheet = ""; }
     }
     if SetState.sheet == "pad-strength": ChoiceSheet {
@@ -201,6 +246,34 @@ export component SettingsApp inherits Window {
         choices: SetState.pad-b-names;
         current: SetState.pad-b;
         chosen(i) => { SetState.act("legacy.pad.b", i); }
+        dismissed => { SetState.sheet = ""; }
+    }
+    // D10: Open apps' columns and home's style
+    if SetState.sheet == "nav-cols": ChoiceSheet {
+        open: true;
+        radio-left: true;
+        title-start: true;
+        title: "Open apps columns";
+        choices: SetState.switcher-col-names;
+        current: SetState.switcher-cols - 2;
+        chosen(i) => {
+            SetState.sheet = "";
+            SetState.act("nav.switcher_cols", i + 2);
+        }
+        dismissed => { SetState.sheet = ""; }
+    }
+    if SetState.sheet == "home-style": ChoiceSheet {
+        open: true;
+        radio-left: true;
+        title-start: true;
+        title: "Home style";
+        choices: SetState.home-styles;
+        descriptions: SetState.home-style-hints;
+        current: SetState.home-style;
+        chosen(i) => {
+            SetState.sheet = "";
+            SetState.act("home.style", i);
+        }
         dismissed => { SetState.sheet = ""; }
     }
 }

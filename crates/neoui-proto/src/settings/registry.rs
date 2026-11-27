@@ -34,6 +34,8 @@ pub enum Limit {
     },
     /// A `Str` or `Bytes` of at most this many bytes (tighter than the type-wide limit).
     MaxLen(usize),
+    /// (TP4) An `n.<app>` notification policy (`notification_policy::Policy`): one validator for SET, load and reset.
+    Policy,
 }
 
 /// A default value, in a form that can be written in a `const` table.
@@ -108,6 +110,11 @@ impl Spec {
             }
             (Limit::MaxLen(n), Value::Str(s)) if s.len() > n => Err(super::Error::TooLong),
             (Limit::MaxLen(n), Value::Bytes(b)) if b.len() > n => Err(super::Error::TooLong),
+            (Limit::Policy, Value::Bytes(b))
+                if crate::notification_policy::Policy::decode(b).is_none() =>
+            {
+                Err(super::Error::OutOfRange)
+            }
             _ => Ok(()),
         }
     }
@@ -118,11 +125,17 @@ impl Spec {
 ///   be folded back into the active profile;
 /// - the radio switches (airplane mode, Wi-Fi, Bluetooth, data), which aren't preferences;
 /// - the old apps' pad epoch, a counter;
-/// - the apps chosen to open each file type (`open.always`), which belong with the apps.
+/// - the apps chosen to open each file type (`open.always`), which belong with the apps;
+/// - home's pages and dock (`home.layout`, D10), the user's own arrangement.
 pub const RESET_KEEPS: &[&str] = &[
     "sound.profile",
     "sound.profiles",
     "sound.tones",
+    "sound.feedback",
+    "sound.your_tones",
+    "sound.tones_yours",
+    "sound.keypad_tones",
+    "sound.touch_vibrate",
     "sound.silent",
     "sound.vibrate",
     "sound.ring_volume",
@@ -134,6 +147,7 @@ pub const RESET_KEEPS: &[&str] = &[
     "radio.airplane",
     "legacy.pad.epoch",
     "open.always",
+    "home.layout",
 ];
 
 /// The keys Reset settings puts back to their defaults: every key no app owns, but [`RESET_KEEPS`]. Apps' keys
@@ -210,15 +224,36 @@ registry! {
     SOUND_RING_VOLUME: i32 = "sound.ring_volume", default DefaultValue::Int(8),
         limit Limit::Range { min: 0, max: 10 }, owner Owner::Shell;
     /// (SE2b) The active profile's ringtone and message tone (`sound_profile::tone`: 0 built-in, 1 beep, 2 two beeps,
-    /// 3 none): live values the shell sends MODEMD, written by the profiles' reducer.
+    /// 3 none; D6: 4..=15 the user's own sounds, `sound.your_tones`): live values the shell sends MODEMD, written by the
+    /// profiles' reducer.
     SOUND_RINGTONE: i32 = "sound.ringtone", default DefaultValue::Int(0),
-        limit Limit::Range { min: 0, max: 3 }, owner Owner::Shell;
+        limit Limit::Range { min: 0, max: 15 }, owner Owner::Shell;
     SOUND_MESSAGE_TONE: i32 = "sound.message_tone", default DefaultValue::Int(0),
-        limit Limit::Range { min: 0, max: 3 }, owner Owner::Shell;
+        limit Limit::Range { min: 0, max: 15 }, owner Owner::Shell;
+    /// (D6, SE2c-1) The user's own sounds (`sound_profile::Profiles::encode_yours`): `[id][len][name]`, ids 4..=15;
+    /// their PCM is NEOSET's `tones\<id>.pcm`. Written only by the shell's reducer.
+    /// (D6) The profiles' tones that are the user's own sounds (`sound_profile::Profiles::encode_tones_yours`), read
+    /// over `sound.tones` (which keeps their built-in fallback for an older shell). Written only by the reducer.
+    SOUND_TONES_YOURS: Bytes = "sound.tones_yours", default DefaultValue::Bytes(&[]),
+        limit Limit::MaxLen(32), owner Owner::Shell;
+    SOUND_YOUR_TONES: Bytes = "sound.your_tones", default DefaultValue::Bytes(&[]),
+        limit Limit::MaxLen(512), owner Owner::Shell;
     /// (SE2b) The profiles' tones (`sound_profile::Profiles::encode_tones`): a key of its own beside
     /// `sound.profiles`, so a shell from before SE2b keeps the profiles. Written only by the shell's reducer.
     SOUND_TONES: Bytes = "sound.tones", default DefaultValue::Bytes(&[]),
         limit Limit::MaxLen(32), owner Owner::Shell;
+    /// (D6) The profiles' keypad tones and vibrate on touch (`sound_profile::Profiles::encode_feedback`), a sidecar
+    /// beside `sound.profiles` (which stays version 1). Written only by the shell's reducer.
+    SOUND_FEEDBACK: Bytes = "sound.feedback", default DefaultValue::Bytes(&[]),
+        limit Limit::MaxLen(34), owner Owner::Shell;
+    /// (D6) The active profile's keypad tones: an accepted dial key out of a call plays its tone. A live value the
+    /// reducer writes; the system keyboard's pulse is `keyboard.vibrate`, in-call DTMF doesn't depend on it.
+    SOUND_KEYPAD_TONES: bool = "sound.keypad_tones", default DefaultValue::Bool(false), limit Limit::None,
+        owner Owner::Shell;
+    /// (D6) The active profile's vibrate on touch: one short pulse for each control a touch works. Written by the
+    /// reducer.
+    SOUND_TOUCH_VIBRATE: bool = "sound.touch_vibrate", default DefaultValue::Bool(false), limit Limit::None,
+        owner Owner::Shell;
     /// The active sound profile (`sound_profile`: 0 General, 1 Silent, 2 Meeting, 3 Outdoor, 4 Offline, 5.. added).
     /// Written only by the shell's reducer; `sound.silent/vibrate/ring_volume` are its live values.
     SOUND_PROFILE: i32 = "sound.profile", default DefaultValue::Int(0),
@@ -244,6 +279,17 @@ registry! {
     /// Seconds without a touch before the screen turns off; 0 = never.
     DISPLAY_TIMEOUT: i32 = "display.timeout", default DefaultValue::Int(60),
         limit Limit::Range { min: 0, max: 600 }, owner Owner::Shell;
+    /// (D7) Home's wallpaper: a colour of `settings_app::choices::WALLPAPERS` by its name ("night", "black", …);
+    /// the shell draws an unknown name as Night.
+    DISPLAY_WALLPAPER: alloc::string::String = "display.wallpaper", default DefaultValue::Str("night"),
+        limit Limit::MaxLen(16), owner Owner::Shell;
+    /// (D7) The text size: 0 Small 87.5 %, 1 Medium, 2 Large 112.5 %, 3 Largest 125 % (`choices::FONT_SIZES`); the
+    /// kit's text tokens scale with it (ui/theme.slint), the status bar, clock digits and key faces don't.
+    DISPLAY_FONT_SIZE: i32 = "display.font_size", default DefaultValue::Int(1),
+        limit Limit::Range { min: 0, max: 3 }, owner Owner::Shell;
+    /// (D8) A toast names the app each time one reads the clipboard (`ipc::CLIP_GET`, nonempty).
+    PRIVACY_CLIP_NOTICE: bool = "privacy.clip_notice", default DefaultValue::Bool(true), limit Limit::None,
+        owner Owner::Shell;
     /// Settings -> Battery (SE3a): the status bar's battery shows its percent (off: the level's fill only).
     BATTERY_SHOW_PERCENT: bool = "battery.show_percent", default DefaultValue::Bool(true), limit Limit::None,
         owner Owner::Shell;
@@ -255,6 +301,20 @@ registry! {
     /// band for the previous / next app), 2 N9 gestures (left Back, right Open apps, a right flick for the last app).
     /// A stored 1 (v1's Gestures) becomes the Thumb map.
     NAV_MODE: i32 = "nav.mode", default DefaultValue::Int(1), limit Limit::Range { min: 0, max: 2 }, owner Owner::Shell;
+    /// (D10, G3) Open apps' columns: 2 or 3 cards to a row (their thumbnails scale with them).
+    NAV_SWITCHER_COLS: i32 = "nav.switcher_cols", default DefaultValue::Int(2),
+        limit Limit::Range { min: 2, max: 3 }, owner Owner::Shell;
+    /// (D10, G4) In Gestures and N9 gestures, a drag down from the status bar over an app closes it past half the
+    /// screen (a resident app goes home and keeps running); the shade then opens by a tap on the bar.
+    NAV_SWIPE_CLOSE: bool = "nav.swipe_close", default DefaultValue::Bool(false), limit Limit::None,
+        owner Owner::Shell;
+    /// (D10, G5) Home: 0 Pages (Belle's widget pages), 1 Lanes (N9: Events, Home, Open apps).
+    HOME_STYLE: i32 = "home.style", default DefaultValue::Int(0), limit Limit::Range { min: 0, max: 1 },
+        owner Owner::Shell;
+    /// (D10) Home's pages and dock (`home::Layout`, version byte first), written by the shell's home editor only;
+    /// empty or damaged = the default layout.
+    HOME_LAYOUT: Bytes = "home.layout", default DefaultValue::Bytes(&[]), limit Limit::MaxLen(2048),
+        owner Owner::Shell;
     /// Settings -> Date & time: the network (the modem's NITZ, else an HTTP Date) sets the clock.
     TIME_AUTO: bool = "time.auto", default DefaultValue::Bool(true), limit Limit::None, owner Owner::Shell;
     /// The mobile network's time zone (NITZ) sets the offset; off, the Time zone row picks it.
@@ -269,8 +329,32 @@ registry! {
     STATUS_SECONDS: bool = "status.seconds", default DefaultValue::Bool(false), limit Limit::None, owner Owner::Shell;
     /// The shade shows the date beside the time.
     SHADE_DATE: bool = "shade.date", default DefaultValue::Bool(true), limit Limit::None, owner Owner::Shell;
-    // a swipe down on home opens the shade (top-panel.md TP1; its Settings row comes with TP4's Panel & notifications)
+    // a swipe down on home opens the shade (top-panel.md TP1; Settings → Panel & notifications, TP4)
     SHELL_SWIPEHOME: bool = "shell.swipehome", default DefaultValue::Bool(true), limit Limit::None, owner Owner::Shell;
+    /// (TP4) Do not disturb: no banners, sounds or vibrations from the shell; cards still reach the shade. Calls and
+    /// SMS tones are MODEMD's and still ring (NeoModem's alert policy is later).
+    NOTIFY_DND: bool = "notify.dnd", default DefaultValue::Bool(false), limit Limit::None, owner Owner::Shell;
+    /// (TP4) When Do not disturb ends: empty (or 0) until turned off, else 8 bytes, a LE i64 UTC second; the shell
+    /// turns `notify.dnd` off once it passes.
+    NOTIFY_DNDTO: Bytes = "notify.dndto", default DefaultValue::Bytes(&[]), limit Limit::MaxLen(8), owner Owner::Shell;
+    /// (TP4) Calls from favourites and repeated callers ring through Do not disturb (needs NeoModem's alert policy).
+    NOTIFY_DNDFAV: bool = "notify.dndfav", default DefaultValue::Bool(true), limit Limit::None, owner Owner::Shell;
+    /// (TP4) How long a banner stays, in seconds.
+    NOTIFY_BANNERT: i32 = "notify.bannert", default DefaultValue::Int(5),
+        limit Limit::Range { min: 1, max: 30 }, owner Owner::Shell;
+    /// (TP8) Cards on the lock screen: 0 show, 1 private, 2 off.
+    NOTIFY_LOCK: i32 = "notify.lock", default DefaultValue::Int(0),
+        limit Limit::Range { min: 0, max: 2 }, owner Owner::Shell;
+    /// (TP4) Each publisher's notification policy (`notification_policy::Policy`; empty = the defaults). Shell-owned:
+    /// the app can't change what the user chose; Settings writes them.
+    N_PHONE: Bytes = "n.phone", default DefaultValue::Bytes(&[]), limit Limit::Policy, owner Owner::Shell;
+    N_MESSAGES: Bytes = "n.messages", default DefaultValue::Bytes(&[]), limit Limit::Policy, owner Owner::Shell;
+    N_DTSRV: Bytes = "n.dtsrv", default DefaultValue::Bytes(&[]), limit Limit::Policy, owner Owner::Shell;
+    N_FILES: Bytes = "n.files", default DefaultValue::Bytes(&[]), limit Limit::Policy, owner Owner::Shell;
+    N_BROWSER: Bytes = "n.browser", default DefaultValue::Bytes(&[]), limit Limit::Policy, owner Owner::Shell;
+    N_DEVTOOLS: Bytes = "n.devtools", default DefaultValue::Bytes(&[]), limit Limit::Policy, owner Owner::Shell;
+    N_TERMINAL: Bytes = "n.terminal", default DefaultValue::Bytes(&[]), limit Limit::Policy, owner Owner::Shell;
+    N_KIT: Bytes = "n.kit", default DefaultValue::Bytes(&[]), limit Limit::Policy, owner Owner::Shell;
     /// 24-hour clock (else 12-hour).
     CLOCK_24H: bool = "clock.24h", default DefaultValue::Bool(true), limit Limit::None, owner Owner::App("clock");
     /// USB debugging (Developer options): fshell's USB serial port and the shell on it (`phone.py sh`), like

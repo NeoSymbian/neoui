@@ -2,6 +2,7 @@
 // Home screen widgets, drawn by the shell from data (docs/neoui-shell.md, Part 4: data first, app-drawn later).
 // The clock widget is the first; the widget catalogue and home layout of Part 3/4 will place these.
 import { Theme } from "../theme.slint";
+import { Kit } from "layers.slint";
 import { Now } from "../now.slint";
 import { BigClock } from "controls.slint";
 import { Glyph } from "frame.slint";
@@ -62,6 +63,7 @@ export component ClockWidget inherits Rectangle {
 
     TouchArea {
         clicked => {
+            Kit.accept();
             root.clicked();
         }
     }

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Personal: Date & time (set2-datetime; the city sheet of set2-timezone, the format sheet of set2-dateformat),
-// Language & keyboard (set2-language) and Privacy (set2-privacy: Clear clipboard; the rest is SE4).
+// Language & keyboard (set2-language; the display language is English only, D7) and Privacy (set2-privacy: Clear
+// clipboard, the clipboard toast and the local log, D8; app permissions come later).
 import { Theme, NeoList, SectionHeader, ListRow, Sheet, TextField, SearchField } from "@neoui/kit.slint";
 import { Note } from "../parts.slint";
 import { SetState, ZoneRow } from "../state.slint";
@@ -244,6 +245,18 @@ export component KeyboardPage inherits NeoList {
             switch-toggled(v) => { SetState.act("keyboard.vibrate", v ? "1" : "0"); }
             divider: false;
         }
+
+        // D7: the menus' language, apart from the keyboards; English only until translations ship (no picker yet)
+        SectionHeader { text: "Language"; }
+        ListRow {
+            value-bright: true;
+            title: "Display language";
+            checked: SetState.found == "kb.display_language";
+            subtitle: "English · more languages later";
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/world.svg");
+            divider: false;
+        }
     }
 }
 
@@ -255,13 +268,40 @@ export component PrivacyPage inherits NeoList {
             value-bright: true;
             title: "Clear clipboard";
             checked: SetState.found == "privacy.clip";
-            subtitle: "It holds up to 2048 bytes until the next copy";
+            subtitle: "Holds up to 2048 B";
             has-icon: true;
-            icon: @image-url("@neoui/icons/sys/delete.svg");
-            divider: false;
+            icon: @image-url("@neoui/icons/sys/copy.svg");
             clicked => { SetState.act("clip-clear", ""); }
         }
 
-        Note { text: "Apps on C: get no capabilities; apps in the ROM get them all. App permissions come later (SE4)."; }
+        // D8: the shell's toast after an app reads it (privacy.clip_notice)
+        ListRow {
+            value-bright: true;
+            title: "Show when an app reads it";
+            checked: SetState.found == "privacy.clip_notice";
+            subtitle: "Toast on CLIP_GET";
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/bell.svg");
+            has-switch: true;
+            switch-on <=> SetState.clip-notice;
+            switch-toggled(v) => { SetState.act("privacy.clip_notice", v ? "1" : "0"); }
+            divider: false;
+        }
+
+        // D8: what the phone logs stays on it: Dev tools' console shows it, and saves it only when asked
+        SectionHeader { text: "Diagnostics"; }
+        ListRow {
+            value-bright: true;
+            title: "Usage & diagnostics";
+            checked: SetState.found == "privacy.diagnostics";
+            subtitle: "Nothing is sent";
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/chart.svg");
+            chevron: true;
+            divider: false;
+            clicked => { SetState.act("devtools", "console"); }
+        }
+
+        Note { text: "Apps in the ROM get every capability; apps on C: only those they declare. A list by app comes later. No automatic diagnostics upload: Dev tools shows the log and saves it only when you ask."; }
     }
 }

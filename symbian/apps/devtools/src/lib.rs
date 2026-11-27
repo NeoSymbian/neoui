@@ -13,11 +13,13 @@
 //! - [`state`]: the model
 //! - [`probe`]: reading and testing the hardware
 //! - [`pages`]: one module per page (callbacks in, properties out)
+//! - [`app_data`]: the logs it saved, as their owner (D4: Settings measures and clears them)
 //! - this file: connecting, and the event loop (input, Back, refreshing as time passes)
 #![no_std]
 
 extern crate alloc;
 
+mod app_data;
 mod pages;
 mod probe;
 mod state;
@@ -37,6 +39,8 @@ slint::include_modules!();
 
 e32::main!(main);
 
+/// The ticker's word that a start only for owner work is done (not an error code: those are negative).
+const DONE: i32 = 1;
 /// How often the loop wakes: the log is read each time.
 const TICK_US: u32 = 500_000;
 /// Memory, processes and the CPU load.
@@ -68,6 +72,7 @@ fn console_rows(h: usize, dp: f32, cell: f32) -> usize {
 
 fn run() -> Result<(), i32> {
     let app = App::connect()?;
+    app_data::register(&app);
     let ui = DevApp::new().map_err(|_| -2)?;
     let dp = app.dp;
     ui.global::<Theme>().set_dp(dp);
@@ -105,9 +110,13 @@ fn run() -> Result<(), i32> {
     });
     pages::bind(&ctx, &ui);
     ctx.refresh_log();
-    ctx.refresh_stats();
-    ctx.refresh_devices();
-    {
+    // the inventory (processes, probes, the device registry) waits for the first show: a start only for owner work
+    // (D4) serves it first and quits
+    ctx.open(View::None); // shows the tabs and describes the page
+    ctx.draw()?; // nothing until Visible(true): neoapp asks for the surface when shown
+    let inventory = |ctx: &Ctx| {
+        ctx.refresh_stats();
+        ctx.refresh_devices();
         let m = ctx.model.borrow();
         let count = |src: &str| m.devices.iter().filter(|d| d.source.label() == src).count();
         dprintln!(
@@ -121,13 +130,14 @@ fn run() -> Result<(), i32> {
             rows_fit,
             m.build.first().map_or("", alloc::string::String::as_str)
         );
-    }
-    ctx.open(View::None); // shows the tabs and describes the page
-    ctx.draw()?; // nothing until Visible(true): neoapp asks for the surface when shown
+    };
 
     // In the background (R10) the app neither refreshes nor draws; the log is still followed (cheap, and the
     // kernel's ring would drop what it is not asked for).
     let mut visible = false;
+    // started only for owner work (D4), never shown: it quits once the work is done and its report taken
+    let mut shown = false;
+    let (mut worked, unsent) = (false, RefCell::new(None));
     // a finger is down: the periodic refresh waits, since replacing the list models under a press loses the drag
     // (the Flickable takes it only after 8 px) and the list wouldn't scroll
     let mut touching = false;
@@ -137,6 +147,11 @@ fn run() -> Result<(), i32> {
             // one NEXT_EVENT stays outstanding while the log is followed (neoapp's Ticker); Slint's timers and
             // animations get their frames inside next_event
             let mut ticker = || -> Result<(), i32> {
+                // a report the shell didn't take, sent again; then a start only for owner work is done
+                app_data::resend(&ctx.app, &mut unsent.borrow_mut());
+                if worked && !shown && unsent.borrow().is_none() {
+                    return Err(DONE);
+                }
                 // nor during a fling (Slint animates the list)
                 let refresh = visible && !touching && !ctx.app.window.has_active_animations();
                 if tick(&ctx, refresh, &mut stats_at, &mut devices_at) {
@@ -150,7 +165,14 @@ fn run() -> Result<(), i32> {
                     every_us: TICK_US,
                     f: &mut ticker,
                 }))
-                .await?;
+                .await;
+            let e = match e {
+                Err(DONE) => {
+                    dprintln!("devtools: owner work done, never shown: quit");
+                    return Ok(());
+                }
+                e => e?,
+            };
             match e {
                 AppEvent::Quit => {
                     dprintln!("devtools: quit");
@@ -160,11 +182,24 @@ fn run() -> Result<(), i32> {
                     dprintln!("devtools: visible {}", v);
                     visible = v;
                     if v {
-                        // what the page shows, fresh, at once
-                        ctx.refresh_stats();
-                        ctx.refresh_devices();
+                        // what the page shows, fresh, at once (the first time with the inventory's log line)
+                        if shown {
+                            ctx.refresh_stats();
+                            ctx.refresh_devices();
+                        } else {
+                            inventory(&ctx);
+                        }
+                        shown = true;
                         (stats_at, devices_at) = (time::millis(), time::millis());
                         ctx.show();
+                    }
+                }
+                AppEvent::OwnerWork { ticket } | AppEvent::ClearTicket { ticket } => {
+                    app_data::work(&ctx.app, ticket, &mut unsent.borrow_mut());
+                    worked = true;
+                    if !shown && unsent.borrow().is_none() {
+                        dprintln!("devtools: owner work done, never shown: quit");
+                        return Ok(());
                     }
                 }
                 AppEvent::Area { h } if h > 0 => {
@@ -211,6 +246,7 @@ fn run() -> Result<(), i32> {
                 }
                 _ => {}
             }
+            neoapp::kit_feedback!(ui, ctx.app); // D6: the kit's controls pulse as the profile says
             ctx.draw()?;
         }
     })

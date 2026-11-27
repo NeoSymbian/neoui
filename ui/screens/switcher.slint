@@ -1,21 +1,32 @@
 // SPDX-License-Identifier: Apache-2.0
-// Open apps (NeoSymbian R10): the apps the UI server keeps running, most recent first, as cards in two columns (Belle's
-// task switcher, modernized). Tap a card to go back to the app; × closes it. Opened from the Apps menu's toolbar.
-// Geometry (crates/neoui-render/tests/switcher.rs and the virt UI CI mirror it): 12 dp margins and gaps, cards 160 dp
-// high, × in a 44 dp square at the card's top-right.
-// shortcut: icons, not live thumbnails of the apps; add downscaled surface snapshots later.
+// Open apps (NeoSymbian R10): the apps the UI server keeps running, most recent first, as cards in two or three columns
+// (nav.switcher_cols, G3). A card shows the app as it was when it went to the back (a thumbnail the UI server took
+// then), or its icon. Tap a card to go back to the app. × closes it: always in Buttons; in Gestures and N9 gestures
+// after a 500 ms press on a card (close mode, the N9's), and a tap off the cards leaves close mode.
+// Geometry (crates/neoui-render/tests/switcher.rs and the virt UI CI mirror it): 12 dp margins and gaps, cards
+// (width - (cols + 1) gaps) / cols wide and 160 dp high, × in a 44 dp square at the card's top-right.
 import { Theme } from "../theme.slint";
 import { NeoList } from "../components/scroll.slint";
 import { Apps } from "menu.slint";
 import { Glyph } from "../components/frame.slint";
+import { SystemSettings } from "../system-settings.slint";
 
 export component SwitcherScreen inherits Rectangle {
     // app keys, most recent first
     in property <[string]> running;
+    // each running app's thumbnail, in the order of `running` (an empty image: none, its icon shows)
+    in property <[image]> thumbs;
+    // the screen is on show: close mode starts off each time
+    in property <bool> shown;
     callback open-app(string);
     callback close-app(string);
+    // close mode (G3): × on every card
+    in-out property <bool> closing;
+    changed shown => { root.closing = false; }
+    property <bool> show-close: SystemSettings.nav-mode == 0 || root.closing;
+    property <int> cols: SystemSettings.switcher-cols >= 3 ? 3 : 2;
     property <length> gap: 12 * Theme.dp;
-    property <length> card-w: (self.width - 3 * gap) / 2;
+    property <length> card-w: (self.width - (cols + 1) * gap) / cols;
     property <length> card-h: 160 * Theme.dp;
 
     if running.length == 0: Text {
@@ -27,25 +38,95 @@ export component SwitcherScreen inherits Rectangle {
     }
 
     NeoList {
-        content-height: gap + Math.ceil(running.length / 2) * (card-h + gap);
+        // at least the screen, so a tap anywhere off the cards reaches the area below
+        content-height: max(root.height, gap + Math.ceil(running.length / cols) * (card-h + gap));
+        // a tap off the cards leaves close mode
+        TouchArea {
+            x: 0;
+            y: 0;
+            width: root.width;
+            height: max(root.height, gap + Math.ceil(running.length / cols) * (card-h + gap));
+            clicked => { root.closing = false; }
+        }
+
         for key[i] in running: Rectangle {
-            x: gap + Math.mod(i, 2) * (card-w + gap);
-            y: gap + Math.floor(i / 2) * (card-h + gap);
+            x: gap + Math.mod(i, cols) * (card-w + gap);
+            y: gap + Math.floor(i / cols) * (card-h + gap);
             width: card-w;
             height: card-h;
             border-radius: Theme.radius;
+            clip: true;
             background: open.pressed ? Theme.pressed : Theme.card;
-            border-width: max(1px, Theme.dp / 2);
-            border-color: Theme.card-border;
+            accessible-role: button;
+            accessible-label: key;
+            accessible-action-default => { root.open-app(key); }
+            property <bool> thumbed: i < root.thumbs.length && root.thumbs[i].width > 0;
+
+            // the app as it was, scaled to the card's width from its top
+            if thumbed: Image {
+                x: 0;
+                y: 0;
+                width: parent.width;
+                height: parent.width * root.thumbs[i].height / max(1, root.thumbs[i].width);
+                source: root.thumbs[i];
+                opacity: open.pressed ? 0.7 : 1;
+            }
 
             open := TouchArea {
+                property <bool> held;
+                changed pressed => {
+                    if self.pressed {
+                        self.held = false;
+                    }
+                }
                 clicked => {
-                    root.open-app(key);
+                    if self.held {
+                        return;
+                    }
+                    if root.closing {
+                        root.closing = false;
+                    } else {
+                        root.open-app(key);
+                    }
+                }
+            }
+            Timer {
+                interval: 500ms;
+                running: open.pressed && !open.held && SystemSettings.nav-mode != 0;
+                triggered => {
+                    open.held = true;
+                    root.closing = true;
                 }
             }
 
+            // its name on a band at the bottom, over the thumbnail
             for app in Apps.all: Rectangle {
-                if app.key == key: VerticalLayout {
+                if thumbed && app.key == key: Rectangle {
+                    y: parent.height - self.height;
+                    height: 32 * Theme.dp;
+                    background: #0d0f13d9;
+                    HorizontalLayout {
+                        padding-left: 8 * Theme.dp;
+                        padding-right: 8 * Theme.dp;
+                        spacing: 6 * Theme.dp;
+                        alignment: start;
+                        Image {
+                            y: (parent.height - self.height) / 2;
+                            width: 20 * Theme.dp;
+                            height: 20 * Theme.dp;
+                            source: app.icon;
+                        }
+
+                        Text {
+                            text: app.name;
+                            color: Theme.text;
+                            font-size: Theme.font-label;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+                    }
+                }
+                if !thumbed && app.key == key: VerticalLayout {
                     alignment: center;
                     spacing: Theme.app-label-gap;
                     HorizontalLayout {
@@ -66,8 +147,15 @@ export component SwitcherScreen inherits Rectangle {
                 }
             }
 
-            // ×: above the card's own touch area
+            // the card's outline, over the thumbnail
             Rectangle {
+                border-radius: Theme.radius;
+                border-width: max(1px, Theme.dp / 2);
+                border-color: root.closing ? Theme.accent : Theme.card-border;
+            }
+
+            // ×: above the card's own touch area
+            if root.show-close: Rectangle {
                 x: parent.width - self.width;
                 y: 0;
                 width: 44 * Theme.dp;
@@ -85,6 +173,8 @@ export component SwitcherScreen inherits Rectangle {
                 }
 
                 close := TouchArea {
+                    accessible-role: button;
+                    accessible-label: "Close " + key;
                     clicked => {
                         root.close-app(key);
                     }

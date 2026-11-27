@@ -1,0 +1,41 @@
+// SPDX-License-Identifier: Apache-2.0
+// (D7) Home's wallpaper colours (display.wallpaper; the canvas's set2-wallpaper): home draws the stored one, the
+// Settings app's picker draws them all. The same names and order as neoui-proto settings_app::choices::WALLPAPERS.
+export global Wallpapers {
+    out property <[{key: string, name: string}]> all: [
+        { key: "night", name: "Night" },
+        { key: "black", name: "Black" },
+        { key: "graphite", name: "Graphite" },
+        { key: "blue", name: "Blue" },
+        { key: "green", name: "Green" },
+        { key: "plum", name: "Plum" },
+        { key: "amber", name: "Amber" },
+        { key: "dusk", name: "Dusk" },
+    ];
+
+    // a stored name's fill; an unknown one (an older or newer store) is Night, the default
+    public pure function fill(key: string) -> brush {
+        if key == "black" {
+            return #000000;
+        }
+        if key == "graphite" {
+            return #2a2e35;
+        }
+        if key == "blue" {
+            return #16325c;
+        }
+        if key == "green" {
+            return #0f3a2a;
+        }
+        if key == "plum" {
+            return #3a1d3f;
+        }
+        if key == "amber" {
+            return #4a3208;
+        }
+        if key == "dusk" {
+            return @linear-gradient(180deg, #3a1d3f 0%, #16325c 60%, #05070b 100%);
+        }
+        return @linear-gradient(180deg, #0c1424 0%, #05070b 55%, #000000 100%);
+    }
+}
