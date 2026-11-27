@@ -273,6 +273,35 @@ fn home_part_3_and_4() {
     common::frame(&mut r, &mut buf, w, "none again");
     assert_eq!(differ(&buf, &empty), 0);
 
+    // a tap on a widget opens its app on the page its content names; a greyed one (no content) just opens the app
+    let centre = |(x, y, rw, rh): (u32, u32, u32, u32)| ((x + rw / 2) as i32, (y + rh / 2) as i32);
+    let (bx, by) = centre(beside);
+    common::tap(&mut r, bx, by);
+    assert_eq!(r.screen(), "clock");
+    assert_eq!(r.take_widget_pages(), [], "nothing came for clock.next");
+    r.show("home", "");
+    r.set_app_widget(
+        "kit",
+        "demo",
+        Some(Content {
+            name: "demo".into(),
+            page: 7,
+            body: Body::Count {
+                icon: 0,
+                value: 1,
+                label: "unread".into(),
+            },
+        }),
+    );
+    common::frame(&mut r, &mut buf, w, "page 7");
+    let (sx, sy) = centre(square);
+    common::tap(&mut r, sx, sy);
+    assert_eq!(r.screen(), "kit");
+    assert_eq!(r.take_widget_pages(), [("kit".into(), 7)]);
+    assert_eq!(r.take_widget_pages(), [], "taken once");
+    r.show("home", "");
+    r.set_app_widget("kit", "demo", None);
+
     // --- the editor's Add sheet: each widget with its sizes; Agenda's 2 × 2 goes to the page shown
     r.edit_home();
     r.set_home_page(1);

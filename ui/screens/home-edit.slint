@@ -13,7 +13,7 @@ import { Apps } from "menu.slint";
 // (home.md Part 4) An app widget's content (neoui-proto `widget::Content`): `template` 0 none yet (the label shows
 // greyed), 1 Text (`title`, `lines`), 2 Count (`value`, its label in `title`), 3 People.
 export struct WidgetPerson { initials: string, tint: color, name: string }
-export struct WidgetContent { template: int, title: string, lines: [string], value: string, people: [WidgetPerson] }
+export struct WidgetContent { template: int, title: string, lines: [string], value: string, people: [WidgetPerson], page: int }
 
 // An item on a page (`page`, its `index` there) at `col`, `row` and `w` × `h` cells of the 4 × 6 grid; `kind` 0 is an
 // app's icon (`key`), 1 a widget (`widget`: 1 Clock, 2 Agenda, 3 Favourites, 4 Media), 2 an app's widget (`key` the
@@ -54,7 +54,8 @@ export global HomeModel {
     in property <string> message;
     // "enter", "done", "remove" (page, index), "drop" (page, index, col, row: the cell it was let go over),
     // "edge" (page, index, -1 | 1: to the end of the page beside it, a new one past the last), "pin" (page, key),
-    // "widget" (page, widget id or 0, size; key "app.name" for an app's), "dock" (slot, key; "" empties it)
+    // "widget" (page, widget id or 0, size; key "app.name" for an app's), "dock" (slot, key; "" empties it), "open"
+    // (an app widget's content page, key the app: a tap on it, `Renderer::take_widget_pages`)
     callback op(string, int, int, int, int, string);
 }
 
@@ -158,6 +159,9 @@ export component AddSheet inherits Sheet {
     title: HomeModel.sheet == "dock" ? "Dock slot " + (HomeModel.dock-slot + 1) : "Add to home";
     title-start: true;
     dismissed => { HomeModel.sheet = ""; }
+    // the list rows that fit under the handle, title and tabs (~120 dp): 6 in portrait, 3 in landscape's 360 dp; the
+    // list scrolls the rest
+    property <int> rows: max(1, min(6, floor((root.height - 120 * Theme.dp) / Theme.list-row-h)));
 
     if HomeModel.sheet == "add": HorizontalLayout {
         padding-left: 20 * Theme.dp;
@@ -186,7 +190,7 @@ export component AddSheet inherits Sheet {
 
     // each widget with its sizes: a tap on a size adds it
     if !root.apps-tab: NeoList {
-        height: min(6, HomeModel.widgets.length) * Theme.list-row-h;
+        height: min(root.rows, HomeModel.widgets.length) * Theme.list-row-h;
         content-height: HomeModel.widgets.length * Theme.list-row-h;
         for w[i] in HomeModel.widgets: Rectangle {
             y: i * Theme.list-row-h;
@@ -230,7 +234,7 @@ export component AddSheet inherits Sheet {
     }
 
     if root.apps-tab: NeoList {
-        height: min(6, Apps.all.length + (HomeModel.sheet == "dock" ? 1 : 0)) * Theme.list-row-h;
+        height: min(root.rows, Apps.all.length + (HomeModel.sheet == "dock" ? 1 : 0)) * Theme.list-row-h;
         content-height: (Apps.all.length + (HomeModel.sheet == "dock" ? 1 : 0)) * Theme.list-row-h;
         for app[i] in Apps.all: Rectangle {
             y: i * Theme.list-row-h;

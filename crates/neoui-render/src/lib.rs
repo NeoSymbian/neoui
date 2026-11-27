@@ -931,6 +931,12 @@ impl Renderer {
         self.notes_cleared.replace(false)
     }
 
+    /// (home.md Part 4) The app widgets tapped on home since the last call: (app key, the page its content names). The
+    /// tap already showed the app's screen; the server tells the app the page (`AppEvent::Page`).
+    pub fn take_widget_pages(&mut self) -> Vec<(String, u16)> {
+        self.home.borrow_mut().take_opened()
+    }
+
     /// The shade's cards tapped since the last call: (app key, id, 0 for the card itself or `i + 1` for its action
     /// `i`).
     pub fn take_notes_opened(&mut self) -> Vec<(String, u32, u16)> {

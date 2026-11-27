@@ -770,6 +770,7 @@ fn main() -> i32 {
                 }
                 page_shown = (screen.clone(), ui.view());
             }
+            host::widget::open_pages(&mut host, &mut ui);
             let running = host.running();
             if running != running_shown {
                 ui.set_running(&running);

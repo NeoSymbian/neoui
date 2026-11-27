@@ -259,8 +259,13 @@ component ItemView inherits Rectangle {
                 label: c.label;
                 icon: app.icon;
                 square: c.w == 2;
-                // shortcut: a tap opens the app, not the content's `page`; pass it once the shell opens apps on a page
-                clicked => { root.open-app(c.key); }
+                // on the page its content names (none yet: just the app)
+                clicked => {
+                    if c.content.template != 0 {
+                        HomeModel.op("open", c.content.page, 0, 0, 0, c.key);
+                    }
+                    root.open-app(c.key);
+                }
             }
         }
     }

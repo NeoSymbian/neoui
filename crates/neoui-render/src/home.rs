@@ -34,6 +34,8 @@ pub(crate) struct State {
     queued: bool,
     /// (Part 4) the apps' widget content the store keeps (`widget.<app>.<name>`)
     content: Vec<(String, String, Content)>,
+    /// (Part 4) app widgets tapped: the app and its content's page, until the server takes them
+    opened: Vec<(String, u16)>,
 }
 
 impl State {
@@ -46,6 +48,10 @@ impl State {
             return None;
         }
         self.pending.as_ref().map(|(b, _)| b.clone())
+    }
+    /// The app widgets tapped since the last call: (app, page).
+    pub(crate) fn take_opened(&mut self) -> Vec<(String, u16)> {
+        core::mem::take(&mut self.opened)
     }
     pub(crate) fn saved_bytes(&self) -> Vec<u8> {
         self.raw.clone()
@@ -95,6 +101,7 @@ fn shown(c: Option<&Content>) -> WidgetContent {
     WidgetContent {
         template: c.body.template() as i32,
         title: title.into(),
+        page: i32::from(c.page),
         lines: ModelRc::new(VecModel::from(lines)),
         value: alloc::format!("{value}").into(),
         people: ModelRc::new(VecModel::from(people)),
@@ -228,6 +235,9 @@ pub(crate) fn wire(ui: &Shell, edited: Rc<RefCell<Vec<String>>>) -> Rc<RefCell<S
         let Some(ui) = weak.upgrade() else { return };
         let mut st = state.borrow_mut();
         let r = apply(&mut st, op.as_str(), [a, b, c, d], key.as_str());
+        if op == "open" {
+            return; // home's model is unchanged
+        }
         let g = ui.global::<HomeModel>();
         g.set_message(r.err().map_or("", message).into());
         if matches!(op.as_str(), "pin" | "widget" | "dock") && r.is_ok() {
@@ -284,6 +294,11 @@ pub(crate) fn apply(
     [a, b, c, d]: [i32; 4],
     key: &str,
 ) -> Result<(), Error> {
+    if op == "open" {
+        let page = u16::try_from(a).map_err(|_| Error::Invalid)?;
+        st.opened.push((key.into(), page));
+        return Ok(());
+    }
     if op == "enter" {
         if st.draft.is_none() {
             st.draft = Some(latest(st));
@@ -397,6 +412,18 @@ pub(crate) fn stored(ui: &Shell, st: &mut State, bytes: &[u8]) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_widget_tap_queues_its_page_once() {
+        let mut st = State::default();
+        apply(&mut st, "open", [7, 0, 0, 0], "kit").unwrap();
+        assert_eq!(
+            apply(&mut st, "open", [-1, 0, 0, 0], "kit"),
+            Err(Error::Invalid)
+        );
+        assert_eq!(st.take_opened(), [("kit".into(), 7)]);
+        assert!(st.take_opened().is_empty() && !st.queued && !st.editing());
+    }
 
     #[test]
     fn done_saves_once_and_only_a_change() {

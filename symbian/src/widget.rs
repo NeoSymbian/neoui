@@ -51,6 +51,15 @@ impl Host {
     }
 }
 
+/// (home.md Part 4) App widgets tapped on home: the tap showed the app's screen (`set_screen` started it), so it is
+/// told the page its content names, like a notification's.
+pub(crate) fn open_pages(host: &mut Host, ui: &mut Renderer) {
+    for (key, page) in ui.take_widget_pages() {
+        dprintln!("neoui: widget of {} opens page {}", key, page);
+        host.post(&key, neoui_proto::ipc::AppEvent::Page { page });
+    }
+}
+
 /// What the store keeps for `(app, name)`, if anything readable.
 fn stored(settings: &Settings, app: &str, name: &str) -> Option<Content> {
     let key = widget::setting_key(app, name)?;
