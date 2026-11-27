@@ -548,7 +548,15 @@ impl Layout {
             }
             keys.push(k);
         }
-        let key = |r: u8| keys.get(usize::from(r).checked_sub(1)?).cloned();
+        // W0d: the old apps' screen (`legacy`) is Classic apps (`classic`) now; saved layouts move with it
+        let key = |r: u8| {
+            let k = keys.get(usize::from(r).checked_sub(1)?)?;
+            Some(if k == crate::apps::LEGACY {
+                String::from(crate::apps::CLASSIC)
+            } else {
+                k.clone()
+            })
+        };
         let mut dock: [Option<String>; DOCK] = Default::default();
         for d in &mut dock {
             let r = next()?;
@@ -613,6 +621,20 @@ mod tests {
     }
     fn at(p: &[Placed]) -> Vec<(u8, u8)> {
         p.iter().map(|p| (p.col, p.row)).collect()
+    }
+
+    /// W0d: the old apps' screen key `legacy` is Classic apps' `classic` now; a saved shortcut or dock slot moves
+    /// with it on load (nothing else changes).
+    #[test]
+    fn a_saved_legacy_key_loads_as_classic() {
+        let mut l = Layout::default();
+        l.pages[1].items = vec![s("files"), s("legacy")];
+        l.dock[3] = Some("legacy".into());
+        let loaded = Layout::load(&l.encode().unwrap());
+        assert_eq!(loaded.pages[1].items, [s("files"), s("classic")]);
+        assert_eq!(loaded.dock[3].as_deref(), Some("classic"));
+        assert_eq!(loaded.pages[0], l.pages[0]);
+        assert_eq!(loaded.dock[..3], l.dock[..3]);
     }
 
     #[test]

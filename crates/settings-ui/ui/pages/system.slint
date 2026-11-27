@@ -12,6 +12,7 @@ export global AppIcon {
         if key == "clock" { return @image-url("@neoui/icons/sys/clock.svg"); }
         if key == "calendar" { return @image-url("@neoui/icons/sys/today.svg"); }
         if key == "terminal" { return @image-url("@neoui/icons/sys/keyboard.svg"); }
+        if key == "classic" { return @image-url("@neoui/icons/sys/keypad.svg"); }
         if key == "files" { return @image-url("@neoui/icons/sys/folder.svg"); }
         if key == "devtools" { return @image-url("@neoui/icons/sys/usb.svg"); }
         if key == "phone" { return @image-url("@neoui/icons/sys/call.svg"); }
@@ -39,7 +40,7 @@ export component AppsPage inherits NeoList {
             clicked => { SetState.act("app-detail", a.key); }
         }
 
-        SectionHeader { text: "Old apps"; }
+        SectionHeader { text: "Classic apps"; }
         for a in SetState.old-apps: ListRow {
             value-bright: true;
             title: a.name;
@@ -53,10 +54,10 @@ export component AppsPage inherits NeoList {
             }
         }
         if SetState.old-total > SetState.old-apps.length: Note {
-            text: SetState.old-apps.length + " of " + SetState.old-total + " old apps: the rest didn't fit in the Old apps grid either.";
+            text: SetState.old-apps.length + " of " + SetState.old-total + " classic apps: the rest didn't fit in the Classic apps list either.";
         }
         if SetState.old-ok && SetState.old-apps.length == 0: Note {
-            text: "Old apps are listed once Old apps has been opened since the phone started.";
+            text: "Classic apps are listed once Classic apps has been opened since the phone started.";
         }
         // a button, not a row: search can't lead to it once old apps are listed
         if SetState.old-ok && SetState.old-apps.length == 0: HorizontalLayout {
@@ -64,15 +65,15 @@ export component AppsPage inherits NeoList {
             padding-right: Theme.margin;
             padding-bottom: 8 * Theme.dp;
             Button {
-                text: "Open Old apps";
+                text: "Open Classic apps";
                 primary: false;
-                clicked => { SetState.act("app-open", "legacy"); }
+                clicked => { SetState.act("app-open", "classic"); }
             }
         }
-        if !SetState.old-ok: Note { text: "This UI server can't list old apps."; }
+        if !SetState.old-ok: Note { text: "This UI server can't list classic apps."; }
         ListRow {
             value-bright: true;
-            title: "Key pads for old apps";
+            title: "Key pads for classic apps";
             checked: SetState.found == "apps.oldapps";
             subtitle: "Pads, buttons and vibration for S60 apps";
             has-icon: true;
@@ -225,7 +226,7 @@ export component AppSheet inherits Sheet {
         padding-right: 20 * Theme.dp;
         spacing: 14 * Theme.dp;
         Text {
-            text: SetState.app-current.old ? "An S60 app, run by the Old apps bridge." : "In the phone's ROM.";
+            text: SetState.app-current.old ? "An S60 app, run by the Classic apps bridge." : "In the phone's ROM.";
             font-size: Theme.font-label;
             color: Theme.text-secondary;
             wrap: word-wrap;

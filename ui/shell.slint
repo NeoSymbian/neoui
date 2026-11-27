@@ -40,7 +40,6 @@ import { PowerMenu, PowerProfile } from "components/powermenu.slint";
 import { HomeScreen } from "screens/home.slint";
 import { HomeModel } from "screens/home-edit.slint";
 import { MenuScreen } from "screens/menu.slint";
-import { OldAppsScreen, OldApp } from "screens/oldapps.slint";
 import { CameraScreen } from "screens/camera.slint";
 import { PhotosScreen } from "screens/photos.slint";
 import { MusicScreen } from "screens/music.slint";
@@ -140,9 +139,6 @@ export component Shell inherits Window {
     // in: an app process is in front: the shell's own mock of that screen stays hidden (an overlay shows over a dark
     // body, not over a mock)
     in property <bool> app-front;
-    // Installed apps advertised by LEGACY; tile taps keep the grid visible until it asks for FRONT(1).
-    in property <[OldApp]> old-apps;
-    callback open-entry(int);
     // in: the foreground app's page (ipc 1.8 PAGE): its name (Open apps), whether Back stays inside the app, full
     // screen. The shell reports taps through app-nav: "back", "answer" i, "note" (the toast's action).
     in property <string> app-title;
@@ -324,7 +320,7 @@ export component Shell inherits Window {
         : s == "terminal" ? "Terminal"
         : s == "devtools" ? "Dev tools"
         : s == "kit" ? "UI kit"
-        : s == "legacy" ? "Old apps"
+        : s == "legacy" || s == "classic" ? "Classic apps"
         : s == "switcher" ? "Open apps"
         : s
     }
@@ -411,14 +407,6 @@ export component Shell inherits Window {
             active: screen == "music";
             MusicScreen {
                 view <=> root.view;
-            }
-        }
-
-        Slot {
-            active: screen == "legacy" && !root.app-front;
-            OldAppsScreen {
-                entries: root.old-apps;
-                open-entry(id) => { root.open-entry(id); }
             }
         }
 

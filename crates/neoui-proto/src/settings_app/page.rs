@@ -179,7 +179,7 @@ impl Page {
             Page::Developer => "Developer options",
             Page::About => "About phone",
             Page::Apps => "Apps",
-            Page::OldApps => "Old apps",
+            Page::OldApps => "Classic apps",
             Page::Privacy => "Privacy",
             Page::Licences => "Licences",
             Page::WifiSaved => "Saved networks",

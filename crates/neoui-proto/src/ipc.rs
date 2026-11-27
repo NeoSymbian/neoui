@@ -221,10 +221,10 @@ pub const CLIP_KIND: i32 = 30;
 pub const SETTINGS_INFO: i32 = 40;
 /// `[kind, Des8 request]` → 0: ask the shell to act. [`ACTION_SIGN_IN`]: open the browser on the current Wi-Fi
 /// network's sign-in page (`KErrNotReady` when there is no captive portal now). [`ACTION_OPEN_ENTRY`] (1.14,
-/// Settings only, else `KErrPermissionDenied`): request = an id (u32 LE, exactly 4 bytes) of [`INFO_APPS`]; the shell
-/// starts the legacy bridge if needed and passes it the choice, as a tap in its grid does (`KErrNotFound` for an id it
-/// hasn't registered, `KErrNotReady` if the bridge didn't start). The bridge decides what shows (an old app already
-/// running stays in front); Back leaves it as from the grid, not to Settings.
+/// Settings and Classic apps only, by their SIDs, else `KErrPermissionDenied`): request = an id (u32 LE, exactly 4
+/// bytes) of [`INFO_APPS`]; the shell starts the legacy bridge if needed and passes it the choice (`KErrNotFound` for
+/// an id it hasn't registered, `KErrNotReady` if the bridge didn't start). The bridge decides what shows (an old app
+/// already running stays in front); Back leaves it for Classic apps (CLASSIC.EXE), not Settings.
 pub const SETTINGS_ACTION: i32 = 41;
 /// [`SETTINGS_INFO`] kinds.
 pub const INFO_BATTERY: i32 = 1;
@@ -352,9 +352,10 @@ pub const SHELL_VERSION: i32 = 47;
 /// the receipt is saved. Only from the app's own EXE (its SID), on its current session, from 1.20 clients
 /// (`KErrPermissionDenied`).
 pub const OWNER_REPORT: i32 = 42;
-/// 1.20, Settings only: `[entry_id, Des8 out, expected_rev, 0]` → the length of an old app's launcher icon cut to at
-/// most 32 × 32 ([`crate::settings_app::wire::thumb`]; 0 bytes: the generic icon). `KErrNotFound` for an entry the
-/// bridge doesn't have, `KErrNotReady` when `expected_rev` isn't 0 and isn't INFO 8's revision now.
+/// 1.20, Settings and Classic apps only (`apps::old_apps_client`): `[entry_id, Des8 out, expected_rev, 0]` → the length
+/// of an old app's launcher icon cut to at most 32 × 32 ([`crate::settings_app::wire::thumb`]; 0 bytes: the generic
+/// icon). `KErrNotFound` for an entry the bridge doesn't have, `KErrNotReady` when `expected_rev` isn't 0 and isn't
+/// INFO 8's revision now.
 pub const ENTRY_THUMB: i32 = 43;
 /// 1.20 (D6): `[kind, key]` → 0: a control of the app in front accepted a
 /// touch (the kit's controls say so through `neoapp::kit_feedback!`). The shell answers at most once per press it

@@ -585,7 +585,7 @@ impl Provider for Builtin {
             },
             "root.datetime" => pick("Automatic", "Manual", f.on("time.auto")),
             "root.keyboard" => known(f.text("kb.current")),
-            "root.apps" => Reading::Value(String::from("Phone, old apps")),
+            "root.apps" => Reading::Value(String::from("Phone, classic apps")),
             "root.developer" => Reading::Value(String::from(if f.on("dev.usb") == Some(true) {
                 "USB debugging"
             } else if f.on("dev.touches") == Some(true) {
@@ -834,6 +834,7 @@ const APP_ALIASES: &[(&str, &[&str])] = &[
     ("terminal", &["shell"]),
     ("devtools", &["logs"]),
     ("kit", &["gallery"]),
+    ("classic", &["old apps", "legacy", "s60"]),
     ("phone", &["calls"]),
     ("messages", &["sms"]),
     ("browser", &["web"]),
@@ -1395,6 +1396,19 @@ mod tests {
             .collect();
         assert_eq!(general.len(), 2);
         assert_ne!(general[0].key, general[1].key);
+    }
+
+    /// W0d: Classic apps is found by its old names too.
+    #[test]
+    fn classic_apps_has_its_old_names() {
+        let snap = project_all(&facts());
+        for q in ["old apps", "legacy", "s60"] {
+            assert!(
+                search(&snap, q).iter().any(|h| h.key
+                    == RowKey::with("apps.app", InstanceId::App(AppId::Native("classic")))),
+                "{q}"
+            );
+        }
     }
 
     #[test]

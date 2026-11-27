@@ -2711,18 +2711,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "neoterm"
-version = "0.1.0"
-dependencies = [
- "e32",
- "neoapp",
- "neoui-kit",
- "neoui-proto",
- "neoui-term",
- "slint",
-]
-
-[[package]]
 name = "neoui-kit"
 version = "0.1.0"
 dependencies = [
@@ -2756,10 +2744,6 @@ dependencies = [
  "phone-rules",
  "wifi",
 ]
-
-[[package]]
-name = "neoui-term"
-version = "0.1.0"
 
 [[package]]
 name = "net"

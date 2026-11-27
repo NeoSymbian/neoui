@@ -89,6 +89,38 @@ fn switcher() {
     common::frame(&mut r, &mut buf, w, "one left");
     assert_eq!(at(&buf, card_in(&r, w, h, 0, 3).0), 0x20d020);
 
+    // the legacy bridge isn't in the Apps menu, but its card (an old app running) keeps its name band: "Classic apps"
+    // and the legacy icon over the thumbnail, as every app's
+    r.set_running(&["legacy", "clock"]);
+    r.set_thumb("legacy", 40, 60, &[0xffd0_2020; 40 * 60]);
+    common::frame(&mut r, &mut buf, w, "legacy card");
+    common::write_png("switcher-legacy-539x1079.png", &buf, w, h);
+    let d = common::dp(w, h);
+    let card_w = (w as f32 - 4.0 * 12.0 * d) / 3.0;
+    let (cx, cy) = card_in(&r, w, h, 0, 3).0;
+    let band = (
+        (cx as f32 - card_w / 2.0 + 4.0 * d) as i32,
+        (cy as f32 + 80.0 * d - 4.0 * d) as i32,
+    );
+    assert_eq!(
+        at(&buf, (cx, cy - (40.0 * d) as i32)),
+        0xd02020,
+        "its thumbnail"
+    );
+    assert_ne!(
+        at(&buf, band),
+        0xd02020,
+        "the bridge's card has its name band"
+    );
+    let band_px = (band.1 - (28.0 * d) as i32..band.1)
+        .flat_map(|y| (band.0..band.0 + (card_w * 0.6) as i32).map(move |x| (x, y)))
+        .filter(|&p| at(&buf, p) != at(&buf, band))
+        .count();
+    assert!(
+        band_px > 50,
+        "the band shows the icon and name ({band_px} px)"
+    );
+
     // close mode (Gestures): no × until a card is held 500 ms; a tap off the cards leaves
     assert!(r.apply_setting("nav.switcher_cols", &Value::Int(2)));
     assert!(r.apply_setting("nav.mode", &Value::Int(1)));
