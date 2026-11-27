@@ -9,6 +9,7 @@ extern crate alloc;
 mod home;
 pub mod keyboard;
 pub mod layer;
+pub mod peek;
 mod settings;
 
 use alloc::boxed::Box;
@@ -1008,22 +1009,7 @@ impl Renderer {
     pub fn gesture(&mut self, g: neoui_proto::gesture::Gesture) {
         use neoui_proto::gesture::Gesture;
         let screen = self.screen();
-        let running: Vec<alloc::string::String> = self
-            .ui
-            .get_running()
-            .iter()
-            .map(|k| k.as_str().into())
-            .collect();
-        let at = running.iter().position(|k| *k == screen);
-        let switch_to = match g {
-            Gesture::LastApp => running.iter().find(|k| **k != screen),
-            // along the band: rightwards the older app, leftwards the newer one
-            Gesture::PrevApp => running.get(at.map_or(0, |i| i + 1)),
-            Gesture::NextApp => at
-                .and_then(|i| i.checked_sub(1))
-                .and_then(|i| running.get(i)),
-            _ => None,
-        };
+        let switch_to = self.app_for(g);
         // the home editor: going home or to the apps is its Done (D10)
         if screen == "home" && self.home_editing() && g != Gesture::Back {
             self.ui

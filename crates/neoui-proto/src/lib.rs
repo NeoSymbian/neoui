@@ -18,6 +18,7 @@ pub mod media;
 pub mod notification_policy;
 pub mod open;
 pub mod page;
+pub mod pinch;
 pub mod recents;
 pub mod settings;
 pub mod settings_app;
