@@ -74,38 +74,30 @@ const CAPS: i32 = 0x1A;
 /// The modifiers held on a hardware keyboard (fed every key event, down and up).
 #[derive(Clone, Copy, Debug, Default)]
 pub struct State {
-    shift: u8,
-    ctrl: u8,
+    /// one bit per modifier key held (bit = scan code - SHIFT_L): a held key's repeated downs set it once
+    held: u16,
     caps: bool,
 }
 
 impl State {
     /// A key event: the code it types (Unicode; Backspace 8, Tab 9, Enter 13, Escape 27, Delete 127, Symbian's arrows
-    /// 0xF807-0xF80A; Ctrl + a letter its control code 1-26), or `None` for a modifier or a key that types nothing.
+    /// 0xF807-0xF80A; Ctrl + a letter its control code 1-26, but not Ctrl+Q), or `None` for a modifier or a key that
+    /// types nothing.
     /// `code` picks the language ([`keymap`]). A key's release maps the same way, with the modifiers as they are then.
     pub fn key(&mut self, scan: i32, down: bool, code: &str) -> Option<u32> {
-        let held = |n: &mut u8| {
-            *n = if down {
-                n.saturating_add(1)
+        if matches!(scan, SHIFT_L | SHIFT_R | CTRL_L | CTRL_R | CAPS) {
+            let bit = 1 << (scan - SHIFT_L);
+            // Caps Lock toggles on its first down only
+            self.caps ^= scan == CAPS && down && self.held & bit == 0;
+            if down {
+                self.held |= bit;
             } else {
-                n.saturating_sub(1)
+                self.held &= !bit;
             }
-        };
-        match scan {
-            SHIFT_L | SHIFT_R => {
-                held(&mut self.shift);
-                return None;
-            }
-            CTRL_L | CTRL_R => {
-                held(&mut self.ctrl);
-                return None;
-            }
-            CAPS => {
-                self.caps ^= down;
-                return None;
-            }
-            _ => {}
+            return None;
         }
+        let is_held = |a: i32, b: i32| self.held & (1 << (a - SHIFT_L) | 1 << (b - SHIFT_L)) != 0;
+        let (shift, ctrl) = (is_held(SHIFT_L, SHIFT_R), is_held(CTRL_L, CTRL_R));
         let fixed = match scan {
             1 => Some(8),       // EStdKeyBackspace
             2 => Some(9),       // EStdKeyTab
@@ -122,13 +114,14 @@ impl State {
         }
         let i = POSITIONS.iter().position(|&p| i32::from(p) == scan)?;
         let letter = (0x41..=0x5A).contains(&scan);
-        if self.ctrl > 0 {
-            // Ctrl + a letter is its control code whatever the language (Ctrl+C is 3 in Armenian too)
-            return letter.then_some((scan as u32) & 0x1F);
+        if ctrl {
+            // Ctrl + a letter is its control code whatever the language (Ctrl+C is 3 in Armenian too); not Ctrl+Q:
+            // 0x11 is the edit bar's Control, which neoapp holds for the next key
+            return (letter && scan != i32::from(b'Q')).then_some((scan as u32) & 0x1F);
         }
         let map = keymap(code);
         // Caps Lock shifts the letters only; Shift with it gives lower case
-        let upper = (self.shift > 0) ^ (self.caps && map.lower.chars().nth(i)?.is_alphabetic());
+        let upper = shift ^ (self.caps && map.lower.chars().nth(i)?.is_alphabetic());
         let s = if upper { map.upper } else { map.lower };
         s.chars().nth(i).map(u32::from)
     }
@@ -211,5 +204,30 @@ mod tests {
             "unknown: English"
         );
         assert_eq!(s.key(0x60, true, "en"), None, "F1 types nothing");
+        // Ctrl+Q would be 0x11, the edit bar's Control (neoapp holds it for the next key): it types nothing
+        s.key(CTRL_R, true, "en");
+        assert_eq!(s.key(i32::from(b'Q'), true, "en"), None);
+        assert_eq!(s.key(i32::from(b'S'), true, "en"), Some(0x13));
+    }
+
+    #[test]
+    fn repeated_downs_hold_once() {
+        // a held key comes again as more downs (VNC, QEMU's virtio keyboard): one up still lets go of it
+        let mut s = State::default();
+        for _ in 0..3 {
+            s.key(SHIFT_L, true, "en");
+            s.key(CTRL_L, true, "en");
+            s.key(CAPS, true, "en");
+        }
+        s.key(SHIFT_L, false, "en");
+        s.key(CTRL_L, false, "en");
+        s.key(CAPS, false, "en");
+        assert_eq!(
+            tap(&mut s, i32::from(b'A'), "en"),
+            Some('A'),
+            "Caps Lock on once"
+        );
+        tap(&mut s, CAPS, "en");
+        assert_eq!(tap(&mut s, i32::from(b'A'), "en"), Some('a'));
     }
 }

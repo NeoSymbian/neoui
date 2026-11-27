@@ -107,20 +107,31 @@ pub fn replacement(word: &str, pick: &str) -> String {
 }
 
 /// Ctrl + `key`: a letter's (either case) or @ [ \ ] ^ _'s control code (Ctrl+C 3, Ctrl+[ Escape), for the terminal.
+/// Not Ctrl+Q: 0x11 is the edit bar's Control, which neoapp and the shell hold for the next key.
 pub fn control(key: &str) -> Option<char> {
     let mut c = key.chars();
     let (Some(ch), None) = (c.next(), c.next()) else {
         return None;
     };
     let up = ch.to_ascii_uppercase();
-    ('@'..='_')
-        .contains(&up)
-        .then(|| char::from(up as u8 & 0x1F))
+    (('@'..='_').contains(&up) && up != 'Q').then(|| char::from(up as u8 & 0x1F))
+}
+
+/// A chord that would put a password field's text on the clipboard the apps share (Ctrl+C, Ctrl+X): dropped (Slint's
+/// TextInput copies a password's text like any other).
+fn copies_secret(secret: bool, text: &str) -> bool {
+    secret && matches!(text, "c" | "C" | "x" | "X")
 }
 
 /// Types the keyboard's `codes` into the shell's own focused field as Slint key events. The edit bar's Control (0x11)
-/// makes the next key a chord (Ctrl+A, Ctrl+C, Ctrl+V), as neoapp does for an app's fields.
-pub(crate) fn type_into_shell(window: &slint::Window, state: &State, codes: Vec<u32>) {
+/// makes the next key a chord (Ctrl+A, Ctrl+C, Ctrl+V), as neoapp does for an app's fields; `secret`: the field is a
+/// password, so no Copy or Cut.
+pub(crate) fn type_into_shell(
+    window: &slint::Window,
+    state: &State,
+    codes: Vec<u32>,
+    secret: bool,
+) {
     let control: SharedString = Key::Control.into();
     for code in codes {
         if code == 0x11 {
@@ -131,6 +142,9 @@ pub(crate) fn type_into_shell(window: &slint::Window, state: &State, codes: Vec<
             continue;
         };
         let ctrl = state.ctrl.replace(false);
+        if ctrl && copies_secret(secret, &text) {
+            continue;
+        }
         if ctrl {
             window.dispatch_event(WindowEvent::KeyPressed {
                 text: control.clone(),
@@ -189,9 +203,11 @@ impl Renderer {
     /// The system keyboard typed into one of the shell's own fields, not for an app (after a touch, and after its
     /// timers: a held key's repeats).
     pub(crate) fn type_into_shell(&mut self) {
-        if self.ui.global::<KeyboardFocus>().get_open() {
+        let focus = self.ui.global::<KeyboardFocus>();
+        if focus.get_open() {
+            let secret = focus.get_secret();
             let codes = self.take_typed();
-            type_into_shell(self.window.window(), &self.kb, codes);
+            type_into_shell(self.window.window(), &self.kb, codes, secret);
         }
     }
 
@@ -275,6 +291,13 @@ mod tests {
     }
 
     #[test]
+    fn a_password_never_reaches_the_clipboard() {
+        assert!(copies_secret(true, "c") && copies_secret(true, "X"));
+        assert!(!copies_secret(true, "v") && !copies_secret(true, "a"));
+        assert!(!copies_secret(false, "c"));
+    }
+
+    #[test]
     fn control_codes() {
         assert_eq!(control("c"), Some('\u{3}'));
         assert_eq!(control("C"), Some('\u{3}'));
@@ -282,6 +305,9 @@ mod tests {
         assert_eq!(control("1"), None);
         assert_eq!(control("ф"), None);
         assert_eq!(control("ab"), None);
+        // 0x11 is the edit bar's Control (neoapp and the shell hold it for the next key), not Ctrl+Q
+        assert_eq!(control("q"), None);
+        assert_eq!(control("s"), Some('\u{13}'));
     }
 
     #[test]
