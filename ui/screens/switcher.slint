@@ -7,9 +7,59 @@
 // (width - (cols + 1) gaps) / cols wide and 160 dp high, × in a 44 dp square at the card's top-right.
 import { Theme } from "../theme.slint";
 import { NeoList } from "../components/scroll.slint";
-import { Apps } from "menu.slint";
+import { Apps, App } from "menu.slint";
 import { Glyph } from "../components/frame.slint";
 import { SystemSettings } from "../system-settings.slint";
+
+// A card's name and icon: a band at the bottom over its thumbnail, else the icon and name in the middle.
+component CardLabel inherits Rectangle {
+    in property <App> app;
+    in property <bool> thumbed;
+    if root.thumbed: Rectangle {
+        y: parent.height - self.height;
+        height: 32 * Theme.dp;
+        background: #0d0f13d9;
+        HorizontalLayout {
+            padding-left: 8 * Theme.dp;
+            padding-right: 8 * Theme.dp;
+            spacing: 6 * Theme.dp;
+            alignment: start;
+            Image {
+                y: (parent.height - self.height) / 2;
+                width: 20 * Theme.dp;
+                height: 20 * Theme.dp;
+                source: root.app.icon;
+            }
+
+            Text {
+                text: root.app.name;
+                color: Theme.text;
+                font-size: Theme.font-label;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+        }
+    }
+    if !root.thumbed: VerticalLayout {
+        alignment: center;
+        spacing: Theme.app-label-gap;
+        HorizontalLayout {
+            alignment: center;
+            Image {
+                width: Theme.app-icon;
+                height: Theme.app-icon;
+                source: root.app.icon;
+            }
+        }
+
+        Text {
+            text: root.app.name;
+            color: Theme.text;
+            font-size: Theme.font-label;
+            horizontal-alignment: center;
+        }
+    }
+}
 
 export component SwitcherScreen inherits Rectangle {
     // app keys, most recent first
@@ -99,52 +149,17 @@ export component SwitcherScreen inherits Rectangle {
                 }
             }
 
-            // its name on a band at the bottom, over the thumbnail
+            // its name on a band at the bottom, over the thumbnail; the legacy bridge isn't in the Apps menu but its
+            // card is named too (Classic apps)
             for app in Apps.all: Rectangle {
-                if thumbed && app.key == key: Rectangle {
-                    y: parent.height - self.height;
-                    height: 32 * Theme.dp;
-                    background: #0d0f13d9;
-                    HorizontalLayout {
-                        padding-left: 8 * Theme.dp;
-                        padding-right: 8 * Theme.dp;
-                        spacing: 6 * Theme.dp;
-                        alignment: start;
-                        Image {
-                            y: (parent.height - self.height) / 2;
-                            width: 20 * Theme.dp;
-                            height: 20 * Theme.dp;
-                            source: app.icon;
-                        }
-
-                        Text {
-                            text: app.name;
-                            color: Theme.text;
-                            font-size: Theme.font-label;
-                            vertical-alignment: center;
-                            overflow: elide;
-                        }
-                    }
+                if app.key == key: CardLabel {
+                    app: app;
+                    thumbed: thumbed;
                 }
-                if !thumbed && app.key == key: VerticalLayout {
-                    alignment: center;
-                    spacing: Theme.app-label-gap;
-                    HorizontalLayout {
-                        alignment: center;
-                        Image {
-                            width: Theme.app-icon;
-                            height: Theme.app-icon;
-                            source: app.icon;
-                        }
-                    }
-
-                    Text {
-                        text: app.name;
-                        color: Theme.text;
-                        font-size: Theme.font-label;
-                        horizontal-alignment: center;
-                    }
-                }
+            }
+            if key == Apps.bridge.key: CardLabel {
+                app: Apps.bridge;
+                thumbed: thumbed;
             }
 
             // the card's outline, over the thumbnail

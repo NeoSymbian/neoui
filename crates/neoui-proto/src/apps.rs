@@ -224,7 +224,7 @@ mod tests {
     }
 
     /// Every app the shell's Apps menu shows that is a process here has the same name there (ui/screens/menu.slint);
-    /// a service isn't in the menu, nor the bridge (Classic apps opens its apps).
+    /// a service isn't in the menu, nor the bridge (Classic apps opens its apps; its name is for its Open apps card).
     #[test]
     fn the_apps_menu_names_match() {
         extern crate std;
@@ -241,9 +241,9 @@ mod tests {
             let name = line[n + 7..].split('"').next().unwrap();
             let key = line[k + 6..].split('"').next().unwrap();
             if let Some(a) = find(key) {
-                assert_ne!(key, LEGACY, "the bridge isn't in the Apps menu");
                 assert_eq!(a.name, name, "{key}");
-                seen += 1;
+                // the bridge's line is `Apps.bridge` (its Open apps card), not a menu tile
+                seen += usize::from(key != LEGACY);
             }
         }
         assert_eq!(

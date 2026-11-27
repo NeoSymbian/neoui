@@ -24,6 +24,9 @@ export global Apps {
         { name: "Classic apps", key: "classic", icon: @image-url("../icons/apps/legacy.svg") },
         { name: "UI kit", key: "kit", icon: @image-url("../icons/apps/devtools.svg") },
     ];
+    // the legacy bridge (LEGACY.EXE): not in the menu (Classic apps lists its apps), but named in Open apps while an
+    // old app runs
+    out property <App> bridge: { name: "Classic apps", key: "legacy", icon: @image-url("../icons/apps/legacy.svg") };
     // in: each app's badge count (ipc BADGE; missed calls, unread messages), in the order of `all`; 0 = none
     in property <[int]> badges;
 }
