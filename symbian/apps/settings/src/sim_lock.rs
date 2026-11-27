@@ -50,6 +50,9 @@ struct Shared {
     done: Option<(i32, Option<bool>)>,
 }
 
+/// D11: the PIN changes are held back until their review's P1s are fixed (MODEMD refuses them too).
+const PIN_CHANGES_ENABLED: bool = false;
+
 pub struct SimLock {
     shared: Option<&'static Mutex<Shared>>,
     seen: Cell<Option<Seen>>,
@@ -114,14 +117,20 @@ impl SimLock {
         }));
         s.set_sim_lock_text(lock.summary().into());
         s.set_sim_pin_on(matches!(lock, Lock::On | Lock::Required));
-        s.set_sim_can_toggle(lock.can_toggle());
-        s.set_sim_can_change(lock.can_change());
+        // shortcut: changing the PIN is held back (MODEMD answers KErrNotSupported) until the D11 review's P1s are
+        // fixed; the page reads the card only. Enable with MODEMD's PIN_CHANGES_ENABLED.
+        s.set_sim_can_toggle(PIN_CHANGES_ENABLED && lock.can_toggle());
+        s.set_sim_can_change(PIN_CHANGES_ENABLED && lock.can_change());
         s.set_sim_attempts(
             tries
                 .map_or_else(String::new, |n| alloc::format!("{n}"))
                 .into(),
         );
-        s.set_sim_note(lock.note().into());
+        s.set_sim_note(if PIN_CHANGES_ENABLED {
+            lock.note().into()
+        } else {
+            "Read only for now: turning the SIM PIN on or off and changing it come after their security review.".into()
+        });
         let Some(shared) = self.shared else { return };
         let mut g = shared.lock();
         s.set_sim_busy(g.busy);

@@ -27,9 +27,9 @@ neoaudio = { workspace = true }
 # telephony C8: dial-string rules (the SIM prompt's emergency call; Apache-2.0)
 phone-rules = { workspace = true }
 # NeoSymbian/neohw: the NeoWifi contract (WIFID.EXE joins and runs WPA2, docs hardware.md S5; Apache-2.0)
-wifi = { git = "https://github.com/NeoSymbian/neohw", rev = "bbc39e2501e3051619765441746013bcacc29ff4" }
+wifi = { git = "https://github.com/NeoSymbian/neohw", rev = "87627092aa42b79bc77cd5ee7fbc17a536b43226" }
 # NeoSymbian/neohw: the NeoNet client (NEONET.EXE, the IP stack over Wi-Fi, W5; Apache-2.0).
-net = { git = "https://github.com/NeoSymbian/neohw", rev = "bbc39e2501e3051619765441746013bcacc29ff4", features = ["client"] }
+net = { git = "https://github.com/NeoSymbian/neohw", rev = "87627092aa42b79bc77cd5ee7fbc17a536b43226", features = ["client"] }
 
 [workspace]
 members = ["apps/term", "apps/devtools", "apps/kit", "apps/settings", "neoapp"]
@@ -40,13 +40,13 @@ e32 = { git = "https://github.com/NeoSymbian/e32-rs", rev = "7d6ab96f8bc7a062f75
 neoui-proto = { path = "../crates/neoui-proto" }
 slint = { version = "=1.18.1", default-features = false, features = ["compat-1-2", "unsafe-single-threaded", "libm", "renderer-software"] }
 neoapp = { path = "neoapp" }
-modem-ipc = { git = "https://github.com/NeoSymbian/neohw", rev = "bbc39e2501e3051619765441746013bcacc29ff4" }
+modem-ipc = { git = "https://github.com/NeoSymbian/neohw", rev = "87627092aa42b79bc77cd5ee7fbc17a536b43226" }
 # NeoAudio's contract and tone helper (docs/hardware/audio.md; Apache-2.0)
-neoaudio = { git = "https://github.com/NeoSymbian/neohw", rev = "bbc39e2501e3051619765441746013bcacc29ff4" }
-phone-rules = { git = "https://github.com/NeoSymbian/neohw", rev = "bbc39e2501e3051619765441746013bcacc29ff4" }
-wifi = { git = "https://github.com/NeoSymbian/neohw", rev = "bbc39e2501e3051619765441746013bcacc29ff4" }
+neoaudio = { git = "https://github.com/NeoSymbian/neohw", rev = "87627092aa42b79bc77cd5ee7fbc17a536b43226" }
+phone-rules = { git = "https://github.com/NeoSymbian/neohw", rev = "87627092aa42b79bc77cd5ee7fbc17a536b43226" }
+wifi = { git = "https://github.com/NeoSymbian/neohw", rev = "87627092aa42b79bc77cd5ee7fbc17a536b43226" }
 # NeoLocation, GNSSD.EXE's contract (docs hardware/gnss.md; Apache-2.0)
-loc = { git = "https://github.com/NeoSymbian/neohw", rev = "bbc39e2501e3051619765441746013bcacc29ff4" }
+loc = { git = "https://github.com/NeoSymbian/neohw", rev = "87627092aa42b79bc77cd5ee7fbc17a536b43226" }
 neoui-term = { path = "../crates/neoui-term" }
 # the Settings app's screens (NEOSET.EXE; host-tested with snapshots)
 settings-ui = { path = "../crates/settings-ui" }
