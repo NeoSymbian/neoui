@@ -28,6 +28,8 @@ import { NotificationBanner } from "components/notification-banner.slint";
 export { ShadeNote } from "components/shade.slint";
 export { Apps } from "screens/menu.slint";
 export { HomeModel } from "screens/home-edit.slint";
+export { TilesModel, TileCell, WifiRow } from "components/tiles.slint";
+import { TilesModel } from "components/tiles.slint";
 import { Keyboard } from "components/keyboard/keyboard.slint";
 import { Alphabets } from "components/keyboard/glyphs.slint";
 export { Layouts } from "components/keyboard/layouts.slint";
@@ -246,7 +248,10 @@ export component Shell inherits Window {
 
     public function back() {
         if (root.shade-open) {
-            root.shade-open = false;
+            // (TP7) the Wi-Fi sheet or the tile editor first
+            if !TilesModel.back() {
+                root.shade-open = false;
+            }
         } else if (root.screen == "home" && HomeModel.sheet != "") {
             HomeModel.sheet = "";
         } else if (root.screen == "home" && HomeModel.editing) {
@@ -468,10 +473,16 @@ export component Shell inherits Window {
         dnd: root.dnd;
         visible: !root.full;
         tapped => {
+            // (TP7) shell.tap: 0 the shade's first stop, 1 the control centre
+            TilesModel.stop = SystemSettings.shell-tap == 1 ? 2 : 1;
             root.shade-open = !root.shade-open;
         }
         pulled => {
             root.shade-open = true;
+        }
+        // (TP7) a pull past the tiles goes on to the control centre
+        pulled-far => {
+            TilesModel.stop = 2;
         }
     }
 

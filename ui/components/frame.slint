@@ -47,8 +47,9 @@ export component StatusBar inherits Rectangle {
     // (TP4) Do not disturb: the moon
     in property <bool> dnd;
     callback tapped;
-    // a swipe down on the bar (the shade opens)
+    // a swipe down on the bar (the shade opens), and further on past the first stop's tiles (TP7: the control centre)
     callback pulled;
+    callback pulled-far;
     height: Theme.status-h;
     background: Theme.bg;
     HorizontalLayout {
@@ -260,6 +261,9 @@ export component StatusBar inherits Rectangle {
             if !self.was-pulled && self.mouse-y - self.pressed-y > 24 * Theme.dp {
                 self.was-pulled = true;
                 root.pulled();
+            }
+            if self.was-pulled && self.mouse-y - self.pressed-y > 180 * Theme.dp {
+                root.pulled-far();
             }
         }
         clicked => {

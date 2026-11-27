@@ -1,0 +1,904 @@
+// SPDX-License-Identifier: Apache-2.0
+// The control centre (top-panel TP7; boards tp-control, tp-control-buttons, tp-edit, tp-wifi, tp-shade's first stop):
+// the shade's second stop (wide and small tiles, brightness, media volume, the media slot), the tile editor and the
+// Wi-Fi detail sheet. The order is `shell.tiles`, kept by neoui-render's tiles.rs, which fills `TilesModel` with the
+// drawn tiles (only backed ones) and answers its `op`s. The shell's own tiles switch their settings here; an app's
+// tile reports a tap or hold (`op("tap" | "hold", id)`), which the UI server sends to its app (event 26).
+import { Theme } from "../theme.slint";
+import { Kit } from "layers.slint";
+import { Glyph } from "frame.slint";
+import { Slider } from "controls.slint";
+import { Switch } from "lists.slint";
+import { SystemSettings } from "../system-settings.slint";
+
+// One drawn tile: its id (1–255 the shell's own, from 256 an app's), its label and line (an app's; the shell's own come
+// from `TilesModel`), its app's name for the editor ("CLOCK"), an app's glyph number and kind (1 toggle, 2 action,
+// 3 detail) and state, wide or small, its cell on the grid, and whether a tap can reach it (an app before 1.22: no)
+export struct TileCell {
+    id: int,
+    label: string,
+    sub: string,
+    owner: string,
+    glyph: int,
+    kind: int,
+    on: bool,
+    wide: bool,
+    col: int,
+    row: int,
+    available: bool,
+}
+
+// A network in the Wi-Fi sheet: its name, its line ("Saved", "Open", "Connected · 5 GHz"), a lock, its bars 0..4
+export struct WifiRow {
+    name: string,
+    sub: string,
+    secured: bool,
+    bars: int,
+}
+
+export global TilesModel {
+    // the control centre's tiles in order (the editor's draft while it is open) and their grid's rows; the first
+    // stop's four; the editor's spare tiles (backed, offered, not placed) on their own grid
+    in property <[TileCell]> placed;
+    in property <int> rows: 1;
+    in property <[TileCell]> first;
+    in property <[TileCell]> spare;
+    in property <int> spare-rows;
+    // the shade's stop: 1 the first stop, 2 the control centre; the editor; the Wi-Fi sheet
+    in-out property <int> stop: 1;
+    in-out property <bool> editing;
+    in-out property <bool> wifi-sheet;
+    // the wide tiles' lines: the joined network, the operator and its technology
+    in property <string> wifi-sub;
+    in property <string> mobile-sub;
+    // the Wi-Fi sheet: the joined network (an empty name: none), the others in range, a scan running
+    in property <WifiRow> joined;
+    in property <[WifiRow]> networks;
+    in property <bool> scanning;
+    // why the editor refused (the last tile can't go)
+    in property <string> message;
+    // "tap" / "hold" (an app's tile id), "edit", "drop" (place, cell = row * 4 + col; -1 below the grid: removed),
+    // "wide", "remove" (place), "add" (id), "reset", "done", "cancel"
+    callback op(string, int, int);
+
+    // a tile's state: the shell's own from its setting, an app's from its offer
+    public pure function on(c: TileCell) -> bool {
+        return c.id == 1 ? SystemSettings.wifi
+            : c.id == 2 ? SystemSettings.mobile-data
+            : c.id == 3 ? SystemSettings.silent
+            : c.id == 4 ? SystemSettings.dnd
+            : c.id == 5 ? SystemSettings.airplane
+            : c.id == 6 ? SystemSettings.battery-saver
+            : c.id == 7 ? SystemSettings.dark
+            : c.on;
+    }
+
+    public pure function sub(c: TileCell) -> string {
+        return c.id == 1 ? (!SystemSettings.wifi ? "Off" : self.wifi-sub != "" ? self.wifi-sub : "Not connected")
+            : c.id == 2 ? (self.mobile-sub != "" ? self.mobile-sub : "No service")
+            : c.sub;
+    }
+
+    // a tile with a › (its detail): Wi-Fi, Mobile data, an app's Detail tile
+    public pure function detail(c: TileCell) -> bool {
+        return c.id == 1 || c.id == 2 || c.kind == 3;
+    }
+
+    // a tap: the shell's own switch flips; an app's goes to its app
+    public function tap(c: TileCell) {
+        Kit.accept();
+        if c.id == 1 {
+            SystemSettings.wifi = !SystemSettings.wifi;
+        } else if c.id == 2 {
+            SystemSettings.mobile-data = !SystemSettings.mobile-data;
+        } else if c.id == 3 {
+            SystemSettings.silent = !SystemSettings.silent;
+        } else if c.id == 4 {
+            SystemSettings.dnd = !SystemSettings.dnd;
+        } else if c.id == 5 {
+            SystemSettings.airplane = !SystemSettings.airplane;
+        } else if c.id == 6 {
+            SystemSettings.battery-saver = !SystemSettings.battery-saver;
+        } else if c.id == 7 {
+            SystemSettings.dark = !SystemSettings.dark;
+        } else if c.available {
+            self.op("tap", c.id, 0);
+        }
+    }
+
+    // a tile's glyph: the shell's own by id, an app's by its glyph number (0: its app's own)
+    public pure function icon(c: TileCell) -> image {
+        return c.id == 1 ? @image-url("../icons/sys/wifi.svg")
+            : c.id == 2 ? @image-url("../icons/sys/data.svg")
+            : c.id == 3 ? @image-url("../icons/sys/silent.svg")
+            : c.id == 4 ? @image-url("../icons/sys/dnd.svg")
+            : c.id == 5 ? @image-url("../icons/sys/plane.svg")
+            : c.id == 6 ? @image-url("../icons/sys/battery_saver.svg")
+            : c.id == 7 ? @image-url("../icons/sys/theme.svg")
+            : c.id == 8 ? @image-url("../icons/sys/bluetooth.svg")
+            : c.id == 9 ? @image-url("../icons/sys/flash.svg")
+            : c.id == 10 ? @image-url("../icons/sys/rotate.svg")
+            : c.id == 11 ? @image-url("../icons/sys/hotspot.svg")
+            : c.id == 12 ? @image-url("../icons/sys/cast.svg")
+            : c.id == 13 ? @image-url("../icons/sys/location.svg")
+            : c.id == 14 ? @image-url("../icons/sys/nfc.svg")
+            : c.id == 15 ? @image-url("../icons/sys/screen_record.svg")
+            : c.id == 16 ? @image-url("../icons/sys/brightness.svg")
+            : c.glyph == 1 ? @image-url("../icons/sys/stopwatch.svg")
+            : c.glyph == 2 ? @image-url("../icons/sys/keyboard.svg")
+            : c.glyph == 3 ? @image-url("../icons/sys/shuffle.svg")
+            : c.glyph == 4 ? @image-url("../icons/sys/call.svg")
+            : c.owner == "CLOCK" ? @image-url("../icons/sys/alarm.svg")
+            : c.owner == "MESSAGES" ? @image-url("../icons/sys/message.svg")
+            : c.owner == "PHONE" ? @image-url("../icons/sys/call.svg")
+            : c.owner == "FILES" ? @image-url("../icons/sys/folder.svg")
+            : c.owner == "BROWSER" ? @image-url("../icons/sys/world.svg")
+            : @image-url("../icons/sys/apps.svg");
+    }
+
+    // Back while the shade is open: the sheet closes, the editor saves (as its Done); false when neither is up
+    public function back() -> bool {
+        if self.wifi-sheet {
+            self.wifi-sheet = false;
+            return true;
+        }
+        if self.editing {
+            self.op("done", 0, 0);
+            return true;
+        }
+        return false;
+    }
+
+    // the shade closed: the sheet goes, the editor's draft too, the next pull starts at the first stop
+    public function closed() {
+        if self.editing {
+            self.op("cancel", 0, 0);
+        }
+        self.wifi-sheet = false;
+        self.stop = 1;
+    }
+}
+
+// the round ⊖ / ⊕ on an edited tile's corner
+component Badge inherits Rectangle {
+    in property <bool> add;
+    callback clicked;
+    width: 22 * Theme.dp;
+    height: self.width;
+    border-radius: self.width / 2;
+    background: add ? Theme.ok : Theme.danger;
+    border-width: 2 * Theme.dp;
+    border-color: #0f1115;
+    Rectangle {
+        width: 10 * Theme.dp;
+        height: 2 * Theme.dp;
+        background: white;
+    }
+
+    if add: Rectangle {
+        width: 2 * Theme.dp;
+        height: 10 * Theme.dp;
+        background: white;
+    }
+    TouchArea {
+        clicked => {
+            Kit.accept();
+            root.clicked();
+        }
+    }
+}
+
+// One tile as the boards draw it: small (glyph over its label) or wide (a round glyph, label and line, then › for its
+// detail). `mode` 0 live, 1 placed in the editor (⊖, dragged, held), 2 spare in the editor (⊕). A hold (500 ms, still)
+// is `held`; in the editor a drag reports where the finger is (`dragging`) and where it lifted (`dropped`), live a
+// drag down past 40 dp is a pull (the shade's second stop).
+export component Tile inherits Rectangle {
+    in property <TileCell> cell;
+    in property <int> mode;
+    in property <bool> ghost;
+    callback tapped;
+    callback held;
+    callback detail;
+    callback pulled;
+    callback removed;
+    callback dragging(length, length);
+    callback dropped(length, length);
+    property <bool> on: mode == 0 && TilesModel.on(cell);
+    property <bool> moved;
+    // a hold fired: the lift is no tap and no drop
+    property <bool> was-held;
+    border-radius: Theme.radius;
+    background: mode == 2 ? Theme.card : on ? Theme.accent : Theme.field;
+    border-width: mode == 2 ? 1.5 * Theme.dp : ghost ? 1.5 * Theme.dp : 0;
+    border-color: ghost ? Theme.accent : #ffffff40;
+    opacity: cell.available || mode != 0 ? 1 : Theme.disabled;
+    animate background { duration: Theme.fast; }
+    accessible-role: button;
+    accessible-label: cell.label;
+    accessible-checked: root.on;
+    accessible-action-default => { root.tapped(); }
+
+    touch := TouchArea {
+        pointer-event(e) => {
+            if e.kind == PointerEventKind.down {
+                root.moved = false;
+                root.was-held = false;
+            }
+            if e.kind == PointerEventKind.up && root.mode == 1 && root.moved && !root.was-held {
+                root.dropped(self.mouse-x, self.mouse-y);
+            }
+        }
+        moved => {
+            let dx = self.mouse-x - self.pressed-x;
+            let dy = self.mouse-y - self.pressed-y;
+            if !root.moved && (abs(dx) > 8 * Theme.dp || abs(dy) > 8 * Theme.dp) {
+                root.moved = true;
+            }
+            if root.mode == 1 && root.moved && !root.was-held {
+                root.dragging(self.mouse-x, self.mouse-y);
+            }
+            if root.mode == 0 && dy > 40 * Theme.dp {
+                root.pulled();
+            }
+        }
+        clicked => {
+            if !root.moved {
+                root.tapped();
+            }
+        }
+    }
+
+    hold := Timer {
+        interval: 500ms;
+        running: touch.pressed && !root.moved && root.mode != 2;
+        triggered => {
+            self.running = false;
+            root.moved = true; // no tap after it
+            root.was-held = true;
+            root.held();
+        }
+    }
+
+    if !cell.wide: VerticalLayout {
+        alignment: center;
+        spacing: 5 * Theme.dp;
+        padding-left: 4 * Theme.dp;
+        padding-right: 4 * Theme.dp;
+        HorizontalLayout {
+            alignment: center;
+            Glyph {
+                source: TilesModel.icon(cell);
+                size: 21 * Theme.dp;
+            }
+        }
+
+        Text {
+            text: cell.label;
+            color: Theme.text;
+            font-size: 11.5 * Theme.dp;
+            horizontal-alignment: center;
+            overflow: elide;
+        }
+    }
+    if cell.wide: HorizontalLayout {
+        padding-left: 12 * Theme.dp;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 36 * Theme.dp;
+                height: self.width;
+                border-radius: self.width / 2;
+                background: root.on ? #ffffff33 : Theme.dialog-button;
+                Glyph {
+                    source: TilesModel.icon(cell);
+                    size: 20 * Theme.dp;
+                }
+            }
+        }
+
+        // a long label takes two lines ("Mobile / data")
+        VerticalLayout {
+            alignment: center;
+            horizontal-stretch: 1;
+            padding-left: 10 * Theme.dp;
+            padding-right: 4 * Theme.dp;
+            Text {
+                text: cell.label;
+                color: Theme.text;
+                font-size: 14 * Theme.dp;
+                font-weight: 600;
+                wrap: word-wrap;
+                max-height: 2.4 * 14 * Theme.dp;
+                overflow: elide;
+            }
+
+            Text {
+                text: root.mode == 0 ? TilesModel.sub(cell) : root.mode == 1 ? "Wide · 2 cells" : "";
+                color: root.on ? #ffffffcc : Theme.text-dim;
+                font-size: 12 * Theme.dp;
+                overflow: elide;
+            }
+        }
+
+        if root.mode == 0 && TilesModel.detail(cell): Rectangle {
+            width: 37 * Theme.dp;
+            Rectangle {
+                x: 0;
+                width: max(1px, Theme.dp);
+                y: 12 * Theme.dp;
+                height: parent.height - 24 * Theme.dp;
+                background: root.on ? #ffffff40 : #ffffff1a;
+            }
+
+            Glyph {
+                source: @image-url("../icons/sys/chevron_right.svg");
+                size: 18 * Theme.dp;
+            }
+
+            TouchArea {
+                clicked => {
+                    Kit.accept();
+                    root.detail();
+                }
+            }
+        }
+        if root.mode != 0 || !TilesModel.detail(cell): Rectangle {
+            width: 4 * Theme.dp;
+        }
+    }
+
+    // an app's name over its tile in the editor
+    if mode != 0 && cell.owner != "": Text {
+        x: 6 * Theme.dp;
+        y: 5 * Theme.dp;
+        text: cell.owner;
+        color: Theme.text-dim;
+        font-size: 9 * Theme.dp;
+        font-weight: 700;
+        letter-spacing: 0.3 * Theme.dp;
+    }
+    if mode != 0: Badge {
+        x: parent.width - self.width + 6 * Theme.dp;
+        y: -6 * Theme.dp;
+        add: root.mode == 2;
+        clicked => {
+            if root.mode == 2 {
+                root.tapped();
+            } else {
+                root.removed();
+            }
+        }
+    }
+}
+
+// The tiles on a 4-column grid (a wide tile takes 2 cells; tiles.rs places them). In the editor a dragged tile follows
+// the finger and lands where it lifts: on a tile, its place; below the grid, removed.
+export component TileGrid inherits Rectangle {
+    in property <[TileCell]> cells;
+    in property <int> rows;
+    in property <int> mode;
+    in property <length> row-gap: 8 * Theme.dp;
+    callback pulled;
+    callback detail(TileCell);
+    callback hold(TileCell);
+    property <length> gap: 8 * Theme.dp;
+    property <length> cw: (self.width - 3 * self.gap) / 4;
+    property <length> ch: 64 * Theme.dp;
+    property <int> drag: -1;
+    property <length> gx;
+    property <length> gy;
+    height: max(0, rows) * (ch + row-gap) - (rows > 0 ? row-gap : 0);
+    for c[i] in cells: Tile {
+        x: c.col * (root.cw + root.gap);
+        y: c.row * (root.ch + root.row-gap);
+        width: c.wide ? 2 * root.cw + root.gap : root.cw;
+        height: root.ch;
+        cell: c;
+        mode: root.mode;
+        opacity: root.drag == i ? 0.3 : 1;
+        tapped => {
+            if root.mode == 0 {
+                TilesModel.tap(c);
+            } else if root.mode == 2 {
+                TilesModel.op("add", c.id, 0);
+            }
+        }
+        held => {
+            if root.mode == 1 {
+                Kit.accept();
+                TilesModel.op("wide", i, 0);
+            } else if root.mode == 0 {
+                root.hold(c);
+            }
+        }
+        detail => { root.detail(c); }
+        pulled => { root.pulled(); }
+        removed => { TilesModel.op("remove", i, 0); }
+        dragging(mx, my) => {
+            root.drag = i;
+            root.gx = self.x + mx - self.width / 2;
+            root.gy = self.y + my - root.ch / 2;
+        }
+        dropped(mx, my) => {
+            let fx = self.x + mx;
+            let fy = self.y + my;
+            root.drag = -1;
+            let col = max(0, min(3, floor(fx / (root.cw + root.gap))));
+            let row = floor(fy / (root.ch + root.row-gap));
+            TilesModel.op("drop", i, fy > root.height + 12 * Theme.dp ? -1 : max(0, row) * 4 + col);
+        }
+    }
+    // the dragged tile, over the others
+    if root.drag >= 0 && root.drag < root.cells.length: Tile {
+        x: root.gx;
+        y: root.gy;
+        width: root.cells[root.drag].wide ? 2 * root.cw + root.gap : root.cw;
+        height: root.ch;
+        cell: root.cells[root.drag];
+        mode: 1;
+        ghost: true;
+    }
+}
+
+// The first stop's row (tp-shade): the first four tiles, 74 dp squares; a drag down on them pulls the second stop.
+export component FirstStop inherits HorizontalLayout {
+    callback hold(TileCell);
+    spacing: 8 * Theme.dp;
+    for c in TilesModel.first: Tile {
+        height: 74 * Theme.dp;
+        cell: {
+            id: c.id,
+            label: c.label,
+            sub: c.sub,
+            owner: c.owner,
+            glyph: c.glyph,
+            kind: c.kind,
+            on: c.on,
+            wide: false,
+            col: 0,
+            row: 0,
+            available: c.available,
+        };
+        tapped => { TilesModel.tap(c); }
+        held => { root.hold(c); }
+        pulled => { TilesModel.stop = 2; }
+    }
+}
+
+// "︾ Pull for all controls" under the first stop: a tap or a pull opens the second stop
+export component PullForAll inherits VerticalLayout {
+    alignment: center;
+    spacing: 2 * Theme.dp;
+    HorizontalLayout {
+        alignment: center;
+        Glyph {
+            source: @image-url("../icons/sys/chevron_down.svg");
+            size: 18 * Theme.dp;
+            colorize: Theme.text-dim;
+        }
+    }
+
+    Text {
+        text: "Pull for all controls";
+        color: Theme.text-dim;
+        font-size: 11.5 * Theme.dp;
+        horizontal-alignment: center;
+        TouchArea {
+            moved => {
+                if self.mouse-y - self.pressed-y > 24 * Theme.dp {
+                    TilesModel.stop = 2;
+                }
+            }
+            clicked => { TilesModel.stop = 2; }
+        }
+    }
+}
+
+// a slider row: a glyph and a slider
+component SliderRow inherits HorizontalLayout {
+    in property <image> icon;
+    in property <string> label;
+    in-out property <float> value;
+    in property <float> step;
+    callback moved(float);
+    spacing: 12 * Theme.dp;
+    padding-left: 4 * Theme.dp;
+    padding-right: 4 * Theme.dp;
+    VerticalLayout {
+        alignment: center;
+        Glyph {
+            source: root.icon;
+            size: 22 * Theme.dp;
+            colorize: Theme.text-secondary;
+        }
+    }
+
+    Slider {
+        label: root.label;
+        value <=> root.value;
+        step: root.step;
+        moved(v) => { root.moved(v); }
+    }
+}
+
+// The second stop (tp-control): the tiles, brightness, media volume, the media card's place, the hint.
+export component ControlCentre inherits VerticalLayout {
+    callback hold(TileCell);
+    callback detail(TileCell);
+    spacing: 10 * Theme.dp;
+    TileGrid {
+        cells: TilesModel.placed;
+        rows: TilesModel.rows;
+        mode: 0;
+        hold(c) => { root.hold(c); }
+        detail(c) => { root.detail(c); }
+    }
+
+    // shortcut: no auto-brightness (the board's "A") until a light sensor drives it; no pager dots: every tile shows
+    SliderRow {
+        icon: @image-url("../icons/sys/brightness.svg");
+        label: "Brightness";
+        value <=> SystemSettings.brightness;
+    }
+
+    SliderRow {
+        icon: @image-url("../icons/sys/volume.svg");
+        label: "Media volume";
+        value: SystemSettings.media-volume / 10;
+        step: 0.1;
+        moved(v) => { SystemSettings.media-volume = round(v * 10); }
+    }
+
+    // (TP3, stream A) the media card goes here
+
+    Text {
+        text: "Hold a tile for its settings · › for details";
+        color: Theme.text-dim;
+        font-size: 11.5 * Theme.dp;
+        horizontal-alignment: center;
+    }
+}
+
+// a pill button of the editor and the sheet
+component Pill inherits Rectangle {
+    in property <string> text;
+    in property <bool> primary;
+    in property <image> icon;
+    in property <bool> has-icon;
+    callback clicked;
+    height: 36 * Theme.dp;
+    border-radius: self.height / 2;
+    background: ta.pressed ? Theme.pressed : primary ? Theme.accent : Theme.dialog-button;
+    min-width: row.preferred-width + 34 * Theme.dp;
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-action-default => { root.clicked(); }
+    row := HorizontalLayout {
+        alignment: center;
+        spacing: 8 * Theme.dp;
+        if root.has-icon: VerticalLayout {
+            alignment: center;
+            Glyph {
+                source: root.icon;
+                size: 18 * Theme.dp;
+            }
+        }
+        Text {
+            text: root.text;
+            color: Theme.text;
+            font-size: 14 * Theme.dp;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+    }
+
+    ta := TouchArea {
+        clicked => {
+            Kit.accept();
+            root.clicked();
+        }
+    }
+}
+
+component SectionLabel inherits Text {
+    color: Theme.text-dim;
+    font-size: 11.7 * Theme.dp;
+    font-weight: 600;
+    letter-spacing: 0.78 * Theme.dp;
+}
+
+// The editor (tp-edit): Reset and Done; the placed tiles (drag to reorder, hold for wide or small, ⊖ or a drag below
+// to remove; one always stays), then the spare ones (⊕ adds).
+export component TileEditor inherits Rectangle {
+    background: #0f1115f7;
+    TouchArea { }
+
+    VerticalLayout {
+        padding: 12 * Theme.dp;
+        spacing: 12 * Theme.dp;
+        alignment: start;
+        HorizontalLayout {
+            spacing: 10 * Theme.dp;
+            padding-left: 4 * Theme.dp;
+            Text {
+                text: "Edit tiles";
+                color: Theme.text;
+                font-size: 20 * Theme.dp;
+                font-weight: 600;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+            }
+
+            Pill {
+                text: "Reset";
+                clicked => { TilesModel.op("reset", 0, 0); }
+            }
+
+            Pill {
+                text: "Done";
+                primary: true;
+                clicked => { TilesModel.op("done", 0, 0); }
+            }
+        }
+
+        Text {
+            text: TilesModel.message != "" ? TilesModel.message
+                : "Drag to reorder. Hold a tile to make it wide or small. The first 4 also show in the shade's first stop.";
+            color: TilesModel.message != "" ? Theme.danger-text : Theme.text-secondary;
+            font-size: 12.5 * Theme.dp;
+            wrap: word-wrap;
+        }
+
+        TileGrid {
+            cells: TilesModel.placed;
+            rows: TilesModel.rows;
+            mode: 1;
+            row-gap: 12 * Theme.dp;
+        }
+
+        HorizontalLayout {
+            spacing: 6 * Theme.dp;
+            padding-left: 4 * Theme.dp;
+            VerticalLayout {
+                alignment: center;
+                Glyph {
+                    source: @image-url("../icons/sys/more.svg");
+                    size: 14 * Theme.dp;
+                    colorize: Theme.text-dim;
+                }
+            }
+
+            SectionLabel {
+                text: "DRAG HERE TO REMOVE · AVAILABLE";
+            }
+        }
+
+        TileGrid {
+            cells: TilesModel.spare;
+            rows: TilesModel.spare-rows;
+            mode: 2;
+            row-gap: 12 * Theme.dp;
+        }
+
+        Text {
+            text: "Labelled tiles come from apps.";
+            color: Theme.text-dim;
+            font-size: 12.5 * Theme.dp;
+        }
+    }
+}
+
+// a network's row in the sheet
+component NetworkRow inherits Rectangle {
+    in property <WifiRow> net;
+    in property <bool> joined;
+    callback clicked;
+    height: 60 * Theme.dp;
+    background: ta.pressed ? Theme.pressed : transparent;
+    HorizontalLayout {
+        padding-left: 4 * Theme.dp;
+        padding-right: 4 * Theme.dp;
+        spacing: 14 * Theme.dp;
+        VerticalLayout {
+            alignment: center;
+            Rectangle {
+                width: 36 * Theme.dp;
+                height: self.width;
+                border-radius: self.width / 2;
+                background: root.joined ? Theme.accent : Theme.dialog-button;
+                opacity: root.joined || net.bars >= 3 ? 1 : 0.7;
+                Glyph {
+                    source: @image-url("../icons/sys/wifi.svg");
+                    size: 19 * Theme.dp;
+                }
+            }
+        }
+
+        VerticalLayout {
+            alignment: center;
+            spacing: 2 * Theme.dp;
+            horizontal-stretch: 1;
+            Text {
+                text: net.name;
+                color: Theme.text;
+                font-size: 15.5 * Theme.dp;
+                font-weight: root.joined ? 600 : 500;
+                overflow: elide;
+            }
+
+            if net.sub != "": Text {
+                text: net.sub;
+                color: root.joined ? Theme.accent : Theme.text-dim;
+                font-size: 12.5 * Theme.dp;
+                overflow: elide;
+            }
+        }
+
+        if net.secured: VerticalLayout {
+            alignment: center;
+            Glyph {
+                source: @image-url("../icons/sys/lock.svg");
+                size: 14 * Theme.dp;
+                colorize: Theme.text-dim;
+            }
+        }
+    }
+
+    Rectangle {
+        x: 54 * Theme.dp;
+        y: parent.height - self.height;
+        width: parent.width - self.x;
+        height: max(1px, Theme.dp / 2);
+        background: Theme.header-hairline;
+    }
+
+    ta := TouchArea {
+        clicked => {
+            Kit.accept();
+            root.clicked();
+        }
+    }
+}
+
+// The Wi-Fi tile's detail (tp-wifi): the switch, the joined network, the others in range (scanned while the sheet is
+// open), Wi-Fi settings and Done. A network opens Settings' Wi-Fi page, where joining is.
+export component WifiSheet inherits Rectangle {
+    callback settings;
+    background: #0f1115f7;
+    TouchArea { }
+
+    VerticalLayout {
+        padding: 12 * Theme.dp;
+        spacing: 10 * Theme.dp;
+        HorizontalLayout {
+            spacing: 8 * Theme.dp;
+            Rectangle {
+                width: 36 * Theme.dp;
+                height: self.width;
+                border-radius: self.width / 2;
+                background: back-ta.pressed ? Theme.pressed : transparent;
+                Glyph {
+                    source: @image-url("../icons/sys/back.svg");
+                    size: 19 * Theme.dp;
+                }
+
+                back-ta := TouchArea {
+                    clicked => { TilesModel.wifi-sheet = false; }
+                }
+            }
+
+            Text {
+                text: "Wi-Fi";
+                color: Theme.text;
+                font-size: 20 * Theme.dp;
+                font-weight: 600;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+            }
+
+            VerticalLayout {
+                alignment: center;
+                Switch {
+                    label: "Wi-Fi";
+                    on <=> SystemSettings.wifi;
+                }
+            }
+        }
+
+        if TilesModel.joined.name != "": VerticalLayout {
+            spacing: 10 * Theme.dp;
+            SectionLabel {
+                text: "CONNECTED";
+            }
+
+            NetworkRow {
+                net: TilesModel.joined;
+                joined: true;
+                clicked => { root.settings(); }
+            }
+        }
+
+        HorizontalLayout {
+            padding-left: 4 * Theme.dp;
+            padding-right: 4 * Theme.dp;
+            SectionLabel {
+                text: SystemSettings.wifi ? "AVAILABLE" : "WI-FI IS OFF";
+                horizontal-stretch: 1;
+            }
+
+            if TilesModel.scanning: Text {
+                text: "Scanning";
+                color: Theme.text-dim;
+                font-size: 12 * Theme.dp;
+            }
+        }
+
+        Flickable {
+            vertical-stretch: 1;
+            content-height: list.preferred-height;
+            list := VerticalLayout {
+                alignment: start;
+                for n in TilesModel.networks: NetworkRow {
+                    net: n;
+                    clicked => { root.settings(); }
+                }
+            }
+        }
+
+        HorizontalLayout {
+            spacing: 10 * Theme.dp;
+            Rectangle {
+                height: 44 * Theme.dp;
+                horizontal-stretch: 1;
+                border-radius: 12 * Theme.dp;
+                background: set-ta.pressed ? Theme.pressed : Theme.dialog-button;
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: 8 * Theme.dp;
+                    VerticalLayout {
+                        alignment: center;
+                        Glyph {
+                            source: @image-url("../icons/sys/gear.svg");
+                            size: 18 * Theme.dp;
+                        }
+                    }
+
+                    Text {
+                        text: "Wi-Fi settings";
+                        color: Theme.text;
+                        font-size: 14 * Theme.dp;
+                        font-weight: 600;
+                        vertical-alignment: center;
+                    }
+                }
+
+                set-ta := TouchArea {
+                    clicked => {
+                        Kit.accept();
+                        root.settings();
+                    }
+                }
+            }
+
+            Rectangle {
+                height: 44 * Theme.dp;
+                horizontal-stretch: 1;
+                border-radius: 12 * Theme.dp;
+                background: done-ta.pressed ? Theme.pressed : Theme.accent;
+                Text {
+                    text: "Done";
+                    color: Theme.text;
+                    font-size: 14 * Theme.dp;
+                    font-weight: 600;
+                }
+
+                done-ta := TouchArea {
+                    clicked => {
+                        Kit.accept();
+                        TilesModel.wifi-sheet = false;
+                    }
+                }
+            }
+        }
+    }
+}

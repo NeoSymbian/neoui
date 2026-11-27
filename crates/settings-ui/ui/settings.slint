@@ -187,6 +187,18 @@ export component SettingsApp inherits Window {
         chosen(i) => { SetState.sheet = ""; SetState.act("notify-bannert", i); }
         dismissed => { SetState.sheet = ""; }
     }
+    // TP7: what a tap on the status bar opens
+    if SetState.sheet == "status-tap": ChoiceSheet {
+        open: true;
+        radio-left: true;
+        title-start: true;
+        title: "Tap on the status bar";
+        choices: SetState.tap-choices;
+        descriptions: ["Pull again for all controls", "Tiles, brightness and media at once"];
+        current: SetState.shell-tap;
+        chosen(i) => { SetState.sheet = ""; SetState.act("notify-tap", i); }
+        dismissed => { SetState.sheet = ""; }
+    }
     if SetState.sheet == "channel": ChoiceSheet {
         open: true;
         radio-left: true;

@@ -46,6 +46,9 @@ mod settings_info;
 // (D10) Settings' Edit home and Open apps' thumbnails
 #[path = "home.rs"]
 mod home;
+// (TP7) the control centre's slot table, app tiles and their taps
+#[path = "tiles.rs"]
+pub mod tiles;
 
 /// Apps whose shell screen is a launcher grid until they request FRONT(1).
 // shortcut: a fixed table like APPS; apps declare launcher support when apps are installable.
@@ -68,6 +71,11 @@ pub const PAGES: &[(&str, &str, u16)] = &[
     ("settings", "wallpaper", 25),
     // TP4: the shade's Manage opens Panel & notifications
     ("settings", "panel", 27),
+    // TP7: a held tile opens its page
+    ("settings", "mobile", 2),
+    ("settings", "sounds", 7),
+    ("settings", "battery", 8),
+    ("settings", "notifications", 28),
 ];
 
 /// Apps started (hidden) at boot, in this order, and never closed for room: DTSRV (a service, 1.19) rings alarms
@@ -299,6 +307,8 @@ pub struct Host {
     pub policies: notifications::Policies,
     /// (D10) the home editor asked for, thumbnails taken ([`home`])
     pub d10: home::D10,
+    /// (TP7) the slot table, held tile taps, INFO 12 ([`tiles`])
+    pub tiles: tiles::Tiles,
 }
 
 impl Host {
@@ -351,6 +361,7 @@ impl Host {
             clip_unseen: false,
             policies: notifications::Policies::boot(),
             d10: home::D10::default(),
+            tiles: tiles::Tiles::boot(),
         }
     }
 
@@ -378,7 +389,9 @@ impl Host {
         };
         app.session = Some(id);
         app.minor = minor;
+        let key = app.key;
         self.unbound.remove(i);
+        self.tiles_bound(key, minor);
         true
     }
 
@@ -1573,6 +1586,12 @@ impl Service for Host {
                 let r = self.channel(key, &m);
                 m.complete(r);
             }
+            // (TP7) an app's tile
+            proto::TILE => {
+                let key = app.key;
+                let r = self.tile_offer(key, &m);
+                m.complete(r);
+            }
             // 1.22's contract: checked, not acted on yet (their producers and consumers land in W1–W3)
             // (the caller by a positive catalogue SID match first: the legacy bridge publishes none of these)
             op if contract::is_publisher_opcode(op) => {
@@ -1753,6 +1772,11 @@ impl Service for Host {
                     proto::ACTION_CLEAR => self.clear_action(&m),
                     proto::ACTION_MEASURE_APP => self.measure_action(&m),
                     proto::ACTION_RESET => self.reset_action(&m),
+                    // (TP7) the tile editor
+                    proto::ACTION_EDIT_TILES => {
+                        let key = app.key;
+                        self.edit_tiles_action(key, &m)
+                    }
                     // (D10) the home editor
                     proto::ACTION_EDIT_HOME => {
                         let key = app.key;

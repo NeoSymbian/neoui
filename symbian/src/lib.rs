@@ -943,6 +943,7 @@ fn main() -> i32 {
                 time::millis(),
                 host.settings.get(keys::RADIO_WIFI).unwrap_or(true),
             );
+            wifi.sheet(&mut ui, time::millis()); // (TP7) the Wi-Fi tile's sheet
             // a Wi-Fi login page (browser UI5): the shade's entry, and the Settings app's Sign in (SETTINGS_ACTION)
             host.set_portal(wifi.portal());
             host.set_info(proto::INFO_NET, encode_ip(wifi.ip()));
@@ -965,6 +966,7 @@ fn main() -> i32 {
             }
             host.deliver_settings();
             host.policy_frame(ms);
+            host.tiles_frame(&mut ui, ms);
             settings::log_save(host.settings.tick(ms));
             if let Some(source) =
                 netclock.frame(&host.settings, phone.nitz(), wifi.take_http_time(), ms)

@@ -2,8 +2,9 @@
 // TP4 / D9: Panel & notifications (tp-settings: the shade's swipe on home, App notifications, Do not disturb, the
 // banner's time), Notifications (set2-notifications: Do not disturb and every app with its line) and one app's
 // notifications (set2-notify-app with nt-settings' channels: Allow, Banners, Sound, Badge, the channels and their
-// importance). Every value is the shell's policy (INFO 7) or the store's notify.* keys. Tiles, the tap on the status
-// bar, the media player, the live island, the lock screen and the history come with TP3/TP6–TP8 and stay out;
+// importance). Every value is the shell's policy (INFO 7) or the store's notify.* keys. Tiles (the shell's editor,
+// ACTION_EDIT_TILES) and the tap on the status bar (shell.tap) came with TP7; the media player, the live island, the
+// lock screen and the history come with TP3/TP6/TP8 and stay out;
 // Notifications' "Show on lock screen" says "Not yet (D15)".
 import { Theme, NeoList, SectionHeader, ListRow } from "@neoui/kit.slint";
 import { Note } from "../parts.slint";
@@ -14,6 +15,34 @@ export component PanelPage inherits NeoList {
     VerticalLayout {
         alignment: start;
         SectionHeader { text: "Top panel"; }
+        // (TP7) the shell's tile editor, and what the status bar's tap opens
+        ListRow {
+            value-bright: true;
+            title: "Tiles";
+            checked: SetState.found == "panel.tiles";
+            subtitle: SetState.tiles-text;
+            value: SetState.tiles-ok ? "Edit" : "Not yet (protocol 1.22)";
+            chevron: SetState.tiles-ok;
+            clicked => {
+                if SetState.tiles-ok {
+                    SetState.act("notify-tiles", "");
+                }
+            }
+        }
+
+        ListRow {
+            value-bright: true;
+            title: "Tap on the status bar";
+            checked: SetState.found == "panel.tap";
+            value: SetState.tiles-ok ? SetState.tap-choices[SetState.shell-tap] : "Not yet (protocol 1.22)";
+            chevron: SetState.tiles-ok;
+            clicked => {
+                if SetState.tiles-ok {
+                    SetState.sheet = "status-tap";
+                }
+            }
+        }
+
         ListRow {
             value-bright: true;
             title: "Swipe down on home opens the shade";

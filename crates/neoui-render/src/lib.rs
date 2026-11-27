@@ -10,6 +10,7 @@ mod home;
 pub mod keyboard;
 pub mod layer;
 mod settings;
+mod tiles;
 
 use alloc::boxed::Box;
 use alloc::rc::Rc;
@@ -342,6 +343,8 @@ pub struct Renderer {
     home: Rc<RefCell<home::State>>,
     /// (G3) the switcher's thumbnails, by app key
     thumbs: Vec<(String, slint::Image)>,
+    /// (TP7) the control centre's order, the apps' offers and the editor's draft
+    tiles: Rc<RefCell<tiles::State>>,
 }
 
 /// Slint's lines for a scrolled list's frame (smooth-ui S2d): the rows of `list` outside `draw` were moved into place
@@ -495,6 +498,7 @@ impl Renderer {
         ui.global::<SystemSettings>()
             .on_edited(move |k| sink.borrow_mut().push(k.as_str().into()));
         let home = home::wire(&ui, edited.clone());
+        let tiles = tiles::wire(&ui, edited.clone());
         Ok(Self {
             window,
             ui,
@@ -523,6 +527,7 @@ impl Renderer {
             shifts: 0,
             home,
             thumbs: Vec::new(),
+            tiles,
         })
     }
 
@@ -1116,7 +1121,7 @@ impl Renderer {
         settings::BINDINGS
             .iter()
             .map(|b| b.key)
-            .chain(core::iter::once(home::KEY))
+            .chain([home::KEY, tiles::KEY])
     }
 
     /// Shows a setting's value (from the UI server's store). False when the shell doesn't show `key` or `value` has
@@ -1127,6 +1132,11 @@ impl Renderer {
             home::stored(&self.ui, &mut self.home.borrow_mut(), b);
             return true;
         }
+        if key == tiles::KEY {
+            let Value::Bytes(b) = value else { return false };
+            tiles::stored(&self.ui, &mut self.tiles.borrow_mut(), b);
+            return true;
+        }
         let global = self.ui.global::<SystemSettings>();
         settings::binding(key).is_some_and(|b| (b.write)(&global, value))
     }
@@ -1135,6 +1145,9 @@ impl Renderer {
     pub fn setting(&self, key: &str) -> Option<Value> {
         if key == home::KEY {
             return Some(Value::Bytes(self.home.borrow().saved_bytes()));
+        }
+        if key == tiles::KEY {
+            return Some(Value::Bytes(self.tiles.borrow().saved_bytes()));
         }
         let global = self.ui.global::<SystemSettings>();
         settings::binding(key).map(|b| (b.read)(&global))
@@ -1155,6 +1168,10 @@ impl Renderer {
         // the home editor's Done (D10)
         if let Some(bytes) = self.home.borrow_mut().take_save() {
             edits.push((home::KEY, Value::Bytes(bytes)));
+        }
+        // the tile editor's Done (TP7)
+        if let Some(bytes) = self.tiles.borrow_mut().take_save() {
+            edits.push((tiles::KEY, Value::Bytes(bytes)));
         }
         edits
     }
@@ -1210,6 +1227,7 @@ impl Renderer {
             details: slint::ModelRc::new(slint::VecModel::from(details)),
             sign_in: v.sign_in,
         });
+        tiles::wifi_sub(&self.ui, if v.connected { &v.name } else { "" });
     }
 
     /// Shares the latest observation with the status bar (the Settings app reads the rest itself).
@@ -1227,6 +1245,7 @@ impl Renderer {
         self.ui.set_bars(bars);
         self.ui.set_operator(operator.into());
         self.ui.set_rat(rat.into());
+        tiles::mobile_sub(&self.ui, bars, operator, rat);
     }
 
     /// What the status bar says about the network instead of the operator's name (tp-statusbar): "" while

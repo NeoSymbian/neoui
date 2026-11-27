@@ -329,6 +329,9 @@ impl Host {
         // TP4's channels are the host's (notifications.rs)
         let records = if kind == proto::INFO_CHANNELS {
             Some(self.channel_records())
+        } else if kind == proto::INFO_TILES {
+            // TP7's tiles are the host's (tiles.rs)
+            Some(self.tile_records())
         } else {
             self.shelf.records(kind)
         };

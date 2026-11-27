@@ -252,6 +252,12 @@ export global SetState {
     in property <string> dnd-text;
     in property <string> notify-root;
     in-out property <bool> swipe-home: true;
+    // (TP7) the control centre's tiles ("7 tiles, 4 in the first stop"; false: this shell has no editor) and what a
+    // tap on the status bar opens (shell.tap: 0 the shade, 1 the control centre) with its choices
+    in property <string> tiles-text: "7 tiles, 4 in the first stop";
+    in property <bool> tiles-ok: true;
+    in property <int> shell-tap;
+    in property <[string]> tap-choices: ["Shade first", "Control centre"];
     in property <int> banner-time: 5;
     in property <string> banner-text: "5 s";
     in property <[string]> banner-times;

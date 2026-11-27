@@ -9,13 +9,31 @@ use crate::settings::kerr;
 use crate::{activity, apps, ipc, media, settings_app::wire, tiles, widget};
 use alloc::vec::Vec;
 
-/// Whether `op` is one of 1.22's app → shell opcodes that publish for the caller (checked by [`ingress`]).
+/// Whether `op` is one of 1.22's app → shell opcodes that publish for the caller (checked by [`ingress`]). `TILE`
+/// is built (TP7): the shell checks it with [`tile`] and keeps it.
 #[must_use]
 pub fn is_publisher_opcode(op: i32) -> bool {
     matches!(
         op,
-        ipc::MEDIA | ipc::REPLY_TEXT | ipc::ACTIVITY | ipc::TILE | ipc::WIDGET
+        ipc::MEDIA | ipc::REPLY_TEXT | ipc::ACTIVITY | ipc::WIDGET
     )
+}
+
+/// (TP7) A `TILE` from app `key` whose message carries secure ID `sid`, checked as [`ingress`] checks the others:
+/// `KErrPermissionDenied` unless `key` has a catalogue SID and `sid` is it, then `KErrArgument` for a malformed offer
+/// (`read` refuses one past [`tiles::OFFER_MAX`] with `KErrTooBig`).
+///
+/// # Errors
+/// As above.
+pub fn tile(
+    key: &str,
+    sid: u32,
+    read: impl FnOnce(usize) -> Result<Vec<u8>, i32>,
+) -> Result<tiles::Offer, i32> {
+    if apps::sid(key) != Some(sid) {
+        return Err(kerr::PERMISSION_DENIED);
+    }
+    tiles::Offer::decode(&read(tiles::OFFER_MAX)?).ok_or(kerr::ARGUMENT)
 }
 
 /// The answer to publisher opcode `op` from app `key` whose message carries secure ID `sid`. `read(max)` reads the
@@ -40,7 +58,6 @@ pub fn ingress(
         ipc::ACTIVITY => read(activity::ACTIVITY_MAX).and_then(|b| {
             ok(activity::Activity::decode(&b).is_some_and(|a| a.kind != activity::kind::MEDIA))
         }),
-        ipc::TILE => read(tiles::OFFER_MAX).and_then(|b| ok(tiles::Offer::decode(&b).is_some())),
         ipc::WIDGET => read(widget::WIDGET_MAX).and_then(|b| {
             let c = widget::Content::decode(&b).ok_or(kerr::ARGUMENT)?;
             c.fits(key).map_err(|template| {
@@ -60,8 +77,8 @@ pub fn ingress(
 /// The longest request [`settings_action`] reads.
 pub const ACTION_REQUEST_MAX: usize = wire::WallpaperRequest::LEN;
 
-/// The answer to `SETTINGS_ACTION` `kind` when it is one of 1.22's (8 `INSTALL_WALLPAPER`, 12 `EDIT_TILES`, 14
-/// `LOCK_DIALOG`), else `None`. `read(max)` reads the request (slot 1, `KErrArgument` past `max`), only for
+/// The answer to `SETTINGS_ACTION` `kind` when it is one of 1.22's not built yet (8 `INSTALL_WALLPAPER`, 14
+/// `LOCK_DIALOG`; 12 `EDIT_TILES` is built with TP7, the shell's `edit_tiles_action`), else `None`. `read(max)` reads the request (slot 1, `KErrArgument` past `max`), only for
 /// Settings. `KErrPermissionDenied` for anyone else, `KErrArgument` for a malformed request, else
 /// `KErrNotSupported`.
 pub fn settings_action(
@@ -71,7 +88,6 @@ pub fn settings_action(
 ) -> Option<i32> {
     let valid: fn(&[u8]) -> bool = match kind {
         ipc::ACTION_INSTALL_WALLPAPER => |b| wire::WallpaperRequest::decode(b).is_some(),
-        ipc::ACTION_EDIT_TILES => tiles::edit_tiles_request,
         ipc::ACTION_LOCK_DIALOG => |b| wire::lock_dialog_request(b).is_some(),
         _ => return None,
     };
@@ -92,13 +108,7 @@ mod tests {
     use crate::settings::access::SETTINGS_SID;
     use alloc::vec;
 
-    const OPS: [i32; 5] = [
-        ipc::MEDIA,
-        ipc::REPLY_TEXT,
-        ipc::ACTIVITY,
-        ipc::TILE,
-        ipc::WIDGET,
-    ];
+    const OPS: [i32; 4] = [ipc::MEDIA, ipc::REPLY_TEXT, ipc::ACTIVITY, ipc::WIDGET];
     const CLOCK: u32 = 0xE000_8001;
 
     fn never(_: usize) -> Result<Vec<u8>, i32> {
@@ -127,7 +137,7 @@ mod tests {
                 kerr::PERMISSION_DENIED
             );
         }
-        assert!(!is_publisher_opcode(ipc::NOTIFY));
+        assert!(!is_publisher_opcode(ipc::NOTIFY) && !is_publisher_opcode(ipc::TILE));
     }
 
     #[test]
@@ -190,12 +200,6 @@ mod tests {
                 kerr::ARGUMENT,
             ),
             (ipc::ACTIVITY, vec![], kerr::ARGUMENT),
-            (
-                ipc::TILE,
-                tiles::Offer::withdraw(1).encode(),
-                kerr::NOT_SUPPORTED,
-            ),
-            (ipc::TILE, vec![1, 9], kerr::ARGUMENT),
             (ipc::WIDGET, text.encode(), kerr::NOT_SUPPORTED),
             (ipc::WIDGET, next.encode(), kerr::ARGUMENT), // another template
             (
@@ -228,6 +232,40 @@ mod tests {
         );
     }
 
+    /// (TP7) `TILE`: the caller first, then the offer.
+    #[test]
+    fn a_tile_offer_is_checked_and_kept() {
+        let rec = |b: Vec<u8>| {
+            move |max: usize| {
+                if b.len() > max {
+                    Err(kerr::TOO_BIG)
+                } else {
+                    Ok(b)
+                }
+            }
+        };
+        let o = tiles::Offer {
+            local_id: 1,
+            kind: tiles::kind::ACTION,
+            label: "Lap".into(),
+            ..tiles::Offer::default()
+        };
+        assert_eq!(tile("clock", CLOCK, rec(o.encode())), Ok(o));
+        assert_eq!(
+            tile(LEGACY, LEGACY_SID, never),
+            Err(kerr::PERMISSION_DENIED)
+        );
+        assert_eq!(
+            tile("clock", 0xE000_5001, never),
+            Err(kerr::PERMISSION_DENIED)
+        );
+        assert_eq!(tile("clock", CLOCK, rec(vec![1, 9])), Err(kerr::ARGUMENT));
+        assert_eq!(
+            tile("clock", CLOCK, rec(vec![0; tiles::OFFER_MAX + 1])),
+            Err(kerr::TOO_BIG)
+        );
+    }
+
     #[test]
     fn settings_actions_of_1_22() {
         let settings = crate::settings::access::caller(apps::SETTINGS, SETTINGS_SID);
@@ -249,7 +287,6 @@ mod tests {
         };
         for (kind, good, bad) in [
             (ipc::ACTION_INSTALL_WALLPAPER, wallpaper.clone(), vec![1, 1]),
-            (ipc::ACTION_EDIT_TILES, vec![], vec![0]),
             (
                 ipc::ACTION_LOCK_DIALOG,
                 wire::encode_lock_dialog(wire::lock_dialog::CHANGE).to_vec(),
@@ -279,6 +316,7 @@ mod tests {
             );
         }
         for kind in [
+            ipc::ACTION_EDIT_TILES,
             ipc::ACTION_SIGN_IN,
             ipc::ACTION_EDIT_HOME,
             ipc::ACTION_VOLUME,
