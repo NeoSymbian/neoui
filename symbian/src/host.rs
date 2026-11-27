@@ -355,23 +355,26 @@ impl Host {
         }
     }
 
-    /// Session `id`'s first message binds it to its app: the newest started app without a session whose EXE the
-    /// sending process is (`apps::sid_fits`, the kernel's secure ID), whatever order the starts connect in. False
+    /// Session `id`'s first message binds it to its app: the started app without a session whose process sent it,
+    /// by the kernel's word twice: its process ID is the one SYSSTART started (`Process::id` against
+    /// `Message::client_process_id`), and its secure ID fits the app's EXE (`apps::sid_fits`). So the kit and the
+    /// legacy bridge, which share a SID, can't take each other's session, whatever order the starts connect in. False
     /// when it fits none (it stays unbound and everything it sends is refused).
-    // shortcut: the kit and the legacy bridge share a SID, so the newer of the two takes a connection when both are
-    // starting; separate their UIDs (docs top-panel.md) to close it.
     fn bind(&mut self, id: u32, m: &Message) -> bool {
         let Some(i) = self.unbound.iter().position(|(s, _)| *s == id) else {
             return true;
         };
         let (sid, minor) = (m.client_sid(), self.unbound[i].1);
-        let Some(app) = self
-            .apps
-            .iter_mut()
-            .rev()
-            .find(|a| a.session.is_none() && apps::sid_fits(a.key, sid))
-        else {
-            dprintln!("neoui: session {} (SID {:#x}) is no started app", id, sid);
+        let pid = m.client_process_id();
+        let Some(app) = self.apps.iter_mut().rev().find(|a| {
+            a.session.is_none() && apps::sid_fits(a.key, sid) && pid == Ok(a.process.id())
+        }) else {
+            dprintln!(
+                "neoui: session {} (SID {:#x}, process {:?}) is no started app",
+                id,
+                sid,
+                pid
+            );
             return false;
         };
         app.session = Some(id);

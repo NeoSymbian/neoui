@@ -138,7 +138,8 @@ pub fn sid(key: &str) -> Option<u32> {
 pub const LEGACY_SID: u32 = 0xE000_2006;
 
 /// Can a process whose kernel secure ID is `sid` be app `key`'s? Its EXE's SID ([`sid`]), or the shared one for the
-/// legacy bridge. The shell binds a new connection to a started app only when it fits.
+/// legacy bridge. The shell binds a new connection to a started app only when it fits and its process is the one the
+/// shell started (the SID alone can't tell the kit from the bridge).
 #[must_use]
 pub fn sid_fits(key: &str, sid: u32) -> bool {
     match self::sid(key) {
