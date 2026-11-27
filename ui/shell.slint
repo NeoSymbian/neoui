@@ -44,6 +44,7 @@ export { KeyboardFocus } from "components/keyboard/focus.slint";
 export { Kit } from "components/layers.slint";
 import { KeyboardFocus } from "components/keyboard/focus.slint";
 import { PowerMenu, PowerProfile } from "components/powermenu.slint";
+import { PowerSheet } from "components/power-sheet.slint";
 import { HomeScreen } from "screens/home.slint";
 import { HomeModel } from "screens/home-edit.slint";
 import { MenuScreen } from "screens/menu.slint";
@@ -192,6 +193,8 @@ export component Shell inherits Window {
     // the sound profiles it offers (SE2a) and the active one; choosing one is power(100 + id)
     in property <[PowerProfile]> power-profiles;
     in property <int> power-profile;
+    // (POWER) the screen under the v2 sheet, averaged (Renderer::set_power_backdrop)
+    in property <image> power-backdrop;
     callback power(int);
     // the shade's ⏻ (tp-shade): the UI server opens the Power menu
     callback power-asked();
@@ -593,12 +596,22 @@ export component Shell inherits Window {
         power-asked => { root.power-asked(); }
     }
 
+    // power.style: 1 the short list, else the v2 sheet (O5)
     PowerMenu {
         width: root.width;
         height: root.height;
-        open: power-open;
+        open: power-open && SystemSettings.power-style == 1;
         profiles: power-profiles;
         active: power-profile;
+        chosen(a) => { root.power(a); }
+    }
+
+    PowerSheet {
+        width: root.width;
+        height: root.height;
+        open: power-open && SystemSettings.power-style != 1;
+        backdrop: power-backdrop;
+        profile-name: power-profiles.length > 0 ? power-profiles[0].name : "General";
         chosen(a) => { root.power(a); }
     }
 

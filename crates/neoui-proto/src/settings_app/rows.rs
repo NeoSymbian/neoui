@@ -745,6 +745,14 @@ pub const ROWS: &[Row] = &[
         "Wallpaper",
         &["background", "home screen", "colour", "color"],
     ),
+    // (POWER, O5) power.style: the v2 sheet or the short list
+    row(
+        "display.power_style",
+        Display,
+        Display,
+        "Power menu",
+        &["power off", "restart", "shut down", "reboot"],
+    ),
     // (D7) a picture from Files (set2-wallpaper's Pictures): an action, it opens Files' picker only when tapped
     action(
         "display.wallpaper_files",

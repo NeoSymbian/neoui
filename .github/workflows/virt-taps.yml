@@ -288,6 +288,11 @@ jobs:
           swipe 76 471 76 244; wait_s 1
           tap 476 82; expect "neoui: setting shell.tiles = <"; expect "neoui: tile editor closed"; wait_s 1
           tap 90 1037; expect "neoui: control centre closed"
+          # POWER: virt has no Power key, so the shade's ⏻ (494,82) opens the v2 sheet; Restart (380,302: 74 dp right
+          # of the centre, 202 dp down, tests/power_sheet_taps.rs) held 0.5 s and let go cancels; a swipe down closes it
+          wait_s 1; tap 270 12; wait_s 2; tap 494 82; expect "neoui: power menu"; wait_s 1
+          press 380 302 0.5; expect "neoui: power: cancelled"; wait_s 1
+          swipe 270 112 270 330; expect "neoui: power menu closed"
           ui_run 640
 
       - name: Check the output
@@ -315,6 +320,9 @@ jobs:
           grep -a 'neoui: key alternate 1 of 5' $s
           grep -aE 'neoui: key repeat ([5-9]|[1-9][0-9])' $s
           grep -a 'neoui: sound profile 0: airplane false, wifi true, bt false' $s
+          # POWER: a Restart hold let go early does nothing
+          grep -a 'neoui: power: cancelled' $s
+          ! grep -aq 'neoui: power 0' $s
           # TP1: the shade from home, then Settings from its ⚙
           grep -a 'neoui: shade from home' $s
           grep -a 'neoui: app settings resumed' $s

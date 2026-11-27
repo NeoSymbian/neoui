@@ -74,6 +74,10 @@ pub fn facts(s: &SetState<'_>, sample: Sample, epochs: Epochs) -> Facts {
         ),
         ("display.dark", on(s.get_dark())),
         ("display.timeout", text(s.get_timeout_text())),
+        (
+            "display.power_style",
+            pick(s.get_power_styles(), s.get_power_style()),
+        ),
         ("nav.mode", pick(s.get_nav_modes(), s.get_nav_mode())),
         (
             "sounds.media",

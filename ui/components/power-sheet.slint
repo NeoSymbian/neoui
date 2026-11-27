@@ -1,0 +1,448 @@
+// SPDX-License-Identifier: Apache-2.0
+// Power menu v2 (POWER, O5; boards sh-power-menu-v2, -hold, -dev, -prototype; `power.style` 0): a full-screen sheet
+// over the screen as it was, darkened and blurred (the UI server's `backdrop`). Power off and Restart confirm by a
+// hold: a ring fills in `HOLD` (neoui_proto::power_menu::HOLD_MS), letting go first reports `cancelled` and does
+// nothing. Below them Lock now, Screenshot, Airplane (the real `radio.airplane`, switched here) and the ring tile
+// (General → Vibrate → Silent through the sound profiles, by the server); with Developer options' USB debugging on,
+// Fastboot. Emergency call at the bottom; a swipe down closes it. What it reports is power_menu::act's numbers.
+// Geometry in board dp from the status bar's bottom (crates/neoui-render/tests/power_sheet.rs mirrors it): the grabber
+// row 24, the title 18 below it, the big buttons 40 (30 with the Developer row) under the hint, the tiles 36 under
+// their labels, the pill 57 dp above the bottom.
+import { Theme } from "../theme.slint";
+import { Glyph } from "frame.slint";
+import { SystemSettings } from "../system-settings.slint";
+
+// power_menu::act
+global Act {
+    out property <int> restart: 0;
+    out property <int> fastboot: 1;
+    out property <int> off: 2;
+    out property <int> dismissed: -1;
+    out property <int> cancelled: -2;
+    out property <int> lock: 10;
+    out property <int> screenshot: 11;
+    out property <int> ring: 12;
+    out property <int> emergency: 13;
+}
+
+// A big round button that confirms by a hold: the ring fills clockwise from the top while the finger stays.
+component HoldButton inherits Rectangle {
+    in property <color> tint;
+    in property <image> icon;
+    in property <string> label;
+    in property <duration> hold;
+    out property <bool> held: touch.pressed && !done;
+    callback confirmed();
+    callback cancelled();
+    property <bool> done;
+    property <duration> pressed-at;
+    property <float> progress: held ? min(1, (animation-tick() - pressed-at) / hold) : 0;
+    property <length> circle: 96 * Theme.dp;
+    width: 120 * Theme.dp;
+    height: circle + 28 * Theme.dp + (held ? 25 * Theme.dp : 0);
+
+    disc := Rectangle {
+        x: (parent.width - root.circle) / 2;
+        y: 0;
+        width: root.circle;
+        height: root.circle;
+        border-radius: self.width / 2;
+        background: touch.pressed ? root.tint.brighter(0.15) : root.tint;
+        drop-shadow-offset-y: 8 * Theme.dp;
+        drop-shadow-blur: 24 * Theme.dp;
+        drop-shadow-color: root.tint.with-alpha(0.33);
+        Glyph {
+            source: root.icon;
+            size: 34 * Theme.dp;
+        }
+    }
+
+    // the ring: its track, then 96 dots around 52 dp, as many as the hold has filled (no Path: the device's software
+    // renderer is built without it)
+    if root.held: Rectangle {
+        x: disc.x - 8 * Theme.dp;
+        y: disc.y - 8 * Theme.dp;
+        width: 112 * Theme.dp;
+        height: self.width;
+        border-radius: self.width / 2;
+        border-width: 4 * Theme.dp;
+        border-color: #ffffff1f;
+        for i in 96: Rectangle {
+            visible: i < root.progress * 96;
+            x: parent.width / 2 + 52 * Theme.dp * Math.sin(i * 3.75deg) - 2 * Theme.dp;
+            y: parent.height / 2 - 52 * Theme.dp * Math.cos(i * 3.75deg) - 2 * Theme.dp;
+            width: 4 * Theme.dp;
+            height: self.width;
+            border-radius: self.width / 2;
+            background: root.tint;
+        }
+    }
+
+    Text {
+        y: root.circle + 10 * Theme.dp;
+        width: parent.width;
+        height: 18 * Theme.dp;
+        horizontal-alignment: center;
+        text: root.label;
+        color: Theme.text;
+        font-size: 15 * Theme.dp;
+        font-weight: 600;
+    }
+
+    if root.held: Text {
+        y: root.circle + 38 * Theme.dp;
+        width: parent.width;
+        height: 15 * Theme.dp;
+        horizontal-alignment: center;
+        text: "Keep holding…";
+        color: Theme.text-secondary;
+        font-size: 12 * Theme.dp;
+    }
+
+    touch := TouchArea {
+        x: disc.x;
+        width: disc.width;
+        height: disc.height;
+        pointer-event(e) => {
+            if e.kind == PointerEventKind.down {
+                root.done = false;
+                root.pressed-at = animation-tick();
+            } else if e.kind == PointerEventKind.up && !root.done {
+                root.cancelled();
+            }
+        }
+    }
+
+    Timer {
+        interval: root.hold;
+        running: root.held;
+        triggered => {
+            root.done = true;
+            root.confirmed();
+        }
+    }
+}
+
+// A round tile: a 60 dp disc, its label and an optional second line.
+component RoundTile inherits Rectangle {
+    in property <image> icon;
+    in property <string> label;
+    in property <string> sub;
+    in property <bool> on;
+    callback clicked();
+    height: 100 * Theme.dp;
+
+    Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: 0;
+        width: 60 * Theme.dp;
+        height: self.width;
+        border-radius: self.width / 2;
+        background: root.on ? Theme.accent : #ffffff1a;
+        Rectangle {
+            border-radius: parent.border-radius;
+            background: touch.pressed ? Theme.pressed : transparent;
+        }
+
+        Glyph {
+            source: root.icon;
+            size: 24 * Theme.dp;
+        }
+
+        touch := TouchArea {
+            clicked => {
+                root.clicked();
+            }
+        }
+    }
+
+    Text {
+        y: 68 * Theme.dp;
+        width: parent.width;
+        height: 15 * Theme.dp;
+        horizontal-alignment: center;
+        text: root.label;
+        color: #d7dce3;
+        font-size: 12.5 * Theme.dp;
+    }
+
+    if root.sub != "": Text {
+        y: 87 * Theme.dp;
+        width: parent.width;
+        height: 13 * Theme.dp;
+        horizontal-alignment: center;
+        text: root.sub;
+        color: Theme.text-dim;
+        font-size: 11 * Theme.dp;
+    }
+}
+
+export component PowerSheet inherits Rectangle {
+    in property <bool> open;
+    // the screen under it, averaged (Renderer::set_power_backdrop); drawn stretched under the scrim
+    in property <image> backdrop;
+    // the active sound profile's name: the ring tile's label while a call rings
+    in property <string> profile-name: "General";
+    callback chosen(int);
+    property <duration> hold: 1200ms;
+    property <bool> developer: SystemSettings.usb-debugging;
+    // 0 rings, 1 vibrates, 2 silent (power_menu::ring, from the mirrors MODEMD rings with)
+    property <int> ring: !SystemSettings.silent ? 0 : SystemSettings.vibrate ? 1 : 2;
+    property <length> drag;
+    property <length> press-y;
+    property <bool> holding: off.held || restart.held;
+    visible: open;
+
+    // every touch is the sheet's, the status bar's too; a drag down moves it and, past 96 dp, closes it
+    TouchArea {
+        pointer-event(e) => {
+            if e.kind == PointerEventKind.down {
+                root.press-y = self.mouse-y;
+            } else if e.kind == PointerEventKind.up {
+                if root.drag > 96 * Theme.dp {
+                    root.chosen(Act.dismissed);
+                }
+                root.drag = 0;
+            }
+        }
+        moved => {
+            root.drag = max(0, self.mouse-y - root.press-y);
+        }
+    }
+
+    // the whole screen's backdrop, cut below the status bar (which stays bright above the sheet)
+    Rectangle {
+        y: Theme.status-h;
+        height: root.height - Theme.status-h;
+        clip: true;
+        Image {
+            y: -Theme.status-h;
+            width: root.width;
+            height: root.height;
+            source: root.backdrop;
+            image-fit: fill;
+        }
+    }
+
+    Rectangle {
+        y: Theme.status-h;
+        height: root.height - Theme.status-h;
+        background: #05070bd9;
+    }
+
+    content := Rectangle {
+        y: Theme.status-h + root.drag;
+        height: root.height - Theme.status-h;
+        property <length> big-y: (root.developer ? 119 : 129) * Theme.dp;
+        property <length> tiles-y: self.big-y + (root.holding ? 185 : 160) * Theme.dp - (root.developer ? 10 * Theme.dp : 0);
+
+        // the grabber
+        Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: 10 * Theme.dp;
+            width: 40 * Theme.dp;
+            height: 4 * Theme.dp;
+            border-radius: 2 * Theme.dp;
+            background: #ffffff40;
+        }
+
+        Text {
+            y: 42 * Theme.dp;
+            width: parent.width;
+            height: 27 * Theme.dp;
+            horizontal-alignment: center;
+            text: "Power";
+            color: Theme.text;
+            font-size: 22 * Theme.dp;
+            font-weight: 600;
+        }
+
+        Text {
+            y: 73 * Theme.dp;
+            width: parent.width;
+            height: 16 * Theme.dp;
+            horizontal-alignment: center;
+            text: root.holding ? "Release to cancel" : "Hold Power off or Restart to confirm";
+            color: Theme.text-secondary;
+            font-size: 13.5 * Theme.dp;
+        }
+
+        off := HoldButton {
+            x: parent.width / 2 - 134 * Theme.dp;
+            y: parent.big-y;
+            tint: #e5484d;
+            icon: @image-url("../icons/sys/power.svg");
+            label: "Power off";
+            hold: root.hold;
+            confirmed => { root.chosen(Act.off); }
+            cancelled => { root.chosen(Act.cancelled); }
+        }
+
+        restart := HoldButton {
+            x: parent.width / 2 + 14 * Theme.dp;
+            y: parent.big-y;
+            tint: Theme.accent;
+            icon: @image-url("../icons/sys/refresh.svg");
+            label: "Restart";
+            hold: root.hold;
+            confirmed => { root.chosen(Act.restart); }
+            cancelled => { root.chosen(Act.cancelled); }
+        }
+
+        HorizontalLayout {
+            x: 14 * Theme.dp;
+            y: parent.tiles-y;
+            width: parent.width - 28 * Theme.dp;
+            height: 100 * Theme.dp;
+            spacing: 8 * Theme.dp;
+            RoundTile {
+                icon: @image-url("../icons/sys/lock.svg");
+                label: "Lock now";
+                clicked => { root.chosen(Act.lock); }
+            }
+
+            RoundTile {
+                icon: @image-url("../icons/sys/screenshot.svg");
+                label: "Screenshot";
+                clicked => { root.chosen(Act.screenshot); }
+            }
+
+            RoundTile {
+                icon: @image-url("../icons/sys/plane.svg");
+                label: "Airplane";
+                sub: SystemSettings.airplane ? "On" : "Off";
+                on: SystemSettings.airplane;
+                clicked => { SystemSettings.airplane = !SystemSettings.airplane; }
+            }
+
+            RoundTile {
+                icon: root.ring == 0 ? @image-url("../icons/sys/volume.svg") : root.ring == 1 ? @image-url("../icons/sys/vibrate.svg") : @image-url("../icons/sys/silent.svg");
+                label: root.ring == 0 ? root.profile-name : root.ring == 1 ? "Vibrate" : "Silent";
+                sub: "Profile";
+                on: root.ring != 0;
+                clicked => { root.chosen(Act.ring); }
+            }
+        }
+
+        // Developer options (USB debugging on): the reboot into the bootloader.
+        // shortcut: no Recovery button; the kernel's power HAL has no recovery reason yet (a64_reboot.cpp writes
+        // only "bootloader"); add it beside Fastboot when it has one.
+        if root.developer: Rectangle {
+            x: 20 * Theme.dp;
+            y: parent.tiles-y + 120 * Theme.dp;
+            width: parent.width - 40 * Theme.dp;
+            height: 70 * Theme.dp;
+            Text {
+                x: 0;
+                y: 0;
+                height: 14 * Theme.dp;
+                text: "DEVELOPER";
+                color: Theme.text-dim;
+                font-size: 11.7 * Theme.dp;
+                font-weight: 600;
+                letter-spacing: 0.78 * Theme.dp;
+            }
+
+            Rectangle {
+                y: 22 * Theme.dp;
+                height: 48 * Theme.dp;
+                border-radius: 12 * Theme.dp;
+                border-width: 1px;
+                border-color: #ffffff1f;
+                background: fastboot.pressed ? #1f2328 : Theme.card;
+                HorizontalLayout {
+                    padding-left: 14 * Theme.dp;
+                    spacing: 10 * Theme.dp;
+                    alignment: start;
+                    VerticalLayout {
+                        alignment: center;
+                        Glyph {
+                            source: @image-url("../icons/sys/flash.svg");
+                            size: 20 * Theme.dp;
+                            colorize: #f2994a;
+                        }
+                    }
+
+                    Text {
+                        text: "Fastboot";
+                        color: Theme.text;
+                        font-size: 14 * Theme.dp;
+                        font-weight: 500;
+                        vertical-alignment: center;
+                    }
+                }
+
+                fastboot := TouchArea {
+                    clicked => { root.chosen(Act.fastboot); }
+                }
+            }
+        }
+
+        // Emergency call, "Swipe down to close", and the band's handle
+        Rectangle {
+            x: 20 * Theme.dp;
+            y: parent.height - 105 * Theme.dp;
+            width: parent.width - 40 * Theme.dp;
+            height: 48 * Theme.dp;
+            border-radius: self.height / 2;
+            border-width: 1px;
+            border-color: #e5484d80;
+            background: sos.pressed ? #e5484d40 : #e5484d1f;
+            HorizontalLayout {
+                alignment: center;
+                spacing: 10 * Theme.dp;
+                VerticalLayout {
+                    alignment: center;
+                    Glyph {
+                        source: @image-url("../icons/sys/call.svg");
+                        size: 20 * Theme.dp;
+                        colorize: #ff8a8d;
+                    }
+                }
+
+                Text {
+                    text: "Emergency call";
+                    color: #ff8a8d;
+                    font-size: 15 * Theme.dp;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                }
+            }
+
+            sos := TouchArea {
+                clicked => { root.chosen(Act.emergency); }
+            }
+        }
+
+        HorizontalLayout {
+            y: parent.height - 45 * Theme.dp;
+            height: 15 * Theme.dp;
+            alignment: center;
+            spacing: 6 * Theme.dp;
+            VerticalLayout {
+                alignment: center;
+                Glyph {
+                    source: @image-url("../icons/sys/chevron_down.svg");
+                    size: 16 * Theme.dp;
+                    colorize: Theme.text-dim;
+                }
+            }
+
+            Text {
+                text: "Swipe down to close";
+                color: Theme.text-dim;
+                font-size: 12.5 * Theme.dp;
+                vertical-alignment: center;
+            }
+        }
+
+        Rectangle {
+            x: (parent.width - self.width) / 2;
+            y: parent.height - 10 * Theme.dp;
+            width: 108 * Theme.dp;
+            height: 4 * Theme.dp;
+            border-radius: 2 * Theme.dp;
+            background: #ffffff59;
+        }
+    }
+}

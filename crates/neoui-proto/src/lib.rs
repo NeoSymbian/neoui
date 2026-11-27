@@ -20,6 +20,8 @@ pub mod notification_policy;
 pub mod open;
 pub mod page;
 pub mod pinch;
+pub mod png_write;
+pub mod power_menu;
 pub mod recents;
 pub mod settings;
 pub mod settings_app;

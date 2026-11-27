@@ -92,8 +92,20 @@ export component DisplayPage inherits NeoList {
             has-icon: true;
             icon: @image-url("@neoui/icons/sys/image.svg");
             chevron: true;
-            divider: false;
             clicked => { SetState.act("open", "25"); }
+        }
+
+        // (POWER, O5) what a held Power key opens
+        ListRow {
+            value-bright: true;
+            title: "Power menu";
+            checked: SetState.found == "display.power_style";
+            value: SetState.power-styles.length > SetState.power-style ? SetState.power-styles[SetState.power-style] : "";
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/power.svg");
+            chevron: true;
+            divider: false;
+            clicked => { SetState.sheet = "power-style"; }
         }
     }
 }

@@ -2664,6 +2664,9 @@ dependencies = [
 [[package]]
 name = "neoui-proto"
 version = "0.1.0"
+dependencies = [
+ "png",
+]
 
 [[package]]
 name = "neoui-render"

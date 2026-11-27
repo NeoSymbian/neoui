@@ -217,6 +217,7 @@ pub fn load(app: &App, ui: &SettingsApp) {
     s.set_timeout(timeout);
     s.set_timeout_text(choices::timeout_text(timeout).into());
     s.set_timeout_index(choices::timeout_index(timeout));
+    s.set_power_style(get(app, keys::POWER_STYLE).clamp(0, 1));
     s.set_nav_mode(get(app, keys::NAV_MODE));
     s.set_time_auto(get(app, keys::TIME_AUTO));
     s.set_time_auto_zone(get(app, keys::TIME_AUTO_ZONE));

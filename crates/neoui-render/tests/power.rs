@@ -3,13 +3,15 @@
 #[allow(dead_code)] // helpers shared with the snapshot tests
 mod common;
 
-/// The Power menu: its buttons are 60 dp apart around the screen's centre (ui/components/powermenu.slint), and each
+/// The Power menu's short list: its buttons are 60 dp apart around the screen's centre (ui/components/powermenu.slint), and each
 /// tap reports its action; a tap outside the card dismisses it.
 #[test]
 fn power_menu() {
     let (w, h) = (539, 1079);
     let mut r = common::renderer(w, h);
     let mut buf = vec![0u32; (w * h) as usize];
+    // the short list is power.style 1 (O5: the v2 sheet is the default, tests/power_sheet.rs)
+    assert!(r.apply_setting("power.style", &neoui_proto::settings::Value::Int(1)));
     r.set_power_menu(true);
     common::frame(&mut r, &mut buf, w, "power menu");
     common::write_png("power-539x1079.png", &buf, w, h);

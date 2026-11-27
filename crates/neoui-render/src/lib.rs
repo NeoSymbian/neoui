@@ -1114,7 +1114,23 @@ impl Renderer {
         self.ui.set_power_open(open);
         if open {
             self.ui.set_shade_open(false); // from the shade's ⏻: one change, nothing under them in between
+        } else {
+            self.ui.set_power_backdrop(slint::Image::default()); // its memory goes with the sheet
         }
+    }
+
+    /// (POWER) What the v2 sheet lies over: the screen (`row(y, out)` fills screen row `y`), small and blurred.
+    pub fn set_power_backdrop(&mut self, w: usize, h: usize, row: impl FnMut(usize, &mut [u32])) {
+        // 2 dp blocks, blurred over about 7 dp (the board's 14 px blur)
+        let step = w.min(h) * 2 / 360;
+        let (mut rgb, bw, bh) = neoui_proto::power_menu::backdrop(w, h, step, row);
+        for _ in 0..2 {
+            neoui_proto::power_menu::blur(&mut rgb, bw, bh, 2);
+        }
+        let buf = slint::SharedPixelBuffer::<slint::Rgb8Pixel>::clone_from_slice(
+            &rgb, bw as u32, bh as u32,
+        );
+        self.ui.set_power_backdrop(slint::Image::from_rgb8(buf));
     }
 
     /// The sound profiles the Power menu offers (id, name) and the active one.
