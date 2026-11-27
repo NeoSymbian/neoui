@@ -32,6 +32,8 @@ swipe_hold() {
 }
 # hold X Y: a long press (a second), for the kit's long-press (selection mode, menus)
 hold() { at "$1" "$2"; add "mouse_button 1"; add "wait 1"; add "mouse_button 0"; add "expect neoui: tap from Some(($1, $2))"; }
+# press X Y SECS: press at (X, Y), hold still SECS seconds (fractions too), release (Power menu v2's hold-to-confirm)
+press() { at "$1" "$2"; add "mouse_button 1"; add "wait $3"; add "mouse_button 0"; }
 # drag X Y1 Y2: a vertical swipe
 drag() { swipe "$1" "$2" "$1" "$3"; }
 # wait_s N: N seconds, for what logs nothing (a drag settling)

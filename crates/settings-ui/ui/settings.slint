@@ -177,6 +177,18 @@ export component SettingsApp inherits Window {
         chosen(i) => { SetState.act("timeout-pick", i); }
         dismissed => { SetState.sheet = ""; }
     }
+    // (POWER) what a held Power key opens (power.style)
+    if SetState.sheet == "power-style": ChoiceSheet {
+        open: true;
+        radio-left: true;
+        title-start: true;
+        title: "Power menu";
+        choices: SetState.power-styles;
+        descriptions: ["Big buttons; hold to power off or restart", "Profiles, Power off, Restart"];
+        current: SetState.power-style;
+        chosen(i) => { SetState.sheet = ""; SetState.act("power.style", i); }
+        dismissed => { SetState.sheet = ""; }
+    }
     if SetState.sheet == "date-format": ChoiceSheet {
         open: true;
         radio-left: true;

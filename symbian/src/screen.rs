@@ -60,6 +60,12 @@ impl Screen {
         self.press_woke
     }
 
+    /// The Power menu's Lock now: off at once (TP8's lock screen shows at the next wake).
+    pub fn lock(&mut self) -> Option<Change> {
+        self.press_woke = false;
+        core::mem::replace(&mut self.on, false).then_some(Change::Off)
+    }
+
     /// An incoming call (or anything else that must be seen).
     pub fn wake(&mut self, now_ms: u64) -> Option<Change> {
         self.last_activity_ms = now_ms;

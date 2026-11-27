@@ -133,6 +133,7 @@ pub(crate) static BINDINGS: &[Binding] = &[
         get_usb_debugging,
         set_usb_debugging
     ),
+    int_binding!(keys::POWER_STYLE, get_power_style, set_power_style),
     Binding {
         key: key_name::<i32>(keys::DISPLAY_BRIGHTNESS),
         read: |g| Value::Int(brightness_to_store(g.get_brightness())),

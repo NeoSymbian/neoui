@@ -303,6 +303,9 @@ export global SetState {
     in property <[string]> switcher-col-names: ["2", "3"];
     in property <int> home-style;
     in property <[string]> home-styles: ["Pages", "Lanes"];
+    // (POWER) power.style: 0 the full-screen sheet, 1 the short list
+    in property <int> power-style;
+    in property <[string]> power-styles: ["Full screen", "Short list"];
     in property <[string]> home-style-hints;
     // D11 (sim_lock.rs): the SIM PIN as MODEMD reports it (settings_app::sim_lock's summary and note), Use SIM PIN's
     // switch (on = asked for at start) and whether it and Change SIM PIN can be used, the card's tries ("" = it doesn't

@@ -21,6 +21,7 @@ mod netclock;
 mod peek;
 mod perf;
 mod phone;
+mod power_sheet;
 mod screen;
 mod settings;
 mod sound;
@@ -189,6 +190,7 @@ fn main() -> i32 {
     let mut pulse_logged = false;
     // the Power menu covers the whole screen: no app surface over it, every touch to the shell
     let mut power_menu = false;
+    let mut sheet = power_sheet::Sheet::default();
     // the store's change counter the sound profiles last looked at (u32::MAX: not yet, so the upgrade runs once)
     let mut profiles_seq = u32::MAX;
     let mut overlay_shown = false;
@@ -986,32 +988,23 @@ fn main() -> i32 {
                 if !asked {
                     power_down_at = None;
                 }
-                dprintln!("neoui: power menu");
-                let p = sound_profile::store::load(&host.settings);
-                // the active profile first: the menu shows only as many as fit
-                let mut names: Vec<(u8, &str)> =
-                    p.list.iter().map(|x| (x.id, x.name.as_str())).collect();
-                names.sort_by_key(|(id, _)| *id != p.active);
-                ui.set_power_profiles(&names, p.active);
-                ui.set_power_menu(true);
+                sheet.open(&mut ui, &host, &frame, (w, h));
                 power_menu = true;
             }
-            let mut power = host.power.take();
+            let (mut power, mut lock) = (host.power.take(), false);
             for a in ui.take_power() {
+                match sheet.chosen(a, &mut ui, &mut host, ms) {
+                    power_sheet::Then::Stay => continue,
+                    power_sheet::Then::Close => {}
+                    power_sheet::Then::Power(a) => power = Some(a),
+                    power_sheet::Then::Lock => lock = true,
+                }
                 ui.set_power_menu(false);
                 power_menu = false;
                 host.refresh = true; // the app's surface again, whole
-                if a >= 100 {
-                    // a sound profile (SE2a)
-                    let r = sound_profile::store::apply(
-                        &mut host.settings,
-                        sound_profile::Command::Choose((a - 100) as u8),
-                        ms,
-                    );
-                    dprintln!("neoui: power menu profile {} ({:?})", a - 100, r);
-                } else if a >= 0 {
-                    power = Some(a);
-                }
+            }
+            if lock && let Some(c) = scr.lock() {
+                battery.display(set_screen(c, &mut host));
             }
             if let Some(a) = power {
                 settings::log_save(host.settings.flush());
@@ -1161,6 +1154,7 @@ fn main() -> i32 {
             let (px, damage, render_us, mut copy_us) =
                 present(&mut ui, &mut frame, &display, &perf, !fading);
             keyboard::after_frame(&mut ui, &mut host);
+            sheet.after_frame(&mut host, &frame, (w, h)); // (POWER) a screenshot asked for
             perf.shifts(ui.take_shifts());
             // (G2) the peek: the page over its target, then the gesture it settled onto, with no fade
             if let Some(p) = peek.as_mut() {

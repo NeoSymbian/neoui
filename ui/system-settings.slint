@@ -39,6 +39,8 @@ export global SystemSettings {
     in-out property <int> nav-mode: 1;
     out property <string> nav-mode-name: nav-mode == 0 ? "Buttons" : nav-mode == 2 ? "N9 gestures" : "Gestures";
     in-out property <bool> usb-debugging: false;
+    // (O5) the Power menu: 0 the full-screen sheet, 1 the short list
+    in-out property <int> power-style: 0;
     // Settings -> Battery -> Show percentage (SE3a): the status bar's battery shows its percent
     in-out property <bool> battery-show-percent: true;
     // Settings -> Battery -> Battery saver (SE3a): the status bar's battery fill turns amber
@@ -101,6 +103,7 @@ export global SystemSettings {
     changed screen-timeout => { edited("display.timeout"); }
     changed nav-mode => { edited("nav.mode"); }
     changed usb-debugging => { edited("developer.usb_debugging"); }
+    changed power-style => { edited("power.style"); }
     changed battery-show-percent => { edited("battery.show_percent"); }
     changed battery-saver => { edited("battery.saver"); }
     changed keyboard-en => { edited("keyboard.en"); }
