@@ -175,6 +175,69 @@ pub fn outcome(result: i32, on: Option<bool>, tries: Option<u8>) -> alloc::strin
     }
 }
 
+/// A PIN field's digits, held here and not in the UI (D11): the sheet sends each key ([`PinBuf::key`]) and shows
+/// only [`PinBuf::len`] dots, so no UI string ever holds the PIN. Zeroed by [`PinBuf::clear`] and on drop.
+#[derive(Default)]
+pub struct PinBuf {
+    b: [u8; 8],
+    n: usize,
+}
+
+impl PinBuf {
+    /// A key from the field: a digit is added (up to 8), Backspace (U+0008) takes the last one away. False for
+    /// any other key, which the field leaves to others.
+    pub fn key(&mut self, key: &str) -> bool {
+        match key.as_bytes() {
+            [d] if d.is_ascii_digit() => {
+                if self.n < self.b.len() {
+                    self.b[self.n] = *d;
+                    self.n += 1;
+                }
+                true
+            }
+            [8] => {
+                if self.n > 0 {
+                    self.n -= 1;
+                    wipe(&mut self.b[self.n..]);
+                }
+                true
+            }
+            _ => false,
+        }
+    }
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.n
+    }
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.n == 0
+    }
+    #[must_use]
+    pub fn as_bytes(&self) -> &[u8] {
+        &self.b[..self.n]
+    }
+    pub fn clear(&mut self) {
+        wipe(&mut self.b);
+        self.n = 0;
+    }
+}
+
+impl Drop for PinBuf {
+    fn drop(&mut self) {
+        self.clear();
+    }
+}
+
+/// Zero `b` so the compiler can't drop the writes as dead (the buffer is freed or reused next).
+pub fn wipe(b: &mut [u8]) {
+    for x in b.iter_mut() {
+        // SAFETY: a valid, aligned, exclusive reference.
+        unsafe { core::ptr::write_volatile(x, 0) };
+    }
+    core::sync::atomic::compiler_fence(core::sync::atomic::Ordering::SeqCst);
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -236,5 +299,23 @@ mod tests {
         assert!(outcome(-1035, None, Some(0)).contains("PUK"));
         assert_eq!(outcome(0, None, Some(3)), "SIM PIN changed.");
         assert!(Lock::Blocked.note().contains("can't enter a PUK"));
+    }
+
+    #[test]
+    fn a_pin_buffer_takes_digits_and_backspace_only_and_wipes() {
+        let mut p = PinBuf::default();
+        for k in ["0", "1", "x", "2", "3", "\u{1b}"] {
+            p.key(k);
+        }
+        assert_eq!(p.as_bytes(), b"0123");
+        assert!(!p.key("a") && !p.key("12") && p.key("\u{8}"));
+        assert_eq!(p.as_bytes(), b"012");
+        assert_eq!(p.b[3], 0, "a removed digit is zeroed");
+        for _ in 0..10 {
+            p.key("9");
+        }
+        assert_eq!(p.len(), 8, "8 digits at most");
+        p.clear();
+        assert!(p.is_empty() && p.b == [0; 8]);
     }
 }

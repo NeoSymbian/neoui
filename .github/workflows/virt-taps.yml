@@ -591,7 +591,9 @@ jobs:
       # (🔍 426,73) "storage", its first result (270,214) -> Storage; the first drive row (E:, or C: where virt has no
       # E:; 72 dp under the header: 270,217) opens the drive's own page (D3, set2-storage-drive), which counts it; ←.
       # The shell read each app's capabilities from the kernel when its session bound (D8).
-      - name: Boot again; Settings → Storage → a drive
+      # D11: ← twice to the root; search "attempts" -> its first result opens SIM card lock (set2-sim-lock); a tap on
+      # Use SIM PIN (the first row, 270,217). virt has no MODEMD: NEOSET refuses the PIN sheet, sending nothing.
+      - name: Boot again; Settings → Storage → a drive; SIM card lock
         working-directory: build
         run: |
           cp out/serial.log out/serial-gestures.log
@@ -602,8 +604,13 @@ jobs:
           tap 270 214; expect "settings: page storage"; wait_s 2
           tap 270 217; expect "settings: drive page "; expect "settings: page drive"
           wait_s 3; tap 36 73; expect "settings: back"
-          ui_run 150
+          wait_s 1; tap 36 73; expect "settings: back"; wait_s 1
+          tap 426 73; wait_s 1; kb_type attempts
+          tap 270 214; expect "settings: page simlock"; wait_s 2
+          tap 270 217; expect "settings: SIM PIN sheet refused (NoModem)"
+          ui_run 180
           s=out/serial.log
+          grep -a 'settings: SIM PIN sheet refused (NoModem)' $s
           grep -aE 'settings: drive page [CE]' $s
           grep -a 'settings: page drive' $s
           grep -aE 'neoui: settings runs with capabilities 0x[0-9a-f]+' $s

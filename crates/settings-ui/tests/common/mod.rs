@@ -105,6 +105,13 @@ impl Shot {
         self.settle();
     }
 
+    /// A key from the system keyboard into the focused element, as neoapp's `dispatch_key` sends it.
+    pub fn key(&self, text: &str) {
+        let w = self.window.window();
+        w.dispatch_event(WindowEvent::KeyPressed { text: text.into() });
+        w.dispatch_event(WindowEvent::KeyReleased { text: text.into() });
+    }
+
     /// A finger held at (x, y) dp for two seconds (long presses fire), then lifted.
     pub fn hold(&self, x: f32, y: f32) {
         let position = LogicalPosition::new(x * DP, y * DP);

@@ -140,6 +140,11 @@ fn run() -> Result<(), i32> {
     let c = ctx.clone();
     ui.global::<SetState>()
         .on_act(move |a, v| c.act(a.as_str(), v.as_str()));
+    let c = ctx.clone(); // (D11) a PIN field's keys go to NEOSET's buffers, never into Slint
+    ui.global::<SetState>().on_pin_key(move |f, k| {
+        c.ui()
+            .is_some_and(|ui| c.modem.borrow().sim.key(&ui, f.as_str(), k.as_str()))
+    });
     ctx.open(Page::Root);
     ui.show().map_err(|_| -2)?;
     let timer = Timer::default();
@@ -248,7 +253,7 @@ fn run() -> Result<(), i32> {
                     ctx.tick(true);
                 } else {
                     ctx.sound.stop(); // a tone's preview ends with the app hidden
-                    sim_lock::clear(&ui);
+                    ctx.modem.borrow().sim.clear(&ui);
                     ctx.storage.stop(); // hidden: no scan in the background
                 }
             }
@@ -313,7 +318,7 @@ impl Ctx {
         s.set_title(page.title().into());
         s.set_sheet(SharedString::new());
         s.set_found(SharedString::new());
-        sim_lock::clear(&ui); // (D11) a typed PIN never outlives its sheet
+        self.modem.borrow().sim.clear(&ui); // (D11) a typed PIN never outlives its sheet
         ui.global::<KeyboardFocus>().set_open(false);
         dprintln!("settings: page {}", page.name());
         // a tone's preview stops when the page changes (Back included)
@@ -343,7 +348,7 @@ impl Ctx {
         let s = ui.global::<SetState>();
         if !s.get_sheet().is_empty() {
             s.set_sheet(SharedString::new());
-            sim_lock::clear(&ui);
+            self.modem.borrow().sim.clear(&ui);
             // the sheet's field went with it: let its keyboard go too (else it comes back on resume)
             ui.global::<KeyboardFocus>().set_open(false);
         } else {

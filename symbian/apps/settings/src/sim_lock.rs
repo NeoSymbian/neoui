@@ -3,19 +3,21 @@
 //! Mobile row and the page, and Use SIM PIN / Change SIM PIN on a worker thread with its own NeoModem session, so
 //! the card's answer (up to MODEMD's 15 s) never holds the UI.
 //!
-//! The PINs: the sheet's masked fields are copied into fixed buffers and cleared at once (submit, Back, hide, another
-//! page); the buffers are wiped after the request. They never reach a log, the settings store, the row model's facts
-//! or search. Slint's own string memory can't be wiped (shortcut: cleared, not zeroed, until Slint offers a secret
-//! string). Nothing here retries: a lost answer is "Result unknown".
+//! The PINs never live in Slint: each key of a PIN field comes here (`SetState.pin-key`) into a [`PinBuf`] (zeroed on
+//! clear and drop), and the field only draws dots. The buffers are wiped at submit, Back, hide and another page, and
+//! the worker's copy after the request. They never reach a log, the settings store, the row model's facts or search.
+//! The sheet freezes the card it opened on (epoch = card slot + application, generation, tries); the worker and MODEMD
+//! both refuse the request if any of them moved. MODEMD is authenticated by its SID before anything is sent. Nothing
+//! here retries: a lost answer is "Result unknown".
 use alloc::boxed::Box;
 use alloc::string::String;
-use core::cell::Cell;
+use core::cell::{Cell, RefCell};
 use e32::dprintln;
 use e32::ipc::{Session, TIpcArgs, TVersion};
 use e32::sync::Mutex;
 use e32::sys::{TPtr8, TPtrC8};
 use modem_ipc::{Protection, Status, op, pin, sim};
-use neoui_proto::settings_app::sim_lock::{self as sl, Gate, Lock};
+use neoui_proto::settings_app::sim_lock::{self as sl, Gate, Lock, PinBuf, wipe as wipe_bytes};
 use settings_ui::{SetState, SettingsApp};
 use slint::{ComponentHandle, SharedString};
 
@@ -50,14 +52,25 @@ struct Shared {
     done: Option<(i32, Option<bool>)>,
 }
 
-/// D11: the PIN changes are held back until their review's P1s are fixed (MODEMD refuses them too).
-const PIN_CHANGES_ENABLED: bool = false;
+/// MODEMD's secure ID (= its UID3): NEOSET sends PINs only to the NeoModem server that process owns.
+const MODEMD_SID: u32 = 0xE000_3001;
+
+/// The sheet's three PIN fields.
+#[derive(Default)]
+struct Pins {
+    old: PinBuf,
+    new: PinBuf,
+    again: PinBuf,
+}
 
 pub struct SimLock {
     shared: Option<&'static Mutex<Shared>>,
     seen: Cell<Option<Seen>>,
+    /// what MODEMD said when the sheet opened: the request is for that card, slot, application and try count only
+    opened: Cell<Option<Seen>>,
     /// the one-try warning was shown: the next press sends
     confirmed: Cell<bool>,
+    pins: RefCell<Pins>,
 }
 
 impl Default for SimLock {
@@ -67,7 +80,9 @@ impl Default for SimLock {
                 .ok()
                 .map(|m| &*Box::leak(Box::new(m))),
             seen: Cell::new(None),
+            opened: Cell::new(None),
             confirmed: Cell::new(false),
+            pins: RefCell::default(),
         }
     }
 }
@@ -117,20 +132,14 @@ impl SimLock {
         }));
         s.set_sim_lock_text(lock.summary().into());
         s.set_sim_pin_on(matches!(lock, Lock::On | Lock::Required));
-        // shortcut: changing the PIN is held back (MODEMD answers KErrNotSupported) until the D11 review's P1s are
-        // fixed; the page reads the card only. Enable with MODEMD's PIN_CHANGES_ENABLED.
-        s.set_sim_can_toggle(PIN_CHANGES_ENABLED && lock.can_toggle());
-        s.set_sim_can_change(PIN_CHANGES_ENABLED && lock.can_change());
+        s.set_sim_can_toggle(lock.can_toggle());
+        s.set_sim_can_change(lock.can_change());
         s.set_sim_attempts(
             tries
                 .map_or_else(String::new, |n| alloc::format!("{n}"))
                 .into(),
         );
-        s.set_sim_note(if PIN_CHANGES_ENABLED {
-            lock.note().into()
-        } else {
-            "Read only for now: turning the SIM PIN on or off and changing it come after their security review.".into()
-        });
+        s.set_sim_note(lock.note().into());
         let Some(shared) = self.shared else { return };
         let mut g = shared.lock();
         s.set_sim_busy(g.busy);
@@ -153,7 +162,7 @@ impl SimLock {
         let lock = seen.map_or(Lock::NoModem, |v| v.lock);
         match action {
             "sim-toggle" | "sim-change" => {
-                clear(ui);
+                self.clear(ui);
                 self.confirmed.set(false);
                 s.set_sim_warning(SharedString::new());
                 s.set_sim_outcome(SharedString::new());
@@ -164,15 +173,18 @@ impl SimLock {
                     lock.can_toggle()
                 };
                 if !ok {
+                    dprintln!("settings: SIM PIN sheet refused ({:?})", lock);
                     s.set_sim_outcome(lock.note().into());
                     return;
                 }
+                dprintln!("settings: SIM PIN sheet opened");
                 s.set_sim_want_on(value == "1");
+                self.opened.set(seen); // D11: the sheet is for this card as it is now
                 s.set_sheet(if change { "sim-change" } else { "sim-pin" }.into());
             }
             "sim-submit" => self.submit(ui),
             _ => {
-                clear(ui);
+                self.clear(ui);
                 self.confirmed.set(false);
             }
         }
@@ -186,29 +198,31 @@ impl SimLock {
             ..Job::default()
         };
         // copy the digits out, then empty the fields whatever happens next
-        let copy = |t: &str, buf: &mut [u8; 8]| -> Result<usize, &'static str> {
-            sl::check(t.as_bytes())?;
-            buf[..t.len()].copy_from_slice(t.as_bytes());
-            Ok(t.len())
+        let copy = |p: &PinBuf, buf: &mut [u8; 8]| -> Result<usize, &'static str> {
+            sl::check(p.as_bytes())?;
+            buf[..p.len()].copy_from_slice(p.as_bytes());
+            Ok(p.len())
         };
         let checked = (|| {
-            job.old_n = copy(s.get_sim_old().as_str(), &mut job.old)?;
+            let pins = self.pins.borrow();
+            job.old_n = copy(&pins.old, &mut job.old)?;
             if change {
-                job.new_n = copy(s.get_sim_new().as_str(), &mut job.new)?;
-                if s.get_sim_new() != s.get_sim_again() {
+                job.new_n = copy(&pins.new, &mut job.new)?;
+                if pins.new.as_bytes() != pins.again.as_bytes() {
                     return Err("The new PINs don't match");
                 }
             }
             Ok(())
         })();
         let warned = self.confirmed.replace(false);
-        clear(ui);
+        self.clear(ui);
         if let Err(why) = checked {
             wipe(&mut job);
             s.set_sim_warning(why.into());
             return;
         }
-        let Some(seen) = self.seen.get() else {
+        // the card the sheet opened on; the worker checks MODEMD still says the same
+        let Some(seen) = self.opened.get() else {
             wipe(&mut job);
             s.set_sim_warning(Lock::NoModem.note().into());
             return;
@@ -288,7 +302,7 @@ fn send(job: &Job) -> i32 {
         minor: minor as u8,
         build: build as u16,
     };
-    let Ok(session) = Session::connect(modem_ipc::NAME, v) else {
+    let Ok(session) = Session::connect_checked(modem_ipc::NAME, v, MODEMD_SID) else {
         return -18;
     };
     match read(&session) {
@@ -321,22 +335,52 @@ fn send(job: &Job) -> i32 {
 }
 
 fn wipe(job: &mut Job) {
-    for b in job.old.iter_mut().chain(job.new.iter_mut()) {
-        // SAFETY: a valid, exclusive reference.
-        unsafe { core::ptr::write_volatile(b, 0) };
-    }
+    wipe_bytes(&mut job.old);
+    wipe_bytes(&mut job.new);
     job.old_n = 0;
     job.new_n = 0;
 }
 
-/// Empty the sheet's PIN fields (submit, Back, hide, another page).
-pub fn clear(ui: &SettingsApp) {
-    let s = ui.global::<SetState>();
-    for set in [
-        SetState::set_sim_old,
-        SetState::set_sim_new,
-        SetState::set_sim_again,
-    ] {
-        set(&s, SharedString::new());
+impl Drop for Job {
+    fn drop(&mut self) {
+        wipe(self);
+    }
+}
+
+impl SimLock {
+    /// A key in PIN field `field` ("old", "new", "again"): into its buffer; the field shows the new count as dots.
+    pub fn key(&self, ui: &SettingsApp, field: &str, key: &str) -> bool {
+        let mut pins = self.pins.borrow_mut();
+        let s = ui.global::<SetState>();
+        let buf = match field {
+            "old" => &mut pins.old,
+            "new" => &mut pins.new,
+            "again" => &mut pins.again,
+            _ => return false,
+        };
+        let took = buf.key(key);
+        let n = buf.len() as i32;
+        match field {
+            "old" => s.set_sim_old_n(n),
+            "new" => s.set_sim_new_n(n),
+            _ => s.set_sim_again_n(n),
+        }
+        took
+    }
+
+    /// Empty the sheet's PIN fields, buffers wiped (submit, Back, hide, another page).
+    pub fn clear(&self, ui: &SettingsApp) {
+        let mut pins = self.pins.borrow_mut();
+        pins.old.clear();
+        pins.new.clear();
+        pins.again.clear();
+        let s = ui.global::<SetState>();
+        for set in [
+            SetState::set_sim_old_n,
+            SetState::set_sim_new_n,
+            SetState::set_sim_again_n,
+        ] {
+            set(&s, 0);
+        }
     }
 }
