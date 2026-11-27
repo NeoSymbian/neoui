@@ -36,6 +36,16 @@ SNAPSHOT_FOR = {
     "sh-home-clock-12h": "home-clock-widget-12h-540x1080",
     "nav-home-longpress": "home-longpress-pixel",
     "sh-apps-menu": "sh-apps-menu-hold-pixel",
+    # the keyboard's snapshots (crates/neoui-render/tests/keyboard.rs, pads.rs) draw it over an empty body
+    "kb2-en": "keyboard-en-539x1079",
+    "kb2-hy": "keyboard-hy-539x1079",
+    "kb2-ru": "keyboard-ru-539x1079",
+    "kb2-number": "keyboard-number-539x1079",
+    "kb2-phone": "keyboard-phone-539x1079",
+    "kb2-term": "keyboard-term-539x1079",
+    "kb2-buttons": "keys-keyboard-539x1079",
+    "sh-form-keyboard": "keyboard-en-539x1079",
+    "nav-map-keyboard": "keyboard-en-539x1079",
 }
 # boards that are specs or maps, not screens
 NOT_SCREENS = ("-spec-", "-replacement-map", "-prototype")
@@ -54,7 +64,11 @@ def pairs(boards: pathlib.Path, snaps: pathlib.Path, only: str):
         s = SNAPSHOT_FOR.get(n, n)
         (found if s in every else missing).append((n, s))
     used = {s for _, s in found}
-    return found, [n for n, _ in missing], sorted(shots - used)
+    return (
+        found,
+        [n for n, _ in missing],
+        sorted(s for s in shots - used if s.startswith(only)),
+    )
 
 
 def side_by_side(
@@ -76,7 +90,9 @@ def side_by_side(
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Set each canvas board beside the app's snapshot.")
+    ap = argparse.ArgumentParser(
+        description="Set each canvas board beside the app's snapshot."
+    )
     ap.add_argument("boards", type=pathlib.Path)
     ap.add_argument(
         "--snapshots",

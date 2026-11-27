@@ -240,7 +240,13 @@ jobs:
           wait_s 1; tap 36 73; expect "settings: back"; wait_s 1; tap 36 73; expect "settings: back"
           expect "selected root.apps)"; wait_s 1
           tap 503 73; expect "settings: search closed"
-          tap 426 73; wait_s 1; kb_type offline
+          # W1 keyboard: "neo" typed, e held a second types é (its first alternate), Backspace held a second deletes
+          # them all (it repeats), then the search as before
+          tap 426 73; wait_s 1
+          for c in n e o; do tap $(kb_key $c); done
+          kb_hold e; expect "neoui: key alternate 1 of 5"
+          kb_hold BKSP; expect "neoui: key repeat"
+          kb_type offline
           tap 270 214; expect "settings: page sounds"; wait_s 1
           tap 270 870; wait_s 1; tap 270 829; expect "neoui: sound profile 4: airplane true, wifi false, bt false"
           wait_s 1; tap 270 435; wait_s 1; tap 270 829; expect "neoui: sound profile 0: airplane false, wifi true, bt false"
@@ -300,6 +306,8 @@ jobs:
           grep -a 'clock: quit' $s
           # SE2a: Offline turned the radios off, General gave them back
           grep -a 'neoui: sound profile 4: airplane true, wifi false, bt false' $s
+          grep -a 'neoui: key alternate 1 of 5' $s
+          grep -aE 'neoui: key repeat ([5-9]|[1-9][0-9])' $s
           grep -a 'neoui: sound profile 0: airplane false, wifi true, bt false' $s
           # TP1: the shade from home, then Settings from its ⚙
           grep -a 'neoui: shade from home' $s

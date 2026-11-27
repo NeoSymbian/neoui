@@ -12,6 +12,7 @@ pub mod layer;
 pub mod peek;
 mod settings;
 mod tiles;
+mod suggest;
 
 use alloc::boxed::Box;
 use alloc::rc::Rc;
@@ -65,6 +66,8 @@ impl TargetPixel for Xrgb8888 {
 struct NeoPlatform {
     window: Rc<MinimalSoftwareWindow>,
     now_ms: fn() -> u64,
+    /// the shell's own text fields' clipboard (the edit bar's Copy and Paste), kept equal to the apps' by the server
+    clipboard: Rc<keyboard::Clipboard>,
 }
 
 impl Platform for NeoPlatform {
@@ -74,6 +77,19 @@ impl Platform for NeoPlatform {
 
     fn duration_since_start(&self) -> Duration {
         Duration::from_millis((self.now_ms)())
+    }
+
+    fn set_clipboard_text(&self, text: &str, clipboard: slint::platform::Clipboard) {
+        if clipboard == slint::platform::Clipboard::DefaultClipboard {
+            *self.clipboard.text.borrow_mut() = text.into();
+            self.clipboard.copied.set(true);
+        }
+    }
+
+    fn clipboard_text(&self, clipboard: slint::platform::Clipboard) -> Option<String> {
+        (clipboard == slint::platform::Clipboard::DefaultClipboard)
+            .then(|| self.clipboard.text.borrow().clone())
+            .filter(|t| !t.is_empty())
     }
 }
 
@@ -307,6 +323,8 @@ pub struct Renderer {
     window: Rc<MinimalSoftwareWindow>,
     ui: Shell,
     typed: Rc<RefCell<Vec<u32>>>,
+    /// the keyboard's log and the shell fields' clipboard and chords (keyboard.rs)
+    kb: keyboard::State,
     /// Presses of the system keyboard's keys since the last [`Renderer::take_key_presses`] (one per key, whatever it
     /// types and wherever it goes: Keypress vibration, SE3a).
     presses: Rc<core::cell::Cell<u32>>,
@@ -383,19 +401,16 @@ impl Renderer {
     pub fn new(width: u32, height: u32, now_ms: fn() -> u64) -> Result<Self, PlatformError> {
         // The caller keeps one buffer and we redraw only what changed in it.
         let window = MinimalSoftwareWindow::new(RepaintBufferType::ReusedBuffer);
+        let clipboard: Rc<keyboard::Clipboard> = Rc::default();
         slint::platform::set_platform(Box::new(NeoPlatform {
             window: window.clone(),
             now_ms,
+            clipboard: clipboard.clone(),
         }))
         .map_err(PlatformError::SetPlatformError)?;
         let ui = Shell::new()?;
         // before anything draws: bindings that call these keep what they first returned
-        let layouts = ui.global::<Layouts>();
-        layouts.on_pick(|on, from| keyboard::pick(&on.iter().collect::<Vec<_>>(), from));
-        layouts.on_tallest_of(|on, all| {
-            let rows: Vec<usize> = all.iter().map(|l| l.rows.row_count()).collect();
-            keyboard::tallest(&on.iter().collect::<Vec<_>>(), &rows)
-        });
+        let kb = keyboard::wire(&ui, clipboard);
         window.set_size(PhysicalSize::new(width, height));
         ui.show()?;
         let typed: Rc<RefCell<Vec<u32>>> = Rc::default();
@@ -504,6 +519,7 @@ impl Renderer {
             window,
             ui,
             typed,
+            kb,
             presses,
             nav,
             notes_opened,
@@ -1291,6 +1307,7 @@ impl Renderer {
 
     pub fn render(&mut self, buf: &mut [u32], stride_px: usize) -> Damage {
         slint::platform::update_timers_and_animations();
+        self.type_into_shell();
         // a group's ▾ (the callback can't reach the renderer): lay the cards out again
         if self.relayout.replace(false) {
             self.lay_out_notes();
@@ -1379,18 +1396,16 @@ impl Renderer {
                 }
             }
         };
-        self.window.dispatch_event(event);
-        // the system keyboard typed into one of the shell's own fields, not for an app
-        if self.ui.global::<KeyboardFocus>().get_open() {
-            for code in self.take_typed() {
-                if let Some(text) = keyboard::key_text(code) {
-                    self.window
-                        .dispatch_event(WindowEvent::KeyPressed { text: text.clone() });
-                    self.window
-                        .dispatch_event(WindowEvent::KeyReleased { text });
-                }
-            }
+        if let InputEvent::Touch {
+            y,
+            phase: TouchPhase::Down,
+            ..
+        } = ev
+        {
+            self.touch_outside_keyboard(y);
         }
+        self.window.dispatch_event(event);
+        self.type_into_shell();
     }
 
     /// Cancels the touch in progress: whatever it pressed lets go without a click (the UI server took the gesture

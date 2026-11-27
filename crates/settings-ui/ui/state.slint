@@ -79,9 +79,11 @@ export global SetState {
     // SE3a: a ring under each finger (developer.show_touches), a pulse per key (keyboard.vibrate)
     in-out property <bool> show-touches;
     in-out property <bool> key-vibrate;
-    in property <[bool]> keyboards;  // English, Armenian, Russian on
+    in property <[bool]> keyboards;  // English, Armenian, Russian, Western Armenian on
     in property <int> keyboard;  // the current one
     in-out property <bool> same-height;
+    // word suggestions on the keyboard's top band (keyboard.suggest)
+    in-out property <bool> suggest;
     in-out property <bool> pad-vibrate;
     in property <int> pad-strength;
     in property <int> pad-default;

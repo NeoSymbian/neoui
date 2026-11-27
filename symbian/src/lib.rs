@@ -15,6 +15,7 @@ mod battery;
 mod clock;
 mod clockwork;
 mod host;
+mod keyboard;
 mod netclock;
 mod peek;
 mod perf;
@@ -246,6 +247,8 @@ fn main() -> i32 {
         let mut peek: Option<peek::Peeking> = None;
         let mut no_fade = false;
         let mut pinch = neoui_proto::pinch::Pinch::default();
+        // a hardware keyboard's Shift, Caps Lock and Ctrl
+        let mut hw = neoui_proto::hwkeys::State::default();
         loop {
             // a dark screen draws nothing: no frame pacing for animations or a pending draw
             let wait = if scr.is_on()
@@ -328,7 +331,10 @@ fn main() -> i32 {
                             // a dark screen takes no touches or keys (the kernel's touchscreen sleeps too)
                             Ok(ev) if scr.is_on() => {
                                 scr.activity(time::millis());
-                                evs.extend(to_input(&ev));
+                                evs.extend(
+                                    to_input(&ev)
+                                        .or_else(|| keyboard::hardware_key(&ev, &mut hw, &ui)),
+                                );
                             }
                             Ok(_) => {}
                             Err(e) => {
@@ -655,6 +661,9 @@ fn main() -> i32 {
                                     home_press = None; // no neighbour, or no memory: Slint's own swipe
                                 }
                                 if to_app {
+                                    if phase == TouchPhase::Down {
+                                        ui.touch_outside_keyboard(y);
+                                    }
                                     let (x, y) = (x - body.x, y - body.y);
                                     host.send(AppEvent::Input(InputEvent::Touch {
                                         id,
@@ -1135,6 +1144,7 @@ fn main() -> i32 {
                 transition.is_some() || swipe.is_some() || close_drag.is_some() || peek.is_some();
             let (px, damage, render_us, mut copy_us) =
                 present(&mut ui, &mut frame, &display, &perf, !fading);
+            keyboard::after_frame(&mut ui, &mut host);
             perf.shifts(ui.take_shifts());
             // (G2) the peek: the page over its target, then the gesture it settled onto, with no fade
             if let Some(p) = peek.as_mut() {
@@ -1715,7 +1725,7 @@ fn present(
     (px, damage, render_us, perf.since(&m))
 }
 
-/// A raw kernel event as neoui input: button 1 is the (single) touch; keys only where a character is obvious.
+/// A raw kernel event as neoui input: button 1 is the (single) touch; keys go through `keyboard::hardware_key`.
 fn to_input(ev: &TRawEvent) -> Option<InputEvent> {
     let touch = |phase| {
         // Raw pointer events are screen pixels on every device (Syborg's driver scaled x wrongly until NeoSymbian's
@@ -1728,46 +1738,11 @@ fn to_input(ev: &TRawEvent) -> Option<InputEvent> {
             phase,
         })
     };
-    let key = |down| {
-        key_char(ev.scan_code()).map(|c| InputEvent::Key {
-            code: c as u32,
-            down,
-        })
-    };
+    // keys: keyboard::hardware_key (a layout per language, with the modifiers)
     match ev.i_type {
         raw::EBUTTON1_DOWN => touch(TouchPhase::Down),
         raw::EPOINTER_MOVE => touch(TouchPhase::Move),
         raw::EBUTTON1_UP => touch(TouchPhase::Up),
-        raw::EKEY_DOWN => key(true),
-        raw::EKEY_UP => key(false),
-        _ => None,
-    }
-}
-
-/// `TStdScanCode` (`e32keys.h`) to a character: letters and digits are their ASCII codes; a few controls.
-// shortcut: no modifiers, no layouts; a real keymap comes with text input (R6).
-fn key_char(scan: i32) -> Option<char> {
-    match scan {
-        1 => Some('\u{8}'),     // EStdKeyBackspace
-        2 => Some('\t'),        // EStdKeyTab
-        3 => Some('\r'),        // EStdKeyEnter: EKeyEnter is 13
-        4 => Some('\u{1b}'),    // EStdKeyEscape
-        5 => Some(' '),         // EStdKeySpace
-        0x0D => Some('\u{7f}'), // EStdKeyDelete
-        // EStdKeyLeft/Right/Up/DownArrow -> EKeyLeftArrow.. (0xF807..0xF80A, Unicode private use)
-        0x0E => Some('\u{F807}'),
-        0x0F => Some('\u{F808}'),
-        0x10 => Some('\u{F809}'),
-        0x11 => Some('\u{F80A}'),
-        0x79 => Some(','),
-        0x7A => Some('.'),
-        0x7B => Some('/'),
-        0x7C => Some('\\'),
-        0x7D => Some(';'),
-        0x82 => Some('-'),
-        0x83 => Some('='),
-        0x30..=0x39 => char::from_u32(scan as u32),
-        0x41..=0x5A => char::from_u32(scan as u32 + 0x20),
         _ => None,
     }
 }

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Armenian (Eastern), phonetic: the letters sit on the QWERTY keys that sound alike (ք q, ո w, ե e, ր r, ...), as in
 // the desktop phonetic layout; the letters it keeps on the digit keys get a row of their own. All 38 letters and և.
-// The full stop is ։ (verjaket); the stress, emphasis and question marks are in the top row.
+// The full stop is ։ (verjaket); the stress, emphasis and question marks are in the top row, the quotes « » a long
+// press on ՝. Drawn in NeoSans (its Noto Sans Armenian part).
 import { Layout } from "../types.slint";
 
 export global Hy {
@@ -9,7 +10,7 @@ export global Hy {
         code: "hy",
         name: "Armenian",
         hint: "Phonetic",
-        font: "DejaVu Sans",
+        font: "NeoSans",
         cols: 12,
         rows: [
             ["է", "ձ", "ջ", "ռ", "չ", "ժ", "և", "՝", "՛", "՞"],
@@ -20,5 +21,6 @@ export global Hy {
         abc: "ԱԲԳ",
         comma: ",",
         stop: "։",
+        alts: ["եէև", "ոօ", "՝«»", "՞՜"],
     };
 }

@@ -98,8 +98,10 @@ pub fn facts(s: &SetState<'_>, sample: Sample, epochs: Epochs) -> Facts {
         ("kb.0", kb(0)),
         ("kb.1", kb(1)),
         ("kb.2", kb(2)),
+        ("kb.3", kb(3)),
         ("kb.same_height", on(s.get_same_height())),
         ("kb.vibrate", on(s.get_key_vibrate())),
+        ("kb.suggest", on(s.get_suggest())),
         ("dev.usb", on(s.get_usb_debugging())),
         ("dev.touches", on(s.get_show_touches())),
         // D2: only what the kernel answered

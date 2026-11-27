@@ -296,9 +296,9 @@ pub struct Host {
     pub notes_changed: bool,
     pub badges_changed: bool,
     /// The clipboard (`CLIP_SET`, `CLIP_GET`), shared by every app.
-    clipboard: String,
+    pub(crate) clipboard: String,
     /// What the clipboard holds (`proto::CLIP_TEXT`, `CLIP_PATHS_COPY`, `CLIP_PATHS_MOVE`; `CLIP_KIND`).
-    clip_kind: i32,
+    pub(crate) clip_kind: i32,
     /// 1.20: revisions, Settings' subscriptions, owner work and thumbnails ([`settings_info`]).
     shelf: settings_info::Shelf,
     /// (D8) The "Files read the clipboard" toasts (`privacy.clip_notice`): readers cooling down and waiting.

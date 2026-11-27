@@ -4,6 +4,7 @@
 mod common;
 
 use neoui_proto::settings::Value;
+use neoui_proto::{InputEvent, TouchPhase};
 use neoui_render::Renderer;
 
 const W: u32 = 539;
@@ -57,6 +58,33 @@ impl Kb {
     /// pixels are truncated).
     fn h_dp(&self) -> u32 {
         (self.r.keyboard_h() as f32 / common::dp(W, H)).round() as u32
+    }
+    fn touch(&mut self, phase: TouchPhase, x: i32, y: i32) {
+        self.r.dispatch(InputEvent::Touch { id: 0, x, y, phase });
+    }
+    /// Press the key at `at` and hold it `ms` (rendering a frame every 17 ms, as the UI server does while the
+    /// keyboard's timers run), still pressed; returns where.
+    fn hold(&mut self, k: usize, at: f32, units: f32, cols: f32, ms: u64) -> (i32, i32) {
+        let (x, y) = key(&self.r, k, at, units, cols);
+        self.touch(TouchPhase::Down, x, y);
+        self.wait(ms);
+        (x, y)
+    }
+    fn wait(&mut self, ms: u64) {
+        let mut t = 0;
+        while t < ms {
+            common::advance(17.min(ms - t));
+            t += 17;
+            self.r.render(&mut self.buf, W as usize);
+        }
+    }
+    fn release(&mut self, (x, y): (i32, i32)) {
+        self.touch(TouchPhase::Up, x, y);
+        common::settle();
+        self.r.render(&mut self.buf, W as usize);
+    }
+    fn log(&mut self) -> Vec<String> {
+        self.r.take_keyboard_log()
     }
     fn snapshot(&mut self, name: &str) {
         common::frame(&mut self.r, &mut self.buf, W, name);
@@ -147,7 +175,7 @@ fn keyboard() {
     kb.globe();
     let _ = kb.r.take_setting_edits();
 
-    // terminal mode: Esc, Tab and the arrows in a row on top (English: row 4 here), six across
+    // terminal mode: Esc, Ctrl, Tab and the arrows in a row on top (English: row 4 here), seven across
     kb.r.set_keyboard(2);
     kb.snapshot("keyboard-term");
     assert_eq!(kb.h_dp(), 276);
@@ -156,10 +184,11 @@ fn keyboard() {
             .map(|h| (h as f32 / common::dp(W, H)).round() as u32),
         [0, 228, 276, 228, 276]
     );
-    for i in 0..6 {
-        kb.letter(4, i as f32, 6.0);
+    for i in [0, 2, 3, 4, 5, 6] {
+        kb.letter(4, i as f32, 7.0);
     }
     assert_eq!(kb.r.take_typed(), [0x1b, 9, 0xF807, 0xF809, 0xF80A, 0xF808]);
+    held_keys(&mut kb);
 
     kb.r.set_keyboard(0);
     assert_eq!(kb.r.keyboard_h(), 0);
@@ -186,4 +215,104 @@ fn layouts_have_every_letter() {
     for c in 'a'..='z' {
         assert!(has(en, c), "English {c}");
     }
+}
+
+/// Key repeat, long-press alternates, the terminal's Ctrl, word suggestions and Western Armenian (W1), on the
+/// keyboard in terminal mode (English, all four rows plus the terminal row) and then text mode.
+fn held_keys(kb: &mut Kb) {
+    let _ = kb.log();
+    // Ctrl (the terminal row's second key) then c: Ctrl+C's code; one-shot, so the next c is a c
+    kb.letter(4, 1.0, 7.0);
+    kb.snapshot("keyboard-term-ctrl");
+    kb.letter(1, 3.5, 10.0); // c (zxcv row: after the 1.5 wide shift)
+    kb.letter(1, 3.5, 10.0);
+    assert_eq!(kb.r.take_typed(), [3, u32::from('c')]);
+    assert_eq!(kb.log(), ["ctrl"]);
+
+    // an arrow held: one at once, the next after 400 ms, then about 15 a second
+    let at = kb.hold(4, 3.0, 1.0, 7.0, 380);
+    assert_eq!(
+        kb.r.take_typed(),
+        [0xF807],
+        "one at the press, none before 400 ms"
+    );
+    kb.wait(630); // 1 s held
+    kb.release(at);
+    let n = kb.r.take_typed().len();
+    assert!((7..=10).contains(&n), "{n} repeats from 400 ms to 1 s");
+    assert_eq!(kb.log(), [format!("repeat {n}")]);
+
+    // text mode: Backspace held deletes several, a letter held types one
+    kb.r.set_keyboard(1);
+    let at = kb.hold(1, 8.5, 1.5, 10.0, 1000);
+    kb.release(at);
+    let typed = kb.r.take_typed();
+    assert!(
+        typed.len() >= 8 && typed.iter().all(|&c| c == 8),
+        "{typed:?}"
+    );
+    let _ = kb.log();
+    let at = kb.hold(3, 3.0, 1.0, 10.0, 1000); // r: no alternates
+    kb.release(at);
+    assert_eq!(kb.typed(), "r", "letters don't repeat");
+
+    // e held: its alternates over it, é picked; let go types it
+    let at = kb.hold(3, 2.0, 1.0, 10.0, 450);
+    kb.snapshot("keyboard-longpress");
+    assert!(
+        kb.r.take_typed().is_empty(),
+        "nothing until the finger lets go"
+    );
+    kb.release(at);
+    assert_eq!(kb.typed(), "é");
+    assert_eq!(kb.log(), ["alternate 1 of 5"], "the log never has the text");
+    // slide two alternates to the right: ê; with shift: upper case
+    let (x, y) = kb.hold(3, 2.0, 1.0, 10.0, 450);
+    let cell = W as i32 / 10;
+    kb.touch(TouchPhase::Move, x + cell, y - 40);
+    kb.touch(TouchPhase::Move, x + 2 * cell, y - 60);
+    kb.release((x + 2 * cell, y - 60));
+    kb.tap(1, 0.0, 1.5, 10.0); // shift
+    let at = kb.hold(3, 2.0, 1.0, 10.0, 450);
+    kb.release(at);
+    assert_eq!(kb.typed(), "êÉ");
+    // a quick tap on e is still e
+    kb.letter(3, 2.0, 10.0);
+    assert_eq!(kb.typed(), "e");
+    let _ = kb.log();
+
+    // word suggestions: off by default; on, "th" offers the most frequent word in the middle, a tap replaces it
+    kb.letter(2, 5.5, 10.0); // h
+    kb.tap(0, 3.5, 4.0, 10.0); // space ends the word
+    let _ = kb.typed();
+    kb.set("keyboard.suggest", Value::Bool(true));
+    kb.letter(3, 4.0, 10.0); // t
+    kb.letter(2, 5.5, 10.0); // h
+    kb.snapshot("keyboard-suggest");
+    let d = common::dp(W, H);
+    let bottom = (kb.r.app_body().y + kb.r.app_body().h as i32) as f32;
+    let band = (bottom - kb.h_dp() as f32 * d + 15.0 * d) as i32;
+    let strip = W as f32 - 68.0 * d; // 4 dp in, the hide key's 64 dp off
+    common::tap(&mut kb.r, (4.0 * d + strip / 2.0) as i32, band);
+    common::settle();
+    kb.r.render(&mut kb.buf, W as usize);
+    assert_eq!(kb.typed(), "th\u{8}\u{8}the ");
+    assert_eq!(kb.log(), ["suggestion"]);
+    kb.set("keyboard.suggest", Value::Bool(false));
+
+    // Russian: е held gives ё
+    kb.globe(); // Armenian
+    kb.globe(); // Russian
+    let at = kb.hold(3, 4.0, 1.0, 12.0, 450);
+    kb.release(at);
+    assert_eq!(kb.typed(), "ё");
+    // Western Armenian: on, after Russian; its b key (Eastern բ) types պ
+    kb.set("keyboard.hyw", Value::Bool(true));
+    kb.globe();
+    kb.snapshot("keyboard-hyw");
+    kb.letter(1, 5.5, 12.0); // after the 1.5 wide shift: զ ղ ց վ, then the b key
+    assert_eq!(kb.typed(), "պ");
+    kb.set("keyboard.hyw", Value::Bool(false));
+    let _ = kb.r.take_setting_edits();
+    let _ = kb.log();
 }

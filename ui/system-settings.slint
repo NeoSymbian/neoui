@@ -50,6 +50,9 @@ export global SystemSettings {
     in-out property <bool> keyboard-ru: true;
     in-out property <int> keyboard-layout: 0;
     in-out property <bool> keyboard-same-height: true;
+    in-out property <bool> keyboard-hyw: false;
+    // word suggestions on the keyboard's top band
+    in-out property <bool> keyboard-suggest: false;
     // Settings -> Old apps: the key pads under old apps (LEGACY reads legacy.pad.*)
     in-out property <bool> legacy-pad-vibrate: true;
     in-out property <int> legacy-pad-strength: 1;
@@ -105,6 +108,8 @@ export global SystemSettings {
     changed keyboard-ru => { edited("keyboard.ru"); }
     changed keyboard-layout => { edited("keyboard.layout"); }
     changed keyboard-same-height => { edited("keyboard.same_height"); }
+    changed keyboard-hyw => { edited("keyboard.hyw"); }
+    changed keyboard-suggest => { edited("keyboard.suggest"); }
     changed legacy-pad-vibrate => { edited("legacy.pad.vibrate"); }
     changed legacy-pad-strength => { edited("legacy.pad.strength"); }
     changed legacy-pad-default => { edited("legacy.pad.default"); }

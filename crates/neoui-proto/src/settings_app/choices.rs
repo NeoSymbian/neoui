@@ -61,10 +61,15 @@ pub const PAD_B: [&str; 3] = ["Right softkey", "0", "#"];
 
 /// The system keyboard's languages: the setting that turns each on, and its name (`ui/components/keyboard/
 /// layouts.slint` keeps the same order; `keyboard.layout` is an index into it).
-pub const KEYBOARDS: [(&str, &str, &str); 3] = [
+pub const KEYBOARDS: [(&str, &str, &str); 4] = [
     ("keyboard.en", "English", "QWERTY"),
     ("keyboard.hy", "Armenian", "Հայերեն · Phonetic"),
     ("keyboard.ru", "Russian", "Русский · ЙЦУКЕН"),
+    (
+        "keyboard.hyw",
+        "Western Armenian",
+        "Արեւմտահայերէն · Phonetic",
+    ),
 ];
 
 /// (D7) Display → Wallpaper's colours (`display.wallpaper`): the stored name and the shown one, in the board's order

@@ -15,6 +15,14 @@ export global KeyboardFocus {
     in-out property <int> mode: 1;
     // the keyboard's height in text mode (written by keyboard.slint), to lift a sheet above it
     in-out property <length> text-h;
+    // the focused shell field is a password: no word suggestions
+    in-out property <bool> secret;
+    // counts touches that went down outside the keyboard (the renderer and the UI server bump it): the cursor may
+    // have moved, so the word the keyboard was suggesting for is over
+    in-out property <int> outside;
+    // what the keyboard did beyond typing (a key's repeats, which alternate a long press picked, a suggestion, Ctrl),
+    // for the UI server's log (`Renderer::take_keyboard_log`); never the text (a password field's keys come here too)
+    callback logged(string);
 
     public function close() {
         open = false;

@@ -1,0 +1,40 @@
+// SPDX-License-Identifier: Apache-2.0
+// Word suggestions (`keyboard.suggest`): up to three words on the keyboard's top band for the word being typed, the
+// most frequent in the middle (Android's order); a tap replaces the word (keyboard.slint).
+import { Theme } from "../../theme.slint";
+
+export component SuggestStrip inherits Rectangle {
+    in property <[string]> words;
+    in property <string> font: "NeoSans";
+    callback picked(string);
+    // shown in thirds: the second word, the first (most frequent) in the middle, the third
+    property <[int]> order: words.length >= 3 ? [1, 0, 2] : words.length == 2 ? [1, 0] : [0];
+    for o[i] in order: Rectangle {
+        x: i * root.width / order.length;
+        width: root.width / order.length;
+        background: t.pressed ? Theme.pressed : transparent;
+        border-radius: Theme.radius-small;
+        Text {
+            text: root.words[o];
+            color: o == 0 ? Theme.text : Theme.text-secondary;
+            font-family: root.font;
+            font-size: Theme.font-label;
+            font-weight: o == 0 ? 600 : 400;
+            overflow: elide;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            width: parent.width - 8 * Theme.dp;
+        }
+        if i > 0: Rectangle {
+            x: 0;
+            width: 1px;
+            height: parent.height * 0.5;
+            background: #ffffff1a;
+        }
+        t := TouchArea {
+            clicked => {
+                root.picked(root.words[o]);
+            }
+        }
+    }
+}
