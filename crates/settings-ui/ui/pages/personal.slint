@@ -288,6 +288,20 @@ export component PrivacyPage inherits NeoList {
             divider: false;
         }
 
+        // (SE4/D8) each app's capabilities are on its page (Apps → an app), read from the kernel or the ROM's rule
+        SectionHeader { text: "Apps"; }
+        ListRow {
+            value-bright: true;
+            title: "App permissions";
+            checked: SetState.found == "privacy.permissions";
+            subtitle: "ROM apps: all · on each app's page";
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/lock.svg");
+            chevron: true;
+            divider: false;
+            clicked => { SetState.act("open", "13"); }
+        }
+
         // D8: what the phone logs stays on it: Dev tools' console shows it, and saves it only when asked
         SectionHeader { text: "Diagnostics"; }
         ListRow {
@@ -302,6 +316,6 @@ export component PrivacyPage inherits NeoList {
             clicked => { SetState.act("devtools", "console"); }
         }
 
-        Note { text: "Apps in the ROM get every capability; apps on C: only those they declare. A list by app comes later. No automatic diagnostics upload: Dev tools shows the log and saves it only when you ask."; }
+        Note { text: "Apps in the ROM get every capability; apps on C: only those they declare. No automatic diagnostics upload: Dev tools shows the log and saves it only when you ask."; }
     }
 }

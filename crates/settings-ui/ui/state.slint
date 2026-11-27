@@ -25,6 +25,8 @@ export struct DriveRow { letter: string, title: string, used: string, note: stri
 // a part of the Storage bar or a kind: its name, size text, and for a bar part where it starts and its share (0..1)
 export struct PartRow { name: string, size: string, start: float, share: float }
 export struct AppRow { key: string, name: string, old: bool, settings: bool }
+// (D14, not yet) a Bluetooth device: its name, address, "Connected" / "Not connected", a pairing's code ("482 915")
+export struct BtDevice { name: string, address: string, state: string, code: string }
 // TP4: an app on Notifications (its policy key, caption, line, its notifications allowed) and a channel of an app
 // (its id, name, description, effective importance's name and number 0 off..4, whether it is the General row)
 export struct NotifyAppRow { key: string, name: string, summary: string, allowed: bool }
@@ -143,6 +145,9 @@ export global SetState {
     // "" = "In the phone's ROM") and its Storage used row (shown when the shell measures apps: subtitle and value)
     in property <[string]> app-subs;
     in property <string> app-identity;
+    // (SE4/D8) its capabilities, read only: "All" / "None" / "3 of 20" and where that was read ("" = no INFO 8)
+    in property <string> app-perm;
+    in property <string> app-perm-sub;
     in property <bool> app-size-shown;
     in property <string> app-size-sub;
     in property <string> app-size;
@@ -195,6 +200,17 @@ export global SetState {
     in property <[DriveRow]> drives;
     in property <[PartRow]> storage-parts;
     in property <[PartRow]> storage-kinds;
+    // (D3) one drive's page (set2-storage-drive): the drive, "12.4 GB" used, "of 41.8 GB · 29.4 GB free", its kinds
+    // (Images & video, Music, Documents, Other; a bar part each), its file system and size, its count's status
+    in property <DriveRow> drive-current;
+    in property <string> drive-used;
+    in property <string> drive-of;
+    in property <[PartRow]> drive-kinds;
+    in property <string> drive-fs;
+    in property <string> drive-size;
+    in property <string> drive-status;
+    // (D14, not yet) the device Bluetooth's device page and pairing sheet are about
+    in property <BtDevice> bt-device;
     in property <bool> storage-counting;
     in property <bool> storage-counted;
     in property <string> storage-status;
@@ -220,6 +236,8 @@ export global SetState {
     // (display.font_size 0..3) with the sizes' names and scales (choices::FONT_SIZES)
     in property <string> wallpaper: "night";
     in property <string> wallpaper-name: "Night";
+    // (D7) a picture from Files: where it is ("Setting the picture…") or why it couldn't be set; "" when idle
+    in property <string> wallpaper-note;
     in property <int> font-size: 1;
     in property <[string]> font-sizes;
     in property <[string]> font-scales;
@@ -318,6 +336,7 @@ export global SetState {
     // - "app-open" + a ROM app's key; "old-open" + an old app's id (hex); "app" + an app's key (its own settings);
     //   "app-detail" + a ROM app's key (its page); "app-stop", "app-clear" for app-current (the app asks first);
     //   "reset" + "network" | "settings" (the app asks first; the phone restarts);
+    //   (D3) "storage-drive" + a drive's letter (its page); (D7) "wallpaper-pick" (Files' picker for a picture);
     // - (D11) "sim-toggle" + "1"/"0" (the switch's wish: the PIN sheet), "sim-change" (its sheet), "sim-submit" (the
     //   sheet's fields, read by NEOSET), "sim-cancel";
     // - "sound" + "test" | "record"; "keyboard" + an index to turn on or off ("+0"/"-0"); "keyboard-next";

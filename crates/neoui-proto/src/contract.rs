@@ -6,7 +6,8 @@
 
 use crate::settings::access::Caller;
 use crate::settings::kerr;
-use crate::{activity, apps, ipc, media, settings_app::wire, tiles, widget};
+use crate::settings_app::{wallpaper, wire};
+use crate::{activity, apps, ipc, media, tiles, widget};
 use alloc::vec::Vec;
 
 /// Whether `op` is one of 1.22's app → shell opcodes that publish for the caller (checked by [`ingress`]).
@@ -60,17 +61,16 @@ pub fn ingress(
 /// The longest request [`settings_action`] reads.
 pub const ACTION_REQUEST_MAX: usize = wire::WallpaperRequest::LEN;
 
-/// The answer to `SETTINGS_ACTION` `kind` when it is one of 1.22's (8 `INSTALL_WALLPAPER`, 12 `EDIT_TILES`, 14
+/// The answer to `SETTINGS_ACTION` `kind` when it is one of 1.22's not built yet (12 `EDIT_TILES`, 14
 /// `LOCK_DIALOG`), else `None`. `read(max)` reads the request (slot 1, `KErrArgument` past `max`), only for
 /// Settings. `KErrPermissionDenied` for anyone else, `KErrArgument` for a malformed request, else
-/// `KErrNotSupported`.
+/// `KErrNotSupported`. 8 `INSTALL_WALLPAPER` is built (D7): [`wallpaper_request`].
 pub fn settings_action(
     kind: i32,
     caller: Caller<'_>,
     read: impl FnOnce(usize) -> Result<Vec<u8>, i32>,
 ) -> Option<i32> {
     let valid: fn(&[u8]) -> bool = match kind {
-        ipc::ACTION_INSTALL_WALLPAPER => |b| wire::WallpaperRequest::decode(b).is_some(),
         ipc::ACTION_EDIT_TILES => tiles::edit_tiles_request,
         ipc::ACTION_LOCK_DIALOG => |b| wire::lock_dialog_request(b).is_some(),
         _ => return None,
@@ -82,6 +82,30 @@ pub fn settings_action(
         Ok(b) if valid(&b) => kerr::NOT_SUPPORTED,
         _ => kerr::ARGUMENT,
     })
+}
+
+/// (D7) `SETTINGS_ACTION` 8 `INSTALL_WALLPAPER`'s checks before the shell takes the file: `KErrPermissionDenied`
+/// unless the caller is Settings (nothing is read before), `KErrArgument` for a malformed request,
+/// `KErrNotSupported` for a size the shell doesn't draw (only [`wallpaper::REQUEST`]); else the request.
+///
+/// # Errors
+/// As above.
+pub fn wallpaper_request(
+    caller: Caller<'_>,
+    read: impl FnOnce(usize) -> Result<Vec<u8>, i32>,
+) -> Result<wire::WallpaperRequest, i32> {
+    if caller != Caller::Settings {
+        return Err(kerr::PERMISSION_DENIED);
+    }
+    let r = read(ACTION_REQUEST_MAX)
+        .ok()
+        .and_then(|b| wire::WallpaperRequest::decode(&b))
+        .ok_or(kerr::ARGUMENT)?;
+    if wallpaper::accepted(&r) {
+        Ok(r)
+    } else {
+        Err(kerr::NOT_SUPPORTED)
+    }
 }
 
 #[cfg(test)]
@@ -247,8 +271,34 @@ mod tests {
                 }
             }
         };
+        // (D7) the wallpaper: Settings only, nothing read before; the one size the shell draws
+        assert_eq!(
+            wallpaper_request(Caller::App(apps::SETTINGS), never),
+            Err(kerr::PERMISSION_DENIED)
+        );
+        assert_eq!(
+            wallpaper_request(settings, read(&wallpaper)),
+            Ok(wallpaper::REQUEST)
+        );
+        assert_eq!(
+            wallpaper_request(settings, read(&[1, 1])),
+            Err(kerr::ARGUMENT)
+        );
+        let big = wire::WallpaperRequest {
+            width: 1080,
+            height: 2160,
+        }
+        .encode()
+        .unwrap();
+        assert_eq!(
+            wallpaper_request(settings, read(&big)),
+            Err(kerr::NOT_SUPPORTED)
+        );
+        assert_eq!(
+            settings_action(ipc::ACTION_INSTALL_WALLPAPER, settings, never),
+            None
+        );
         for (kind, good, bad) in [
-            (ipc::ACTION_INSTALL_WALLPAPER, wallpaper.clone(), vec![1, 1]),
             (ipc::ACTION_EDIT_TILES, vec![], vec![0]),
             (
                 ipc::ACTION_LOCK_DIALOG,

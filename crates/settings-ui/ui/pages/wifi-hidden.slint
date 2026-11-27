@@ -1,0 +1,95 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Wi-Fi → Add hidden network (set2-wifi-hidden). Joining one needs a scan by name the driver doesn't do yet (D12), so
+// Save says so and does nothing. What is typed stays in this page: it is never stored, sent, logged or searched, and
+// it goes when the page closes.
+import { Theme, NeoList, TextField, Button } from "@neoui/kit.slint";
+
+// a field's label (the board's sentence-case labels, not section headers)
+component Label inherits Text {
+    color: Theme.text-secondary;
+    font-size: Theme.font-label;
+    font-weight: 500;
+}
+
+// one half of Security's two-way choice
+component Choice inherits Rectangle {
+    in property <string> text;
+    in property <bool> on;
+    callback clicked;
+    height: Theme.field-h;
+    border-radius: 8 * Theme.dp;
+    background: on ? #12233f : Theme.field;
+    border-width: max(1px, Theme.dp / 2);
+    border-color: on ? Theme.accent : Theme.card-border;
+    accessible-role: button;
+    accessible-label: root.text;
+    accessible-checkable: true;
+    accessible-checked: root.on;
+    accessible-action-default => { root.clicked(); }
+    TouchArea {
+        clicked => { root.clicked(); }
+    }
+    Text {
+        text: root.text;
+        color: Theme.text;
+        font-size: Theme.font-body;
+        font-weight: 600;
+    }
+}
+
+export component WifiHiddenPage inherits NeoList {
+    property <string> name;
+    property <string> password;
+    property <bool> secured: true;
+    VerticalLayout {
+        alignment: start;
+        padding-left: Theme.margin;
+        padding-right: Theme.margin;
+        padding-top: 14 * Theme.dp;
+        spacing: 8 * Theme.dp;
+        Label { text: "Network name"; }
+        TextField {
+            placeholder: "Network name";
+            text <=> root.name;
+        }
+        Rectangle { height: 4 * Theme.dp; }
+        Label { text: "Security"; }
+        HorizontalLayout {
+            spacing: 10 * Theme.dp;
+            Choice {
+                text: "Open";
+                on: !root.secured;
+                clicked => { root.secured = false; }
+            }
+            Choice {
+                text: "WPA2-Personal";
+                on: root.secured;
+                clicked => { root.secured = true; }
+            }
+        }
+        if root.secured: Rectangle { height: 4 * Theme.dp; }
+        if root.secured: Label { text: "Password"; }
+        if root.secured: TextField {
+            placeholder: "Password";
+            password: true;
+            text <=> root.password;
+        }
+        Rectangle { height: 8 * Theme.dp; }
+        Text {
+            text: "The network doesn't show its name, so the phone asks for it by name when it scans. Save joins it.";
+            color: Theme.text-secondary;
+            font-size: Theme.font-label;
+            wrap: word-wrap;
+        }
+        Button {
+            text: "Save";
+            enabled: false;
+        }
+        Text {
+            text: "Not yet (D12): the Wi-Fi driver can't scan for a network by name yet.";
+            color: Theme.text-dim;
+            font-size: Theme.font-label;
+            wrap: word-wrap;
+        }
+    }
+}

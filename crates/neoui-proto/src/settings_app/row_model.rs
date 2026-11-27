@@ -210,6 +210,13 @@ impl RowKey {
             Some(InstanceId::Drive(d)) => format!("{id}.{}", char::from(b'A' + d)),
             Some(InstanceId::OverviewKind(k)) => format!("{id}.{}", *k as u8),
             Some(InstanceId::WifiField { field, .. }) => format!("{id}.{}", *field as u8),
+            // (D1) a network by its BSSID as Wi-Fi's rows show it ("wifi.ap.02:00:00:00:00:01"), a saved one by its
+            // name (two saved networks of one name both show selected)
+            Some(InstanceId::WifiAp(b)) => format!(
+                "{id}.{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
+                b[0], b[1], b[2], b[3], b[4], b[5]
+            ),
+            Some(InstanceId::SavedSsid(raw)) => format!("{id}.{}", String::from_utf8_lossy(raw)),
             _ => String::from(id),
         }
     }
@@ -394,6 +401,22 @@ pub struct AppFact {
     pub size: String,
 }
 
+/// (D1) A network Wi-Fi sees: its BSSID, its name and its line ("Secured · strong").
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ApFact {
+    pub bssid: [u8; 6],
+    pub name: String,
+    pub detail: String,
+}
+
+/// (D1) A network WIFID remembers: its raw SSID, its name and its line ("Connected · Secured").
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SavedFact {
+    pub ssid: Vec<u8>,
+    pub name: String,
+    pub detail: String,
+}
+
 /// The current link (Wi-Fi's "Current network"): its BSSID and the fields its details show.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LinkFact {
@@ -433,6 +456,9 @@ pub struct Facts {
     /// (TP4) Notifications' apps and every channel (empty: the shell doesn't answer INFO 7, not read yet)
     pub notify_apps: Vec<NotifyFact>,
     pub channels: Vec<ChannelFact>,
+    /// (D1) the networks in range (empty while Wi-Fi is off or before a scan) and the saved ones
+    pub aps: Vec<ApFact>,
+    pub saved: Vec<SavedFact>,
 }
 
 impl Facts {
@@ -648,6 +674,8 @@ impl Provider for Action {
             "bt.visible" | "bt.paired" => Availability::Disabled("Not yet (D14)"),
             "root.lock" | "notify.lock" => Availability::Disabled("Not yet (D15)"),
             "reset.erase" => Availability::Disabled("Not yet (D19)"),
+            // (D7) Photos is still being designed (O6)
+            "display.wallpaper_photos" => Availability::Disabled("Not yet (Photos)"),
             _ => Availability::Readable,
         }
     }
@@ -1056,6 +1084,85 @@ impl Provider for Channels {
     }
 }
 
+/// (D1) The networks in range: a hit opens Wi-Fi with that network's row selected.
+struct WifiAps;
+impl WifiAps {
+    fn ap<'a>(f: &'a Facts, key: &RowKey) -> Option<&'a ApFact> {
+        match &key.instance {
+            Some(InstanceId::WifiAp(b)) => f.aps.iter().find(|a| a.bssid == *b),
+            _ => None,
+        }
+    }
+}
+impl Provider for WifiAps {
+    fn enumerate(&self, f: &Facts, row: &'static Row, out: &mut Vec<RowKey>) {
+        for a in &f.aps {
+            let key = RowKey::with(row.id, InstanceId::WifiAp(a.bssid));
+            // one row per access point (a scan can list one twice)
+            if !out.contains(&key) {
+                out.push(key);
+            }
+        }
+    }
+
+    fn read(&self, f: &Facts, key: &RowKey) -> Reading {
+        Self::ap(f, key).map_or(Reading::Unavailable("No longer available"), |a| {
+            Reading::Value(a.detail.clone())
+        })
+    }
+
+    fn label(&self, f: &Facts, key: &RowKey) -> Label {
+        Label {
+            title: Self::ap(f, key).map_or_else(String::new, |a| a.name.clone()),
+            path: String::from(Page::Wifi.title()),
+            aliases: &[],
+        }
+    }
+
+    fn guard(&self, f: &Facts) -> u32 {
+        f.epochs.wifi
+    }
+}
+
+/// (D1) The saved networks: a hit opens Saved networks with that one selected (Forget is still a tap of its own).
+struct SavedNets;
+impl SavedNets {
+    fn net<'a>(f: &'a Facts, key: &RowKey) -> Option<&'a SavedFact> {
+        match &key.instance {
+            Some(InstanceId::SavedSsid(raw)) => f.saved.iter().find(|n| n.ssid == *raw),
+            _ => None,
+        }
+    }
+}
+impl Provider for SavedNets {
+    fn enumerate(&self, f: &Facts, row: &'static Row, out: &mut Vec<RowKey>) {
+        for n in &f.saved {
+            let key = RowKey::with(row.id, InstanceId::SavedSsid(n.ssid.clone()));
+            if !out.contains(&key) {
+                out.push(key);
+            }
+        }
+    }
+
+    fn read(&self, f: &Facts, key: &RowKey) -> Reading {
+        Self::net(f, key).map_or(Reading::Unavailable("No longer available"), |n| {
+            Reading::Value(n.detail.clone())
+        })
+    }
+
+    fn label(&self, f: &Facts, key: &RowKey) -> Label {
+        Label {
+            title: Self::net(f, key).map_or_else(String::new, |n| n.name.clone()),
+            path: String::from(Page::WifiSaved.title()),
+            aliases: &[],
+        }
+    }
+
+    fn guard(&self, f: &Facts) -> u32 {
+        f.epochs.wifi
+    }
+}
+
 impl ProviderId {
     /// The provider that serves this family.
     #[must_use]
@@ -1071,6 +1178,8 @@ impl ProviderId {
             ProviderId::WifiFields => &WifiFields,
             ProviderId::NotifyApps => &NotifyApps,
             ProviderId::Channels => &Channels,
+            ProviderId::WifiAps => &WifiAps,
+            ProviderId::SavedNets => &SavedNets,
         }
     }
 }
@@ -1396,6 +1505,46 @@ mod tests {
             .collect();
         assert_eq!(general.len(), 2);
         assert_ne!(general[0].key, general[1].key);
+    }
+
+    /// (D1) Every network in range and every saved one is a row of its own: found by name, opened with its row
+    /// selected, gone once it is out of range or forgotten.
+    #[test]
+    fn networks_are_instances() {
+        let mut f = facts();
+        let ap = |b: u8, name: &str| ApFact {
+            bssid: [2, 0, 0, 0, 0, b],
+            name: name.into(),
+            detail: "Secured".into(),
+        };
+        f.aps = vec![ap(1, "Home-5G"), ap(2, "Cafe Lumen"), ap(2, "Cafe Lumen")];
+        f.saved = vec![SavedFact {
+            ssid: b"Office".to_vec(),
+            name: "Office".into(),
+            detail: "Secured · not in range".into(),
+        }];
+        let snap = project_all(&f);
+        let cafe = RowKey::with("wifi.ap", InstanceId::WifiAp([2, 0, 0, 0, 0, 2]));
+        let hits = search(&snap, "cafe");
+        assert_eq!(hits.len(), 1, "one row per access point");
+        assert_eq!(hits[0].key, cafe);
+        let d = resolve_hit(hits[0].token, &hits, &snap).unwrap();
+        assert_eq!(d.page, Page::Wifi);
+        assert_eq!(
+            d.focus.as_ref().map(RowKey::alias).as_deref(),
+            Some("wifi.ap.02:00:00:00:00:02")
+        );
+        let office = &search(&snap, "office")[0];
+        assert_eq!(office.key.alias(), "wifi.saved_net.Office");
+        assert_eq!(
+            snap.get(&office.key).unwrap().value_text,
+            "Secured · not in range"
+        );
+        // out of range now: the hit is gone, not opened on another network
+        let hits_then = search(&snap, "cafe");
+        f.aps.truncate(1);
+        let now = project_all(&f);
+        assert!(resolve_hit(hits_then[0].token, &hits_then, &now).is_err());
     }
 
     /// W0d: Classic apps is found by its old names too.

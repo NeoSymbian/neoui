@@ -495,7 +495,7 @@ fn features_golden_and_what_is_advertised() {
     let want = [
         &[1u8, 22, 0, 0][..], // 1.22 advertises nothing new: its shell side lands in W1–W3
         &[0xFE, 0x63, 0, 0, 0, 0, 0, 0], // INFO 1–7 (7 since 1.21), 8, 9, 13, 14
-        &[0xFE, 0x02, 0, 0, 0, 0, 0, 0], // actions 1–7, 9 (D10's EDIT_HOME)
+        &[0xFE, 0x03, 0, 0, 0, 0, 0, 0], // actions 1–7, 8 (D7's INSTALL_WALLPAPER), 9 (D10's EDIT_HOME)
         &[0xFE, 0xE7, 0xFF, 0x7F, 0x05, 0x3F, 0, 0], // opcodes 1–10, 13–30, 32, 34 (1.21), 40–45
     ]
     .concat();
@@ -518,7 +518,8 @@ fn features_golden_and_what_is_advertised() {
     );
     assert!(f.has_info(ipc::INFO_APP_DETAIL), "D4 produces INFO 8");
     for a in ipc::ACTION_INSTALL_WALLPAPER..=ipc::ACTION_LOCK_DIALOG {
-        assert_eq!(f.has_action(a), a == ipc::ACTION_EDIT_HOME, "action {a}");
+        let built = a == ipc::ACTION_EDIT_HOME || a == ipc::ACTION_INSTALL_WALLPAPER;
+        assert_eq!(f.has_action(a), built, "action {a}");
     }
     // D10: EDIT_HOME takes nothing
     assert!(neoui_proto::settings_app::wire::edit_home_request(&[]));

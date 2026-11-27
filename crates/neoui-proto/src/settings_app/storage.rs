@@ -265,6 +265,28 @@ pub fn drive_parts(used: u64, t: &Tally) -> [u64; 3] {
     [apps, files, used - apps - files]
 }
 
+/// D3, one drive's page (set2-storage-drive): Images & video, Music, Documents and Other bytes that add up to `used`
+/// exactly, as [`drive_parts`] does: counted files past `used` are cut, and Other is the rest (other files, apps,
+/// private data and the file system's overhead).
+#[must_use]
+pub fn drive_kinds(used: u64, t: &Tally) -> [(&'static str, u64); 4] {
+    let mut left = used;
+    let mut take = |n: u64| {
+        let n = n.min(left);
+        left -= n;
+        n
+    };
+    let media = take(t.files[Kind::Images as usize] + t.files[Kind::Video as usize]);
+    let music = take(t.files[Kind::Audio as usize]);
+    let docs = take(t.files[Kind::Documents as usize]);
+    [
+        ("Images & video", media),
+        ("Music", music),
+        ("Documents", docs),
+        ("Other", left),
+    ]
+}
+
 /// What a drive holds, with its mounted file system (D3): `fs` is `RFs::FileSystemSubType` (`FAT32`, or the name of
 /// a file system without sub types: `Rom`, `Rofs`, `Composite`), empty when unknown. The read-only Z: says what makes
 /// it up instead.
@@ -583,6 +605,28 @@ mod tests {
         assert_eq!(drive_note('Z', "Composite"), "ROFS + core ROM · read-only");
         assert_eq!(drive_note('z', "Rom"), "Core ROM · read-only");
         assert_eq!(drive_note('Z', ""), "Read-only");
+    }
+
+    #[test]
+    fn a_drives_kinds_add_up_to_its_used_bytes() {
+        let t = Tally {
+            files: [8 << 30, 600 << 20, 2 << 30, 400 << 20, 300 << 20],
+            apps: 100 << 20,
+            ..Tally::default()
+        };
+        let used = 12 << 30;
+        let k = drive_kinds(used, &t);
+        assert_eq!(
+            k.map(|(n, _)| n),
+            ["Images & video", "Music", "Documents", "Other"]
+        );
+        assert_eq!(k[0].1, (8 << 30) + (600 << 20));
+        assert_eq!(k[1].1, 2 << 30);
+        assert_eq!(k.iter().map(|(_, b)| b).sum::<u64>(), used);
+        // files deleted since the count: never past what the drive uses
+        let k = drive_kinds(1 << 30, &t);
+        assert_eq!(k.map(|(_, b)| b), [1 << 30, 0, 0, 0]);
+        assert_eq!(drive_kinds(0, &Tally::default()).map(|(_, b)| b), [0; 4]);
     }
 
     #[test]

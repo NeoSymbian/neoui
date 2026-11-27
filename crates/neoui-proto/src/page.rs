@@ -447,6 +447,18 @@ impl Notification {
 }
 
 impl Query {
+    /// The dialog's title and body as the shell draws them (set2-reset-query): a first question ("Reset settings?")
+    /// followed by more text is the bold title, the rest the body; any other text is all body.
+    #[must_use]
+    pub fn title_body(&self) -> (&str, &str) {
+        match self.text.find("? ") {
+            Some(i) if i < 60 && !self.text[i + 2..].trim().is_empty() => {
+                (&self.text[..=i], self.text[i + 2..].trim_start())
+            }
+            _ => ("", &self.text),
+        }
+    }
+
     pub fn encode(&self) -> Result<Vec<u8>, PageError> {
         if !(1..=BUTTONS_MAX).contains(&self.buttons.len()) {
             return Err(PageError);
@@ -896,5 +908,24 @@ mod tests {
         let mut b = good;
         b[1] = 0;
         assert_eq!(Query::decode(&b), Err(PageError));
+    }
+
+    #[test]
+    fn a_first_question_is_the_title() {
+        let q = |t: &str| Query {
+            text: t.into(),
+            buttons: vec!["OK".into()],
+            destructive: false,
+        };
+        assert_eq!(
+            q("Reset settings? Display goes back. The phone restarts.").title_body(),
+            ("Reset settings?", "Display goes back. The phone restarts.")
+        );
+        assert_eq!(q("Delete 2 files?").title_body(), ("", "Delete 2 files?"));
+        assert_eq!(q("Why? ").title_body(), ("", "Why? "));
+        assert_eq!(
+            q("No question here.").title_body(),
+            ("", "No question here.")
+        );
     }
 }

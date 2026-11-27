@@ -93,6 +93,11 @@ fn page_rows() -> BTreeSet<(&'static str, String)> {
     // Storage's by-kind section is a search target though not a list row; About's slot is a key/value row (D2)
     assert!(page_file("storage.slint").contains("SectionHeader { text: \"C: and E: by kind\"; }"));
     out.insert((Page::Storage.name(), "C: and E: by kind".to_string()));
+    // (D7) Wallpaper's picture sources are tiles, not list rows
+    for tile in ["From Files", "From Photos"] {
+        assert!(page_file("appearance.slint").contains(&format!("name: \"{tile}\";")));
+        out.insert((Page::Wallpaper.name(), tile.to_string()));
+    }
     assert!(page_file("system.slint").contains("key: \"Active slot\";"));
     out.insert((Page::About.name(), "Active slot".to_string()));
     out
@@ -159,6 +164,16 @@ const REPEATERS: &[(ProviderId, &str, &str)] = &[
         ProviderId::Channels,
         "notifications.slint",
         "for c[i] in SetState.channels: VerticalLayout",
+    ),
+    (
+        ProviderId::WifiAps,
+        "wifi.slint",
+        "for net in (SetState.wifi ? SetState.wifi-networks : []): ListRow",
+    ),
+    (
+        ProviderId::SavedNets,
+        "wifi.slint",
+        "for net[i] in SetState.wifi-saved: ListRow",
     ),
 ];
 

@@ -170,6 +170,15 @@ export component AppDetailPage inherits NeoList {
                 if SetState.app-running { SetState.act("app-stop", SetState.app-current.key); }
             }
         }
+        // (SE4/D8) read only, last so the rows above keep their places: what the kernel lets it do
+        if SetState.app-perm-sub != "": SectionHeader { text: "Permissions"; }
+        if SetState.app-perm-sub != "": ListRow {
+            value-bright: true;
+            title: "Capabilities";
+            subtitle: SetState.app-perm-sub;
+            value: SetState.app-perm;
+            divider: false;
+        }
     }
 }
 

@@ -12,6 +12,7 @@
 extern crate alloc;
 
 mod battery;
+mod caps;
 mod clock;
 mod clockwork;
 mod host;
@@ -710,6 +711,14 @@ fn main() -> i32 {
             // (D10) Settings' Edit home; (G3) the thumbnails of apps that went to the back
             if core::mem::take(&mut host.d10.edit_home) {
                 ui.edit_home();
+            }
+            // (D7) a wallpaper picture installed (or read at boot)
+            if let Some(px) = host.wallpaper.pending.take() {
+                let (w, h) = (
+                    neoui_proto::settings_app::wallpaper::W,
+                    neoui_proto::settings_app::wallpaper::H,
+                );
+                ui.set_wallpaper_picture(Some((&px, u32::from(w), u32::from(h))));
             }
             for (key, tw, th, px) in host.d10.thumbs.drain(..) {
                 ui.set_thumb(key, tw, th, &px);

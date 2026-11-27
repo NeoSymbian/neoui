@@ -8,8 +8,8 @@ use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 use neoui_proto::settings_app::row_model::{
-    AppFact, AppId, ChannelFact, Console, DriveFact, Epochs, Facts, Hit, KindsState, LinkFact,
-    NotifyFact, RowSnapshot, Sample, Scalar, WifiField, project_all, search,
+    ApFact, AppFact, AppId, ChannelFact, Console, DriveFact, Epochs, Facts, Hit, KindsState,
+    LinkFact, NotifyFact, RowSnapshot, Sample, SavedFact, Scalar, WifiField, project_all, search,
 };
 use neoui_proto::settings_app::storage::KINDS;
 use neoui_proto::sound_profile::Profile;
@@ -279,6 +279,29 @@ pub fn facts(s: &SetState<'_>, sample: Sample, epochs: Epochs) -> Facts {
             })
             .collect(),
     });
+    // (D1) the networks in range (only while Wi-Fi is on) and the saved ones, each a row of its own
+    if s.get_wifi() {
+        f.aps = s
+            .get_wifi_networks()
+            .iter()
+            .map(|n| ApFact {
+                bssid: mac(n.bssid.as_str()),
+                name: String::from(n.name.as_str()),
+                detail: String::from(n.detail.as_str()),
+            })
+            .collect();
+    }
+    f.saved = s
+        .get_wifi_saved()
+        .iter()
+        .map(|n| SavedFact {
+            // shortcut: the shown name stands for the raw SSID (WIFID's names are its SSIDs as text); two saved
+            // networks of one name are one row until SetState carries the raw bytes
+            ssid: n.name.as_bytes().to_vec(),
+            name: String::from(n.name.as_str()),
+            detail: String::from(n.detail.as_str()),
+        })
+        .collect();
     // D2: only what the kernel answered, and nothing before it was asked
     f.console = match (s.get_console_read(), s.get_console_ok()) {
         (false, _) => Console::Unread,

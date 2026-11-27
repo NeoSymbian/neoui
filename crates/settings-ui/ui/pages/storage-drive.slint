@@ -1,0 +1,126 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// One drive (set2-storage-drive, D3): what it uses and holds by kind from its own last count (Storage's scan), then
+// the drive itself: its file system and size, Open in Files, and Eject for USB (FS6, not yet).
+import { Theme, NeoList, SectionHeader, ListRow, Button } from "@neoui/kit.slint";
+import { Note, Pair } from "../parts.slint";
+import { SetState } from "../state.slint";
+
+export component StorageDrivePage inherits NeoList {
+    // Images & video, Music, Documents, Other (the board's)
+    property <[color]> kind-colours: [#3d8bfd, #e5484d, #e2a92a, #7d838c];
+    VerticalLayout {
+        alignment: start;
+        VerticalLayout {
+            padding-left: Theme.margin + 4 * Theme.dp;
+            padding-right: Theme.margin + 4 * Theme.dp;
+            padding-top: 14 * Theme.dp;
+            padding-bottom: 10 * Theme.dp;
+            spacing: 6 * Theme.dp;
+            HorizontalLayout {
+                spacing: 8 * Theme.dp;
+                alignment: start;
+                Text {
+                    text: SetState.drive-used;
+                    color: Theme.text;
+                    font-size: 30 * Theme.dp;
+                    font-weight: 600;
+                }
+                Text {
+                    text: "used";
+                    color: Theme.text-secondary;
+                    font-size: Theme.font-body;
+                    vertical-alignment: bottom;
+                }
+            }
+            Text {
+                text: SetState.drive-of;
+                color: Theme.text-secondary;
+                font-size: Theme.font-label;
+            }
+            bar := Rectangle {
+                height: 10 * Theme.dp;
+                border-radius: 5 * Theme.dp;
+                background: #2a2e35;
+                clip: true;
+                for k[i] in SetState.drive-kinds: Rectangle {
+                    x: k.start * bar.width;
+                    width: k.share * bar.width;
+                    background: root.kind-colours[i];
+                }
+            }
+        }
+        for k[i] in SetState.drive-kinds: Rectangle {
+            height: 48 * Theme.dp;
+            background: SetState.found == "storage.drive_kind." + i ? Theme.selected : transparent;
+            accessible-role: text;
+            accessible-label: k.name + ", " + k.size;
+            HorizontalLayout {
+                padding-left: Theme.margin + 4 * Theme.dp;
+                padding-right: Theme.margin + 4 * Theme.dp;
+                spacing: 12 * Theme.dp;
+                VerticalLayout {
+                    alignment: center;
+                    Rectangle {
+                        width: 12 * Theme.dp;
+                        height: self.width;
+                        border-radius: 3 * Theme.dp;
+                        background: root.kind-colours[i];
+                    }
+                }
+                Text {
+                    text: k.name;
+                    color: Theme.text;
+                    font-size: Theme.font-body;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+                Text {
+                    text: k.size;
+                    color: Theme.text-secondary;
+                    font-size: Theme.font-value;
+                    vertical-alignment: center;
+                }
+            }
+            if i < SetState.drive-kinds.length - 1: Rectangle {
+                x: Theme.margin + 4 * Theme.dp + 24 * Theme.dp;
+                y: parent.height - self.height;
+                width: parent.width - self.x;
+                height: max(1px, Theme.dp / 2);
+                background: Theme.hairline;
+            }
+        }
+        Note { text: SetState.drive-status; }
+
+        SectionHeader { text: "Drive"; }
+        ListRow {
+            value-bright: true;
+            title: "File system";
+            value: SetState.drive-fs;
+        }
+        ListRow {
+            value-bright: true;
+            title: "Size";
+            value: SetState.drive-size;
+            divider: false;
+        }
+        Pair {
+            Button {
+                text: "Open in Files";
+                tint: #22b46a;
+                has-icon: true;
+                icon: @image-url("@neoui/icons/sys/folder.svg");
+                clicked => { SetState.act("app-open", "files"); }
+            }
+            if SetState.drive-current.letter == "E": Button {
+                text: "Eject for USB";
+                primary: false;
+                enabled: false;
+                has-icon: true;
+                icon: @image-url("@neoui/icons/sys/usb.svg");
+            }
+        }
+        if SetState.drive-current.letter == "E": Note {
+            text: "Eject unmounts E: here so a PC can use it. C: stays mounted, so the system and apps keep running. Not yet (FS6).";
+        }
+    }
+}

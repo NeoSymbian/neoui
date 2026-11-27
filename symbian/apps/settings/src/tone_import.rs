@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //! D6, SE2c-1 (docs neoui-shell/settings.md "SE2c plan"): Your sounds. "Add from Files" opens Files' picker (filter
 //! `wav`); the WAV it answers with (on C: or E:, at most 16 MiB) becomes one ring period (`neoaudio::wav`, 192,000
-//! bytes, 48 kHz mono), read and converted on a worker into a flushed `tones\import.new`; then the shell's reducer
-//! reserves a free id with its name (`ACTION_PROFILE` tag 7, ids 4..=15; a taken one is refused) and only then the file
-//! becomes `C:\private\e0002007\tones\<id>.pcm` (`Fs::replace_file`). Rename is tag 8; Delete is tag 9
+//! bytes, 48 kHz mono), read and converted on a worker into a flushed `tones\import-<ms>.new` of its own; then the
+//! shell's reducer reserves a free id with its name (`ACTION_PROFILE` tag 7, ids 4..=15; a taken one is refused) and
+//! only then the file becomes `C:\private\e0002007\tones\<id>.pcm` (`Fs::rename`: never over a file already
+//! there). Rename is tag 8; Delete is tag 9
 //! (every profile using it goes back to the built-in tone) and only then the file goes. AUDIOD rings the file and
 //! falls back to the built-in tone when it is missing or the wrong size.
 use alloc::boxed::Box;
@@ -60,18 +61,19 @@ pub fn add(app: &App, ui: &SettingsApp) {
     }
 }
 
-/// The worker's answer (handed over once through [`OUTCOME`]): the converted sound waits in [`staged`], with the
+/// The worker's answer (handed over once through [`OUTCOME`]): the import's own staging file ([`staged`]) and the
 /// name the file gives (INAM, else its file name); or why it can't be a sound.
-type Outcome = Result<Option<String>, String>;
+type Outcome = Result<(String, Option<String>), String>;
 
 /// A conversion is running on its worker.
 static RUNNING: AtomicBool = AtomicBool::new(false);
 /// The worker's [`Outcome`], boxed; the UI thread takes it ([`poll`]).
 static OUTCOME: AtomicPtr<Outcome> = AtomicPtr::new(core::ptr::null_mut());
 
-/// The converted sound before it has an id: renamed onto `<id>.pcm` once the reducer reserved that id.
+/// The converted sound before it has an id, one file per import (`import-<ms>.new`), so a late clean-up of one never
+/// takes another's: renamed onto `<id>.pcm` once the reducer reserved that id.
 fn staged() -> String {
-    format!("{}import.new", neoaudio::tones::DIR)
+    format!("{}import-{}.new", neoaudio::tones::DIR, e32::time::millis())
 }
 
 /// The app is shown again: the picked file, if a pick was out (none: cancelled). It is read and converted on a
@@ -99,7 +101,7 @@ pub fn resumed(app: &App, ui: &SettingsApp) {
     }
     // the worker opens the file by its name with a file-server session of its own (Files' handle is this thread's)
     if let Err(e) = e32::thread::spawn(move || {
-        let outcome = Box::new(convert(&path));
+        let outcome = Box::new(convert(&path, staged()));
         let old = OUTCOME.swap(Box::into_raw(outcome), SeqCst);
         if !old.is_null() {
             // SAFETY: a pointer only `Box::into_raw` put there, taken once (swap)
@@ -115,7 +117,7 @@ pub fn resumed(app: &App, ui: &SettingsApp) {
 }
 
 /// The worker: the file read whole (at most `wav::MAX_INPUT`), converted, staged.
-fn convert(path: &str) -> Outcome {
+fn convert(path: &str, staging: String) -> Outcome {
     let fs = Fs::connect().map_err(|e| format!("Couldn't read the file ({e})"))?;
     let read = |e: i32| format!("Couldn't read the file ({e})");
     let file = File::open(&fs, path, mode::READ | mode::SHARE_READERS_ONLY).map_err(read)?;
@@ -143,8 +145,8 @@ fn convert(path: &str) -> Outcome {
     drop(file);
     let sound = wav::convert(&bytes).map_err(|e| String::from(e.reason()))?;
     drop(bytes);
-    stage(&fs, &sound.pcm).map_err(|e| format!("Couldn't save the sound ({e})"))?;
-    Ok(sound.name.or_else(|| stem(path)))
+    stage(&fs, &staging, &sound.pcm).map_err(|e| format!("Couldn't save the sound ({e})"))?;
+    Ok((staging, sound.name.or_else(|| stem(path))))
 }
 
 /// Once a tick: the worker's answer, if it came. The reducer reserves a free id first (it refuses one that is
@@ -156,11 +158,12 @@ pub fn poll(app: &App, ui: &SettingsApp) {
     }
     // SAFETY: a pointer only `Box::into_raw` put there, taken once (swap)
     let outcome = *unsafe { Box::from_raw(p) };
-    let note = match outcome.and_then(|name| install(app, name)) {
+    let staging = outcome.as_ref().ok().map(|(p, _)| p.clone());
+    let note = match outcome.and_then(|(p, name)| install(app, &p, name)) {
         Ok(name) => format!("Added {name}."),
         Err(why) => {
-            if let Ok(fs) = Fs::connect() {
-                let _ = fs.delete(&staged());
+            if let (Some(p), Ok(fs)) = (staging, Fs::connect()) {
+                let _ = fs.delete(&p);
             }
             why
         }
@@ -170,7 +173,7 @@ pub fn poll(app: &App, ui: &SettingsApp) {
     ui.global::<SetState>().set_import_note(note.into());
 }
 
-fn install(app: &App, name: Option<String>) -> Result<String, String> {
+fn install(app: &App, staging: &str, name: Option<String>) -> Result<String, String> {
     // an unreadable catalogue is an error, never an empty one: a taken id must not be written over
     let profiles = crate::store::read_profiles_checked(app)
         .map_err(|e| format!("Couldn't read your sounds ({e})"))?;
@@ -181,11 +184,16 @@ fn install(app: &App, name: Option<String>) -> Result<String, String> {
     action(app, &Command::AddTone(id, name.clone()))
         .map_err(|e| format!("Couldn't add the sound ({e})"))?;
     let path = neoaudio::tones::file(id).ok_or_else(|| String::from("No such sound"))?;
-    // the id is ours now: a file left under it is no sound's (the catalogue didn't have it)
-    let moved = Fs::connect().and_then(|fs| fs.replace_file(&staged(), &path));
+    // the id is ours now, but a file already under it is never written over (a rename fails on it): the id goes
+    // back and the import says so
+    let moved = Fs::connect().and_then(|fs| fs.rename(staging, &path));
     if let Err(e) = moved {
         let _ = action(app, &Command::DeleteTone(id));
-        return Err(format!("Couldn't save the sound ({e})"));
+        return Err(if e == -11 {
+            String::from("A file is already in that sound's place; nothing was replaced") // KErrAlreadyExists
+        } else {
+            format!("Couldn't save the sound ({e})")
+        });
     }
     Ok(name)
 }
@@ -209,8 +217,8 @@ fn action(app: &App, cmd: &Command) -> Result<(), i32> {
     r
 }
 
-/// The converted sound into [`staged`], flushed.
-fn stage(fs: &Fs, pcm: &[u8]) -> Result<(), i32> {
+/// The converted sound into this import's `staging` file, flushed.
+fn stage(fs: &Fs, staging: &str, pcm: &[u8]) -> Result<(), i32> {
     for dir in [
         "C:\\private\\",
         "C:\\private\\e0002007\\",
@@ -221,7 +229,7 @@ fn stage(fs: &Fs, pcm: &[u8]) -> Result<(), i32> {
             Err(e) => return Err(e),
         }
     }
-    let f = File::replace(fs, &staged(), mode::WRITE | mode::SHARE_EXCLUSIVE)?;
+    let f = File::replace(fs, staging, mode::WRITE | mode::SHARE_EXCLUSIVE)?;
     f.write(pcm)?;
     f.flush()
 }

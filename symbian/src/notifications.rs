@@ -58,6 +58,9 @@ pub struct Policies {
     pub pending: Option<Pending>,
 }
 
+/// A damaged catalogue, kept as it was (the last one only) before a fresh one is written.
+const CATALOGUE_DAMAGED: &str = "C:\\private\\e0002001\\channels.bad";
+
 /// The file a save writes first, then puts in [`CATALOGUE_PATH`]'s place.
 const CATALOGUE_STAGING: &str = "C:\\private\\e0002001\\channels.tmp";
 
@@ -75,8 +78,8 @@ impl Policies {
         p
     }
 
-    /// Read the saved catalogue, if it isn't yet. A damaged one is dropped (its apps declare again on their next
-    /// connect); an unreadable one is tried again later.
+    /// Read the saved catalogue, if it isn't yet. A damaged one is kept aside and its apps declare again on their next
+    /// connect; an unreadable one (or a damaged one that can't be kept aside) is tried again later.
     fn load(&mut self) -> bool {
         if self.loaded {
             return true;
@@ -96,10 +99,28 @@ impl Policies {
             Ok(b)
         };
         self.catalogue = match read() {
-            Ok(b) => policy::decode_catalogue(&b).unwrap_or_else(|| {
-                dprintln!("neoui: channels file damaged, apps declare again");
-                Vec::new()
-            }),
+            Ok(b) => match policy::decode_catalogue(&b) {
+                Some(c) => c,
+                // never saved over: the damaged file is kept aside first (`channels.bad`), and until it is, every
+                // write is refused (read again on the next declaration)
+                None => match Fs::connect()
+                    .and_then(|fs| fs.replace_file(CATALOGUE_PATH, CATALOGUE_DAMAGED))
+                {
+                    Ok(()) => {
+                        dprintln!(
+                            "neoui: channels file damaged, kept as channels.bad; apps declare again"
+                        );
+                        Vec::new()
+                    }
+                    Err(e) => {
+                        dprintln!(
+                            "neoui: channels file damaged and can't be kept aside ({}), writes refused",
+                            e
+                        );
+                        return false;
+                    }
+                },
+            },
             Err(err::KERR_NOT_FOUND | err::KERR_PATH_NOT_FOUND) => Vec::new(),
             Err(e) => {
                 dprintln!("neoui: channels file unreadable ({}), trying again", e);

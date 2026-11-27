@@ -16,7 +16,7 @@ use neoui_proto::settings_app::page::Page;
 use neoui_proto::settings_app::wire::{
     self, AppDetail, AppRef, ClearRequest, MeasureRequest, state,
 };
-use neoui_proto::settings_app::{app_detail, asks};
+use neoui_proto::settings_app::{app_detail, asks, permissions};
 use settings_ui::{AppRow, SetState, SettingsApp};
 use slint::{ComponentHandle, Model, ModelRc, SharedString, VecModel};
 
@@ -156,6 +156,7 @@ fn show(ctx: &Ctx, ui: &SettingsApp) {
     }
     let current = s.get_app_current();
     if current.old {
+        s.set_app_perm_sub(SharedString::new());
         return;
     }
     let d = find(&current.key);
@@ -164,6 +165,9 @@ fn show(ctx: &Ctx, ui: &SettingsApp) {
     s.set_app_size_sub(sub.into());
     s.set_app_size(size.into());
     s.set_app_identity(d.map(app_detail::identity).unwrap_or_default().into());
+    let (perm, perm_sub) = d.map(permissions::row).unwrap_or_default();
+    s.set_app_perm(perm.into());
+    s.set_app_perm_sub(perm_sub.into());
     // Clear data: the scope an owner offers (1.20), else the 1.17 clear
     let offered = d.map_or(0, |d| d.clear_scope);
     s.set_app_clear(

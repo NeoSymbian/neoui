@@ -80,12 +80,20 @@ pub fn open() -> Settings {
         keys,
         version,
         dropped,
+        damaged,
         error,
     } = report;
     match (error, version) {
         (Some(e), _) => dprintln!(
             "neoui: settings unreadable ({:?}), using defaults; nothing is saved over the file",
             e
+        ),
+        // a cut file: what loaded runs, and nothing is saved over the records it lost
+        (None, Some(v)) if damaged => dprintln!(
+            "neoui: settings damaged: {} keys loaded (v{}), {} lost; nothing is saved over the file",
+            keys,
+            v,
+            dropped
         ),
         (None, Some(v)) => dprintln!(
             "neoui: settings loaded {} keys (v{}, {} dropped)",

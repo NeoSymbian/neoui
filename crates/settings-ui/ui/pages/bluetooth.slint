@@ -1,0 +1,163 @@
+// SPDX-License-Identifier: GPL-3.0-only
+// Bluetooth's own pages (set2-bt-device, set2-bt-pair), drawn now and fed once the stack exists (D14: B3 pairing, B6
+// audio, B7 calls, B8 input). Every action says "Not yet (D14)" and does nothing; nothing here is reachable until a
+// paired or nearby device is listed, which needs that stack too.
+import { Theme, NeoList, SectionHeader, ListRow, Button, Glyph } from "@neoui/kit.slint";
+import { Note, Pair } from "../parts.slint";
+import { SetState } from "../state.slint";
+
+// set2-bt-device: one paired device: who it is, Disconnect / Forget, what it is used for, its name.
+export component BtDevicePage inherits NeoList {
+    VerticalLayout {
+        alignment: start;
+        VerticalLayout {
+            padding-top: 20 * Theme.dp;
+            padding-bottom: 14 * Theme.dp;
+            spacing: 6 * Theme.dp;
+            HorizontalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 72 * Theme.dp;
+                    height: self.width;
+                    border-radius: self.width / 2;
+                    background: Theme.pill;
+                    Glyph {
+                        source: @image-url("@neoui/icons/sys/headset.svg");
+                        size: 32 * Theme.dp;
+                        colorize: Theme.text;
+                    }
+                }
+            }
+            Text {
+                text: SetState.bt-device.name;
+                color: Theme.text;
+                font-size: 18 * Theme.dp;
+                font-weight: 600;
+                horizontal-alignment: center;
+                overflow: elide;
+            }
+            Text {
+                text: SetState.bt-device.state + " · " + SetState.bt-device.address;
+                color: Theme.text-secondary;
+                font-size: Theme.font-label;
+                horizontal-alignment: center;
+                overflow: elide;
+            }
+        }
+        Pair {
+            Button {
+                text: "Disconnect";
+                primary: false;
+                enabled: false;
+            }
+            Button {
+                text: "Forget";
+                primary: false;
+                enabled: false;
+            }
+        }
+
+        SectionHeader { text: "Use for"; }
+        ListRow {
+            value-bright: true;
+            title: "Audio";
+            subtitle: "Music and media · Not yet (D14)";
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/volume.svg");
+            has-switch: true;
+            switch-on: false;
+        }
+        ListRow {
+            value-bright: true;
+            title: "Calls";
+            subtitle: "Phone calls · Not yet (D14)";
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/call.svg");
+            has-switch: true;
+            switch-on: false;
+        }
+        ListRow {
+            value-bright: true;
+            title: "Input";
+            subtitle: "Not offered";
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/keyboard.svg");
+            icon-tint: Theme.text-dim;
+        }
+        ListRow {
+            value-bright: true;
+            title: "Rename";
+            subtitle: SetState.bt-device.name + " · Not yet (D14)";
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/edit.svg");
+            divider: false;
+        }
+        Note { text: "Not yet (D14): connections, profiles and names come with the Bluetooth stack."; }
+    }
+}
+
+// set2-bt-pair: the pairing question over Bluetooth (numeric comparison: both show the same code), a dialog in the
+// middle of the screen. Pair waits for the stack; Cancel and a tap outside close it.
+export component BtPairDialog inherits Rectangle {
+    callback dismissed();
+    Rectangle {
+        background: Theme.scrim;
+        TouchArea {
+            clicked => { root.dismissed(); }
+        }
+    }
+    Rectangle {
+        x: 24 * Theme.dp;
+        width: parent.width - 48 * Theme.dp;
+        height: box.preferred-height;
+        y: (parent.height - self.height) / 2;
+        border-radius: Theme.radius + 4 * Theme.dp;
+        background: Theme.sheet;
+        border-width: max(1px, Theme.dp / 2);
+        border-color: Theme.card-border;
+        TouchArea { }
+        box := VerticalLayout {
+            padding: 20 * Theme.dp;
+            spacing: 14 * Theme.dp;
+            Text {
+                text: "Pair with " + SetState.bt-device.name + "?";
+                font-size: 18 * Theme.dp;
+                font-weight: 600;
+                color: Theme.text;
+                wrap: word-wrap;
+            }
+            Text {
+                text: "Check that " + SetState.bt-device.name + " shows the same code.";
+                font-size: Theme.font-label;
+                color: Theme.text-secondary;
+                wrap: word-wrap;
+            }
+            Text {
+                text: SetState.bt-device.code;
+                font-size: 34 * Theme.dp;
+                letter-spacing: 3 * Theme.dp;
+                color: Theme.text;
+                horizontal-alignment: center;
+            }
+            Text {
+                text: "Paired devices can reach your calls and audio. Not yet (D14): pairing comes with the Bluetooth stack.";
+                font-size: Theme.font-label;
+                color: Theme.text-secondary;
+                wrap: word-wrap;
+            }
+            HorizontalLayout {
+                alignment: end;
+                spacing: 8 * Theme.dp;
+                Button {
+                    text: "Pair";
+                    enabled: false;
+                }
+                Button {
+                    text: "Cancel";
+                    primary: false;
+                    clicked => { root.dismissed(); }
+                }
+            }
+        }
+    }
+}

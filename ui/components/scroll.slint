@@ -16,6 +16,15 @@ export global Scroll {
     in-out property <length> height;
 }
 
+// (D1) A row that asks to be seen (a ListRow a search hit selected, while an app armed this): its place on screen
+// and height, and a counter the list watches. Only Settings arms it, so other apps' rows never scroll their lists.
+export global Reveal {
+    in-out property <bool> armed;
+    in-out property <length> y;
+    in-out property <length> h;
+    in-out property <int> seq;
+}
+
 // A Flickable that reports its scrolling to `Scroll`, inside a pull-to-refresh handler (the Flickable takes every
 // vertical drag once its content overflows, so the pull is caught around it). The Flickable's content properties are
 // forwarded, so a NeoList is used as one.
@@ -42,6 +51,19 @@ export component NeoList inherits Rectangle {
     // back to the top (Header.top, tap to top)
     public function to-top() {
         flick.content-y = 0;
+    }
+
+    // (D1) scroll the least that shows the row whose top is `top` (in the list's view) and height `h`, 8 dp spare
+    public function show-row(top: length, h: length) {
+        if top < 0 {
+            flick.content-y = min(0, flick.content-y - top + 8 * Theme.dp);
+        } else if top + h > flick.height {
+            flick.content-y = max(min(0, flick.height - flick.content-height), flick.content-y - (top + h - flick.height) - 8 * Theme.dp);
+        }
+    }
+    property <int> reveal-seq: Reveal.armed ? Reveal.seq : 0;
+    changed reveal-seq => {
+        root.show-row(Reveal.y - flick.absolute-position.y, Reveal.h);
     }
 
     swipe := SwipeGestureHandler {

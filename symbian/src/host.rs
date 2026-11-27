@@ -46,6 +46,9 @@ mod settings_info;
 // (D10) Settings' Edit home and Open apps' thumbnails
 #[path = "home.rs"]
 mod home;
+// (D7) Settings' wallpaper pictures
+#[path = "wallpaper.rs"]
+pub mod wallpaper;
 
 /// Apps whose shell screen is a launcher grid until they request FRONT(1).
 // shortcut: a fixed table like APPS; apps declare launcher support when apps are installable.
@@ -299,6 +302,8 @@ pub struct Host {
     pub policies: notifications::Policies,
     /// (D10) the home editor asked for, thumbnails taken ([`home`])
     pub d10: home::D10,
+    /// (D7) the installed wallpaper picture on its way to home ([`wallpaper`])
+    pub wallpaper: wallpaper::Wallpaper,
 }
 
 impl Host {
@@ -351,6 +356,7 @@ impl Host {
             clip_unseen: false,
             policies: notifications::Policies::boot(),
             d10: home::D10::default(),
+            wallpaper: wallpaper::Wallpaper::boot(),
         }
     }
 
@@ -378,7 +384,11 @@ impl Host {
         };
         app.session = Some(id);
         app.minor = minor;
+        let key = app.key;
         self.unbound.remove(i);
+        if let Ok(pid) = pid {
+            self.saw_caps(key, pid); // (D8) what it may do, for Settings → Apps
+        }
         true
     }
 
@@ -1753,6 +1763,10 @@ impl Service for Host {
                     proto::ACTION_CLEAR => self.clear_action(&m),
                     proto::ACTION_MEASURE_APP => self.measure_action(&m),
                     proto::ACTION_RESET => self.reset_action(&m),
+                    proto::ACTION_INSTALL_WALLPAPER => {
+                        let key = app.key;
+                        self.install_wallpaper(key, &m)
+                    }
                     // (D10) the home editor
                     proto::ACTION_EDIT_HOME => {
                         let key = app.key;

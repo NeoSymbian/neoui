@@ -5,7 +5,7 @@ import { Theme, NeoList, SectionHeader, ListRow, Button, Glyph } from "@neoui/ki
 import { SetState, DriveRow, PartRow } from "../state.slint";
 
 // A drive (set2-storage): its tile by letter, the title with the used size at the right, a bar when the drive has a
-// size, then what lives there. No chevron: a drive's own page waits for FS6.
+// size, then what lives there. C: and E: open their own page (D3, set2-storage-drive); no chevron, as the board.
 component DriveItem inherits Rectangle {
     in property <DriveRow> d;
     // D3: the drive's Apps, Files and Other (C:'s, once counted) in the by-kind colours; empty: one used fill
@@ -20,13 +20,20 @@ component DriveItem inherits Rectangle {
     property <bool> is-d: letter.starts-with("D:");
     property <bool> is-z: letter.starts-with("Z:");
     property <color> tint: is-e ? #e2a92a : is-c ? #2f80ed : is-d ? #1aa37a : #5b616b;
-    accessible-role: text;
+    // (D3) C: and E: (the counted drives) open their own page
+    property <bool> opens: is-c || is-e;
+    accessible-role: opens ? button : text;
+    accessible-action-default => { if opens { SetState.act("storage-drive", d.letter); } }
     // the bar's parts by name and size too (D3: C:'s Apps, Files, Other), not by colour only
     accessible-label: d.title + ", " + d.used + (d.note == "" ? "" : ", " + d.note)
         + (parts.length == 3 ? ", " + parts[0].name + " " + parts[0].size + ", " + parts[1].name + " " + parts[1].size
             + ", " + parts[2].name + " " + parts[2].size : "");
     height: 76 * Theme.dp;
-    background: found ? Theme.selected : transparent;
+    background: touch.pressed ? Theme.pressed : found ? Theme.selected : transparent;
+    touch := TouchArea {
+        enabled: root.opens;
+        clicked => { SetState.act("storage-drive", d.letter); }
+    }
     HorizontalLayout {
         padding-left: Theme.margin + 4 * Theme.dp;
         padding-right: Theme.margin + 4 * Theme.dp;

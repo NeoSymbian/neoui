@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // (D7) Display's own pages: Wallpaper (set2-wallpaper: the colours; a tap applies one to home at once) and Font size
-// (set2-fontsize: a preview at the chosen size and the four sizes). Pictures from Files wait for the shell's
-// wallpaper install (protocol 1.20+), so they aren't offered yet.
-import { Theme, NeoList, SectionHeader } from "@neoui/kit.slint";
+// (set2-fontsize: a preview at the chosen size and the four sizes). Pictures: one from Files, fitted by the app and
+// installed by the shell (SETTINGS_ACTION 8); Photos doesn't exist yet.
+import { Theme, NeoList, SectionHeader, Glyph } from "@neoui/kit.slint";
 import { Wallpapers } from "@neoui/components/wallpaper.slint";
 import { Note } from "../parts.slint";
 import { SetState } from "../state.slint";
@@ -71,6 +71,64 @@ component Swatch inherits Rectangle {
     }
 }
 
+// (D7) a source of pictures: a tile the swatches' size with its glyph and a +, its name under it; `on` rings it (the
+// installed picture came from it), `ready` false dims it (its app doesn't exist yet)
+component PictureTile inherits Rectangle {
+    in property <string> name;
+    in property <image> glyph;
+    in property <bool> on;
+    in property <bool> ready: true;
+    in property <bool> found;
+    callback clicked;
+    width: 76 * Theme.dp;
+    height: 140 * Theme.dp;
+    accessible-role: button;
+    accessible-label: root.ready ? root.name : root.name + ", not yet";
+    accessible-action-default => { root.clicked(); }
+    t := TouchArea {
+        enabled: root.ready;
+        clicked => { root.clicked(); }
+    }
+    Rectangle {
+        y: 0;
+        height: 118 * Theme.dp;
+        border-radius: 10 * Theme.dp;
+        background: t.pressed ? Theme.pressed : root.found ? Theme.selected : Theme.field;
+        border-width: root.on ? 2 * Theme.dp : 1px;
+        border-color: root.on ? Theme.accent : Theme.hairline;
+        opacity: root.ready ? 1 : 0.45;
+        VerticalLayout {
+            alignment: center;
+            spacing: 10 * Theme.dp;
+            HorizontalLayout {
+                alignment: center;
+                Glyph {
+                    source: root.glyph;
+                    size: 22 * Theme.dp;
+                    colorize: Theme.text;
+                }
+            }
+            HorizontalLayout {
+                alignment: center;
+                Glyph {
+                    source: @image-url("@neoui/icons/sys/add.svg");
+                    size: 18 * Theme.dp;
+                    colorize: Theme.accent;
+                }
+            }
+        }
+    }
+    Text {
+        y: 124 * Theme.dp;
+        width: root.width;
+        text: root.name;
+        color: Theme.text-secondary;
+        font-size: 12.5 * Theme.dp;
+        horizontal-alignment: center;
+        overflow: elide;
+    }
+}
+
 export component WallpaperPage inherits NeoList {
     VerticalLayout {
         alignment: start;
@@ -98,7 +156,30 @@ export component WallpaperPage inherits NeoList {
             }
         }
 
-        Note { text: "A tap applies it to home at once."; }
+        // (D7) a picture: Files' picker, then the shell installs it; Photos is still being designed (O6)
+        SectionHeader { text: "Pictures"; }
+        Rectangle {
+            height: 146 * Theme.dp;
+            PictureTile {
+                x: 16 * Theme.dp;
+                y: 4 * Theme.dp;
+                name: "From Files";
+                glyph: @image-url("@neoui/icons/sys/folder.svg");
+                on: SetState.wallpaper == "picture";
+                found: SetState.found == "display.wallpaper_files";
+                clicked => { SetState.act("wallpaper-pick", ""); }
+            }
+            PictureTile {
+                x: 100 * Theme.dp;
+                y: 4 * Theme.dp;
+                name: "From Photos";
+                glyph: @image-url("@neoui/icons/sys/image.svg");
+                ready: false;
+                found: SetState.found == "display.wallpaper_photos";
+            }
+        }
+        if SetState.wallpaper-note != "": Note { text: SetState.wallpaper-note; }
+        Note { text: "A tap applies it to home at once. Pictures are JPEG, PNG, GIF, WebP or BMP from C: or E:, scaled to fill the screen. From Photos: not yet."; }
     }
 }
 

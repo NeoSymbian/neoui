@@ -454,6 +454,8 @@ export component OptionsMenu inherits Rectangle {
 // destroys something. A tap outside does nothing; Back answers the last button (the shell's nav-back).
 export component QueryDialog inherits Rectangle {
     in property <bool> open;
+    // a first question drawn bold above the text ("Reset settings?", `page::Query::title_body`); "" = none
+    in property <string> title;
     in property <string> text;
     in property <[string]> buttons;
     in property <bool> destructive;
@@ -476,11 +478,21 @@ export component QueryDialog inherits Rectangle {
         box := VerticalLayout {
             padding: 20 * Theme.dp;
             spacing: 18 * Theme.dp;
-            Text {
-                text: root.text;
-                color: Theme.text;
-                font-size: Theme.font-body;
-                wrap: word-wrap;
+            VerticalLayout {
+                spacing: 10 * Theme.dp;
+                if root.title != "": Text {
+                    text: root.title;
+                    color: Theme.text;
+                    font-size: 18 * Theme.dp;
+                    font-weight: 600;
+                    wrap: word-wrap;
+                }
+                Text {
+                    text: root.text;
+                    color: root.title != "" ? Theme.text-secondary : Theme.text;
+                    font-size: Theme.font-body;
+                    wrap: word-wrap;
+                }
             }
 
             HorizontalLayout {

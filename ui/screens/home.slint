@@ -13,7 +13,7 @@ import { Avatar } from "../components/lists.slint";
 import { Glyph } from "../components/frame.slint";
 import { Badge } from "../components/footer.slint";
 import { Menu } from "../components/menu.slint";
-import { Wallpapers } from "../components/wallpaper.slint";
+import { Wallpapers, WallpaperPicture } from "../components/wallpaper.slint";
 import { Apps } from "menu.slint";
 import { HomeModel, HomeCell, EditBar, AddSheet } from "home-edit.slint";
 import { SwitcherScreen } from "switcher.slint";
@@ -291,6 +291,13 @@ export component HomeScreen inherits Rectangle {
     // display.wallpaper (D7): a colour from Settings → Display → Wallpaper
     background: Wallpapers.fill(SystemSettings.wallpaper);
     clip: true;
+    // (D7) the installed picture, under everything, covering the screen
+    if WallpaperPicture.shown && SystemSettings.wallpaper == "picture": Image {
+        width: parent.width;
+        height: parent.height;
+        source: WallpaperPicture.image;
+        image-fit: cover;
+    }
 
     // Pages, side by side. A sideways swipe moves between them; taps still reach the widgets and cards on the
     // pages (a TouchArea over the strip used to take every touch). On the device the UI server slides the pages
