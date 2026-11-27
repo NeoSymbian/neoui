@@ -171,6 +171,14 @@ pub const ROWS: &[Row] = &[
         "Storage",
         &["space", "memory", "disk", "free"],
     ),
+    // D15: the lock screen and its PIN have no page yet (set2-lock); the root says so
+    action(
+        "root.lock",
+        Root,
+        Root,
+        "Lock screen & security",
+        &["security", "pin", "lock"],
+    ),
     row(
         "root.datetime",
         Root,
@@ -218,6 +226,14 @@ pub const ROWS: &[Row] = &[
         ProviderId::WifiFields,
         &["link", "network details"],
     ),
+    // D12: a hidden network needs a directed scan the driver doesn't do yet (set2-wifi-hidden)
+    action(
+        "wifi.hidden",
+        Wifi,
+        Wifi,
+        "Add hidden network",
+        &["hidden ssid", "hidden network", "add network"],
+    ),
     // Connectivity
     row("conn.wifi", Connectivity, Connectivity, "Wi-Fi", &[]),
     row("conn.bt", Connectivity, Connectivity, "Bluetooth", &[]),
@@ -238,8 +254,52 @@ pub const ROWS: &[Row] = &[
         &["operator", "carrier"],
     ),
     row("mobile.data", Mobile, Mobile, "Mobile data", &["internet"]),
+    // D13: they need the data bearer (C10)
+    action(
+        "mobile.mode",
+        Mobile,
+        Mobile,
+        "Network mode",
+        &["lte", "3g", "2g", "4g", "preferred network"],
+    ),
+    action(
+        "mobile.roaming",
+        Mobile,
+        Mobile,
+        "Roaming",
+        &["data roaming", "abroad"],
+    ),
+    action(
+        "mobile.apn",
+        Mobile,
+        Mobile,
+        "Access point names",
+        &["apn", "internet settings"],
+    ),
+    action(
+        "mobile.usage",
+        Mobile,
+        Mobile,
+        "Data usage",
+        &["this month", "traffic", "megabytes"],
+    ),
     // Bluetooth
     row("bt.switch", Bluetooth, Bluetooth, "Bluetooth", &[]),
+    // D14: no driver yet
+    action(
+        "bt.visible",
+        Bluetooth,
+        Bluetooth,
+        "Visible to nearby devices",
+        &["discoverable", "visibility"],
+    ),
+    action(
+        "bt.paired",
+        Bluetooth,
+        Bluetooth,
+        "Paired devices",
+        &["pair", "headphones", "devices"],
+    ),
     // Display
     row(
         "display.dark",
@@ -577,6 +637,14 @@ pub const ROWS: &[Row] = &[
         "Active slot",
         &["slot", "a/b", "boot slot"],
     ),
+    // D18: the slot and that no update service is configured (it never checks)
+    row(
+        "about.updates",
+        About,
+        About,
+        "Check for updates",
+        &["update", "software update", "upgrade", "ota"],
+    ),
     // Reset (SE4a)
     action(
         "reset.network",
@@ -591,6 +659,14 @@ pub const ROWS: &[Row] = &[
         Reset,
         "Reset settings",
         &["defaults", "factory"],
+    ),
+    // D19: erasing C: needs the recovery step
+    action(
+        "reset.erase",
+        Reset,
+        Reset,
+        "Erase C:",
+        &["factory reset", "wipe", "erase"],
     ),
     // D7: Display's text size and wallpaper (their pages), Language & keyboard's display language
     row(
@@ -651,6 +727,14 @@ pub const ROWS: &[Row] = &[
         Panel,
         "Pop-up time",
         &["banner", "heads-up", "seconds"],
+    ),
+    // D15: no lock screen yet
+    action(
+        "notify.lock",
+        Notifications,
+        Notifications,
+        "Show on lock screen",
+        &["lock screen", "hide content", "private"],
     ),
     row(
         "notify.dnd",
@@ -755,7 +839,7 @@ pub const ROWS: &[Row] = &[
 
 /// The root list's rows, top to bottom (set2-root-list, root.slint's `RootPage`): row `i` shows
 /// `SetState.summaries[i]`, the projection of `ROOT_LIST[i]` (tests/rows.rs checks the page against this).
-pub const ROOT_LIST: [&str; 16] = [
+pub const ROOT_LIST: [&str; 17] = [
     "root.wifi",
     "root.mobile",
     "root.bt",
@@ -766,6 +850,7 @@ pub const ROOT_LIST: [&str; 16] = [
     "root.notifications",
     "root.battery",
     "root.storage",
+    "root.lock",
     "root.datetime",
     "root.keyboard",
     "root.privacy",

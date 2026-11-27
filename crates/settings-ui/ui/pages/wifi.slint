@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 // Wi-Fi (set2-wifi, set2-wifi-off, set2-wifi-join, set2-wifi-details, set2-wifi-saved): the switch, the current
 // network, the networks WIFID found, the join sheet, the current network's details and the networks WIFID remembers.
-// Add hidden network waits for the kernel (SE1c-2).
+// Add hidden network waits for the kernel's directed scan (SE1c-2, D12): the row says "Not yet (D12)".
 import { Theme, NeoList, SectionHeader, ListRow, Sheet, TextField, Button } from "@neoui/kit.slint";
 import { Note } from "../parts.slint";
 import { SetState } from "../state.slint";
@@ -98,6 +98,15 @@ export component WifiPage inherits NeoList {
         }
         if SetState.wifi && SetState.wifi-hidden > 0: Note {
             text: SetState.wifi-hidden == 1 ? "1 hidden network nearby" : SetState.wifi-hidden + " hidden networks nearby";
+        }
+        // D12: joining one needs a directed scan the driver doesn't do yet
+        if SetState.wifi: ListRow {
+            value-bright: true;
+            title: "Add hidden network";
+            checked: SetState.found == "wifi.hidden";
+            subtitle: "Not yet (D12)";
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/add.svg");
         }
         if !SetState.wifi: HorizontalLayout {
             padding-left: Theme.margin + 4 * Theme.dp;

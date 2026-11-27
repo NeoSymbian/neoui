@@ -3,7 +3,8 @@
 // banner's time), Notifications (set2-notifications: Do not disturb and every app with its line) and one app's
 // notifications (set2-notify-app with nt-settings' channels: Allow, Banners, Sound, Badge, the channels and their
 // importance). Every value is the shell's policy (INFO 7) or the store's notify.* keys. Tiles, the tap on the status
-// bar, the media player, the live island, the lock screen and the history come with TP3/TP6–TP8 and stay out.
+// bar, the media player, the live island, the lock screen and the history come with TP3/TP6–TP8 and stay out;
+// Notifications' "Show on lock screen" says "Not yet (D15)".
 import { Theme, NeoList, SectionHeader, ListRow } from "@neoui/kit.slint";
 import { Note } from "../parts.slint";
 import { SetState } from "../state.slint";
@@ -70,6 +71,16 @@ export component NotificationsPage inherits NeoList {
             has-switch: true;
             switch-on <=> SetState.dnd;
             switch-toggled(v) => { SetState.act("notify-dnd", v ? "1" : "0"); }
+        }
+
+        // D15: there is no lock screen yet
+        ListRow {
+            value-bright: true;
+            title: "Show on lock screen";
+            checked: SetState.found == "notify.lock";
+            subtitle: "Not yet (D15)";
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/lock.svg");
             divider: false;
         }
 

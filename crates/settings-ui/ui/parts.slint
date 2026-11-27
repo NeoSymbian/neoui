@@ -28,6 +28,8 @@ export component SettingRow inherits Rectangle {
     in property <bool> has-switch;
     in-out property <bool> switch-on;
     in property <bool> divider: true;
+    // false: a row that opens nothing yet (its value says why)
+    in property <bool> chevron: true;
     callback clicked;
     callback switch-toggled(bool);
     property <bool> value-under: root.has-switch && root.value != "";
@@ -78,7 +80,7 @@ export component SettingRow inherits Rectangle {
             vertical-alignment: center;
         }
 
-        if !root.has-switch: VerticalLayout {
+        if !root.has-switch && root.chevron: VerticalLayout {
             alignment: center;
             Image {
                 width: 18 * Theme.dp;

@@ -172,8 +172,8 @@ export component AppDetailPage inherits NeoList {
     }
 }
 
-// Reset (SE4a, set2-reset): each asks first, naming what goes and what stays; the phone restarts after. Erase C:
-// waits for SE7 (D19).
+// Reset (SE4a, set2-reset): each asks first, naming what goes and what stays; the phone restarts after. Erase C: and
+// the network reset's Bluetooth and APN parts wait for SE7 (D19): the row says so and does nothing.
 export component ResetPage inherits NeoList {
     VerticalLayout {
         alignment: start;
@@ -185,7 +185,7 @@ export component ResetPage inherits NeoList {
             value-bright: true;
             title: "Reset network settings";
             checked: SetState.found == "reset.network";
-            subtitle: "Forgets every saved Wi-Fi network";
+            subtitle: "Wi-Fi networks · BT, APN not yet (D19)";
             has-icon: true;
             icon: @image-url("@neoui/icons/sys/wifi.svg");
             chevron: true;
@@ -201,6 +201,17 @@ export component ResetPage inherits NeoList {
             chevron: true;
             divider: false;
             clicked => { SetState.act("reset", "settings"); }
+        }
+
+        SectionHeader { text: "Erase"; }
+        ListRow {
+            value-bright: true;
+            title: "Erase C:";
+            checked: SetState.found == "reset.erase";
+            subtitle: "Not yet (D19) · needs the recovery step";
+            has-icon: true;
+            icon: @image-url("@neoui/icons/sys/phone_storage.svg");
+            divider: false;
         }
     }
 }
@@ -516,6 +527,13 @@ export component AboutPage inherits NeoList {
             subtitle: "Apache-2.0 · EPL · GPL-3.0 (Slint) · fonts";
             chevron: true;
             clicked => { SetState.act("open", "16"); }
+        }
+        // D18: no update feed or signed release metadata exists, so it never checks; the slot as D2 read it
+        ListRow {
+            value-bright: true;
+            title: "Check for updates";
+            checked: SetState.found == "about.updates";
+            subtitle: (SetState.slot != "" ? "Slot " + SetState.slot : "Slot unavailable") + " · Update service unavailable";
         }
         ListRow {
             value-bright: true;

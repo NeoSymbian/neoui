@@ -103,9 +103,18 @@ export component RootPage inherits NeoList {
         }
 
         SectionHeader { text: "Personal"; }
+        // D15: no lock screen or PIN yet; the row says so and opens nothing
+        SettingRow {
+            title: "Lock screen & security";
+            value: SetState.summaries[10];
+            icon: @image-url("@neoui/icons/sys/lock.svg");
+            tint: #2bb0a0;
+            chevron: false;
+        }
+
         SettingRow {
             title: "Date & time";
-            value: SetState.summaries[10];
+            value: SetState.summaries[11];
             icon: @image-url("@neoui/icons/sys/stopwatch.svg");
             tint: #3d8bfd;
             clicked => { SetState.act("open", "9"); }
@@ -113,7 +122,7 @@ export component RootPage inherits NeoList {
 
         SettingRow {
             title: "Language & keyboard";
-            value: SetState.summaries[11];
+            value: SetState.summaries[12];
             icon: @image-url("@neoui/icons/sys/language.svg");
             tint: #1fa9c4;
             clicked => { SetState.act("open", "10"); }
@@ -129,7 +138,7 @@ export component RootPage inherits NeoList {
         SectionHeader { text: "Apps"; }
         SettingRow {
             title: "Apps";
-            value: SetState.summaries[13];
+            value: SetState.summaries[14];
             icon: @image-url("@neoui/icons/sys/apps.svg");
             tint: #8656e8;
             clicked => { SetState.act("open", "13"); }
@@ -138,7 +147,7 @@ export component RootPage inherits NeoList {
         SectionHeader { text: "System"; }
         SettingRow {
             title: "Developer options";
-            value: SetState.summaries[14];
+            value: SetState.summaries[15];
             icon: @image-url("@neoui/icons/sys/usb.svg");
             tint: #5b6472;
             clicked => { SetState.act("open", "11"); }
@@ -223,10 +232,10 @@ export component RootGridPage inherits NeoList {
              { l: "Battery", i: @image-url("@neoui/icons/sys/battery_saver.svg"), c: #14a37f, p: 8, s: 8 }],
             [{ l: "Storage", i: @image-url("@neoui/icons/sys/phone_storage.svg"), c: #8656e8, p: 20, s: 9 },
              { l: "Privacy", i: @image-url("@neoui/icons/sys/privacy.svg"), c: #5b6472, p: 15, s: -1 },
-             { l: "Time", i: @image-url("@neoui/icons/sys/stopwatch.svg"), c: #3d8bfd, p: 9, s: 10 }],
-            [{ l: "Language", i: @image-url("@neoui/icons/sys/language.svg"), c: #1fa9c4, p: 10, s: 11 },
-             { l: "Apps", i: @image-url("@neoui/icons/sys/apps.svg"), c: #8656e8, p: 13, s: 13 },
-             { l: "Developer", i: @image-url("@neoui/icons/sys/usb.svg"), c: #5b6472, p: 11, s: 14 }],
+             { l: "Time", i: @image-url("@neoui/icons/sys/stopwatch.svg"), c: #3d8bfd, p: 9, s: 11 }],
+            [{ l: "Language", i: @image-url("@neoui/icons/sys/language.svg"), c: #1fa9c4, p: 10, s: 12 },
+             { l: "Apps", i: @image-url("@neoui/icons/sys/apps.svg"), c: #8656e8, p: 13, s: 14 },
+             { l: "Developer", i: @image-url("@neoui/icons/sys/usb.svg"), c: #5b6472, p: 11, s: 15 }],
             [{ l: "About", i: @image-url("@neoui/icons/sys/info.svg"), c: #5b6472, p: 12, s: -1 }, { l: "", i: @image-url("@neoui/icons/sys/info.svg"), c: #5b6472, p: 0, s: -1 }, { l: "", i: @image-url("@neoui/icons/sys/info.svg"), c: #5b6472, p: 0, s: -1 }],
         ]: HorizontalLayout {
             spacing: 4 * Theme.dp;

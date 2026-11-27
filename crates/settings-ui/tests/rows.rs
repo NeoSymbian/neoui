@@ -285,6 +285,7 @@ fn facts() -> Facts {
         Scalar::Text("8 of 8 apps allowed".into()),
     );
     f.scalars.insert("about.slot", Scalar::Text("a".into()));
+    f.scalars.insert("radio.wifi", Scalar::On(true));
     f.scalars
         .insert("storage.free", Scalar::Text("C: 5.9 GB free".into()));
     f.scalars.insert(
@@ -475,6 +476,121 @@ fn the_manifest_resolves_and_its_gates_hold() {
             "{board} {text} without its producer: {offered:?}"
         );
     }
+}
+
+/// The boards' rows whose stage hasn't landed (g6-big-specs D12–D19): (board, the row's text, row id, the page its hit
+/// opens, why). Each is drawn, does nothing, and search finds it disabled with the reason.
+const NOT_YET: &[(&str, &str, &str, Page, &str)] = &[
+    (
+        "set2-wifi",
+        "Add hidden network",
+        "wifi.hidden",
+        Page::Wifi,
+        "Not yet (D12)",
+    ),
+    (
+        "set2-mobile",
+        "Network mode",
+        "mobile.mode",
+        Page::Mobile,
+        "Not yet (D13)",
+    ),
+    (
+        "set2-mobile",
+        "Roaming",
+        "mobile.roaming",
+        Page::Mobile,
+        "Not yet (D13)",
+    ),
+    (
+        "set2-mobile",
+        "Access point names",
+        "mobile.apn",
+        Page::Mobile,
+        "Not yet (D13)",
+    ),
+    (
+        "set2-mobile",
+        "Data usage",
+        "mobile.usage",
+        Page::Mobile,
+        "Not yet (D13)",
+    ),
+    (
+        "set2-bluetooth",
+        "Visible to nearby devices",
+        "bt.visible",
+        Page::Bluetooth,
+        "Not yet (D14)",
+    ),
+    (
+        "set2-bluetooth",
+        "Paired devices",
+        "bt.paired",
+        Page::Bluetooth,
+        "Not yet (D14)",
+    ),
+    (
+        "set2-root-list",
+        "Lock screen & security",
+        "root.lock",
+        Page::Root,
+        "Not yet (D15)",
+    ),
+    (
+        "set2-notifications",
+        "Show on lock screen",
+        "notify.lock",
+        Page::Notifications,
+        "Not yet (D15)",
+    ),
+    (
+        "set2-storage",
+        "Share E: over USB",
+        "storage.usb",
+        Page::Storage,
+        "Not yet (FS6)",
+    ),
+    (
+        "set2-reset",
+        "Erase C:",
+        "reset.erase",
+        Page::Reset,
+        "Not yet (D19)",
+    ),
+];
+
+#[test]
+fn rows_not_yet_are_found_disabled() {
+    let snap = project_all(&facts());
+    for (board, text, id, page, why) in NOT_YET {
+        let hit = search(&snap, text)
+            .into_iter()
+            .find(|h| h.key.id.0 == *id)
+            .unwrap_or_else(|| panic!("{board}: {text} not found"));
+        let r = &snap.rows[hit.row];
+        assert_eq!(r.title, *text, "{board}");
+        assert_eq!(r.destination.page, *page, "{board} {text}");
+        assert_eq!(
+            r.availability,
+            Availability::Disabled(why),
+            "{board} {text}"
+        );
+        assert_eq!(r.value_text, *why, "{board} {text}");
+    }
+    // D18: About's "Check for updates" is the slot as read and no update service, whatever the slot
+    let updates = |f: &Facts| {
+        let snap = project_all(f);
+        let hit = search(&snap, "Check for updates")
+            .into_iter()
+            .find(|h| h.key.id.0 == "about.updates")
+            .expect("set2-about: Check for updates");
+        snap.rows[hit.row].value_text.clone()
+    };
+    assert_eq!(updates(&facts()), "Slot a · Update service unavailable");
+    let mut f = facts();
+    f.scalars.remove("about.slot");
+    assert_eq!(updates(&f), "Slot unavailable · Update service unavailable");
 }
 
 #[test]

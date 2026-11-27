@@ -1073,7 +1073,7 @@ fn every_page() {
     page(&sh, 28, "Notifications");
     sh.shoot("set2-notifications");
     sh.take_acts();
-    sh.tap(100.0, 260.0); // Messages, the second app
+    sh.tap(100.0, 332.0); // Messages, the second app (under Show on lock screen)
     assert_eq!(sh.take_acts(), acts(&[("notify-app", "messages")]));
     s.set_notify_current(s.get_notify_apps().row_data(1).unwrap());
     s.set_notify_sound_ours(false);

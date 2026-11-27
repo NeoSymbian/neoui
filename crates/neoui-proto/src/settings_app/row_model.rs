@@ -527,6 +527,9 @@ fn known(t: Option<&str>) -> Reading {
     }
 }
 
+/// (D18) What About's "Check for updates" says: no update feed or signed release metadata exists yet.
+pub const NO_UPDATE_SERVICE: &str = "Update service unavailable";
+
 struct Builtin;
 impl Provider for Builtin {
     fn read(&self, f: &Facts, key: &RowKey) -> Reading {
@@ -597,6 +600,11 @@ impl Provider for Builtin {
                 t if t.ends_with(" (partial)") => Reading::Partial(String::from(t)),
                 t => Reading::Value(String::from(t)),
             },
+            // D18: there is no update feed to check, so the row never pretends to; the slot as D2 read it
+            "about.updates" => Reading::Value(match f.text("about.slot") {
+                Some(slot) if !slot.is_empty() => format!("Slot {slot} · {NO_UPDATE_SERVICE}"),
+                _ => format!("Slot unavailable · {NO_UPDATE_SERVICE}"),
+            }),
             _ => match f.scalars.get(id) {
                 Some(Scalar::On(b)) => on_off(*b),
                 Some(Scalar::Text(t) | Scalar::Choice(_, t)) => known(Some(t)),
@@ -621,9 +629,19 @@ impl Provider for Action {
         Reading::NoValue
     }
 
-    fn availability(&self, _f: &Facts, key: &RowKey) -> Availability {
+    fn availability(&self, f: &Facts, key: &RowKey) -> Availability {
+        // drawn but not usable until their stage lands (g6-big-specs)
         match key.id.0 {
             "storage.usb" => Availability::Disabled("Not yet (FS6)"),
+            // drawn only while Wi-Fi is on (set2-wifi-off has no such row)
+            "wifi.hidden" if f.on("radio.wifi") != Some(true) => Availability::Hidden,
+            "wifi.hidden" => Availability::Disabled("Not yet (D12)"),
+            "mobile.mode" | "mobile.roaming" | "mobile.apn" | "mobile.usage" => {
+                Availability::Disabled("Not yet (D13)")
+            }
+            "bt.visible" | "bt.paired" => Availability::Disabled("Not yet (D14)"),
+            "root.lock" | "notify.lock" => Availability::Disabled("Not yet (D15)"),
+            "reset.erase" => Availability::Disabled("Not yet (D19)"),
             _ => Availability::Readable,
         }
     }
@@ -1468,6 +1486,33 @@ mod tests {
         // a disabled row says why
         let usb = snap.get(&RowKey::of("storage.usb")).unwrap();
         assert_eq!(usb.availability, Availability::Disabled("Not yet (FS6)"));
+        // a stage that hasn't landed is drawn disabled and found with its reason; Add hidden network only with Wi-Fi on
+        let lock = snap.get(&RowKey::of("root.lock")).unwrap();
+        assert_eq!(lock.value_text, "Not yet (D15)");
+        let hidden = |f: &Facts| {
+            project_all(f)
+                .get(&RowKey::of("wifi.hidden"))
+                .unwrap()
+                .availability
+        };
+        let mut on = facts();
+        assert_eq!(hidden(&on), Availability::Disabled("Not yet (D12)"));
+        on.scalars.insert("radio.wifi", Scalar::On(false));
+        assert_eq!(hidden(&on), Availability::Hidden);
+        // D18: the slot as read, never a check
+        let updates = |f: &Facts| {
+            project_all(f)
+                .get(&RowKey::of("about.updates"))
+                .unwrap()
+                .value_text
+                .clone()
+        };
+        assert_eq!(
+            updates(&facts()),
+            "Slot unavailable · Update service unavailable"
+        );
+        on.scalars.insert("about.slot", Scalar::Text("b".into()));
+        assert_eq!(updates(&on), "Slot b · Update service unavailable");
         // a credential or a typed draft is never a fact, so never found: the search covers the catalogue only
         assert!(search(&snap, "password").is_empty());
     }
@@ -1630,14 +1675,20 @@ mod tests {
     fn wifi_fields_follow_the_link() {
         let mut f = facts();
         let snap = project_all(&f);
-        let hits = search(&snap, "access point");
+        let field = |snap: &RowSnapshot| {
+            search(snap, "access point")
+                .into_iter()
+                .filter(|h| h.key.id == RowId("wifi.field"))
+                .collect::<Vec<_>>()
+        };
+        let hits = field(&snap); // Mobile's "Access point names" (D13) matches too
         assert_eq!(hits.len(), 1);
         let d = resolve_hit(0, &hits, &snap).unwrap();
         assert_eq!((d.page, d.sheet), (Page::Wifi, Some(Sheet::WifiDetails)));
         // a disconnect: no fields, and the old token is gone even if the same BSSID comes back
         f.link = None;
         f.epochs.wifi += 1;
-        assert!(search(&project_all(&f), "access point").is_empty());
+        assert!(field(&project_all(&f)).is_empty());
         f.link = facts().link;
         assert_eq!(resolve_hit(0, &hits, &project_all(&f)), Err(Gone));
     }
