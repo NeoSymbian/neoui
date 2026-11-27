@@ -78,9 +78,9 @@ pub fn ingress(
 pub const ACTION_REQUEST_MAX: usize = wire::WallpaperRequest::LEN;
 
 /// The answer to `SETTINGS_ACTION` `kind` when it is one of 1.22's not built yet (8 `INSTALL_WALLPAPER`, 14
-/// `LOCK_DIALOG`; 12 `EDIT_TILES` is built with TP7, the shell's `edit_tiles_action`), else `None`. `read(max)` reads the request (slot 1, `KErrArgument` past `max`), only for
-/// Settings. `KErrPermissionDenied` for anyone else, `KErrArgument` for a malformed request, else
-/// `KErrNotSupported`.
+/// `LOCK_DIALOG`; 12 `EDIT_TILES` is built with TP7, the shell's `edit_tiles_action`), else `None`. `read(max)` reads
+/// the request (slot 1, `KErrArgument` past `max`), only for Settings. `KErrPermissionDenied` for anyone else,
+/// `KErrArgument` for a malformed request, else `KErrNotSupported`.
 pub fn settings_action(
     kind: i32,
     caller: Caller<'_>,

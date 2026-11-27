@@ -381,8 +381,10 @@ impl Held {
 
     /// Drops what waited longer than [`HELD_MS`] (the millisecond counter may wrap: a time ahead of `now` restarts).
     pub fn expire(&mut self, now: u64) {
-        self.q
-            .retain(|h| now < h.3 || now.saturating_sub(h.3) < HELD_MS);
+        self.q.retain_mut(|h| {
+            h.3 = h.3.min(now);
+            now - h.3 < HELD_MS
+        });
     }
 }
 
@@ -506,6 +508,12 @@ mod tests {
         h.expire(1000 + HELD_MS - 1);
         assert!(h.waiting("files"));
         h.expire(1000 + HELD_MS);
+        assert!(!h.waiting("files"));
+        // the counter wrapped: the wait restarts from the new time
+        h.hold("files", 0, false, 5000);
+        h.expire(100);
+        assert!(h.waiting("files"));
+        h.expire(100 + HELD_MS);
         assert!(!h.waiting("files"));
         for i in 0..10 {
             h.hold("files", 0, false, i);

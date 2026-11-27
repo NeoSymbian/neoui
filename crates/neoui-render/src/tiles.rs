@@ -157,6 +157,16 @@ pub(crate) fn apply(st: &mut State, op: &str, a: i32, cell: i32) {
     }
 }
 
+/// The UI server's slot table. The editor's ops name places in the drawn draft, so a tile withdrawn while it is
+/// open leaves the draft at once (else every place after it would name the next tile).
+fn set_slots(st: &mut State, slots: &Slots, stale: &[&str]) {
+    st.slots = slots.clone();
+    st.stale = stale.iter().map(|k| String::from(*k)).collect();
+    if let Some(d) = &mut st.draft {
+        *d = tile_table::drawn(d, &st.slots);
+    }
+}
+
 /// `shell.tiles` as stored: shown, and the editor's base.
 pub(crate) fn stored(ui: &Shell, st: &mut State, bytes: &[u8]) {
     st.raw = bytes.to_vec();
@@ -212,8 +222,7 @@ impl Renderer {
     /// 1.22: their tiles show unavailable).
     pub fn set_tile_slots(&mut self, slots: &Slots, stale: &[&str]) {
         let mut st = self.tiles.borrow_mut();
-        st.slots = slots.clone();
-        st.stale = stale.iter().map(|k| String::from(*k)).collect();
+        set_slots(&mut st, slots, stale);
         project(&self.ui, &st);
     }
 
@@ -289,6 +298,7 @@ impl Renderer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec;
     use neoui_proto::tiles::builtin;
 
     #[test]
@@ -327,5 +337,33 @@ mod tests {
         apply(&mut st, "tap", 257, 0);
         apply(&mut st, "hold", 257, 0);
         assert_eq!(st.taps, [(257, false), (257, true)]);
+    }
+
+    /// The editor's ops come by place in the drawn draft: an app tile withdrawn while it is open leaves the draft, so
+    /// the places after it still name the tiles on screen.
+    #[test]
+    fn a_tile_withdrawn_while_editing_leaves_the_draft() {
+        let mut slots = Slots::default();
+        let stopwatch = neoui_proto::tiles::Offer {
+            local_id: 1,
+            kind: tiles::kind::TOGGLE,
+            label: "Stopwatch".into(),
+            ..neoui_proto::tiles::Offer::default()
+        };
+        let id = slots.offer("clock", stopwatch).unwrap();
+        let mut st = State {
+            order: vec![(id, false), (builtin::WIFI, false), (builtin::DND, false)],
+            slots: slots.clone(),
+            ..State::default()
+        };
+        apply(&mut st, "edit", 0, 0);
+        slots.offer("clock", neoui_proto::tiles::Offer::withdraw(1));
+        set_slots(&mut st, &slots, &[]);
+        apply(&mut st, "wide", 1, 0); // place 1 on screen: Do not disturb
+        apply(&mut st, "done", 0, 0);
+        assert_eq!(
+            tiles::decode_order(&st.take_save().unwrap()).unwrap(),
+            [(builtin::WIFI, false), (builtin::DND, true)]
+        );
     }
 }

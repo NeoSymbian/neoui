@@ -230,13 +230,11 @@ impl Host {
             }
             Some((true, _)) => dprintln!("neoui: {} is before 1.22: no tile event", key),
             Some((false, _)) => self.tiles.held.hold(key, local, hold, now_ms),
+            // `bind` matches a session to its app by process ID, so another app connecting meanwhile can't take it;
+            // room is made first, as for any start
             None => {
-                // `connect` binds the newest app without a session: no hidden start while another app connects
-                let connecting = self
-                    .apps
-                    .find(|a| a.session.is_none() && a.quit_at.is_none())
-                    .is_some();
-                if !connecting && self.launch(key) {
+                self.limit_running(key, now_ms);
+                if self.launch(key) {
                     self.tiles.held.hold(key, local, hold, now_ms);
                 }
             }
