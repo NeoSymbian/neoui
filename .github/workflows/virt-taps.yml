@@ -212,15 +212,15 @@ jobs:
           tap 270 551; wait_s 1; tap 297 566; expect "neoui: settings stops app clock"; expect "clock: quit"
           # SE2a, Offline (virt is the only device it may run on): ← to Apps, ← back to the search it came from (D1:
           # the query and the result it opened are restored), its ✕ (336 dp) closes it and clears the query; then
-          # search "offline" -> its row on Sounds (406 dp) -> the sheet's Activate (529 dp): airplane on, Wi-Fi and BT
-          # off; then General (118 dp) -> Activate: everything as it was
+          # search "offline" -> its row on Sounds (556 dp, under the Active card) -> the sheet's Activate (529 dp): airplane
+          # on, Wi-Fi and BT off; then General (266 dp) -> Activate: everything as it was
           wait_s 1; tap 36 73; expect "settings: back"; wait_s 1; tap 36 73; expect "settings: back"
           expect "selected root.apps)"; wait_s 1
           tap 503 73; expect "settings: search closed"
           tap 426 73; wait_s 1; kb_type offline
           tap 270 214; expect "settings: page sounds"; wait_s 1
-          tap 270 645; wait_s 1; tap 270 829; expect "neoui: sound profile 4: airplane true, wifi false, bt false"
-          wait_s 1; tap 270 214; wait_s 1; tap 270 829; expect "neoui: sound profile 0: airplane false, wifi true, bt false"
+          tap 270 870; wait_s 1; tap 270 829; expect "neoui: sound profile 4: airplane true, wifi false, bt false"
+          wait_s 1; tap 270 435; wait_s 1; tap 270 829; expect "neoui: sound profile 0: airplane false, wifi true, bt false"
           # TP1: home, a swipe down on its pages opens the shade (shell.swipehome), and the shade's ⚙ (36 dp, left of
           # ⏻ in its header: 425,82) brings Settings back
           wait_s 1; swipe 270 1075 270 900; expect "neoui: screen home"; wait_s 1
