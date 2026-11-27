@@ -342,10 +342,52 @@ pub const TILE: i32 = 37;
 /// not in the app's [`crate::widget::CATALOGUE`], `KErrArgument` for a malformed record or another template. Only
 /// from the app's own EXE. (Not 11 or 12, home.md's first numbers: they are 1.4's retired `TITLE` and `TOOLBAR`.)
 pub const WIDGET: i32 = 46;
-/// 1.22: no arguments → `major << 8 | minor` of the shell's protocol, for any app: a publisher learns whether the
-/// shell reads 1.22's records (`page::NOTIFY_STICKY`). An older shell answers `KErrNotSupported`: treat it as
-/// before 1.22.
+/// 1.22: no arguments → [`ShellVersion::encode`] (`features << 16 | major << 8 | minor`), for any app: a publisher
+/// learns whether the shell reads 1.22's records (`page::NOTIFY_STICKY`) and what it draws ([`SHELL_CALL_KEYS`]). An
+/// older shell answers `KErrNotSupported`: treat it as before 1.22, with no features.
 pub const SHELL_VERSION: i32 = 47;
+/// [`ShellVersion::features`] bit: the shell draws Answer and Reject on a Call-style card and reports them as
+/// `page::CALL_ANSWER`/`CALL_REJECT`. Without it the publisher puts Answer and Reject among its own actions.
+pub const SHELL_CALL_KEYS: u16 = 1;
+
+/// What [`SHELL_VERSION`] answers.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ShellVersion {
+    pub major: u8,
+    pub minor: u8,
+    /// [`SHELL_CALL_KEYS`]…; 15 bits, so the completion stays positive.
+    pub features: u16,
+}
+
+impl ShellVersion {
+    /// This shell: [`VERSION`]; no feature yet (TP5's shell side, W2-J, sets [`SHELL_CALL_KEYS`] when it draws them).
+    pub const THIS: ShellVersion = ShellVersion {
+        major: VERSION.0,
+        minor: VERSION.1,
+        features: 0,
+    };
+
+    /// The completion: `features << 16 | major << 8 | minor`, the feature bits cut to 15.
+    #[must_use]
+    pub fn encode(&self) -> i32 {
+        i32::from(self.features & 0x7fff) << 16 | i32::from(self.major) << 8 | i32::from(self.minor)
+    }
+
+    /// A completion back; `None` for an error (negative: a shell before 1.22).
+    #[must_use]
+    pub fn decode(v: i32) -> Option<Self> {
+        (v >= 0).then_some(Self {
+            major: (v >> 8) as u8,
+            minor: v as u8,
+            features: (v >> 16) as u16,
+        })
+    }
+
+    #[must_use]
+    pub fn has(&self, feature: u16) -> bool {
+        self.features & feature != 0
+    }
+}
 /// 1.20: `[mode, ticket, descriptor, 0]`, an app as the owner of its data ([`crate::settings_app::jobs`]). Mode 0
 /// `OWNER_REGISTER` `[0, 0, Des8 payload]` (`[1, capabilities]`) → 0; mode 1 `OWNER_CLAIM` `[1, ticket, Des8 out]` →
 /// the [`crate::settings_app::wire::OwnerWork`]'s length; mode 2 `OWNER_FINISH` `[2, ticket, Des8 report]` → 0 once
@@ -753,6 +795,32 @@ mod tests {
             b[0] = kind;
             assert_eq!(AppEvent::decode(&b), None, "kind {kind}");
         }
+    }
+
+    #[test]
+    fn the_shell_version_word() {
+        let this = ShellVersion::THIS;
+        assert_eq!(this.encode(), 0x0116, "low 16 bits as before: 1.22");
+        assert!(!this.has(SHELL_CALL_KEYS), "this build draws no call keys");
+        assert_eq!(ShellVersion::decode(this.encode()), Some(this));
+        let keys = ShellVersion {
+            features: SHELL_CALL_KEYS,
+            ..this
+        };
+        assert_eq!(keys.encode(), 0x1_0116);
+        assert!(
+            ShellVersion::decode(keys.encode())
+                .unwrap()
+                .has(SHELL_CALL_KEYS)
+        );
+        // the top feature bit is cut: the completion never reads as an error
+        let all = ShellVersion {
+            features: u16::MAX,
+            ..this
+        };
+        assert!(all.encode() > 0);
+        assert_eq!(ShellVersion::decode(all.encode()).unwrap().features, 0x7fff);
+        assert_eq!(ShellVersion::decode(-5), None);
     }
 
     #[test]
