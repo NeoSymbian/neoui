@@ -495,7 +495,7 @@ fn features_golden_and_what_is_advertised() {
     let want = [
         &[1u8, 22, 0, 0][..], // 1.22 advertises what W1–W3 built: TP3's media, TP7's tiles, home's widgets, D7
         &[0xFE, 0x73, 0, 0, 0, 0, 0, 0], // INFO 1–7 (7 since 1.21), 8, 9, 12 (TP7), 13, 14
-        &[0xFE, 0x13, 0, 0, 0, 0, 0, 0], // actions 1–7, 8 (D7's INSTALL_WALLPAPER), 9 (D10's EDIT_HOME), 12 (TP7)
+        &[0xFE, 0x53, 0, 0, 0, 0, 0, 0], // actions 1–7, 8 (D7), 9 (D10), 12 (TP7), 14 (TP9)
         // opcodes 1–10, 13–30, 32, 33 (TP3), 34 (1.21), 37 (TP7), 40–45, 46 (W1-E)
         &[0xFE, 0xE7, 0xFF, 0x7F, 0x27, 0x7F, 0, 0],
     ]
@@ -520,7 +520,8 @@ fn features_golden_and_what_is_advertised() {
     for a in ipc::ACTION_INSTALL_WALLPAPER..=ipc::ACTION_LOCK_DIALOG {
         let built = a == ipc::ACTION_EDIT_HOME
             || a == ipc::ACTION_EDIT_TILES
-            || a == ipc::ACTION_INSTALL_WALLPAPER;
+            || a == ipc::ACTION_INSTALL_WALLPAPER
+            || a == ipc::ACTION_LOCK_DIALOG;
         assert_eq!(f.has_action(a), built, "action {a}");
     }
     // D10: EDIT_HOME takes nothing

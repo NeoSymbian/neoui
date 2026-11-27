@@ -15,6 +15,7 @@ pub mod gesture;
 pub mod home;
 pub mod hwkeys;
 pub mod ipc;
+pub mod lock;
 pub mod media;
 pub mod notification_policy;
 pub mod open;

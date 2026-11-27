@@ -659,6 +659,7 @@ impl Features {
             ipc::ACTION_EDIT_HOME,
             ipc::ACTION_EDIT_TILES,
             ipc::ACTION_INSTALL_WALLPAPER, // D7
+            ipc::ACTION_LOCK_DIALOG,       // TP9
         ]),
         // every built opcode: 1–10, 13–30, 32, 33 (TP3), 34, 37 (TP7), 40–46 (11/12 are retired, 31, 35, 36, 38, 39
         // reserved)

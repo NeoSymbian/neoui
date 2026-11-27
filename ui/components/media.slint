@@ -8,7 +8,7 @@ import { Media } from "../media.slint";
 import { SystemSettings } from "../system-settings.slint";
 import { Glyph } from "frame.slint";
 
-component Art inherits Rectangle {
+export component Art inherits Rectangle {
     in property <length> size: 44 * Theme.dp;
     width: size;
     height: size;
@@ -21,7 +21,7 @@ component Art inherits Rectangle {
 }
 
 // A round control: a plain glyph, or white with a black glyph (play / pause); dim when off (shuffle, repeat)
-component Control inherits Rectangle {
+export component Control inherits Rectangle {
     in property <image> icon;
     in property <length> size: 40 * Theme.dp;
     in property <bool> primary;

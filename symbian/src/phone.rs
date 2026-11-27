@@ -408,6 +408,19 @@ impl Phone {
         }
     }
 
+    /// (TP9) The lock screen's emergency dialer: an emergency number only (false for anything else, not dialled).
+    pub fn emergency(&mut self, ui: &mut Renderer, typed: &str) -> bool {
+        let flags = Flags {
+            send: true,
+            in_call: self.in_call(),
+        };
+        if !matches!(dial::classify(typed, flags), Kind::Emergency(_)) {
+            return false;
+        }
+        self.dial(ui, typed);
+        true
+    }
+
     /// The SIM prompt's emergency call, as the Symbian^3 parser reads the number (docs/symbian-phone-sources.md §5).
     fn dial(&mut self, ui: &mut Renderer, typed: &str) {
         let flags = Flags {

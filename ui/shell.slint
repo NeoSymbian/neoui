@@ -44,6 +44,9 @@ export { KeyboardFocus } from "components/keyboard/focus.slint";
 export { Kit } from "components/layers.slint";
 import { KeyboardFocus } from "components/keyboard/focus.slint";
 import { PowerMenu, PowerProfile } from "components/powermenu.slint";
+// (TP8, TP9) the lock screen, its PIN pad and the PIN dialog
+import { LockScreen, LockDialog, Lock } from "components/lock.slint";
+export { Lock, LockCard } from "components/lock.slint";
 import { HomeScreen } from "screens/home.slint";
 import { HomeModel } from "screens/home-edit.slint";
 import { MenuScreen } from "screens/menu.slint";
@@ -468,7 +471,8 @@ export component Shell inherits Window {
         battery-full: root.battery-full;
         battery-show-percent: SystemSettings.battery-show-percent;
         y: 0;
-        time: clock;
+        // (TP8) the lock screen shows the time itself: the operator's name in its place (nt-lock)
+        time: Lock.shown ? root.operator : clock;
         bars: root.bars;
         note: root.network-note;
         rat: root.rat;
@@ -485,11 +489,15 @@ export component Shell inherits Window {
         dnd: root.dnd;
         visible: !root.full;
         tapped => {
+            if Lock.shown || Lock.dialog { return; } // (TP8) no shade over the lock screen
             // (TP7) shell.tap: 0 the shade's first stop, 1 the control centre
             TilesModel.stop = SystemSettings.shell-tap == 1 ? 2 : 1;
             root.shade-open = !root.shade-open;
         }
         pulled => {
+            // (TP8) in Gestures and N9 the top edge unlocks like the others; the shade stays shut while locked
+            if Lock.shown { if SystemSettings.nav-mode != 0 { Lock.swiped(); } return; }
+            if Lock.dialog { return; }
             root.shade-open = true;
         }
         // (TP7) a pull past the tiles goes on to the control centre
@@ -535,7 +543,7 @@ export component Shell inherits Window {
 
     // (TP4) an Urgent card's banner under the status bar, over the app; never over the shade or the Power menu
     banner-card := NotificationBanner {
-        visible: root.banner-shown && !root.shade-open && !root.power-open;
+        visible: root.banner-shown && !root.shade-open && !root.power-open && !Lock.shown && !Lock.dialog;
         x: 8 * Theme.dp;
         width: root.width - 16 * Theme.dp;
         y: (root.full ? 0 : Theme.status-h) + 6 * Theme.dp;
@@ -591,6 +599,16 @@ export component Shell inherits Window {
         open-app(a) => { root.open(a); }
         // the shade stays until the UI server opens the Power menu (Renderer::set_power_menu closes it)
         power-asked => { root.power-asked(); }
+    }
+
+    LockScreen {
+        y: Theme.status-h;
+        height: root.height - Theme.status-h;
+        feedback: root.phone-feedback;
+    }
+    LockDialog {
+        y: Theme.status-h;
+        height: root.height - Theme.status-h;
     }
 
     PowerMenu {

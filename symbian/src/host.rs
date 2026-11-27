@@ -59,6 +59,9 @@ pub mod wallpaper;
 #[path = "media.rs"]
 pub mod media;
 
+#[path = "lock.rs"]
+pub mod lock;
+
 /// Apps whose shell screen is a launcher grid until they request FRONT(1).
 // shortcut: a fixed table like APPS; apps declare launcher support when apps are installable.
 pub const LAUNCHERS: &[&str] = &["legacy"];
@@ -256,6 +259,8 @@ pub struct Host {
     pub requested_from: Option<&'static str>,
     /// A service's `OPEN` with `OPEN_WAKE` (1.19): the main loop turns the screen on.
     pub wake: bool,
+    /// (TP9) Settings asked for the PIN dialog (`ACTION_LOCK_DIALOG`'s mode): the main loop opens it (lock.rs).
+    pub lock_dialog: Option<u8>,
     /// (D6) Finger 0's presses delivered to an app, and which app got the last one: a `CONTROL_FEEDBACK` answers one.
     presses: neoui_proto::effects::PressGate,
     press_app: Option<&'static str>,
@@ -322,6 +327,8 @@ pub struct Host {
     pub wallpaper: wallpaper::Wallpaper,
     /// (TP3) the media session ([`media`])
     pub media: media::Media,
+    /// (TP8, TP9) the lock screen and its PIN ([`lock`])
+    pub lock: lock::LockScreen,
 }
 
 impl Host {
@@ -345,6 +352,7 @@ impl Host {
             requested_screen: None,
             requested_from: None,
             wake: false,
+            lock_dialog: None,
             presses: neoui_proto::effects::PressGate::default(),
             press_app: None,
             feedback: None,
@@ -377,6 +385,7 @@ impl Host {
             tiles: tiles::Tiles::boot(),
             wallpaper: wallpaper::Wallpaper::boot(),
             media: media::Media::default(),
+            lock: lock::LockScreen::boot(),
         }
     }
 
@@ -1746,12 +1755,19 @@ impl Service for Host {
             }
             proto::SETTINGS_ACTION => {
                 let caller = access::caller(app.key, m.client_sid());
-                // 1.22's actions (wallpaper, tile editor, PIN dialog): checked, not acted on yet
-                let new = contract::settings_action(m.int(0), caller, |max| {
-                    read_bytes(&m, 1, max).map_err(|_| kerr::ARGUMENT)
-                });
                 let r = match m.int(0) {
-                    _ if new.is_some() => new.unwrap_or(kerr::ARGUMENT),
+                    // (TP9) SYSSTART's own PIN dialog (lock.rs); Settings only
+                    proto::ACTION_LOCK_DIALOG => {
+                        match contract::lock_dialog_request(caller, |max| {
+                            read_bytes(&m, 1, max).map_err(|_| kerr::ARGUMENT)
+                        }) {
+                            Ok(mode) => {
+                                self.lock_dialog = Some(mode);
+                                0
+                            }
+                            Err(e) => e,
+                        }
+                    }
                     proto::ACTION_SIGN_IN if self.portal.is_some() => {
                         dprintln!("neoui: {} asks to sign in to the Wi-Fi network", app.key);
                         self.open_portal(e32::time::millis());
