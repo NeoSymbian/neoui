@@ -9,6 +9,7 @@ extern crate alloc;
 mod home;
 pub mod keyboard;
 pub mod layer;
+mod media;
 mod settings;
 
 use alloc::boxed::Box;
@@ -342,6 +343,8 @@ pub struct Renderer {
     home: Rc<RefCell<home::State>>,
     /// (G3) the switcher's thumbnails, by app key
     thumbs: Vec<(String, slint::Image)>,
+    /// (TP3) the media buttons' commands
+    media: media::Commands,
 }
 
 /// Slint's lines for a scrolled list's frame (smooth-ui S2d): the rows of `list` outside `draw` were moved into place
@@ -495,6 +498,7 @@ impl Renderer {
         ui.global::<SystemSettings>()
             .on_edited(move |k| sink.borrow_mut().push(k.as_str().into()));
         let home = home::wire(&ui, edited.clone());
+        let media = media::wire(&ui);
         Ok(Self {
             window,
             ui,
@@ -523,6 +527,7 @@ impl Renderer {
             shifts: 0,
             home,
             thumbs: Vec::new(),
+            media,
         })
     }
 

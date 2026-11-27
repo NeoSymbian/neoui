@@ -24,7 +24,7 @@ from PIL import Image, ImageDraw
 from playwright.sync_api import sync_playwright
 
 # boards whose snapshot has another name (the app's page replaced the board's example)
-SNAPSHOT_FOR = {"set2-app-browser": "set2-app-detail"}
+SNAPSHOT_FOR = {"set2-app-browser": "set2-app-detail", "tp-shade": "tp-shade-media"}
 # boards that are specs or maps, not screens
 NOT_SCREENS = ("-spec-", "-replacement-map")
 STATUS_BAR = 25  # dp at the top of every 360x720 board

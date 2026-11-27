@@ -299,7 +299,7 @@ fn main() -> i32 {
                                     scr.power_up(held, POWER_HOLD_MS)
                                 };
                                 if let Some(c) = change {
-                                    battery.display(set_screen(c, &mut host.refresh));
+                                    battery.display(set_screen(c, &mut host));
                                     if c == screen::Change::Off
                                         && (core::mem::take(&mut to_app) | fingers.take())
                                     {
@@ -315,7 +315,10 @@ fn main() -> i32 {
                                             ev.scan_code() == SCAN_VOL_UP,
                                             &mut host.settings,
                                             time::millis(),
-                                        )) => {}
+                                        )) =>
+                            {
+                                host.volume_hud(&mut ui, phone.call_volume(), time::millis());
+                            }
                             // a dark screen takes no touches or keys (the kernel's touchscreen sleeps too)
                             Ok(ev) if scr.is_on() => {
                                 scr.activity(time::millis());
@@ -863,6 +866,8 @@ fn main() -> i32 {
                 banner_until = 0;
                 ui.set_banner(None);
             }
+            // (TP3) the media session: the player, its buttons, the HUD's end
+            host.media_frame(&mut ui, ms);
             // by (app, id): whatever moved in the list since, the card the user touched (or nothing, if it went)
             for (key, id, action) in ui.take_notes_opened() {
                 host.open_notification(&key, id, action, ms);
@@ -986,7 +991,7 @@ fn main() -> i32 {
             };
             let hold = phone.in_call() || power_menu || host.front_awake();
             if let Some(c) = woke.or_else(|| scr.tick(ms, timeout, hold)) {
-                battery.display(set_screen(c, &mut host.refresh));
+                battery.display(set_screen(c, &mut host));
                 if c == screen::Change::Off && (core::mem::take(&mut to_app) | fingers.take()) {
                     host.send(AppEvent::InputReset);
                 }
@@ -1141,6 +1146,16 @@ fn main() -> i32 {
                     if !covered
                         && app_px > 0
                         && let Some(r) = ui.banner_rect()
+                    {
+                        let (x, y) = (r.x.max(0) as usize, r.y.max(0) as usize);
+                        let rw = (r.w as usize).min(w.saturating_sub(x));
+                        let rh = (r.h as usize).min(h.saturating_sub(y));
+                        display.blit(&frame, w, x, y, rw, rh);
+                    }
+                    // (TP3) the volume HUD too
+                    if !covered
+                        && app_px > 0
+                        && let Some(r) = ui.hud_rect()
                     {
                         let (x, y) = (r.x.max(0) as usize, r.y.max(0) as usize);
                         let rw = (r.w as usize).min(w.saturating_sub(x));
@@ -1701,9 +1716,10 @@ fn set_brightness(level: i32) -> bool {
     r == 0
 }
 
-/// Screen on or off (EDisplayHalSetState): the kernel sleeps or wakes the panel and the touchscreen. On wake the
-/// app's surface is composed again whole. What the HAL says afterwards (a failed set leaves the old state), for D5.
-fn set_screen(c: screen::Change, refresh: &mut bool) -> Option<bool> {
+/// Screen on or off (EDisplayHalSetState): the kernel sleeps or wakes the panel and the touchscreen. The front app
+/// is told it is hidden or shown, and on wake its surface is composed again whole (TP3: `Host::screen_power`). What
+/// the HAL says afterwards (a failed set leaves the old state), for D5.
+fn set_screen(c: screen::Change, host: &mut Host) -> Option<bool> {
     let on = c == screen::Change::On;
     // SAFETY: the function takes the state by value in a1; a2 is unused.
     let r = unsafe {
@@ -1715,9 +1731,7 @@ fn set_screen(c: screen::Change, refresh: &mut bool) -> Option<bool> {
         )
     };
     dprintln!("neoui: screen {} ({})", if on { "on" } else { "off" }, r);
-    if on {
-        *refresh = true;
-    }
+    host.screen_power(on);
     display_state()
 }
 

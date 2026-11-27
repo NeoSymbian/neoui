@@ -22,7 +22,8 @@ pub fn is_publisher_opcode(op: i32) -> bool {
 /// record (slot 0), refusing one over `max` bytes; it is called only once the caller is known.
 ///
 /// `KErrPermissionDenied` unless `key` has a catalogue SID and `sid` is it (the legacy bridge and the kit's shared
-/// SID publish nothing); then `KErrArgument` for a malformed record (an ACTIVITY of kind Media too: that one is the
+/// SID publish nothing); then `KErrArgument` for a malformed record (SYSSTART takes `MEDIA` through [`media`] since
+/// TP3) (an ACTIVITY of kind Media too: that one is the
 /// shell's), `KErrNotFound` for a widget name not in the app's catalogue; else `KErrNotSupported`.
 pub fn ingress(
     op: i32,
@@ -35,8 +36,8 @@ pub fn ingress(
     }
     let ok = |valid: bool| if valid { Ok(()) } else { Err(kerr::ARGUMENT) };
     let r = match op {
-        ipc::MEDIA => read(media::MEDIA_MAX)
-            .and_then(|b| ok(b.is_empty() || media::Session::decode(&b).is_some())),
+        // TP3: SYSSTART takes MEDIA through [`media`]; here the same checks
+        ipc::MEDIA => media(key, sid, read).map(drop),
         ipc::ACTIVITY => read(activity::ACTIVITY_MAX).and_then(|b| {
             ok(activity::Activity::decode(&b).is_some_and(|a| a.kind != activity::kind::MEDIA))
         }),
@@ -55,6 +56,23 @@ pub fn ingress(
         _ => Ok(()),
     };
     r.err().unwrap_or(kerr::NOT_SUPPORTED)
+}
+
+/// `MEDIA` (TP3): the caller as for every publisher (`KErrPermissionDenied` without its catalogue SID), then the
+/// record: `Ok(None)` for the empty one (the caller's session ends), `KErrArgument` for a malformed one.
+pub fn media(
+    key: &str,
+    sid: u32,
+    read: impl FnOnce(usize) -> Result<Vec<u8>, i32>,
+) -> Result<Option<media::Session>, i32> {
+    if apps::sid(key) != Some(sid) {
+        return Err(kerr::PERMISSION_DENIED);
+    }
+    let b = read(media::MEDIA_MAX)?;
+    if b.is_empty() {
+        return Ok(None);
+    }
+    media::Session::decode(&b).map(Some).ok_or(kerr::ARGUMENT)
 }
 
 /// The longest request [`settings_action`] reads.
@@ -285,5 +303,30 @@ mod tests {
         ] {
             assert_eq!(settings_action(kind, settings, never), None);
         }
+    }
+
+    #[test]
+    fn media_records() {
+        let song = media::Session {
+            state: media::state::PLAYING,
+            title: "x".into(),
+            ..media::Session::default()
+        };
+        let b = song.encode();
+        assert_eq!(media("clock", CLOCK, |_| Ok(b.clone())), Ok(Some(song)));
+        assert_eq!(media("clock", CLOCK, |_| Ok(vec![])), Ok(None));
+        assert_eq!(media("clock", CLOCK, |_| Ok(vec![1])), Err(kerr::ARGUMENT));
+        assert_eq!(
+            media("clock", CLOCK, |_| Err(kerr::TOO_BIG)),
+            Err(kerr::TOO_BIG)
+        );
+        assert_eq!(
+            media(LEGACY, LEGACY_SID, never),
+            Err(kerr::PERMISSION_DENIED)
+        );
+        assert_eq!(
+            media("clock", 0xE000_5001, never),
+            Err(kerr::PERMISSION_DENIED)
+        );
     }
 }

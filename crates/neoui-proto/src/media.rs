@@ -151,6 +151,99 @@ pub fn valid_command(c: u8, arg: u32) -> bool {
     }
 }
 
+/// `m:ss` (or `h:mm:ss` from an hour) for a position or a duration in ms: the player's "1:42" and "4:05".
+#[must_use]
+pub fn clock_text(ms: u32) -> String {
+    let s = ms / 1000;
+    let (h, m, s) = (s / 3600, s / 60 % 60, s % 60);
+    if h > 0 {
+        alloc::format!("{h}:{m:02}:{s:02}")
+    } else {
+        alloc::format!("{m}:{s:02}")
+    }
+}
+
+/// The one session system-wide (P05), by app key: its owner and what it said, and the last track once it ended
+/// (home's Media card shows that one, paused).
+// shortcut: the last track lives in memory only (gone at a restart); keep it in a setting if owners miss it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Current<K> {
+    now: Option<(K, Session)>,
+    last: Option<(K, Session)>,
+}
+
+impl<K> Default for Current<K> {
+    fn default() -> Self {
+        Self {
+            now: None,
+            last: None,
+        }
+    }
+}
+
+impl<K: Copy + PartialEq> Current<K> {
+    /// App `key` sent `s` (`None`: the empty record). The last app that sent Playing owns the session; a player
+    /// that isn't the owner may only take it over by playing (or start one when there is none). Returns the
+    /// previous owner when a new one took over: it gets `Media { PAUSE }`.
+    pub fn post(&mut self, key: K, s: Option<Session>) -> Option<K> {
+        let Some(s) = s else {
+            self.end(key);
+            return None;
+        };
+        match &self.now {
+            Some((owner, _)) if *owner == key => {
+                self.now = Some((key, s));
+                None
+            }
+            Some((owner, _)) if s.state == state::PLAYING => {
+                let old = *owner;
+                self.now = Some((key, s));
+                Some(old)
+            }
+            Some(_) => None,
+            None => {
+                self.now = Some((key, s));
+                None
+            }
+        }
+    }
+
+    /// App `key` ended its session or exited: what it played stays as the last track, paused.
+    pub fn end(&mut self, key: K) {
+        if self.owner() == Some(key)
+            && let Some((k, mut s)) = self.now.take()
+        {
+            s.state = state::PAUSED;
+            self.last = Some((k, s));
+        }
+    }
+
+    /// The session's owner.
+    #[must_use]
+    pub fn owner(&self) -> Option<K> {
+        self.now.as_ref().map(|(k, _)| *k)
+    }
+
+    /// The owner while it plays (or buffers): the shell doesn't close it to make room.
+    #[must_use]
+    pub fn playing(&self) -> Option<K> {
+        self.now
+            .as_ref()
+            .filter(|(_, s)| matches!(s.state, state::PLAYING | state::BUFFERING))
+            .map(|(k, _)| *k)
+    }
+
+    /// What to draw: the session (live), else the last track (not live).
+    #[must_use]
+    pub fn shown(&self) -> Option<(K, &Session, bool)> {
+        match (&self.now, &self.last) {
+            (Some((k, s)), _) => Some((*k, s, true)),
+            (None, Some((k, s))) => Some((*k, s, false)),
+            (None, None) => None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -237,5 +330,48 @@ mod tests {
         assert!(valid_command(cmd::SHUFFLE, 1) && !valid_command(cmd::REPEAT, 2));
         assert!(valid_command(cmd::PLAY, 0) && !valid_command(cmd::PAUSE, 1));
         assert!(!valid_command(0, 0) && !valid_command(8, 0));
+    }
+
+    #[test]
+    fn clock_texts() {
+        assert_eq!(clock_text(0), "0:00");
+        assert_eq!(clock_text(102_999), "1:42");
+        assert_eq!(clock_text(245_000), "4:05");
+        assert_eq!(clock_text(3_723_000), "1:02:03");
+    }
+
+    #[test]
+    fn the_last_player_owns_the_session() {
+        let mut c = Current::default();
+        assert_eq!(c.shown(), None);
+        let paused = Session {
+            state: state::PAUSED,
+            ..song()
+        };
+        // a paused player starts a session when there is none
+        assert_eq!(c.post("files", Some(paused.clone())), None);
+        assert_eq!((c.owner(), c.playing()), (Some("files"), None));
+        assert_eq!(c.post("files", Some(song())), None);
+        assert_eq!(c.playing(), Some("files"));
+        // another app that only pauses can't take it; one that plays takes it, and Files is told to pause
+        assert_eq!(c.post("music", Some(paused.clone())), None);
+        assert_eq!(c.owner(), Some("files"));
+        assert_eq!(c.post("music", Some(song())), Some("files"));
+        assert_eq!(c.owner(), Some("music"));
+        // the old owner's end changes nothing
+        assert_eq!(c.post("files", None), None);
+        assert_eq!(c.owner(), Some("music"));
+        // the owner's end (or exit) leaves the last track, paused, for home
+        c.end("music");
+        assert_eq!((c.owner(), c.playing()), (None, None));
+        let (k, s, live) = c.shown().unwrap();
+        assert_eq!((k, s.state, live), ("music", state::PAUSED, false));
+        assert_eq!(s.title, "Bubble");
+        // a new session hides the last track
+        c.post("files", Some(song()));
+        assert_eq!(
+            c.shown().map(|(k, _, live)| (k, live)),
+            Some(("files", true))
+        );
     }
 }

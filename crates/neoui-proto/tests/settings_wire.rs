@@ -493,10 +493,10 @@ fn job_golden_and_strict() {
 #[test]
 fn features_golden_and_what_is_advertised() {
     let want = [
-        &[1u8, 22, 0, 0][..], // 1.22 advertises nothing new: its shell side lands in W1–W3
+        &[1u8, 22, 0, 0][..], // 1.22's shell side lands in W1–W3: MEDIA (33) since TP3
         &[0xFE, 0x63, 0, 0, 0, 0, 0, 0], // INFO 1–7 (7 since 1.21), 8, 9, 13, 14
         &[0xFE, 0x02, 0, 0, 0, 0, 0, 0], // actions 1–7, 9 (D10's EDIT_HOME)
-        &[0xFE, 0xE7, 0xFF, 0x7F, 0x05, 0x3F, 0, 0], // opcodes 1–10, 13–30, 32, 34 (1.21), 40–45
+        &[0xFE, 0xE7, 0xFF, 0x7F, 0x07, 0x3F, 0, 0], // opcodes 1–10, 13–30, 32, 33 (TP3), 34 (1.21), 40–45
     ]
     .concat();
     assert_eq!(Features::SHELL.encode(), want);
@@ -526,6 +526,7 @@ fn features_golden_and_what_is_advertised() {
     for op in [11, 12, 31, ipc::REPLY_TEXT, 36, ipc::TILE, 38, 39] {
         assert!(!f.has_opcode(op), "opcode {op}");
     }
+    assert!(f.has_opcode(ipc::MEDIA), "TP3's media session is built");
     assert!(
         f.has_opcode(ipc::OWNER_REPORT)
             && f.has_opcode(ipc::ENTRY_THUMB)
