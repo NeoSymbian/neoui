@@ -32,7 +32,7 @@ use neoui_proto::recents::Recents;
 use neoui_proto::settings::value::ENCODED_MAX;
 use neoui_proto::settings::{Caller, KEY_MAX, Value, access, kerr, keys};
 use neoui_proto::settings_app::info::{OldApps, encode_running};
-use neoui_proto::settings_app::privacy::ClipNotices;
+use neoui_proto::settings_app::privacy::{self, ClipNotices};
 use neoui_proto::sound_profile;
 use neoui_proto::{InputEvent, TouchPhase};
 use neoui_render::{LauncherEntry, Nav, Note, Notification, Page, Query};
@@ -423,21 +423,21 @@ impl Host {
 
     /// The toast's time is up: take it away. Call once per frame.
     pub fn expire_note(&mut self, now_ms: u64) {
-        let unseen = self.clip_unseen;
+        // a clipboard toast not shown yet has no deadline (`privacy::UNSEEN`) until `note_displayed` gives it one
         if self
             .note
             .as_ref()
-            .is_some_and(|(k, _, until)| now_ms >= *until && !(unseen && *k == CLIP_NOTE))
+            .is_some_and(|(_, _, until)| now_ms >= *until)
         {
             self.note = None;
             self.notes_changed = true;
         }
-        self.clip_notice(now_ms);
+        self.clip_notice();
     }
 
     /// (D8) The next waiting clipboard toast, once no toast shows (it never covers another app's toast and its
     /// action); with the notice turned off, the waiting ones go.
-    fn clip_notice(&mut self, now_ms: u64) {
+    fn clip_notice(&mut self) {
         if !self.settings.get(keys::PRIVACY_CLIP_NOTICE).unwrap_or(true) {
             self.clip_notices.clear();
         } else if self.note.is_none()
@@ -447,7 +447,8 @@ impl Host {
                 text,
                 action: String::new(),
             };
-            self.note = Some((CLIP_NOTE, note, now_ms + proto::NOTE_MS));
+            // its time starts when it reaches the screen, so a covered one neither expires nor wakes the loop
+            self.note = Some((CLIP_NOTE, note, privacy::UNSEEN));
             self.clip_unseen = true;
             self.notes_changed = true;
         }
@@ -1562,7 +1563,7 @@ impl Service for Host {
                 {
                     let now = e32::time::millis();
                     if self.clip_notices.read(m.client_sid(), now) {
-                        self.clip_notice(now);
+                        self.clip_notice();
                     }
                 }
                 m.complete(r.unwrap_or_else(|e| e));

@@ -259,9 +259,9 @@ fn main() -> i32 {
             let wait = [
                 gest.busy().then_some(50_000),
                 ui.next_timer().map(|d| d.as_micros() as u64),
-                host.note
-                    .as_ref()
-                    .map(|(_, _, until)| until.saturating_sub(time::millis()) * 1000),
+                host.note.as_ref().and_then(|(_, _, until)| {
+                    neoui_proto::settings_app::privacy::toast_wake_us(*until, time::millis())
+                }),
                 (banner_until != 0).then(|| banner_until.saturating_sub(time::millis()) * 1000),
             ]
             .into_iter()

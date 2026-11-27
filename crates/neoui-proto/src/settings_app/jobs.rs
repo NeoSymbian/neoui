@@ -575,13 +575,14 @@ impl Jobs {
     }
 
     /// After a restart: the saved table with every unfinished job interrupted (nothing resumes on its own) and no
-    /// owner registered. `None` for a damaged file.
+    /// owner registered. `None` for a damaged file. Reads this version and the first build's (1: no fingerprints,
+    /// its receipts and next ticket kept); the shell then saves it as this version.
     #[must_use]
     pub fn restore(b: &[u8], now_utc: i64) -> Option<Self> {
-        let (&[FILE_VERSION, n0, n1, n2, n3, c0, c1], mut rest) = b.split_first_chunk::<7>()?
-        else {
+        let (&[version, n0, n1, n2, n3, c0, c1], mut rest) = b.split_first_chunk::<7>()?;
+        if version != 1 && version != FILE_VERSION {
             return None;
-        };
+        }
         let next = u32::from_le_bytes([n0, n1, n2, n3]);
         let mut jobs = Self {
             next,
@@ -592,9 +593,14 @@ impl Jobs {
             let (len, r) = rest.split_first_chunk::<2>()?;
             let len = usize::from(u16::from_le_bytes(*len));
             let job = Job::decode(r.get(..len)?)?;
-            let (fp, r) = r[len..].split_first_chunk::<8>()?;
-            rest = r;
-            let fp = u64::from_le_bytes(*fp);
+            let fp = if version == 1 {
+                rest = &r[len..];
+                0
+            } else {
+                let (fp, r) = r[len..].split_first_chunk::<8>()?;
+                rest = r;
+                u64::from_le_bytes(*fp)
+            };
             // a receipt has the fingerprint of the report it accepted only if an owner finished it
             if jobs.entries.iter().any(|e| e.job.ticket == job.ticket)
                 || (fp != 0 && !matches!(job.state, state::COMMITTED..=state::INTERRUPTED))

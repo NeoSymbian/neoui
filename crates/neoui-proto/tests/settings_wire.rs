@@ -1362,3 +1362,57 @@ fn report_fingerprints_differ_and_are_never_zero() {
     );
     assert_ne!(jobs::fingerprint(&a), 0);
 }
+
+// --- review fixes (w2) -----------------------------------------------------------------------------------------------
+
+#[test]
+fn a_first_build_table_upgrades_with_its_receipts_and_tickets() {
+    // what the first 1.20 build saved: [1][next:w][count:h] then [len:h][job], no fingerprints
+    let receipt = Job {
+        ticket: 5,
+        action: ipc::ACTION_MEASURE_APP as u8,
+        state: state::COMMITTED,
+        subject: Some(AppRef::Native("clock")),
+        requested_scope: 0,
+        committed_scope: 0,
+        result: 0,
+        finished_utc: UTC,
+    };
+    let running = Job {
+        ticket: 6,
+        state: state::RUNNING,
+        finished_utc: 0,
+        ..receipt
+    };
+    let mut v1 = vec![1, 7, 0, 0, 0, 2, 0];
+    for j in [receipt, running] {
+        let r = j.encode();
+        v1.extend_from_slice(&(r.len() as u16).to_le_bytes());
+        v1.extend_from_slice(&r);
+    }
+    let mut j = Jobs::restore(&v1, UTC + 60).expect("a v1 table is no damaged one");
+    let order: Vec<Job> = j.jobs().copied().collect();
+    assert_eq!(order[0], receipt, "the receipt kept");
+    assert_eq!(
+        (
+            order[1].ticket,
+            order[1].state,
+            order[1].result,
+            order[1].finished_utc
+        ),
+        (6, state::INTERRUPTED, wire::KERR_DIED, UTC + 60),
+        "the unfinished job interrupted"
+    );
+    // saved again as v2, and the ticket numbers go on where v1 left them
+    let v2 = j.encode();
+    assert_eq!(v2[0], 2);
+    assert_eq!(Jobs::restore(&v2, UTC + 61).unwrap().jobs().count(), 2);
+    j.register("clock", sid("clock"), S, 20, &[1, 3], (0, UTC))
+        .unwrap();
+    assert_eq!(j.submit(ipc::ACTION_MEASURE_APP, "clock", 0, 0), Ok(7));
+    // v1 holds no fingerprints: one there is damage, as is another version
+    assert_eq!(Jobs::restore(&[&v1[..], &[0; 8]].concat(), UTC), None);
+    let mut v3 = v1.clone();
+    v3[0] = 3;
+    assert_eq!(Jobs::restore(&v3, UTC), None);
+}

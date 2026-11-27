@@ -77,9 +77,36 @@ pub fn reader_text(sid: u32) -> String {
     }
 }
 
+/// The deadline of a toast not shown yet: none. Its time starts when a frame with it reaches the screen.
+pub const UNSEEN: u64 = u64::MAX;
+
+/// How long the main loop may sleep for a toast that ends at `until_ms` (`e32::time::millis`), in microseconds: 0 once
+/// it is due, `None` while it waits to be shown ([`UNSEEN`]: a covered toast never asks for a busy wake).
+#[must_use]
+pub fn toast_wake_us(until_ms: u64, now_ms: u64) -> Option<u64> {
+    (until_ms != UNSEEN).then(|| until_ms.saturating_sub(now_ms).saturating_mul(1000))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_unseen_toast_asks_for_no_wake() {
+        assert_eq!(toast_wake_us(UNSEEN, 0), None);
+        assert_eq!(
+            toast_wake_us(UNSEEN, u64::MAX - 1),
+            None,
+            "not even long after"
+        );
+        assert_eq!(toast_wake_us(5_000, 2_000), Some(3_000_000));
+        assert_eq!(toast_wake_us(5_000, 9_000), Some(0), "due");
+        assert_eq!(
+            toast_wake_us(u64::MAX - 1, 0),
+            Some(u64::MAX),
+            "no overflow"
+        );
+    }
 
     const BROWSER: u32 = 0xE000_7001;
     const FILES: u32 = 0xE000_6001;
