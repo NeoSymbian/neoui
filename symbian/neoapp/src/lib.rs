@@ -793,15 +793,15 @@ impl App {
         Ok(self.font_scale())
     }
 
-    /// (1.22) The shell's protocol version (`proto::SHELL_VERSION`); `None` from a shell before 1.22, which doesn't
-    /// read 1.22's records: send it no `card::NOTIFY_STICKY` (a 1.21 shell refuses the card) and expect no
-    /// `card::CALL_ANSWER`/`CALL_REJECT` (draw Answer and Reject as the card's own actions there).
-    pub fn shell_version(&self) -> Option<(u8, u8)> {
-        let v = self
-            .server
+    /// (1.22) The shell's protocol version and features (`proto::SHELL_VERSION`); `None` from a shell before 1.22,
+    /// which doesn't read 1.22's records: send it no `card::NOTIFY_STICKY` (a 1.21 shell refuses the card). Put Answer
+    /// and Reject among a Call card's own actions unless `features` has `proto::SHELL_CALL_KEYS` (then the shell draws
+    /// them and reports `card::CALL_ANSWER`/`CALL_REJECT`).
+    pub fn shell_version(&self) -> Option<proto::ShellVersion> {
+        self.server
             .send_receive(proto::SHELL_VERSION, &TIpcArgs::new())
-            .ok()?;
-        Some(((v >> 8) as u8, v as u8))
+            .ok()
+            .and_then(proto::ShellVersion::decode)
     }
 
     /// (D7) The text size now, 0–3 (1 when the shell has none).

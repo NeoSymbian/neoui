@@ -1581,7 +1581,7 @@ impl Service for Host {
                 m.complete(r);
             }
             proto::SHELL_VERSION => {
-                m.complete(i32::from(proto::VERSION.0) << 8 | i32::from(proto::VERSION.1));
+                m.complete(proto::ShellVersion::THIS.encode());
             }
             proto::NOTIFY_CLEAR => {
                 let key = app.key;
