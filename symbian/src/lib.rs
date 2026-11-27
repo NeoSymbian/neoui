@@ -39,7 +39,7 @@ use e32::rt::{self, Either};
 use e32::server::{self, Server};
 use e32::{dprintln, time};
 use host::Host;
-use neoui_proto::gesture::{Edge, Gesture, Map, Recognizer, Step};
+use neoui_proto::gesture::{Edge, Gesture, Map, Recognizer, Step, live_edges};
 use neoui_proto::ipc::{self as proto, AppEvent};
 use neoui_proto::settings::keys;
 use neoui_proto::settings_app::info::encode_ip;
@@ -247,6 +247,9 @@ fn main() -> i32 {
         // (G2) the peek under way, and that the gesture it settled onto changes the screen with no fade; (G3) pinch
         let mut peek: Option<peek::Peeking> = None;
         let mut no_fade = false;
+        // the shade as last drawn, and whether the running fade lifts the body (a screen change) or not (the shade)
+        let mut shade_shown = false;
+        let mut rise = true;
         let mut pinch = neoui_proto::pinch::Pinch::default();
         // a hardware keyboard's Shift, Caps Lock and Ctrl
         let mut hw = neoui_proto::hwkeys::State::default();
@@ -379,25 +382,24 @@ fn main() -> i32 {
                     let mode = host.settings.get(keys::NAV_MODE).unwrap_or(1);
                     let map = if mode == 2 { Map::N9 } else { Map::Thumb };
                     gest.set_map(map);
+                    // the shade is the shell's transient UI: its edges stay live (Back and Home close it); an app's
+                    // dialog keeps them
+                    let shade = ui.shade_open();
                     let gestures = mode != 0
                         && !power_menu
                         && !phone.modal()
-                        && !ui.overlay_open()
+                        && (shade || !ui.overlay_open())
                         && transition.is_none()
                         && swipe.is_none()
                         && peek.is_none();
-                    // home keeps its side edges for the pages (Back does nothing there); N9's right edge is Open apps
                     // (G4) the status bar over an app (not a full-screen page: it has none) drags the app down
-                    let top = gestures
-                        && host.settings.get(keys::NAV_SWIPE_CLOSE).unwrap_or(false)
+                    let top = host.settings.get(keys::NAV_SWIPE_CLOSE).unwrap_or(false)
                         && host.front().is_some()
                         && !host.front_full();
-                    let live: &[Edge] = match (gestures, mode, screen.as_str()) {
-                        (false, _, _) => &[],
-                        (true, 2, "home") => &[Edge::Right, Edge::Bottom],
-                        (true, _, "home") => &[Edge::Bottom],
-                        _ if top => &[Edge::Left, Edge::Right, Edge::Bottom, Edge::Top],
-                        _ => &[Edge::Left, Edge::Right, Edge::Bottom],
+                    let live: &[Edge] = if gestures {
+                        live_edges(i32::from(mode), screen == "home", shade, top)
+                    } else {
+                        &[]
                     };
                     let ms = time::millis();
                     let mut routed = Vec::with_capacity(evs.len());
@@ -813,27 +815,41 @@ fn main() -> i32 {
             // nothing must not take the next fade)
             let slid = peek.is_none() && core::mem::take(&mut no_fade);
             // (G2) a peek's preview is no screen change: the app stays in front until it commits
-            if now != screen && peek.is_none() {
-                dprintln!("neoui: screen {}", now);
-                gest.reset();
-                held.clear();
-                hint = None;
+            let changed = now != screen && peek.is_none();
+            // the shade opening or closing fades too (Slint draws it once, not every frame: W1's 35-49 ms frames),
+            // unless a fade runs already: that one blends into the frame, shade and all
+            let shade = ui.shade_open();
+            let shade_moved = shade != core::mem::replace(&mut shade_shown, shade);
+            if changed || (shade_moved && transition.is_none() && peek.is_none()) {
+                if changed {
+                    dprintln!("neoui: screen {}", now);
+                    gest.reset();
+                    held.clear();
+                    hint = None;
+                }
                 // what is on screen now (the old app with it, before set_screen hides it) fades out; when memory is
                 // short there is no fade, the new screen just appears (the Pixel's kernel has 87 MB of RAM for now)
                 if slid {
                     // no fade: the slide showed the change
                 } else if old.len() == w * h || old.try_reserve_exact(w * h).is_ok() {
                     old.resize(w * h, 0);
-                    snapshot(&host, &frame, &mut old, w);
+                    if overlay_shown {
+                        old.copy_from_slice(&frame); // the shade or a dialog covered the app
+                    } else {
+                        snapshot(&host, &frame, &mut old, w);
+                    }
                     transition = Some(Transition::new(ms, TRANSITION_MS));
+                    rise = changed;
                 } else {
                     dprintln!(
                         "neoui: no memory for a fade ({} bytes), switching at once",
                         w * h * 4
                     );
                 }
-                host.set_screen(&now, ms);
-                screen = now;
+                if changed {
+                    host.set_screen(&now, ms);
+                    screen = now;
+                }
             }
             host.keep_resident(ms);
             // an icon, notification or Settings row opening an app's page: the app is told, and the view is cleared
@@ -1132,6 +1148,9 @@ fn main() -> i32 {
                 );
             }
             if !scr.is_on() {
+                if ui.shade_open() {
+                    ui.close_shade(); // like an app's transient UI, the shade doesn't outlive the screen
+                }
                 touches.clear(); // a sleeping touchscreen sends no lifts; the rings go at the next frame
                 close_restore |= peek.is_some(); // (G2) nor a peek's: it would wait for one at wake
                 peek::abort(&mut peek, &mut ui);
@@ -1243,7 +1262,11 @@ fn main() -> i32 {
                     let m = perf.mark();
                     hint_drawn = None; // the fade writes the whole screen
                     touches_drawn.clear(); // and the rings with it: none while it runs
-                    fade(&old, &frame, &host, e, (w, h), &mut rows, &display);
+                    // under the shade or a dialog the app isn't on screen
+                    let covered = power_menu || phone_modal || ui.overlay_open();
+                    let app = if covered { None } else { front_surface(&host) };
+                    let band = rise.then_some((host.body.y.max(0) as usize, host.body.h as usize));
+                    fade((&old, &frame), app, band, e, (w, h), &mut rows, &display);
                     perf.layer(perf.since(&m));
                 }
                 None => {
@@ -1399,20 +1422,19 @@ fn snapshot(host: &Host, frame: &[u32], old: &mut [u32], w: usize) {
 }
 
 /// One frame of a screen change (smooth-ui S2b), written to the screen row by row: the old screen fades out while
-/// the new one (the shell frame with the front app over its body) fades in, its body rising 16 dp into place, as the
-/// shell's `Slot` did. `e` is the eased progress, 0..=256.
+/// the new one (the shell frame with the front `app` over its body) fades in, the body (`rise`: its rows) rising
+/// 16 dp into place, as the shell's `Slot` did; the shade only fades. `e` is the eased progress, 0..=256.
 fn fade(
-    old: &[u32],
-    frame: &[u32],
-    host: &Host,
+    (old, frame): (&[u32], &[u32]),
+    app: Option<(&[u32], usize, Rect)>,
+    rise: Option<(usize, usize)>,
     e: u32,
     (w, h): (usize, usize),
     (new, out): &mut (Vec<u32>, Vec<u32>),
     display: &Display,
 ) {
-    let (by, bh) = (host.body.y.max(0) as usize, host.body.h as usize);
+    let (by, bh) = rise.unwrap_or((0, 0));
     let lift = w.min(h) * 16 / 360 * (256 - e as usize) / 256;
-    let app = front_surface(host);
     for y in 0..h {
         let sy = if y >= by && y < by + bh {
             y.saturating_sub(lift).max(by)

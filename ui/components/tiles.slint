@@ -616,7 +616,8 @@ component SectionLabel inherits Text {
 // The editor (tp-edit): Reset and Done; the placed tiles (drag to reorder, hold for wide or small, ⊖ or a drag below
 // to remove; one always stays), then the spare ones (⊕ adds).
 export component TileEditor inherits Rectangle {
-    background: #0f1115f7;
+    // opaque: on the board it sits on a 90 % black scrim, here straight on the control centre
+    background: #0f1115;
     TouchArea { }
 
     VerticalLayout {
@@ -770,7 +771,8 @@ component NetworkRow inherits Rectangle {
 // open), Wi-Fi settings and Done. A network opens Settings' Wi-Fi page, where joining is.
 export component WifiSheet inherits Rectangle {
     callback settings;
-    background: #0f1115f7;
+    // opaque: on the board it sits on a 90 % black scrim, here straight on the control centre
+    background: #0f1115;
     TouchArea { }
 
     VerticalLayout {

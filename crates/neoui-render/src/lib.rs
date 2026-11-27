@@ -368,6 +368,8 @@ pub struct Renderer {
     tiles: Rc<RefCell<tiles::State>>,
     /// (TP3) the media buttons' commands
     media: media::Commands,
+    /// where the last touch was ([`Renderer::cancel_touch`])
+    touch_at: LogicalPosition,
 }
 
 /// Slint's lines for a scrolled list's frame (smooth-ui S2d): the rows of `list` outside `draw` were moved into place
@@ -551,6 +553,7 @@ impl Renderer {
             thumbs: Vec::new(),
             tiles,
             media,
+            touch_at: LogicalPosition::default(),
         })
     }
 
@@ -568,6 +571,17 @@ impl Renderer {
     /// Opens the shade (a swipe down on home, `shell.swipehome`).
     pub fn open_shade(&mut self) {
         self.ui.set_shade_open(true);
+    }
+
+    /// Closes the shade, its sheet and editor with it (the screen went off: transient UI doesn't outlive it).
+    pub fn close_shade(&mut self) {
+        self.ui.set_shade_open(false);
+    }
+
+    /// The shade (either stop, or a sheet over it) is open.
+    #[must_use]
+    pub fn shade_open(&self) -> bool {
+        self.ui.get_shade_open()
     }
 
     /// Shows app `screen` opened by app `from` (ipc `OPEN`): Back at its root returns to `from`.
@@ -1056,6 +1070,11 @@ impl Renderer {
         use neoui_proto::gesture::Gesture;
         let screen = self.screen();
         let switch_to = self.app_for(g);
+        // Home over the shade only closes it, as for an app's transient UI (Back goes through nav-back's own steps)
+        if g == Gesture::Home && self.shade_open() {
+            self.close_shade();
+            return;
+        }
         // the home editor: going home or to the apps is its Done (D10)
         if screen == "home" && self.home_editing() && g != Gesture::Back {
             self.ui
@@ -1378,6 +1397,7 @@ impl Renderer {
         let event = match ev {
             InputEvent::Touch { x, y, phase, .. } => {
                 let position = LogicalPosition::new(x as f32, y as f32);
+                self.touch_at = position;
                 let button = PointerEventButton::Left;
                 match phase {
                     TouchPhase::Down => {
@@ -1419,6 +1439,16 @@ impl Renderer {
     /// Cancels the touch in progress: whatever it pressed lets go without a click (the UI server took the gesture
     /// over, e.g. its own home page slide).
     pub fn cancel_touch(&mut self) {
+        self.window.dispatch_event(WindowEvent::PointerExited);
+        // A press a Flickable or SwipeGestureHandler still holds back (Slint forwards it to their children 100 ms
+        // later) survives the exit: Slint drops other events while it waits. It reached the widget later and grabbed
+        // the pointer, so the next touches went there, even on another screen (the Apps menu's taps on home's
+        // widgets). A release hands it on at once; with another button than the press's it clicks nothing and lets
+        // go of the grab, and the second exit then cancels the press as the first would have.
+        self.window.dispatch_event(WindowEvent::PointerReleased {
+            position: self.touch_at,
+            button: PointerEventButton::Right,
+        });
         self.window.dispatch_event(WindowEvent::PointerExited);
         self.stop_home_hold();
     }

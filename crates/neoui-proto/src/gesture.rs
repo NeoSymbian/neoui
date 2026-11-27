@@ -63,6 +63,20 @@ impl Gesture {
     }
 }
 
+/// The edges that take gestures in `nav.mode` `mode` (Buttons, 0, has none: D18): home keeps its sides for its pages
+/// (N9's right edge is Open apps there), except under the `shade`, which Back closes; `top` adds the status bar's drag
+/// down over an app (G4), never while the shade is open.
+#[must_use]
+pub fn live_edges(mode: i32, home: bool, shade: bool, top: bool) -> &'static [Edge] {
+    match (mode, home && !shade, top && !shade) {
+        (0, _, _) => &[],
+        (2, true, _) => &[Edge::Right, Edge::Bottom],
+        (_, true, _) => &[Edge::Bottom],
+        (_, _, true) => &[Edge::Left, Edge::Right, Edge::Bottom, Edge::Top],
+        _ => &[Edge::Left, Edge::Right, Edge::Bottom],
+    }
+}
+
 /// What the server does with the touch it just fed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Step {

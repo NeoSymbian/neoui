@@ -74,8 +74,9 @@ pub fn track(
     let Some(kind) = Kind::of(map, edge, along.is_some()) else {
         return;
     };
-    // home keeps its own bottom (the Apps menu) and right edge; Open apps doesn't peek at itself
-    if screen == "home" || (kind == Kind::Side && screen == "switcher") {
+    // home keeps its own bottom (the Apps menu) and right edge; Open apps doesn't peek at itself; over the shade a
+    // gesture only closes it, so there is nothing to preview (the hint only)
+    if screen == "home" || ui.shade_open() || (kind == Kind::Side && screen == "switcher") {
         return;
     }
     let dir = match (kind, along) {
