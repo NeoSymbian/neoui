@@ -278,6 +278,24 @@ export global SetState {
     in property <int> home-style;
     in property <[string]> home-styles: ["Pages", "Lanes"];
     in property <[string]> home-style-hints;
+    // D11 (sim_lock.rs): the SIM PIN as MODEMD reports it (settings_app::sim_lock's summary and note), Use SIM PIN's
+    // switch (on = asked for at start) and whether it and Change SIM PIN can be used, the card's tries ("" = it doesn't
+    // say), the last request's outcome, a request with the card, the sheet's warning (one try left, a refusal) and the
+    // protection the toggle sheet asks for. sim-old/new/again are the sheets' masked fields: never stored, logged,
+    // searched or sent through act; NEOSET copies and empties them on submit, Back, hide and another page.
+    in property <string> sim-lock-text;
+    in-out property <bool> sim-pin-on;
+    in property <bool> sim-can-toggle;
+    in property <bool> sim-can-change;
+    in property <string> sim-attempts;
+    in property <string> sim-note;
+    in property <string> sim-outcome;
+    in property <bool> sim-busy;
+    in property <string> sim-warning;
+    in property <bool> sim-want-on;
+    in-out property <string> sim-old;
+    in-out property <string> sim-new;
+    in-out property <string> sim-again;
 
     // the open sheet: "" none, "timeout", "date-format", "zone", "pad-strength", "pad-default", "pad-dirs", "pad-a",
     // "pad-b", "wifi-join", "wifi-details"; the network the join sheet is for, and what is typed in it
@@ -300,6 +318,8 @@ export global SetState {
     // - "app-open" + a ROM app's key; "old-open" + an old app's id (hex); "app" + an app's key (its own settings);
     //   "app-detail" + a ROM app's key (its page); "app-stop", "app-clear" for app-current (the app asks first);
     //   "reset" + "network" | "settings" (the app asks first; the phone restarts);
+    // - (D11) "sim-toggle" + "1"/"0" (the switch's wish: the PIN sheet), "sim-change" (its sheet), "sim-submit" (the
+    //   sheet's fields, read by NEOSET), "sim-cancel";
     // - "sound" + "test" | "record"; "keyboard" + an index to turn on or off ("+0"/"-0"); "keyboard-next";
     // - "city-query" + the search text; "pad-reset" (QUERY first); "clip-clear";
     // - "app" + "phone" | "messages" | "devtools" (another app's settings); "devtools" + a page ("console", "tools");

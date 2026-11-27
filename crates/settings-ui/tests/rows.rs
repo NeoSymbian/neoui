@@ -44,6 +44,7 @@ const COMPONENTS: &[(&str, Page)] = &[
     ("PanelPage", Page::Panel),
     ("NotificationsPage", Page::Notifications),
     ("NotifyAppPage", Page::NotifyApp),
+    ("SimLockPage", Page::SimLock),
 ];
 
 fn page_file(name: &str) -> String {
@@ -292,6 +293,7 @@ fn facts() -> Facts {
         "battery.screen_on",
         Scalar::Text("2 h 14 min since charged".into()),
     );
+    f.scalars.insert("sim.attempts", Scalar::Text("3".into()));
     f
 }
 
@@ -447,6 +449,17 @@ const MANIFEST: &[(&str, &str, &str, ProviderId, Page, Gate)] = &[
                 "battery.screen_on",
                 Scalar::Text(neoui_proto::battery::cycle::SCREEN_NOT_YET.into()),
             );
+        },
+    ),
+    // D11: the card's count, or none (MODEMD's 255); never a default
+    (
+        "set2-sim-lock",
+        "PIN attempts left",
+        "sim.attempts",
+        ProviderId::Builtin,
+        Page::SimLock,
+        |f| {
+            f.scalars.remove("sim.attempts");
         },
     ),
 ];

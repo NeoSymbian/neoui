@@ -12,6 +12,7 @@ pub mod page;
 pub mod privacy;
 pub mod row_model;
 pub mod rows;
+pub mod sim_lock;
 pub mod slot;
 pub mod storage;
 pub mod wire;

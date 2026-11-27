@@ -766,6 +766,17 @@ impl Renderer {
         self.keyboard_heights()[mode as usize]
     }
 
+    /// (D11) The number pad is up (an app's or a shell field's): its taps may be PIN digits, so the shell logs no
+    /// tap coordinates and draws no Show touches rings meanwhile.
+    pub fn number_pad_up(&self) -> bool {
+        let focus = self.ui.global::<KeyboardFocus>();
+        let mode = match self.ui.get_keyboard_mode() {
+            0 if focus.get_open() => focus.get_mode(),
+            m => m,
+        };
+        mode == 3 && self.keyboard_h() > 0
+    }
+
     /// The user put the keyboard away with the toolbar's keyboard button: the app in front gets its body back.
     pub fn keyboard_dismissed(&self) -> bool {
         self.ui.global::<KeyboardFocus>().get_dismissed()

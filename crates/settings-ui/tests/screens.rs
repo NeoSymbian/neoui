@@ -9,6 +9,7 @@ use neoui_proto::settings_app::row_model::{
     Destination, Epochs, InstanceId, Reading, RowKey, RowSnapshot, Sample, resolve_hit,
 };
 use neoui_proto::settings_app::rows::{ROOT_LIST, Search};
+use neoui_proto::settings_app::sim_lock::{self as sl, Lock};
 use settings_ui::row_model as rm;
 use settings_ui::{
     AppRow, ChannelRow, DriveRow, NotifyAppRow, PartRow, ProfileRow, SetState, WifiDetail,
@@ -92,6 +93,7 @@ fn fill(sh: &Shot) {
     s.set_pad_b_names(strings(&["Right softkey", "0", "#"]));
     s.set_operator("Ucom AM".into());
     s.set_sim("SIM ready".into());
+    sim_lock(&s, Lock::On, "3");
     s.set_rat("3G".into());
     s.set_radio_online(true);
     s.set_battery_text("72%".into());
@@ -397,6 +399,16 @@ fn fill(sh: &Shot) {
     s.set_banner_times(strings(&["3 s", "5 s", "8 s", "10 s"]));
     s.set_banner_index(1);
     s.set_swipe_home(true);
+}
+
+/// D11: the SIM card lock's state as NEOSET's sim_lock.rs sets it from MODEMD (a synthetic card: never a real SIM).
+fn sim_lock(s: &SetState<'_>, lock: Lock, tries: &str) {
+    s.set_sim_lock_text(lock.summary().into());
+    s.set_sim_pin_on(matches!(lock, Lock::On | Lock::Required));
+    s.set_sim_can_toggle(lock.can_toggle());
+    s.set_sim_can_change(lock.can_change());
+    s.set_sim_attempts(tries.into());
+    s.set_sim_note(lock.note().into());
 }
 
 /// D4: the Apps list's subtitles for `apps` (as NEOSET sets them from INFO 8: what the shell and the owners here
@@ -1116,6 +1128,74 @@ fn every_page() {
         );
     }
     s.set_notify_ok(true);
+
+    // D11: SIM card lock (set2-sim-lock), synthetic states only. On with the card's 3 tries; the switch asks for
+    // the PIN sheet and shows the card's state until the card confirms; the Mobile row says it too
+    page(&sh, 30, "SIM card lock");
+    sh.shoot("set2-sim-lock");
+    sh.take_acts();
+    sh.tap(321.0, 48.0 + 36.0);
+    sh.tap(100.0, 48.0 + 72.0 + 36.0);
+    assert_eq!(
+        sh.take_acts(),
+        acts(&[("sim-toggle", "0"), ("sim-change", "")])
+    );
+    assert!(s.get_sim_pin_on(), "the switch waits for the card");
+    let snap = project(&sh, Epochs::default());
+    let hit = searched(&sh, &snap, "sim card lock");
+    assert_eq!(snap.rows[hit[0].row].value_text, "SIM PIN on");
+    assert_eq!(snap.rows[hit[0].row].destination.page, Page::SimLock);
+    let hit = searched(&sh, &snap, "pin attempts");
+    assert_eq!(snap.rows[hit[0].row].value_text, "3");
+    s.set_searching(false);
+    s.set_query("".into());
+    // the masked form (dots only), at one try left the warning first, then Change SIM PIN's three fields
+    s.set_sim_want_on(false);
+    sheet(&sh, "sim-pin");
+    s.set_sim_old("4321".into());
+    sh.draw(); // the field's focus reserves the keyboard's room first
+    sh.shoot("set2-sim-lock-sheet");
+    sim_lock(&s, Lock::On, "1");
+    s.set_sim_old("".into());
+    s.set_sim_warning(sl::LAST_TRY.into());
+    sh.shoot("set2-sim-lock-last");
+    s.set_sim_warning("".into());
+    sheet(&sh, "sim-change");
+    s.set_sim_old("1111".into());
+    s.set_sim_new("2222".into());
+    sh.draw();
+    for set in [SetState::set_sim_old, SetState::set_sim_new] {
+        set(&s, "".into());
+    }
+    // waiting for the card, then its answer on the page
+    page(&sh, 30, "SIM card lock");
+    sim_lock(&s, Lock::Off, "3");
+    s.set_sim_busy(true);
+    sh.shoot("set2-sim-lock-pending");
+    s.set_sim_busy(false);
+    s.set_sim_outcome(sl::outcome(-1012, Some(true), Some(2)).into());
+    sh.draw();
+    s.set_sim_outcome(sl::outcome(-33, Some(true), None).into());
+    sh.draw();
+    s.set_sim_outcome("".into());
+    // the honest states: blocked (no PUK here), the SIM not saying, an old MODEMD, no modem at all
+    sim_lock(&s, Lock::Blocked, "0");
+    sh.shoot("set2-sim-lock-blocked");
+    sh.take_acts();
+    sh.tap(321.0, 48.0 + 36.0); // no switch: the row asks, NEOSET refuses with the note
+    assert_eq!(sh.take_acts(), acts(&[("sim-toggle", "1")]));
+    for lock in [Lock::Unknown, Lock::OldModem, Lock::NoSim] {
+        sim_lock(&s, lock, "");
+        sh.draw();
+    }
+    sim_lock(&s, Lock::NoModem, "");
+    sh.shoot("set2-sim-lock-nomodem");
+    let snap = project(&sh, Epochs::default());
+    let attempts = snap.get(&RowKey::of("sim.attempts")).unwrap();
+    assert!(matches!(attempts.reading, Reading::Unavailable(_)));
+    page(&sh, 2, "Mobile network");
+    sh.draw();
+    sim_lock(&s, Lock::On, "3");
 
     // every row that shows a value has one for search, from the sample state above (D1's projection)
     let snap = project(&sh, Epochs::default());

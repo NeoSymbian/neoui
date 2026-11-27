@@ -332,10 +332,13 @@ fn main() -> i32 {
                     // Edge gestures see every move (before they are merged: a merged move could hide the
                     // direction); what they don't take is routed as usual below.
                     // Show touches (SE3a) only watches the fingers: the events are routed below as they would be
+                    // (D11) none while a PIN may be typed: the rings would show the digits
                     if host
                         .settings
                         .get(keys::DEVELOPER_SHOW_TOUCHES)
                         .unwrap_or(false)
+                        && !phone.modal()
+                        && !ui.number_pad_up()
                     {
                         // a finger from its press to its lift (a pointer moving unpressed starts nothing)
                         for ev in &evs {
@@ -516,7 +519,8 @@ fn main() -> i32 {
                                 if phase == TouchPhase::Up {
                                     let down = down_at.take();
                                     // PIN keypad coordinates disclose the entered digits just as text would.
-                                    if !phone.modal() {
+                                    // (D11) so do the number pad's, wherever a PIN is typed
+                                    if !phone.modal() && !ui.number_pad_up() {
                                         dprintln!("neoui: tap {},{} down {:?}", x, y, down);
                                         tap_end = Some(down);
                                     }

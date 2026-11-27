@@ -151,6 +151,21 @@ pub fn facts(s: &SetState<'_>, sample: Sample, epochs: Epochs) -> Facts {
         ("panel.dnd", notify(on(s.get_dnd()))),
         ("notify.dnd", notify(on(s.get_dnd()))),
         ("notify.bannert", notify(text(s.get_banner_text()))),
+        // D11: what MODEMD says of the SIM PIN, never the PIN
+        ("mobile.sim_lock", text(s.get_sim_lock_text())),
+        (
+            "sim.pin",
+            Some(if s.get_sim_can_toggle() {
+                Scalar::On(s.get_sim_pin_on())
+            } else {
+                Scalar::Text(String::from(s.get_sim_lock_text().as_str()))
+            }),
+        ),
+        (
+            "sim.attempts",
+            (!s.get_sim_attempts().is_empty())
+                .then(|| Scalar::Text(String::from(s.get_sim_attempts().as_str()))),
+        ),
     ] {
         if let Some(v) = v {
             f.scalars.insert(key, v);

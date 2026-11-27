@@ -21,6 +21,7 @@ mod navigation;
 mod notifications;
 mod profile_audio;
 mod row_model;
+mod sim_lock;
 mod sound;
 mod storage;
 mod store;
@@ -244,6 +245,7 @@ fn run() -> Result<(), i32> {
                     ctx.tick(true);
                 } else {
                     ctx.sound.stop(); // a tone's preview ends with the app hidden
+                    sim_lock::clear(&ui);
                     ctx.storage.stop(); // hidden: no scan in the background
                 }
             }
@@ -308,6 +310,7 @@ impl Ctx {
         s.set_title(page.title().into());
         s.set_sheet(SharedString::new());
         s.set_found(SharedString::new());
+        sim_lock::clear(&ui); // (D11) a typed PIN never outlives its sheet
         ui.global::<KeyboardFocus>().set_open(false);
         dprintln!("settings: page {}", page.name());
         // a tone's preview stops when the page changes (Back included)
@@ -337,6 +340,7 @@ impl Ctx {
         let s = ui.global::<SetState>();
         if !s.get_sheet().is_empty() {
             s.set_sheet(SharedString::new());
+            sim_lock::clear(&ui);
             // the sheet's field went with it: let its keyboard go too (else it comes back on resume)
             ui.global::<KeyboardFocus>().set_open(false);
         } else {
@@ -383,7 +387,7 @@ impl Ctx {
         }
         if matches!(
             page,
-            Page::Root | Page::Mobile | Page::Connectivity | Page::Sounds
+            Page::Root | Page::Mobile | Page::Connectivity | Page::Sounds | Page::SimLock
         ) && every(2)
         {
             self.modem.borrow_mut().poll(&ui);
@@ -854,6 +858,7 @@ impl Ctx {
                 }
             }
             a if a.starts_with("notify-") => notifications::act(self, &ui, a, value),
+            a if a.starts_with("sim-") => self.modem.borrow().sim.act(&ui, a, value),
             // a setting: its key and value
             key if key.contains('.') => {
                 store::write(app, &ui, key, value);

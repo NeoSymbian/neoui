@@ -12,6 +12,8 @@ use slint::ComponentHandle;
 #[derive(Default)]
 pub struct Modem {
     session: Option<Session>,
+    /// (D11) the SIM PIN's page and its requests
+    pub sim: crate::sim_lock::SimLock,
 }
 
 impl Modem {
@@ -64,24 +66,22 @@ impl Modem {
         modem_ipc::SmsSettings::from_bytes(&b).map(|s| s.alert)
     }
 
-    fn status(&mut self) -> Option<Status> {
+    /// (D11) the extended status: with the SIM PIN's protection from a 2.9 MODEMD, without it from an older one
+    fn status(&mut self) -> Option<(Status, Option<modem_ipc::Protection>)> {
         self.connect();
-        let mut b = [0u8; Status::SIZE];
-        let mut des = TPtr8::new(&mut b);
-        let mut args = TIpcArgs::new();
-        args.des8(0, &mut des);
-        let r = self.session.as_ref()?.send_receive(op::STATUS, &args);
-        if r.is_err() {
+        let r = crate::sim_lock::read(self.session.as_ref()?);
+        if r.is_none() {
             self.session = None; // MODEMD restarted: connect again next time
-            return None;
         }
-        Status::from_bytes(&b)
+        r
     }
 
     /// Read MODEMD's status into the pages (no modem: "No service", "No modem").
     pub fn poll(&mut self, ui: &SettingsApp) {
         let s = ui.global::<SetState>();
-        let Some(st) = self.status() else {
+        let read = self.status();
+        self.sim.show(ui, read.as_ref());
+        let Some((st, _)) = read else {
             s.set_operator(String::new().into());
             s.set_sim("No modem".into());
             s.set_rat("".into());
@@ -109,6 +109,8 @@ impl Modem {
             sim::PRESENT if registered => "SIM ready",
             sim::PRESENT => "SIM present, not registered",
             sim::ERROR => "SIM error",
+            sim::PIN_REQUIRED => "SIM PIN needed",
+            sim::BLOCKED => "SIM blocked",
             _ => "SIM unknown",
         };
         s.set_sim(sim.into());

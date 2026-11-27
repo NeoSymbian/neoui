@@ -283,6 +283,35 @@ pub const ROWS: &[Row] = &[
         "Data usage",
         &["this month", "traffic", "megabytes"],
     ),
+    // D11: SIM card lock (set2-mobile's row, set2-sim-lock); the PIN itself is never a value
+    row(
+        "mobile.sim_lock",
+        Mobile,
+        SimLock,
+        "SIM card lock",
+        &["sim pin", "pin lock"],
+    ),
+    row(
+        "sim.pin",
+        SimLock,
+        SimLock,
+        "Use SIM PIN",
+        &["sim pin", "pin lock"],
+    ),
+    action(
+        "sim.change",
+        SimLock,
+        SimLock,
+        "Change SIM PIN",
+        &["pin code", "new pin"],
+    ),
+    row(
+        "sim.attempts",
+        SimLock,
+        SimLock,
+        "PIN attempts left",
+        &["tries", "puk"],
+    ),
     // Bluetooth
     row("bt.switch", Bluetooth, Bluetooth, "Bluetooth", &[]),
     // D14: no driver yet

@@ -83,6 +83,16 @@ export component MobilePage inherits NeoList {
             icon: @image-url("@neoui/icons/sys/signal.svg");
         }
 
+        // D11: the SIM PIN as MODEMD reports it
+        ListRow {
+            value-bright: true;
+            title: "SIM card lock";
+            checked: SetState.found == "mobile.sim_lock";
+            subtitle: SetState.sim-lock-text;
+            chevron: true;
+            clicked => { SetState.act("open", "30"); }
+        }
+
         SectionHeader { text: "Data"; }
         ListRow {
             value-bright: true;

@@ -605,6 +605,12 @@ impl Provider for Builtin {
                 Some(slot) if !slot.is_empty() => format!("Slot {slot} · {NO_UPDATE_SERVICE}"),
                 _ => format!("Slot unavailable · {NO_UPDATE_SERVICE}"),
             }),
+            // D11: only the card supplies a try count (255 from MODEMD: none)
+            "sim.attempts" => f
+                .text(id)
+                .map_or(Reading::Unavailable("The SIM doesn't say"), |t| {
+                    Reading::Value(String::from(t))
+                }),
             _ => match f.scalars.get(id) {
                 Some(Scalar::On(b)) => on_off(*b),
                 Some(Scalar::Text(t) | Scalar::Choice(_, t)) => known(Some(t)),

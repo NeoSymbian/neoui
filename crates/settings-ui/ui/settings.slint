@@ -19,6 +19,7 @@ import { DateTimePage, TimeZonePage, KeyboardPage, PrivacyPage } from "pages/per
 import { AppsPage, AppSheet, AppDetailPage, ResetPage, OldAppsPage, DeveloperPage, AboutPage } from "pages/system.slint";
 import { WallpaperPage, FontSizePage } from "pages/appearance.slint";
 import { PanelPage, NotificationsPage, NotifyAppPage } from "pages/notifications.slint";
+import { SimLockPage, SimPinSheet } from "pages/sim-lock.slint";
 import { Wallpapers } from "@neoui/components/wallpaper.slint";
 
 export { Theme, Scroll, KeyboardFocus, Kit, SetState, WifiNet, WifiLink, WifiDetail, SearchHit, DriveRow, PartRow, Wallpapers }
@@ -101,6 +102,7 @@ export component SettingsApp inherits Window {
         if SetState.page == 27: PanelPage { }
         if SetState.page == 28: NotificationsPage { }
         if SetState.page == 29: NotifyAppPage { }
+        if SetState.page == 30: SimLockPage { }
     }
 
     // the sheets: full size, last, so they cover the header and the page
@@ -108,6 +110,13 @@ export component SettingsApp inherits Window {
         kb: root.kb;
         open: true;
         dismissed => { SetState.sheet = ""; SetState.password = ""; KeyboardFocus.open = false; }
+    }
+    // D11: the SIM PIN's sheets; their fields go empty when they close
+    if SetState.sheet == "sim-pin" || SetState.sheet == "sim-change": SimPinSheet {
+        kb: root.kb;
+        change: SetState.sheet == "sim-change";
+        open: true;
+        dismissed => { SetState.sheet = ""; SetState.act("sim-cancel", ""); KeyboardFocus.open = false; }
     }
     if SetState.sheet == "message-tone": ChoiceSheet {
         open: true;

@@ -45,9 +45,11 @@ pub enum Page {
     /// (TP4) One app's notifications (set2-notify-app, nt-settings): its switches and channels; the app is NEOSET's
     /// current one.
     NotifyApp = 29,
+    /// (D11) SIM card lock (set2-sim-lock): Use SIM PIN, Change SIM PIN, the attempts left.
+    SimLock = 30,
 }
 
-pub const ALL: [Page; 30] = [
+pub const ALL: [Page; 31] = [
     Page::Root,
     Page::Wifi,
     Page::Mobile,
@@ -78,6 +80,7 @@ pub const ALL: [Page; 30] = [
     Page::Panel,
     Page::Notifications,
     Page::NotifyApp,
+    Page::SimLock,
 ];
 
 impl Page {
@@ -125,6 +128,7 @@ impl Page {
             Page::Panel => "panel",
             Page::Notifications => "notifications",
             Page::NotifyApp => "notifyapp",
+            Page::SimLock => "simlock",
         }
     }
 
@@ -190,6 +194,7 @@ impl Page {
             Page::FontSize => "Font size",
             Page::Panel => "Panel & notifications",
             Page::Notifications | Page::NotifyApp => "Notifications",
+            Page::SimLock => "SIM card lock",
         }
     }
 
@@ -210,6 +215,7 @@ impl Page {
             Page::Wallpaper | Page::FontSize => Some(Page::Display),
             Page::Notifications => Some(Page::Panel),
             Page::NotifyApp => Some(Page::Notifications),
+            Page::SimLock => Some(Page::Mobile),
             _ => Some(Page::Root),
         }
     }
@@ -226,7 +232,9 @@ mod tests {
             assert_eq!(Page::from_id(p.id()), Some(*p));
             assert_eq!(Page::from_name(p.name()), Some(*p));
         }
-        assert_eq!(Page::from_id(30), None);
+        assert_eq!(Page::from_id(31), None);
+        assert_eq!(Page::SimLock.parent(), Some(Page::Mobile));
+        assert_eq!(Page::opened(0, "simlock"), Page::SimLock);
         assert_eq!(Page::opened(29, "").from_outside(), Page::Notifications);
         assert_eq!(Page::NotifyApp.parent(), Some(Page::Notifications));
         assert_eq!(Page::Notifications.parent(), Some(Page::Panel));
