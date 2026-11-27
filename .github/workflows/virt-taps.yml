@@ -394,8 +394,9 @@ jobs:
           tap 270 1007; expect "classic: "; expect "legacy: app "
           wait_s 3; tap 90 202; expect "legacy: start app"
           wait_s 5; tap 200 300; expect "legacy: raw"
-          swipe 5 540 200 540; expect "neoui: app legacy front false"   # Back (the left edge)
-          wait_s 2; swipe 5 540 200 540; wait_s 2; swipe 5 540 200 540; wait_s 3   # Classic apps, the menu, then home
+          swipe 5 540 200 540; expect "neoui: app legacy front false"; expect "neoui: screen classic"   # Back: Classic apps
+          wait_s 2; swipe 5 540 200 540; expect "neoui: screen menu"
+          wait_s 2; swipe 5 540 200 540; expect "neoui: screen home"; wait_s 3
           tap 54 973; expect "neoui: screen phone"
           # Phone opens on its dial pad (NEOPHONE v2): Back shows the call list, a second Back goes home
           wait_s 1; swipe 5 540 200 540; wait_s 1; swipe 5 540 200 540; expect "neoui: screen home"

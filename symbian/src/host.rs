@@ -837,26 +837,45 @@ impl Host {
         } else {
             self.launch(key);
         }
-        if let Some(app) = self.apps.find_mut(|a| a.key == key && a.quit_at.is_none()) {
+        // the bridge's Open apps card shows only while a guest is up: its FRONT says so (`set_card`)
+        if key != LEGACY
+            && let Some(app) = self.apps.find_mut(|a| a.key == key && a.quit_at.is_none())
+        {
             app.shown = true;
+        }
+    }
+
+    /// The bridge's Open apps card: on while a guest app is up, off once it ended or went back.
+    fn set_card(&mut self, on: bool) {
+        if let Some(app) = self
+            .apps
+            .find_mut(|a| a.key == LEGACY && a.quit_at.is_none())
+        {
+            app.shown = on;
         }
     }
 
     /// Close the apps used longest ago (never a resident) so that `key` runs within [`MAX_RUNNING`]: before
     /// starting it, so the new app has the memory (the closed ones get [`QUIT_GRACE_MS`] to save).
     fn limit_running(&mut self, key: &str, now_ms: u64) {
-        let running = self
-            .apps
-            .find(|a| a.key == key && a.quit_at.is_none())
-            .is_some();
-        let limit = MAX_RUNNING - usize::from(!running);
+        // a cold Classic apps start adds two processes (it and the bridge): room for both
+        let starts = apps::starts(key, |k| {
+            self.apps
+                .find(|a| a.key == k && a.quit_at.is_none())
+                .is_some()
+        });
+        let limit = MAX_RUNNING.saturating_sub(starts);
         let over: Vec<&'static str> = self
             .apps
             .over_limit(
                 limit,
                 // a resident never opened (or dismissed) holds no slot: it has no surface yet
                 |a| a.quit_at.is_some() || (RESIDENT.contains(&a.key) && !a.shown),
-                |a| a.key == key || RESIDENT.contains(&a.key),
+                |a| {
+                    a.key == key
+                        || apps::companions(key).contains(&a.key)
+                        || RESIDENT.contains(&a.key)
+                },
             )
             .map(|a| a.key)
             .collect();
@@ -1680,9 +1699,7 @@ impl Service for Host {
                     // registered
                     proto::ACTION_OPEN_ENTRY => {
                         let key = app.key;
-                        if access::caller(key, m.client_sid()) != Caller::Settings
-                            && !(key == CLASSIC && apps::sid_fits(CLASSIC, m.client_sid()))
-                        {
+                        if !apps::old_apps_client(key, m.client_sid()) {
                             kerr::PERMISSION_DENIED
                         } else {
                             let mut b = [0u8; 4];
@@ -1760,6 +1777,23 @@ impl Service for Host {
                 // Select the caller's shell screen without briefly foregrounding an ordinary app on FRONT(0).
                 let was_front = self.front == Some(key);
                 dprintln!("neoui: app {} front {}", key, show);
+                // the bridge: its guest ended or went back (FRONT 0) moves the user only when it has the screen
+                if key == LEGACY && !show {
+                    let (screen, card) = apps::bridge_front(show, was_front);
+                    self.set_card(card);
+                    match screen {
+                        Some(s) => {
+                            self.screen = Some(key);
+                            self.set_front(None);
+                            self.requested_screen = Some(s);
+                        }
+                        // in the background: nobody moves; FRONT still acknowledges its caller's state
+                        None => {
+                            self.post(key, AppEvent::Visible(false));
+                        }
+                    }
+                    return m.complete(0);
+                }
                 self.screen = Some(key);
                 self.set_front(if show { Some(key) } else { None });
                 if show == was_front {
@@ -1768,8 +1802,10 @@ impl Service for Host {
                 }
                 self.limit_running(key, e32::time::millis());
                 self.start(key);
-                // the bridge's FRONT(0) (its old app ended or went back): Classic apps, the list it was opened from
-                self.requested_screen = Some(if !show && key == LEGACY { CLASSIC } else { key });
+                if key == LEGACY {
+                    self.set_card(true); // FRONT(1): a guest is up
+                }
+                self.requested_screen = Some(key);
                 m.complete(0);
             }
             proto::OPEN | proto::OPEN_FILE => {

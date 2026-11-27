@@ -154,6 +154,51 @@ pub fn sid_fits(key: &str, sid: u32) -> bool {
     }
 }
 
+/// The apps that start, hidden, with app `key`: Classic apps lists what the legacy bridge registers, so the bridge
+/// runs with it.
+#[must_use]
+pub fn companions(key: &str) -> &'static [&'static str] {
+    if key == CLASSIC { &[LEGACY] } else { &[] }
+}
+
+/// How many processes opening app `key` starts, given which apps run now (`running`): the shell makes room for all
+/// of them before starting any.
+#[must_use]
+pub fn starts(key: &str, running: impl Fn(&str) -> bool) -> usize {
+    core::iter::once(key)
+        .chain(companions(key).iter().copied())
+        .filter(|k| !running(k))
+        .count()
+}
+
+/// May the process with screen key `key` and secure ID `sid` open an old app (`ipc::ACTION_OPEN_ENTRY`) and read
+/// its icon (`ipc::ENTRY_THUMB`)? Settings and Classic apps, each by its own SID.
+#[must_use]
+pub fn old_apps_client(key: &str, sid: u32) -> bool {
+    use crate::settings::access::{Caller, caller};
+    caller(key, sid) == Caller::Settings || (key == CLASSIC && sid_fits(CLASSIC, sid))
+}
+
+/// What the legacy bridge's `FRONT(show)` does, `in_front` when it has the screen now: the screen the shell goes to
+/// (`None`: it stays where it is) and whether its Open apps card shows (a guest app is up). The bridge, not the
+/// user, decides when its guest shows, so a guest ending in the background must move nobody.
+#[must_use]
+pub fn bridge_front(show: bool, in_front: bool) -> (Option<&'static str>, bool) {
+    match (show, in_front) {
+        (true, _) => (Some(LEGACY), true),
+        // its guest ended or went back: the list it was opened from
+        (false, true) => (Some(CLASSIC), false),
+        (false, false) => (None, false),
+    }
+}
+
+/// Where the shell goes when app `key`'s process ends while its screen is shown: home, or Classic apps for the
+/// bridge (its guest's list).
+#[must_use]
+pub fn after_exit(key: &str) -> &'static str {
+    if key == LEGACY { CLASSIC } else { "home" }
+}
+
 /// The app with screen key `key`.
 #[must_use]
 pub fn find(key: &str) -> Option<&'static App> {
@@ -199,6 +244,52 @@ mod tests {
                 assert!(find(k).is_some(), "{} settings in {k}", a.key);
             }
         }
+    }
+
+    #[test]
+    fn a_cold_classic_start_makes_room_for_the_bridge_too() {
+        let none = |_: &str| false;
+        assert_eq!(starts(CLASSIC, none), 2, "Classic and the bridge");
+        assert_eq!(starts(CLASSIC, |k| k == LEGACY), 1);
+        assert_eq!(starts(CLASSIC, |k| k == CLASSIC || k == LEGACY), 0);
+        assert_eq!(starts("files", none), 1);
+        assert_eq!(starts("files", |k| k == "files"), 0);
+        assert_eq!(companions(CLASSIC), [LEGACY]);
+        assert!(companions("files").is_empty());
+    }
+
+    #[test]
+    fn only_settings_and_classic_open_old_apps() {
+        use crate::settings::access::SETTINGS_SID;
+        assert!(old_apps_client(SETTINGS, SETTINGS_SID));
+        assert!(old_apps_client(CLASSIC, 0xE000_2008));
+        assert!(
+            !old_apps_client(CLASSIC, SETTINGS_SID),
+            "Classic's key with another SID"
+        );
+        assert!(!old_apps_client("kit", LEGACY_SID));
+        assert!(
+            !old_apps_client(LEGACY, LEGACY_SID),
+            "the bridge opens its own apps itself"
+        );
+    }
+
+    /// The bridge's life in the shell: a tile opens a guest (FRONT 1: its screen, its Open apps card), Back closes it
+    /// (FRONT 0 while in front: Classic apps, no card); a guest that ends while the user is elsewhere moves nobody
+    /// and clears the card; the bridge dying on screen lands on Classic apps, any other app on home.
+    #[test]
+    fn the_bridge_lifecycle() {
+        // a tile in Classic apps: the guest comes to the front
+        assert_eq!(bridge_front(true, false), (Some(LEGACY), true));
+        // a second tile while it runs: the bridge shows it again
+        assert_eq!(bridge_front(true, true), (Some(LEGACY), true));
+        // Back in the guest: Classic apps again, the card goes
+        assert_eq!(bridge_front(false, true), (Some(CLASSIC), false));
+        // the user went to Files; the guest ends there: Files stays, the card goes
+        assert_eq!(bridge_front(false, false), (None, false));
+        // the bridge's process ends on screen
+        assert_eq!(after_exit(LEGACY), CLASSIC);
+        assert_eq!(after_exit("files"), "home");
     }
 
     #[test]

@@ -317,9 +317,10 @@ pub const TILE: i32 = 37;
 /// the receipt is saved. Only from the app's own EXE (its SID), on its current session, from 1.20 clients
 /// (`KErrPermissionDenied`).
 pub const OWNER_REPORT: i32 = 42;
-/// 1.20, Settings only: `[entry_id, Des8 out, expected_rev, 0]` → the length of an old app's launcher icon cut to at
-/// most 32 × 32 ([`crate::settings_app::wire::thumb`]; 0 bytes: the generic icon). `KErrNotFound` for an entry the
-/// bridge doesn't have, `KErrNotReady` when `expected_rev` isn't 0 and isn't INFO 8's revision now.
+/// 1.20, Settings and Classic apps only (`apps::old_apps_client`): `[entry_id, Des8 out, expected_rev, 0]` → the length
+/// of an old app's launcher icon cut to at most 32 × 32 ([`crate::settings_app::wire::thumb`]; 0 bytes: the generic
+/// icon). `KErrNotFound` for an entry the bridge doesn't have, `KErrNotReady` when `expected_rev` isn't 0 and isn't
+/// INFO 8's revision now.
 pub const ENTRY_THUMB: i32 = 43;
 /// 1.20 (D6): `[kind, key]` → 0: a control of the app in front accepted a
 /// touch (the kit's controls say so through `neoapp::kit_feedback!`). The shell answers at most once per press it
