@@ -240,7 +240,13 @@ jobs:
           wait_s 1; tap 36 73; expect "settings: back"; wait_s 1; tap 36 73; expect "settings: back"
           expect "selected root.apps)"; wait_s 1
           tap 503 73; expect "settings: search closed"
-          tap 426 73; wait_s 1; kb_type offline
+          # W1 keyboard: "neo" typed, e held a second types é (its first alternate), Backspace held a second deletes
+          # them all (it repeats), then the search as before
+          tap 426 73; wait_s 1
+          for c in n e o; do tap $(kb_key $c); done
+          kb_hold e; expect "neoui: key alternate 1 of 5"
+          kb_hold BKSP; expect "neoui: key repeat"
+          kb_type offline
           tap 270 214; expect "settings: page sounds"; wait_s 1
           tap 270 870; wait_s 1; tap 270 829; expect "neoui: sound profile 4: airplane true, wifi false, bt false"
           wait_s 1; tap 270 435; wait_s 1; tap 270 829; expect "neoui: sound profile 0: airplane false, wifi true, bt false"
@@ -249,10 +255,13 @@ jobs:
           wait_s 1; swipe 270 1075 270 900; expect "neoui: screen home"; wait_s 1
           swipe 270 300 270 600; expect "neoui: shade from home"; wait_s 1
           tap 425 82; expect "neoui: app settings resumed"
+          # G2: over Settings, a short swipe up from the band peeks (the app shrinks into a card over home) and settles
+          # back; the long one below settles onto home and commits it, with no fade
+          wait_s 1; swipe 270 1075 270 1040; expect "neoui: peek cancel"; wait_s 1
           # TP2a: home, Apps, UI kit (its tile ends the grid's 5th row), ⋮ → Notifications, Post sample cards (6, one
           # ongoing, a group of 3); the shade from the status bar, See all, a swipe on the reminder (Alerts) dismisses
           # it, Clear all (left of TP4's Manage) takes the other 4 and leaves the ongoing one
-          wait_s 1; swipe 270 1075 270 900; expect "neoui: screen home"; wait_s 1
+          swipe 270 1075 270 900; expect "neoui: peek commit home"; expect "neoui: screen home"; wait_s 1
           tap 485 973; wait_s 2; tap 448 1000; expect "neoui: app kit surface"; wait_s 2
           tap 497 72; wait_s 2; tap 298 874; wait_s 2
           tap 270 160; expect "kit: sample cards posted (Ok"; wait_s 1
@@ -262,7 +271,25 @@ jobs:
           # Mark read (an in-place action) on the group's head: the kit hears it without coming forward
           wait_s 1; tap 270 12; wait_s 1; tap 270 160; expect "kit: sample cards posted (Ok"; wait_s 1
           tap 270 12; wait_s 2; tap 174 670; expect "kit: card 5 opened (2)"
-          ui_run 560
+          # TP3: Back closes the shade (Mark read left it open: its ⏻ is where the kit's ⋮ is); the kit's ⋮ → Media
+          # (menu row 11), Play a sample track posts the session; the shade's player (under brightness, above the
+          # cards) → its pause (268,511, tests/tp3_media.rs): the kit hears PAUSE
+          wait_s 1; tap 90 1037; wait_s 1; tap 497 72; wait_s 2; tap 298 946; wait_s 2
+          tap 270 160; expect "kit: media posted (Ok"; expect "neoui: media kit state 1"; wait_s 1
+          tap 270 12; wait_s 2; tap 268 511; expect "neoui: media command 2 0 to kit"; expect "kit: media command 2 0"
+          # TP7: Back closes TP3's shade; the shade again, a pull on its first stop's tiles (122 dp; TP3's player is
+          # under them, and under the control centre's grid) goes on to the control centre; Do not disturb
+          # (row 1, col 1: 137,189 dp) switches notify.dnd; ✎ (238,55 dp) opens the editor, Dark (row 2, col 0 under
+          # the editor's hint: 51,315 dp) is dragged onto Wi-Fi's cell (51,163 dp), Done (318,55 dp) saves
+          # shell.tiles; Back closes the shade. (The order surviving a reboot is checked on the integrated branch.)
+          wait_s 1; tap 90 1037; wait_s 1; tap 270 12; wait_s 2
+          swipe 60 183 60 420; expect "neoui: control centre shown"; wait_s 1
+          tap 205 283; expect "neoui: setting notify.dnd = true (by shell)"; wait_s 1
+          tap 356 82; expect "neoui: tile editor shown"; wait_s 1
+          swipe 76 471 76 244; wait_s 1
+          tap 476 82; expect "neoui: setting shell.tiles = <"; expect "neoui: tile editor closed"; wait_s 1
+          tap 90 1037; expect "neoui: control centre closed"
+          ui_run 640
 
       - name: Check the output
         working-directory: build
@@ -286,10 +313,16 @@ jobs:
           grep -a 'clock: quit' $s
           # SE2a: Offline turned the radios off, General gave them back
           grep -a 'neoui: sound profile 4: airplane true, wifi false, bt false' $s
+          grep -a 'neoui: key alternate 1 of 5' $s
+          grep -aE 'neoui: key repeat ([5-9]|[1-9][0-9])' $s
           grep -a 'neoui: sound profile 0: airplane false, wifi true, bt false' $s
           # TP1: the shade from home, then Settings from its ⚙
           grep -a 'neoui: shade from home' $s
           grep -a 'neoui: app settings resumed' $s
+          # G2: the peek ran, a short swipe put the app back, a long one went home through it
+          grep -a 'neoui: peek Card' $s
+          grep -a 'neoui: peek cancel' $s
+          grep -a 'neoui: peek commit home' $s
           # TP2a: the kit's cards passed the SID check, a swipe and Clear all reached it, the ongoing card stayed
           grep -a 'kit: sample cards posted (Ok' $s
           ! grep -aq 'refused for kit' $s
@@ -298,6 +331,17 @@ jobs:
           grep -a 'kit: card 5 gone (1)' $s
           ! grep -aq 'kit: card 6 gone' $s
           grep -a 'kit: card 5 opened (2)' $s
+          # TP3: the kit owns the media session; the shade's pause reached it as event 23
+          grep -a 'kit: media posted (Ok' $s
+          grep -a 'neoui: media command 2 0 to kit' $s
+          grep -a 'kit: media command 2 0' $s
+          ! grep -aq 'neoui: media from kit refused' $s
+          # TP7: the control centre by a pull, a tile switched Do not disturb, the editor saved a new order
+          grep -a 'neoui: control centre shown' $s
+          grep -a 'neoui: setting notify.dnd = true (by shell)' $s
+          grep -a 'neoui: tile editor shown' $s
+          grep -a 'neoui: setting shell.tiles = <14 bytes> (by shell)' $s
+          ! grep -aq 'tiles table save failed' $s
           ! grep -aq 'settings: set nav.mode = [0-9] (Err' $s
           grep -aE 'neoui: clock [0-9]{2}:[0-9]{2}' $s
           # R9: frame timing (one summary per second of activity) on the fast counter
@@ -433,6 +477,58 @@ jobs:
           grep -a 'neocont: opened on page 0' $s
           ! grep -aq 'K::Fault\|Kern::Fault\|\[EKERN\] panic\|rust panic' $s
 
+      # Home Part 3 and 4 (docs neoui-shell/home.md), in Gestures (the Classic step left it so). In screen pixels:
+      # - Add to home: Apps (485,973) -> a long press on Clock (449,603) opens the kit's Menu at the finger; its one
+      #   item, Add to home (362,651: the menu's left edge clamped to 132 dp, its row 32 dp under the finger), saves
+      #   home.layout at once (page 0 is full: page 1). Reboot persistence is the conductor's check.
+      # - The kit's widget: UI kit (449,990) -> ⋮ (497,72) -> Notifications (298,874) -> Send home widget (third
+      #   button, 270,328): WIDGET passes the SID check and is kept under widget.kit.demo.
+      # - The editor: Settings (270,805) -> Home & navigation (270,721) -> Edit home (270,980) -> + (42,73) ->
+      #   Agenda's 2 × 2 (467,659: the sheet's six rows from the bottom, the last chip) -> + -> Kit demo's 2 × 2
+      #   (359,994: its first chip) -> Done (473,73) saves once.
+      # - The kit's widget opens the kit on its page: a swipe left to page 1 (the last: no change if Done left home
+      #   there) -> Kit demo's 2 × 2 under Clock and Agenda (146,470) -> the kit on NOTIFY_PAGE (10); home again.
+      # - Lanes: Settings again -> Home style (270,883) -> Lanes (270,988); home; a swipe moves between lanes; then
+      #   Pages again (270,892) for the steps after this one.
+      - name: Boot again; home (Add to home from the menu, the kit's widget, a 2 × 2 in the editor, Lanes)
+        working-directory: build
+        run: |
+          cp out/serial.log out/serial-legacy.log
+          export SCREEN=539x1079 NAV=gestures
+          . ../neoui/symbian/taps.sh
+          tap 485 973; wait_s 1
+          hold 449 603; wait_s 1; tap 362 651; expect "neoui: setting home.layout"
+          wait_s 1; tap 449 990; expect "neoui: app kit started"; wait_s 2
+          tap 497 72; wait_s 2; tap 298 874; wait_s 2
+          tap 270 328; expect "kit: home widget sent (Ok"; expect "neoui: widget widget.kit.demo from kit"
+          wait_s 1; swipe 270 1075 270 900; expect "neoui: screen home"; wait_s 1
+          tap 485 973; tap 270 805; expect "neoui: app settings surface"; wait_s 2
+          tap 270 721; expect "settings: page navigation"; wait_s 1
+          tap 270 980; expect "neoui: settings opens the home editor"; wait_s 1
+          tap 42 73; wait_s 1; tap 467 659; wait_s 1
+          tap 42 73; wait_s 1; tap 359 994; wait_s 1
+          tap 473 73; expect "neoui: setting home.layout"; wait_s 1
+          swipe 450 500 90 500; wait_s 1
+          tap 146 470; expect "neoui: widget of kit opens page 10"; wait_s 2
+          swipe 270 1075 270 900; expect "neoui: screen home"; wait_s 1
+          tap 485 973; tap 270 805; expect "neoui: app settings resumed"; wait_s 2
+          tap 270 883; wait_s 1; tap 270 988; expect "neoui: setting home.style = 1"
+          wait_s 1; swipe 270 1075 270 900; expect "neoui: screen home"; wait_s 1
+          swipe 450 500 90 500; expect "neoui: home page"; wait_s 1
+          tap 485 973; tap 270 805; expect "neoui: app settings resumed"; wait_s 2
+          tap 270 883; wait_s 1; tap 270 892; expect "neoui: setting home.style = 0"
+          ui_run 240
+          s=out/serial.log
+          test "$(grep -ac 'neoui: setting home.layout' $s)" -ge 2   # the menu's save, then Done's
+          grep -a 'kit: home widget sent (Ok' $s
+          grep -a 'neoui: widget widget.kit.demo from kit (Text)' $s
+          ! grep -aq 'neoui: widget refused for kit' $s
+          grep -a 'neoui: settings opens the home editor' $s
+          grep -a 'neoui: widget of kit opens page 10' $s
+          grep -a 'neoui: setting home.style = 1' $s
+          grep -a 'neoui: home page' $s
+          ! grep -aq 'K::Fault\|Kern::Fault\|\[EKERN\] panic\|rust panic' $s
+
       # Navigation v2's gestures (docs neoui-shell/navigation.md; edge zone 16 dp = 24 px, sides and the band commit at 72 dp =
       # 108 px, Home at 80 dp = 120 px). The Thumb map (Gestures, the default):
       # - Settings (via Apps 485,973 and 270,805; the NEOSET app) -> Home & navigation (270,721).
@@ -440,7 +536,8 @@ jobs:
       # - Up from the bottom goes Home, and from home to the menu.
       # - Clock (449,603). Up and held still for Open apps.
       # - Clock again from the menu; along the band rightwards: the previous app.
-      # - Clock's ⋮ (497,73) -> Settings (400,157), the kit's menu.
+      # - Clock's ⋮ (497,73) -> Settings (400,229), the kit's menu: its second row (72 px each; datetime's Clock lists
+      #   Set time first, at 400,157).
       # - Protocol 1.12 (Files FA8): the UI kit (Apps row 4, 449,985) -> ⋮ (500,73) -> Files (menu row 9, 400,805) ->
       #   Save a file (270,244) opens Files' Save as on C:\ (no C:\Data there); its Save (470,998) answers the kit
       #   with the new file by handle, and the kit writes into it.
@@ -450,7 +547,7 @@ jobs:
       - name: Boot again; gesture navigation (the Thumb map, then N9)
         working-directory: build
         run: |
-          cp out/serial.log out/serial-legacy.log
+          cp out/serial.log out/serial-home.log
           export SCREEN=539x1079 NAV=gestures
           . ../neoui/symbian/taps.sh
           tap 485 973; tap 270 805; expect "neoui: app settings surface"; wait_s 2
@@ -467,7 +564,7 @@ jobs:
           # (the previous app is Settings, now an app itself): home, then Clock from the menu again
           wait_s 1; swipe 270 1075 270 900; expect "neoui: screen home"
           wait_s 1; tap 485 973; tap 449 603; expect "clock: visible true"
-          wait_s 1; tap 497 73; wait_s 1; tap 400 157; expect "clock: view settings"
+          wait_s 1; tap 497 73; wait_s 1; tap 400 229; expect "clock: view settings"
           wait_s 1; swipe 270 1075 270 900; expect "neoui: screen home"
           wait_s 1; tap 485 973; tap 449 985; expect "neoui: app kit started"
           wait_s 1; tap 500 73; wait_s 1; tap 400 805; wait_s 1
@@ -492,6 +589,28 @@ jobs:
           grep -a 'kit: saved C:\\note.txt 15 bytes' $s
           ! grep -aq 'K::Fault\|Kern::Fault\|\[EKERN\] panic\|rust panic' $s
 
+      # Settings leftovers (W1-H, docs neoui-shell/settings-data.md D3/D8): Settings (via Apps 485,973 and 270,805), search
+      # (🔍 426,73) "storage", its first result (270,214) -> Storage; the first drive row (E:, or C: where virt has no
+      # E:; 72 dp under the header: 270,217) opens the drive's own page (D3, set2-storage-drive), which counts it; ←.
+      # The shell read each app's capabilities from the kernel when its session bound (D8).
+      - name: Boot again; Settings → Storage → a drive
+        working-directory: build
+        run: |
+          cp out/serial.log out/serial-gestures.log
+          export SCREEN=539x1079 NAV=gestures
+          . ../neoui/symbian/taps.sh
+          tap 485 973; tap 270 805; expect "neoui: app settings surface"; wait_s 2
+          tap 426 73; wait_s 1; kb_type storage
+          tap 270 214; expect "settings: page storage"; wait_s 2
+          tap 270 217; expect "settings: drive page "; expect "settings: page drive"
+          wait_s 3; tap 36 73; expect "settings: back"
+          ui_run 150
+          s=out/serial.log
+          grep -aE 'settings: drive page [CE]' $s
+          grep -a 'settings: page drive' $s
+          grep -aE 'neoui: settings runs with capabilities 0x[0-9a-f]+' $s
+          ! grep -aq 'K::Fault\|Kern::Fault\|\[EKERN\] panic\|rust panic' $s
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -501,3 +620,5 @@ jobs:
             build/out/serial.log
             build/out/serial-main.log
             build/out/serial-legacy.log
+            build/out/serial-home.log
+            build/out/serial-gestures.log

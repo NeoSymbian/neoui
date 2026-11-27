@@ -233,6 +233,7 @@ pub fn load(app: &App, ui: &SettingsApp) {
     s.set_keyboard(pick(&on, get(app, keys::KEYBOARD_LAYOUT)));
     s.set_keyboards(ModelRc::new(VecModel::from(on)));
     s.set_same_height(get(app, keys::KEYBOARD_SAME_HEIGHT));
+    s.set_suggest(get(app, keys::KEYBOARD_SUGGEST));
     s.set_pad_vibrate(get(app, keys::LEGACY_PAD_VIBRATE));
     s.set_pad_strength(get(app, keys::LEGACY_PAD_STRENGTH));
     s.set_pad_default(get(app, keys::LEGACY_PAD_DEFAULT));

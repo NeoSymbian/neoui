@@ -58,6 +58,7 @@ kb_key() {
 		else if (c == " ") { row = 0; at = 3.5; w = 4 }
 		else if (c == "GLOBE") { row = 0; at = 1.5 }
 		else if (c == "ENTER") { row = 0; at = 8.5; w = 1.5 }
+		else if (c == "BKSP") { row = 1; at = 8.5; w = 1.5 }
 		else exit 1
 		printf "%d %d\n", (at + w / 2) * u, bottom - (27 + row * 48) * d
 	}'
@@ -87,6 +88,10 @@ kb_globe() { tap $(kb_key GLOBE); }
 # kb_enter: the Enter key
 # shellcheck disable=SC2046 # "x y"
 kb_enter() { tap $(kb_key ENTER); }
+# kb_hold KEY: hold a key of kb_key's (a letter, BKSP, ...) for a second: Backspace repeats, a letter with alternates
+# types its first one (the keyboard logs "neoui: key repeat N", "neoui: key alternate 1 of N")
+# shellcheck disable=SC2046 # "x y"
+kb_hold() { hold $(kb_key "$1"); }
 kb_type() {
 	w=$1
 	while [ -n "$w" ]; do

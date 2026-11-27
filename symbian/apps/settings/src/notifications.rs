@@ -72,6 +72,16 @@ fn sound_elsewhere(owner: &str) -> bool {
 pub fn refresh(app: &App, ui: &SettingsApp) {
     let s = ui.global::<SetState>();
     s.set_swipe_home(app.setting(keys::SHELL_SWIPEHOME).unwrap_or(true));
+    // (TP7) a shell before 1.22 refuses shell.tiles: no editor there
+    let tiles = match app.setting_raw(keys::SHELL_TILES.name()) {
+        Ok(Value::Bytes(b)) => neoui_proto::tiles::decode_order(&b),
+        _ => None,
+    };
+    s.set_tiles_ok(tiles.is_some());
+    // shortcut: counts the placed tiles as stored (an app tile whose app withdrew it too); INFO 12 has the drawn ones
+    let n = tiles.map_or(0, |t| t.len());
+    s.set_tiles_text(format!("{n} tiles, {} in the first stop", n.min(4)).into());
+    s.set_shell_tap(app.setting(keys::SHELL_TAP).unwrap_or(0).clamp(0, 1));
     let secs = app
         .setting(keys::NOTIFY_BANNERT)
         .unwrap_or(policy::BANNER_S);
@@ -311,6 +321,24 @@ pub fn act(ctx: &Ctx, ui: &SettingsApp, action: &str, value: &str) {
             change(app, &s, |p| {
                 p.set_override(channel, over);
             });
+        }
+        // (TP7) the shell's tile editor comes up over this app; what a tap on the status bar opens
+        "notify-tiles" => {
+            let r = app.settings_action(proto::ACTION_EDIT_TILES);
+            dprintln!("settings: edit tiles ({:?})", r);
+            if r.is_err() {
+                let _ = app.note("Couldn't open the tile editor", "");
+            }
+        }
+        "notify-tap" => {
+            if let Ok(i @ 0..=1) = value.parse::<i32>() {
+                let r = app.set_setting(keys::SHELL_TAP, i);
+                dprintln!("settings: status bar tap {} ({:?})", i, r);
+                if r.is_err() {
+                    let _ = app.note("Couldn't change the status bar's tap", "");
+                    refresh(app, ui);
+                }
+            }
         }
         "notify-bannert" => {
             if let Some(t) = value

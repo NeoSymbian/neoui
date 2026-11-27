@@ -12,10 +12,13 @@
 extern crate alloc;
 
 mod battery;
+mod caps;
 mod clock;
 mod clockwork;
 mod host;
+mod keyboard;
 mod netclock;
+mod peek;
 mod perf;
 mod phone;
 mod screen;
@@ -241,10 +244,20 @@ fn main() -> i32 {
         let mut press_y = 0;
         let mut close_drag: Option<(&'static str, i32)> = None;
         let mut close_restore = false;
+        // (G2) the peek under way, and that the gesture it settled onto changes the screen with no fade; (G3) pinch
+        let mut peek: Option<peek::Peeking> = None;
+        let mut no_fade = false;
+        let mut pinch = neoui_proto::pinch::Pinch::default();
+        // a hardware keyboard's Shift, Caps Lock and Ctrl
+        let mut hw = neoui_proto::hwkeys::State::default();
         loop {
             // a dark screen draws nothing: no frame pacing for animations or a pending draw
             let wait = if scr.is_on()
-                && (due || transition.is_some() || swipe.is_some() || ui.has_active_animations())
+                && (due
+                    || transition.is_some()
+                    || swipe.is_some()
+                    || peek.is_some()
+                    || ui.has_active_animations())
                 || power_down_at.is_some()
             {
                 next_frame.saturating_sub(now_us())
@@ -255,7 +268,8 @@ fn main() -> i32 {
             } else {
                 IDLE_US
             };
-            // a Slint timer (a long press, the kit's spinner), the toast's end, or a held gesture's pause is due sooner
+            // a Slint timer (a long press, the kit's spinner), the toast's, banner's or volume HUD's end, or a held gesture's
+            // pause is due sooner
             let wait = [
                 gest.busy().then_some(50_000),
                 ui.next_timer().map(|d| d.as_micros() as u64),
@@ -263,6 +277,7 @@ fn main() -> i32 {
                     neoui_proto::settings_app::privacy::toast_wake_us(*until, time::millis())
                 }),
                 (banner_until != 0).then(|| banner_until.saturating_sub(time::millis()) * 1000),
+                host.media_wake_us(time::millis()),
             ]
             .into_iter()
             .flatten()
@@ -299,7 +314,7 @@ fn main() -> i32 {
                                     scr.power_up(held, POWER_HOLD_MS)
                                 };
                                 if let Some(c) = change {
-                                    battery.display(set_screen(c, &mut host.refresh));
+                                    battery.display(set_screen(c, &mut host));
                                     if c == screen::Change::Off
                                         && (core::mem::take(&mut to_app) | fingers.take())
                                     {
@@ -315,11 +330,17 @@ fn main() -> i32 {
                                             ev.scan_code() == SCAN_VOL_UP,
                                             &mut host.settings,
                                             time::millis(),
-                                        )) => {}
+                                        )) =>
+                            {
+                                host.volume_hud(&mut ui, phone.call_volume(), time::millis());
+                            }
                             // a dark screen takes no touches or keys (the kernel's touchscreen sleeps too)
                             Ok(ev) if scr.is_on() => {
                                 scr.activity(time::millis());
-                                evs.extend(to_input(&ev));
+                                evs.extend(
+                                    to_input(&ev)
+                                        .or_else(|| keyboard::hardware_key(&ev, &mut hw, &ui)),
+                                );
                             }
                             Ok(_) => {}
                             Err(e) => {
@@ -356,13 +377,15 @@ fn main() -> i32 {
                     }
                     // Gestures (the Thumb map) and N9 gestures; Buttons has no edge gestures (D18)
                     let mode = host.settings.get(keys::NAV_MODE).unwrap_or(1);
-                    gest.set_map(if mode == 2 { Map::N9 } else { Map::Thumb });
+                    let map = if mode == 2 { Map::N9 } else { Map::Thumb };
+                    gest.set_map(map);
                     let gestures = mode != 0
                         && !power_menu
                         && !phone.modal()
                         && !ui.overlay_open()
                         && transition.is_none()
-                        && swipe.is_none();
+                        && swipe.is_none()
+                        && peek.is_none();
                     // home keeps its side edges for the pages (Back does nothing there); N9's right edge is Open apps
                     // (G4) the status bar over an app (not a full-screen page: it has none) drags the app down
                     let top = gestures
@@ -383,6 +406,10 @@ fn main() -> i32 {
                             routed.push(ev);
                             continue;
                         };
+                        let busy = gest.busy() || peek.is_some();
+                        if peek::pinch(&mut pinch, &mut ui, &mut host, &ev, ms, busy) {
+                            continue;
+                        }
                         if id != 0 {
                             routed.push(ev); // gestures follow the first finger only; in order with it (below)
                             continue;
@@ -421,6 +448,7 @@ fn main() -> i32 {
                                     dprintln!("neoui: gesture close {}", key);
                                     host.close(key, ms);
                                     ui.gesture(Gesture::Close);
+                                    peek::pulse(&host);
                                 }
                                 close_restore = true;
                             }
@@ -431,18 +459,43 @@ fn main() -> i32 {
                                     progress,
                                     if edge == Edge::Bottom { x } else { y },
                                 ));
+                                let bufs = (&frame[..], &mut old, (w, h));
+                                let along = gest.along_dx();
+                                let at = Some((x, y));
+                                peek::track(
+                                    &mut peek,
+                                    &mut ui,
+                                    &host,
+                                    bufs,
+                                    (map, along),
+                                    (edge, progress),
+                                    at,
+                                    dp256,
+                                    ms,
+                                );
                             }
                             Step::Commit(g) => {
                                 hint = None;
                                 dprintln!("neoui: gesture {}", g.name());
-                                ui.gesture(g);
-                                for n in ui.take_nav() {
-                                    host.send_nav(n);
+                                // (G2) a peek settling onto the target applies the gesture once it is there
+                                if !peek::release(
+                                    &mut peek,
+                                    &mut ui,
+                                    ms,
+                                    Some(g),
+                                    &mut close_restore,
+                                ) {
+                                    ui.gesture(g);
+                                    for n in ui.take_nav() {
+                                        host.send_nav(n);
+                                    }
+                                    peek::pulse(&host);
                                 }
                             }
                             Step::Cancel => {
                                 hint = None;
                                 close_restore |= close_drag.take().is_some();
+                                peek::release(&mut peek, &mut ui, ms, None, &mut close_restore);
                             }
                         }
                     }
@@ -480,7 +533,7 @@ fn main() -> i32 {
                             InputEvent::Touch { id, x, y, phase } => {
                                 let body = host.surface_rect();
                                 if phase == TouchPhase::Down {
-                                    swallow = swipe.is_some();
+                                    swallow = swipe.is_some() || peek.is_some();
                                     // the shade over home takes its own drags: no page slide under it
                                     home_press = (screen == "home"
                                         && !ui.home_editing()
@@ -614,6 +667,9 @@ fn main() -> i32 {
                                     home_press = None; // no neighbour, or no memory: Slint's own swipe
                                 }
                                 if to_app {
+                                    if phase == TouchPhase::Down {
+                                        ui.touch_outside_keyboard(y);
+                                    }
                                     let (x, y) = (x - body.x, y - body.y);
                                     host.send(AppEvent::Input(InputEvent::Touch {
                                         id,
@@ -682,11 +738,14 @@ fn main() -> i32 {
             // (G4) an overlay (the shade, a dialog) or another app in front ends a drag down too
             let drag_lost = close_drag
                 .is_some_and(|(k, _)| ui.overlay_open() || host.front().map(|a| a.key) != Some(k));
-            if modal || ui.screen() != screen || drag_lost {
+            // (G2) a peek shows its target in Slint: only another screen than that ends it
+            let expected = peek.as_ref().map_or(screen.as_str(), |p| p.showing());
+            if modal || ui.screen() != expected || drag_lost {
                 gest.reset();
                 held.clear();
                 hint = None;
-                close_restore |= close_drag.take().is_some();
+                close_restore |= close_drag.take().is_some() | peek.is_some();
+                peek::abort(&mut peek, &mut ui);
             }
             if modal_changed {
                 host.refresh = true;
@@ -711,12 +770,26 @@ fn main() -> i32 {
             if core::mem::take(&mut host.d10.edit_home) {
                 ui.edit_home();
             }
-            for (key, tw, th, px) in host.d10.thumbs.drain(..) {
-                ui.set_thumb(key, tw, th, &px);
+            // (D7) a wallpaper picture installed (or read at boot)
+            if let Some(px) = host.wallpaper.pending.take() {
+                let (w, h) = (
+                    neoui_proto::settings_app::wallpaper::W,
+                    neoui_proto::settings_app::wallpaper::H,
+                );
+                ui.set_wallpaper_picture(Some((&px, u32::from(w), u32::from(h))));
             }
+            host.show_thumbs(&mut ui);
             let ms = time::millis();
             host.tick_jobs(ms);
-            for key in host.reap(ms) {
+            let reaped = host.reap(ms);
+            // (G2) the host moving the screen (an app's exit, OPEN or leave) ends a peek first: it would put it back
+            if peek.is_some()
+                && (!reaped.is_empty() || host.requested_screen.is_some() || host.leave)
+            {
+                peek::abort(&mut peek, &mut ui);
+                repaint_all = true;
+            }
+            for key in reaped {
                 // its screen goes with it: home, or Classic apps for the bridge (its guest's list)
                 if ui.screen() == key {
                     ui.show(neoui_proto::apps::after_exit(key), "");
@@ -736,14 +809,20 @@ fn main() -> i32 {
                 ui.leave_app();
             }
             let now = ui.screen();
-            if now != screen {
+            // (G2) the peek's slide was the animation of the change it committed (once: a gesture that changed
+            // nothing must not take the next fade)
+            let slid = peek.is_none() && core::mem::take(&mut no_fade);
+            // (G2) a peek's preview is no screen change: the app stays in front until it commits
+            if now != screen && peek.is_none() {
                 dprintln!("neoui: screen {}", now);
                 gest.reset();
                 held.clear();
                 hint = None;
                 // what is on screen now (the old app with it, before set_screen hides it) fades out; when memory is
                 // short there is no fade, the new screen just appears (the Pixel's kernel has 87 MB of RAM for now)
-                if old.len() == w * h || old.try_reserve_exact(w * h).is_ok() {
+                if slid {
+                    // no fade: the slide showed the change
+                } else if old.len() == w * h || old.try_reserve_exact(w * h).is_ok() {
                     old.resize(w * h, 0);
                     snapshot(&host, &frame, &mut old, w);
                     transition = Some(Transition::new(ms, TRANSITION_MS));
@@ -760,7 +839,10 @@ fn main() -> i32 {
             // an icon, notification or Settings row opening an app's page: the app is told, and the view is cleared
             // so the same page can be asked for again
             let view = ui.view();
-            if (screen.as_str(), view.as_str()) != (page_shown.0.as_str(), page_shown.1.as_str()) {
+            if peek.is_none()
+                && (screen.as_str(), view.as_str())
+                    != (page_shown.0.as_str(), page_shown.1.as_str())
+            {
                 if let Some((key, page)) = host::page_for(&screen, &view) {
                     dprintln!("neoui: {} page {}", key, page);
                     // without the app (not in this ROM) the shell's own screen keeps its view
@@ -770,6 +852,7 @@ fn main() -> i32 {
                 }
                 page_shown = (screen.clone(), ui.view());
             }
+            host::widget::open_pages(&mut host, &mut ui);
             let running = host.running();
             if running != running_shown {
                 ui.set_running(&running);
@@ -863,6 +946,8 @@ fn main() -> i32 {
                 banner_until = 0;
                 ui.set_banner(None);
             }
+            // (TP3) the media session: the player, its buttons, the HUD's end
+            host.media_frame(&mut ui, ms);
             // by (app, id): whatever moved in the list since, the card the user touched (or nothing, if it went)
             for (key, id, action) in ui.take_notes_opened() {
                 host.open_notification(&key, id, action, ms);
@@ -943,6 +1028,7 @@ fn main() -> i32 {
                 time::millis(),
                 host.settings.get(keys::RADIO_WIFI).unwrap_or(true),
             );
+            wifi.sheet(&mut ui, time::millis()); // (TP7) the Wi-Fi tile's sheet
             // a Wi-Fi login page (browser UI5): the shade's entry, and the Settings app's Sign in (SETTINGS_ACTION)
             host.set_portal(wifi.portal());
             host.set_info(proto::INFO_NET, encode_ip(wifi.ip()));
@@ -965,6 +1051,7 @@ fn main() -> i32 {
             }
             host.deliver_settings();
             host.policy_frame(ms);
+            host.tiles_frame(&mut ui, ms);
             settings::log_save(host.settings.tick(ms));
             if let Some(source) =
                 netclock.frame(&host.settings, phone.nitz(), wifi.take_http_time(), ms)
@@ -986,7 +1073,7 @@ fn main() -> i32 {
             };
             let hold = phone.in_call() || power_menu || host.front_awake();
             if let Some(c) = woke.or_else(|| scr.tick(ms, timeout, hold)) {
-                battery.display(set_screen(c, &mut host.refresh));
+                battery.display(set_screen(c, &mut host));
                 if c == screen::Change::Off && (core::mem::take(&mut to_app) | fingers.take()) {
                     host.send(AppEvent::InputReset);
                 }
@@ -1046,6 +1133,8 @@ fn main() -> i32 {
             }
             if !scr.is_on() {
                 touches.clear(); // a sleeping touchscreen sends no lifts; the rings go at the next frame
+                close_restore |= peek.is_some(); // (G2) nor a peek's: it would wait for one at wake
+                peek::abort(&mut peek, &mut ui);
                 host.release_frames(); // apps go on (their frames aren't shown)
                 continue; // nothing drawn while dark; the pollers above keep running
             }
@@ -1054,11 +1143,61 @@ fn main() -> i32 {
             if let Some(Step::Track { edge, progress }) = gest.tick(ms) {
                 let at = hint.map_or(0, |(_, _, at)| at);
                 hint = Some((edge, progress, at));
+                let bufs = (&frame[..], &mut old, (w, h));
+                peek::track(
+                    &mut peek,
+                    &mut ui,
+                    &host,
+                    bufs,
+                    (Map::Thumb, None),
+                    (edge, progress),
+                    None,
+                    dp256,
+                    ms,
+                );
             }
-            let fading = transition.is_some() || swipe.is_some() || close_drag.is_some();
+            let fading =
+                transition.is_some() || swipe.is_some() || close_drag.is_some() || peek.is_some();
             let (px, damage, render_us, mut copy_us) =
                 present(&mut ui, &mut frame, &display, &perf, !fading);
+            keyboard::after_frame(&mut ui, &mut host);
             perf.shifts(ui.take_shifts());
+            // (G2) the peek: the page over its target, then the gesture it settled onto, with no fade
+            if let Some(p) = peek.as_mut() {
+                perf.frame(render_us, 0, 0, px);
+                let m = perf.mark();
+                let thumb = host.settings.get(keys::NAV_MODE).unwrap_or(1) == 1;
+                let shown = hint.map(|(e, p, at)| {
+                    let back = e == Edge::Left || (e == Edge::Right && thumb);
+                    hint_rect(e, p, at, back, (w, h), dp256)
+                });
+                if !peek::frame(
+                    p,
+                    time::millis(),
+                    (&old, &frame),
+                    &host,
+                    shown,
+                    &mut rows,
+                    &display,
+                ) {
+                    if let Some(g) = peek.take().and_then(|p| peek::finish(p, &mut ui)) {
+                        ui.gesture(g);
+                        for n in ui.take_nav() {
+                            host.send_nav(n);
+                        }
+                        peek::pulse(&host);
+                        no_fade = true;
+                    }
+                    old = Vec::new();
+                    close_restore = true;
+                    hint_drawn = None;
+                    due = true;
+                }
+                perf.layer(perf.since(&m));
+                host.release_frames();
+                perf.idle();
+                continue;
+            }
             if let Some((_, dy)) = close_drag
                 && front_surface(&host).is_some()
             {
@@ -1141,6 +1280,16 @@ fn main() -> i32 {
                     if !covered
                         && app_px > 0
                         && let Some(r) = ui.banner_rect()
+                    {
+                        let (x, y) = (r.x.max(0) as usize, r.y.max(0) as usize);
+                        let rw = (r.w as usize).min(w.saturating_sub(x));
+                        let rh = (r.h as usize).min(h.saturating_sub(y));
+                        display.blit(&frame, w, x, y, rw, rh);
+                    }
+                    // (TP3) the volume HUD too
+                    if !covered
+                        && app_px > 0
+                        && let Some(r) = ui.hud_rect()
                     {
                         let (x, y) = (r.x.max(0) as usize, r.y.max(0) as usize);
                         let rw = (r.w as usize).min(w.saturating_sub(x));
@@ -1602,7 +1751,7 @@ fn present(
     (px, damage, render_us, perf.since(&m))
 }
 
-/// A raw kernel event as neoui input: button 1 is the (single) touch; keys only where a character is obvious.
+/// A raw kernel event as neoui input: button 1 is the (single) touch; keys go through `keyboard::hardware_key`.
 fn to_input(ev: &TRawEvent) -> Option<InputEvent> {
     let touch = |phase| {
         // Raw pointer events are screen pixels on every device (Syborg's driver scaled x wrongly until NeoSymbian's
@@ -1615,46 +1764,11 @@ fn to_input(ev: &TRawEvent) -> Option<InputEvent> {
             phase,
         })
     };
-    let key = |down| {
-        key_char(ev.scan_code()).map(|c| InputEvent::Key {
-            code: c as u32,
-            down,
-        })
-    };
+    // keys: keyboard::hardware_key (a layout per language, with the modifiers)
     match ev.i_type {
         raw::EBUTTON1_DOWN => touch(TouchPhase::Down),
         raw::EPOINTER_MOVE => touch(TouchPhase::Move),
         raw::EBUTTON1_UP => touch(TouchPhase::Up),
-        raw::EKEY_DOWN => key(true),
-        raw::EKEY_UP => key(false),
-        _ => None,
-    }
-}
-
-/// `TStdScanCode` (`e32keys.h`) to a character: letters and digits are their ASCII codes; a few controls.
-// shortcut: no modifiers, no layouts; a real keymap comes with text input (R6).
-fn key_char(scan: i32) -> Option<char> {
-    match scan {
-        1 => Some('\u{8}'),     // EStdKeyBackspace
-        2 => Some('\t'),        // EStdKeyTab
-        3 => Some('\r'),        // EStdKeyEnter: EKeyEnter is 13
-        4 => Some('\u{1b}'),    // EStdKeyEscape
-        5 => Some(' '),         // EStdKeySpace
-        0x0D => Some('\u{7f}'), // EStdKeyDelete
-        // EStdKeyLeft/Right/Up/DownArrow -> EKeyLeftArrow.. (0xF807..0xF80A, Unicode private use)
-        0x0E => Some('\u{F807}'),
-        0x0F => Some('\u{F808}'),
-        0x10 => Some('\u{F809}'),
-        0x11 => Some('\u{F80A}'),
-        0x79 => Some(','),
-        0x7A => Some('.'),
-        0x7B => Some('/'),
-        0x7C => Some('\\'),
-        0x7D => Some(';'),
-        0x82 => Some('-'),
-        0x83 => Some('='),
-        0x30..=0x39 => char::from_u32(scan as u32),
-        0x41..=0x5A => char::from_u32(scan as u32 + 0x20),
         _ => None,
     }
 }
@@ -1701,9 +1815,10 @@ fn set_brightness(level: i32) -> bool {
     r == 0
 }
 
-/// Screen on or off (EDisplayHalSetState): the kernel sleeps or wakes the panel and the touchscreen. On wake the
-/// app's surface is composed again whole. What the HAL says afterwards (a failed set leaves the old state), for D5.
-fn set_screen(c: screen::Change, refresh: &mut bool) -> Option<bool> {
+/// Screen on or off (EDisplayHalSetState): the kernel sleeps or wakes the panel and the touchscreen. The front app
+/// is told it is hidden or shown, and on wake its surface is composed again whole (TP3: `Host::screen_power`). What
+/// the HAL says afterwards (a failed set leaves the old state), for D5.
+fn set_screen(c: screen::Change, host: &mut Host) -> Option<bool> {
     let on = c == screen::Change::On;
     // SAFETY: the function takes the state by value in a1; a2 is unused.
     let r = unsafe {
@@ -1715,9 +1830,7 @@ fn set_screen(c: screen::Change, refresh: &mut bool) -> Option<bool> {
         )
     };
     dprintln!("neoui: screen {} ({})", if on { "on" } else { "off" }, r);
-    if on {
-        *refresh = true;
-    }
+    host.screen_power(on);
     display_state()
 }
 

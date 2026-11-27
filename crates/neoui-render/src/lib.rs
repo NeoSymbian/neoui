@@ -9,7 +9,12 @@ extern crate alloc;
 mod home;
 pub mod keyboard;
 pub mod layer;
+mod media;
+pub mod peek;
 mod settings;
+mod suggest;
+mod tiles;
+mod wallpaper;
 
 use alloc::boxed::Box;
 use alloc::rc::Rc;
@@ -63,6 +68,8 @@ impl TargetPixel for Xrgb8888 {
 struct NeoPlatform {
     window: Rc<MinimalSoftwareWindow>,
     now_ms: fn() -> u64,
+    /// the shell's own text fields' clipboard (the edit bar's Copy and Paste), kept equal to the apps' by the server
+    clipboard: Rc<keyboard::Clipboard>,
 }
 
 impl Platform for NeoPlatform {
@@ -72,6 +79,19 @@ impl Platform for NeoPlatform {
 
     fn duration_since_start(&self) -> Duration {
         Duration::from_millis((self.now_ms)())
+    }
+
+    fn set_clipboard_text(&self, text: &str, clipboard: slint::platform::Clipboard) {
+        if clipboard == slint::platform::Clipboard::DefaultClipboard {
+            *self.clipboard.text.borrow_mut() = text.into();
+            self.clipboard.copied.set(true);
+        }
+    }
+
+    fn clipboard_text(&self, clipboard: slint::platform::Clipboard) -> Option<String> {
+        (clipboard == slint::platform::Clipboard::DefaultClipboard)
+            .then(|| self.clipboard.text.borrow().clone())
+            .filter(|t| !t.is_empty())
     }
 }
 
@@ -305,6 +325,8 @@ pub struct Renderer {
     window: Rc<MinimalSoftwareWindow>,
     ui: Shell,
     typed: Rc<RefCell<Vec<u32>>>,
+    /// the keyboard's log and the shell fields' clipboard and chords (keyboard.rs)
+    kb: keyboard::State,
     /// Presses of the system keyboard's keys since the last [`Renderer::take_key_presses`] (one per key, whatever it
     /// types and wherever it goes: Keypress vibration, SE3a).
     presses: Rc<core::cell::Cell<u32>>,
@@ -342,6 +364,10 @@ pub struct Renderer {
     home: Rc<RefCell<home::State>>,
     /// (G3) the switcher's thumbnails, by app key
     thumbs: Vec<(String, slint::Image)>,
+    /// (TP7) the control centre's order, the apps' offers and the editor's draft
+    tiles: Rc<RefCell<tiles::State>>,
+    /// (TP3) the media buttons' commands
+    media: media::Commands,
 }
 
 /// Slint's lines for a scrolled list's frame (smooth-ui S2d): the rows of `list` outside `draw` were moved into place
@@ -379,19 +405,16 @@ impl Renderer {
     pub fn new(width: u32, height: u32, now_ms: fn() -> u64) -> Result<Self, PlatformError> {
         // The caller keeps one buffer and we redraw only what changed in it.
         let window = MinimalSoftwareWindow::new(RepaintBufferType::ReusedBuffer);
+        let clipboard: Rc<keyboard::Clipboard> = Rc::default();
         slint::platform::set_platform(Box::new(NeoPlatform {
             window: window.clone(),
             now_ms,
+            clipboard: clipboard.clone(),
         }))
         .map_err(PlatformError::SetPlatformError)?;
         let ui = Shell::new()?;
         // before anything draws: bindings that call these keep what they first returned
-        let layouts = ui.global::<Layouts>();
-        layouts.on_pick(|on, from| keyboard::pick(&on.iter().collect::<Vec<_>>(), from));
-        layouts.on_tallest_of(|on, all| {
-            let rows: Vec<usize> = all.iter().map(|l| l.rows.row_count()).collect();
-            keyboard::tallest(&on.iter().collect::<Vec<_>>(), &rows)
-        });
+        let kb = keyboard::wire(&ui, clipboard);
         window.set_size(PhysicalSize::new(width, height));
         ui.show()?;
         let typed: Rc<RefCell<Vec<u32>>> = Rc::default();
@@ -495,10 +518,13 @@ impl Renderer {
         ui.global::<SystemSettings>()
             .on_edited(move |k| sink.borrow_mut().push(k.as_str().into()));
         let home = home::wire(&ui, edited.clone());
+        let tiles = tiles::wire(&ui, edited.clone());
+        let media = media::wire(&ui);
         Ok(Self {
             window,
             ui,
             typed,
+            kb,
             presses,
             nav,
             notes_opened,
@@ -523,6 +549,8 @@ impl Renderer {
             shifts: 0,
             home,
             thumbs: Vec::new(),
+            tiles,
+            media,
         })
     }
 
@@ -647,6 +675,17 @@ impl Renderer {
         self.ui
             .global::<HomeModel>()
             .invoke_op("enter".into(), 0, 0, 0, 0, "".into());
+    }
+
+    /// (home.md Part 4) The content the shell keeps for app `app`'s widget `name` (`widget.<app>.<name>`, from its
+    /// `ipc::WIDGET`), or `None` (never sent: the widget shows its label greyed).
+    pub fn set_app_widget(
+        &mut self,
+        app: &str,
+        name: &str,
+        c: Option<neoui_proto::widget::Content>,
+    ) {
+        home::set_content(&self.ui, &mut self.home.borrow_mut(), app, name, c);
     }
 
     /// (D10) Is home's editor on? The UI server's page slide and pull to the shade stay off meanwhile.
@@ -920,6 +959,12 @@ impl Renderer {
         self.notes_cleared.replace(false)
     }
 
+    /// (home.md Part 4) The app widgets tapped on home since the last call: (app key, the page its content names). The
+    /// tap already showed the app's screen; the server tells the app the page (`AppEvent::Page`).
+    pub fn take_widget_pages(&mut self) -> Vec<(String, u16)> {
+        self.home.borrow_mut().take_opened()
+    }
+
     /// The shade's cards tapped since the last call: (app key, id, 0 for the card itself or `i + 1` for its action
     /// `i`).
     pub fn take_notes_opened(&mut self) -> Vec<(String, u32, u16)> {
@@ -989,7 +1034,9 @@ impl Renderer {
         let ui = &self.ui;
         ui.set_query_open(query.is_some());
         if let Some(q) = query {
-            ui.set_query_text(q.text.as_str().into());
+            let (title, body) = q.title_body();
+            ui.set_query_title(title.into());
+            ui.set_query_text(body.into());
             let buttons: Vec<slint::SharedString> =
                 q.buttons.iter().map(|b| b.as_str().into()).collect();
             ui.set_query_buttons(Rc::new(slint::VecModel::from(buttons)).into());
@@ -1008,22 +1055,7 @@ impl Renderer {
     pub fn gesture(&mut self, g: neoui_proto::gesture::Gesture) {
         use neoui_proto::gesture::Gesture;
         let screen = self.screen();
-        let running: Vec<alloc::string::String> = self
-            .ui
-            .get_running()
-            .iter()
-            .map(|k| k.as_str().into())
-            .collect();
-        let at = running.iter().position(|k| *k == screen);
-        let switch_to = match g {
-            Gesture::LastApp => running.iter().find(|k| **k != screen),
-            // along the band: rightwards the older app, leftwards the newer one
-            Gesture::PrevApp => running.get(at.map_or(0, |i| i + 1)),
-            Gesture::NextApp => at
-                .and_then(|i| i.checked_sub(1))
-                .and_then(|i| running.get(i)),
-            _ => None,
-        };
+        let switch_to = self.app_for(g);
         // the home editor: going home or to the apps is its Done (D10)
         if screen == "home" && self.home_editing() && g != Gesture::Back {
             self.ui
@@ -1116,7 +1148,7 @@ impl Renderer {
         settings::BINDINGS
             .iter()
             .map(|b| b.key)
-            .chain(core::iter::once(home::KEY))
+            .chain([home::KEY, tiles::KEY])
     }
 
     /// Shows a setting's value (from the UI server's store). False when the shell doesn't show `key` or `value` has
@@ -1127,6 +1159,11 @@ impl Renderer {
             home::stored(&self.ui, &mut self.home.borrow_mut(), b);
             return true;
         }
+        if key == tiles::KEY {
+            let Value::Bytes(b) = value else { return false };
+            tiles::stored(&self.ui, &mut self.tiles.borrow_mut(), b);
+            return true;
+        }
         let global = self.ui.global::<SystemSettings>();
         settings::binding(key).is_some_and(|b| (b.write)(&global, value))
     }
@@ -1135,6 +1172,9 @@ impl Renderer {
     pub fn setting(&self, key: &str) -> Option<Value> {
         if key == home::KEY {
             return Some(Value::Bytes(self.home.borrow().saved_bytes()));
+        }
+        if key == tiles::KEY {
+            return Some(Value::Bytes(self.tiles.borrow().saved_bytes()));
         }
         let global = self.ui.global::<SystemSettings>();
         settings::binding(key).map(|b| (b.read)(&global))
@@ -1155,6 +1195,10 @@ impl Renderer {
         // the home editor's Done (D10)
         if let Some(bytes) = self.home.borrow_mut().take_save() {
             edits.push((home::KEY, Value::Bytes(bytes)));
+        }
+        // the tile editor's Done (TP7)
+        if let Some(bytes) = self.tiles.borrow_mut().take_save() {
+            edits.push((tiles::KEY, Value::Bytes(bytes)));
         }
         edits
     }
@@ -1210,6 +1254,7 @@ impl Renderer {
             details: slint::ModelRc::new(slint::VecModel::from(details)),
             sign_in: v.sign_in,
         });
+        tiles::wifi_sub(&self.ui, if v.connected { &v.name } else { "" });
     }
 
     /// Shares the latest observation with the status bar (the Settings app reads the rest itself).
@@ -1227,6 +1272,7 @@ impl Renderer {
         self.ui.set_bars(bars);
         self.ui.set_operator(operator.into());
         self.ui.set_rat(rat.into());
+        tiles::mobile_sub(&self.ui, bars, operator, rat);
     }
 
     /// What the status bar says about the network instead of the operator's name (tp-statusbar): "" while
@@ -1269,6 +1315,7 @@ impl Renderer {
 
     pub fn render(&mut self, buf: &mut [u32], stride_px: usize) -> Damage {
         slint::platform::update_timers_and_animations();
+        self.type_into_shell();
         // a group's ▾ (the callback can't reach the renderer): lay the cards out again
         if self.relayout.replace(false) {
             self.lay_out_notes();
@@ -1357,18 +1404,16 @@ impl Renderer {
                 }
             }
         };
-        self.window.dispatch_event(event);
-        // the system keyboard typed into one of the shell's own fields, not for an app
-        if self.ui.global::<KeyboardFocus>().get_open() {
-            for code in self.take_typed() {
-                if let Some(text) = keyboard::key_text(code) {
-                    self.window
-                        .dispatch_event(WindowEvent::KeyPressed { text: text.clone() });
-                    self.window
-                        .dispatch_event(WindowEvent::KeyReleased { text });
-                }
-            }
+        if let InputEvent::Touch {
+            y,
+            phase: TouchPhase::Down,
+            ..
+        } = ev
+        {
+            self.touch_outside_keyboard(y);
         }
+        self.window.dispatch_event(event);
+        self.type_into_shell();
     }
 
     /// Cancels the touch in progress: whatever it pressed lets go without a click (the UI server took the gesture

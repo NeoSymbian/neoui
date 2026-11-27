@@ -10,7 +10,7 @@ extern crate alloc;
 use alloc::format;
 use alloc::rc::Rc;
 use alloc::string::String;
-use core::cell::Cell;
+use core::cell::{Cell, RefCell};
 use e32::dprintln;
 use e32::fs::SharedFile;
 use neoapp::open::{files, kit};
@@ -35,6 +35,28 @@ fn main() -> i32 {
 const FILES_PAGE: i32 = 9;
 /// The "Notifications" page's.
 const NOTIFY_PAGE: i32 = 10;
+
+fn unix_ms() -> u64 {
+    u64::try_from(e32::time::utc_now().0).unwrap_or(0) * 1000
+}
+
+/// TP3's sample track, playing from the start (no file behind it: the kit only shows the session and logs the
+/// commands that come back).
+fn sample_track() -> neoapp::media::Session {
+    use neoapp::media::{Session, caps, state};
+    Session {
+        state: state::PLAYING,
+        caps: caps::ALL,
+        modes: 0,
+        title: "Kit demo track".into(),
+        artist: "NeoSymbian".into(),
+        album: String::new(),
+        art: 0,
+        duration_ms: 180_000,
+        position_ms: 0,
+        at: unix_ms(),
+    }
+}
 
 /// TP2a's sample cards (nt-shade): an ongoing call, three messages in one group, a copy in progress, a reminder.
 fn samples() -> alloc::vec::Vec<neoapp::Notification> {
@@ -128,6 +150,38 @@ fn run() -> Result<(), i32> {
     cards.on_clear(move || {
         dprintln!("kit: cards cleared ({:?})", a.clear_notify());
     });
+    // (home.md Part 4) the kit's widget on home: a Text card that counts the sends
+    let (a, sent) = (app.clone(), Rc::new(Cell::new(0u32)));
+    cards.on_widget(move || {
+        sent.set(sent.get() + 1);
+        let r = a.widget(&neoapp::widget::Content {
+            name: "demo".into(),
+            page: NOTIFY_PAGE as u16,
+            body: neoapp::widget::Body::Text {
+                icon: 0,
+                title: "Kit demo".into(),
+                lines: alloc::vec![
+                    format!("Sent {} times", sent.get()),
+                    "From the UI kit".into()
+                ],
+            },
+        });
+        dprintln!("kit: home widget sent ({:?})", r);
+    });
+    // TP3: the sample track as the kit last posted it, while its session lasts
+    let track: Rc<RefCell<Option<neoapp::media::Session>>> = Rc::default();
+    let media = ui.global::<MediaDemo>();
+    let (a, t) = (app.clone(), track.clone());
+    media.on_play(move || {
+        let s = sample_track();
+        dprintln!("kit: media posted ({:?})", a.media(&s));
+        *t.borrow_mut() = Some(s);
+    });
+    let (a, t) = (app.clone(), track.clone());
+    media.on_end(move || {
+        *t.borrow_mut() = None;
+        dprintln!("kit: media ended ({:?})", a.end_media());
+    });
     ui.show().map_err(|_| -2)?;
     let mut shown = Page::default();
     describe(&app, &ui, &mut shown)?;
@@ -156,6 +210,27 @@ fn run() -> Result<(), i32> {
                 };
                 let status = format!("Card {id} {how}.");
                 ui.global::<NotifyDemo>().set_status(status.into());
+            }
+            // TP3: the shade's or home's buttons (play and pause change the state the kit posts)
+            AppEvent::Media { cmd, arg } => {
+                use neoapp::media::{cmd as c, state};
+                dprintln!("kit: media command {} {}", cmd, arg);
+                let next = match cmd {
+                    c::PAUSE => Some(state::PAUSED),
+                    c::PLAY => Some(state::PLAYING),
+                    _ => None,
+                };
+                if let Some(next) = next
+                    && let Some(s) = track.borrow_mut().as_mut()
+                {
+                    let now = unix_ms();
+                    s.position_ms = s.position_at(now);
+                    s.at = now;
+                    s.state = next;
+                    let _ = app.media(s);
+                }
+                let status = format!("The shell sent command {cmd} ({arg}).");
+                ui.global::<MediaDemo>().set_status(status.into());
             }
             // Open with: another app (Files) opened a file here
             AppEvent::Open { page } if page == kit::VIEW => {

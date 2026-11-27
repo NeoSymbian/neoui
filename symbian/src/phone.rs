@@ -468,6 +468,12 @@ impl Phone {
             .count() as u32
     }
 
+    /// (TP3) The call's volume while a call has the audio, for the volume HUD.
+    pub fn call_volume(&self) -> Option<u8> {
+        let s = self.shown.as_ref().filter(|s| s.audio.on)?;
+        Some(self.volume.unwrap_or(s.audio.volume))
+    }
+
     pub fn volume_key(&mut self, up: bool) -> bool {
         let Some(s) = self.shown else {
             return false;

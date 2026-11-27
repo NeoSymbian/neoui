@@ -47,6 +47,8 @@ phone-rules = { git = "https://github.com/NeoSymbian/neohw", rev = "87627092aa42
 wifi = { git = "https://github.com/NeoSymbian/neohw", rev = "87627092aa42b79bc77cd5ee7fbc17a536b43226" }
 # NeoLocation, GNSSD.EXE's contract (docs hardware/gnss.md; Apache-2.0)
 loc = { git = "https://github.com/NeoSymbian/neohw", rev = "87627092aa42b79bc77cd5ee7fbc17a536b43226" }
+# NeoSymbian/files' image decoders (JPEG, PNG, GIF, WebP, BMP; Apache-2.0): Settings' wallpaper pictures (D7)
+neo-format-image = { git = "https://github.com/NeoSymbian/files", rev = "5817c61b489ac52daaf39e855491200a65e69f82" }
 # the Settings app's screens (NEOSET.EXE; host-tested with snapshots)
 settings-ui = { path = "../crates/settings-ui" }
 # the kit build helper (@neoui/kit.slint): every app's build.rs compiles its UI with it

@@ -39,3 +39,9 @@ export global Wallpapers {
         return @linear-gradient(180deg, #0c1424 0%, #05070b 55%, #000000 100%);
     }
 }
+
+// (D7) The installed picture (SETTINGS_ACTION 8): the shell sets it; home draws it while display.wallpaper is "picture"
+export global WallpaperPicture {
+    in-out property <image> image;
+    in-out property <bool> shown;
+}

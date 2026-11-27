@@ -1,0 +1,36 @@
+// SPDX-License-Identifier: Apache-2.0
+// A long press's alternates (keyboard.slint): a row of keys over the pressed one, the picked one lit; the finger
+// slides along it and lets go on the one it wants. Drawn by the keyboard above its rows, never past its top.
+import { Theme } from "../../theme.slint";
+
+export component AltPopup inherits Rectangle {
+    in property <[string]> items;
+    in property <int> picked;
+    // shift is on: the alternates in upper case
+    in property <bool> upper;
+    in property <string> font: "NeoSans";
+    // one alternate's width (the pressed key's)
+    in property <length> cell;
+    width: items.length * cell + 6 * Theme.dp;
+    height: 48 * Theme.dp;
+    border-radius: Theme.radius-small;
+    background: #2a2e35;
+    drop-shadow-blur: 8 * Theme.dp;
+    drop-shadow-color: #0008;
+    for t[i] in items: Rectangle {
+        x: 3 * Theme.dp + i * root.cell;
+        y: 3 * Theme.dp;
+        width: root.cell;
+        height: parent.height - 6 * Theme.dp;
+        border-radius: Theme.radius-small;
+        background: i == root.picked ? Theme.accent : transparent;
+        Text {
+            text: root.upper ? t.to-uppercase() : t;
+            color: Theme.text;
+            font-family: root.font;
+            font-size: 19 * Theme.dp;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+}

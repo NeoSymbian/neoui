@@ -9,16 +9,19 @@ import { Data } from "../data.slint";
 import { Now } from "../now.slint";
 import { Card, PageDots } from "../components/controls.slint";
 import { ClockWidget } from "../components/widgets.slint";
+import { ClockSquare, AgendaSquare, FavouritesSquare, MusicSquare, AppWidgetCard } from "../components/home-widgets.slint";
 import { Avatar } from "../components/lists.slint";
 import { Glyph } from "../components/frame.slint";
 import { Badge } from "../components/footer.slint";
 import { Menu } from "../components/menu.slint";
-import { Wallpapers } from "../components/wallpaper.slint";
+import { Wallpapers, WallpaperPicture } from "../components/wallpaper.slint";
 import { Apps } from "menu.slint";
 import { HomeModel, HomeCell, EditBar, AddSheet } from "home-edit.slint";
 import { SwitcherScreen } from "switcher.slint";
 import { ShadeNote } from "../components/shade.slint";
 import { NeoList } from "../components/scroll.slint";
+import { HomeMedia } from "../components/media.slint";
+import { Media } from "../media.slint";
 
 component DockIcon inherits Rectangle {
     in property <image> icon;
@@ -118,47 +121,6 @@ component AgendaCard inherits Card {
     }
 }
 
-// Media (TP3's media session isn't there yet): nothing playing. Tap: Music.
-component MusicCard inherits Card {
-    callback clicked;
-    HorizontalLayout {
-        padding: 12 * Theme.dp;
-        spacing: 12 * Theme.dp;
-        Rectangle {
-            width: min(self.height, 52 * Theme.dp);
-            border-radius: Theme.radius-small;
-            background: @linear-gradient(135deg, #e04e9b 0%, #8656e8 100%);
-            Glyph {
-                source: @image-url("../icons/sys/note.svg");
-                size: 24 * Theme.dp;
-            }
-        }
-
-        VerticalLayout {
-            alignment: center;
-            horizontal-stretch: 1;
-            Text {
-                text: "Nothing playing";
-                color: Theme.text;
-                font-size: Theme.font-body;
-                font-weight: 600;
-                overflow: elide;
-            }
-
-            Text {
-                text: "Music";
-                color: Theme.text-dim;
-                font-size: Theme.font-label;
-                overflow: elide;
-            }
-        }
-    }
-
-    TouchArea {
-        clicked => { root.clicked(); }
-    }
-}
-
 // Favourites (no contacts source in the shell yet): its empty state. Tap: Contacts.
 component FavouritesCard inherits Card {
     callback clicked;
@@ -228,25 +190,66 @@ component ItemView inherits Rectangle {
             }
         }
     }
-    if c.kind == 1 && c.widget == 1: ClockWidget {
+    // (Part 4) the shell's widgets at 2 × 2, and the apps' widgets
+    if c.kind == 1 && c.w == 2: Rectangle {
+        y: root.inset;
+        x: root.inset / 2;
+        width: root.width - root.inset;
+        height: root.height - 2 * root.inset;
+        if c.widget == 1: ClockSquare {
+            clicked => { root.open-app("clock"); }
+        }
+        if c.widget == 2: AgendaSquare {
+            clicked => { root.open-app("calendar"); }
+        }
+        if c.widget == 3: FavouritesSquare {
+            clicked => { root.open-app("contacts"); }
+        }
+        if c.widget == 4: MusicSquare {
+            clicked => { root.open-app(Media.on ? Media.app-key : "music"); }
+        }
+    }
+    if c.kind == 2: Rectangle {
+        y: root.inset;
+        x: c.w == 2 ? root.inset / 2 : 0;
+        width: root.width - (c.w == 2 ? root.inset : 0);
+        height: root.height - 2 * root.inset;
+        for app in Apps.all: Rectangle {
+            if app.key == c.key: AppWidgetCard {
+                content: c.content;
+                label: c.label;
+                icon: app.icon;
+                square: c.w == 2;
+                // on the page its content names (none yet: just the app)
+                clicked => {
+                    if c.content.template != 0 {
+                        HomeModel.op("open", c.content.page, 0, 0, 0, c.key);
+                    }
+                    root.open-app(c.key);
+                }
+            }
+        }
+    }
+    if c.kind == 1 && c.w == 4 && c.widget == 1: ClockWidget {
         y: root.inset;
         width: root.width;
         clicked => { root.open-app("clock"); }
     }
-    if c.kind == 1 && c.widget == 2: AgendaCard {
+    if c.kind == 1 && c.w == 4 && c.widget == 2: AgendaCard {
         y: root.inset;
         height: root.height - 2 * root.inset;
         clicked => { root.open-app("calendar"); }
     }
-    if c.kind == 1 && c.widget == 3: FavouritesCard {
+    if c.kind == 1 && c.w == 4 && c.widget == 3: FavouritesCard {
         y: root.inset;
         height: root.height - 2 * root.inset;
         clicked => { root.open-app("contacts"); }
     }
-    if c.kind == 1 && c.widget == 4: MusicCard {
+    // (TP3) the media session (nt-home-media); a tap opens its owner, Music with none
+    if c.kind == 1 && c.w == 4 && c.widget == 4: HomeMedia {
         y: root.inset;
         height: root.height - 2 * root.inset;
-        clicked => { root.open-app("music"); }
+        clicked => { root.open-app(Media.on ? Media.app-key : "music"); }
     }
 }
 
@@ -291,6 +294,13 @@ export component HomeScreen inherits Rectangle {
     // display.wallpaper (D7): a colour from Settings → Display → Wallpaper
     background: Wallpapers.fill(SystemSettings.wallpaper);
     clip: true;
+    // (D7) the installed picture, under everything, covering the screen
+    if WallpaperPicture.shown && SystemSettings.wallpaper == "picture": Image {
+        width: parent.width;
+        height: parent.height;
+        source: WallpaperPicture.image;
+        image-fit: cover;
+    }
 
     // Pages, side by side. A sideways swipe moves between them; taps still reach the widgets and cards on the
     // pages (a TouchArea over the strip used to take every touch). On the device the UI server slides the pages

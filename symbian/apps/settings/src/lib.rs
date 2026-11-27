@@ -24,8 +24,10 @@ mod row_model;
 mod sim_lock;
 mod sound;
 mod storage;
+mod storage_drive;
 mod store;
 mod tone_import;
+mod wallpaper;
 mod wifi;
 
 use alloc::rc::Rc;
@@ -238,8 +240,9 @@ fn run() -> Result<(), i32> {
                 ctx.visible.set(v);
                 if v {
                     tone_import::resumed(&ctx.app, &ui); // D6: a WAV picked in Files
+                    wallpaper::resumed(&ctx.app, &ui); // D7: a picture picked in Files
                     row_model::resume(&ctx);
-                    if ctx.page.get() == Page::Storage {
+                    if matches!(ctx.page.get(), Page::Storage | Page::StorageDrive) {
                         ctx.storage.ensure();
                     }
                     ctx.tick(true);
@@ -316,7 +319,7 @@ impl Ctx {
         // a tone's preview stops when the page changes (Back included)
         self.sound.stop();
         // Storage's scan runs only on its page, shown (SE3b); a kept count isn't redone
-        if page == Page::Storage && self.visible.get() {
+        if matches!(page, Page::Storage | Page::StorageDrive) && self.visible.get() {
             self.storage.ensure();
         } else {
             self.storage.stop();
@@ -395,12 +398,15 @@ impl Ctx {
         if matches!(page, Page::Root | Page::Battery) && every(5) {
             self.battery(&ui);
         }
-        if matches!(page, Page::Root | Page::Storage) && every(5) {
+        if matches!(page, Page::Root | Page::Storage | Page::StorageDrive) && every(5) {
             self.storage.drives(&ui);
         }
-        if page == Page::Storage {
+        if matches!(page, Page::Storage | Page::StorageDrive) {
             self.storage.recount_changed(); // a changed volume is counted again (D3)
             self.storage.show(&ui);
+        }
+        if page == Page::StorageDrive {
+            storage_drive::show(self, &ui);
         }
         if page == Page::Profile && every(5) {
             profile_audio::refresh(&mut self.modem.borrow_mut(), &ui);
@@ -424,6 +430,7 @@ impl Ctx {
         row_model::tick(self, &ui, n);
         profile_audio::show_preview(&self.sound, &ui);
         tone_import::poll(&self.app, &ui); // D6: a WAV converted on its worker
+        wallpaper::poll(&self.app, &ui); // D7: a picture fitted on its worker
         if let Some(text) = self.sound.changed() {
             ui.global::<SetState>().set_sound_feedback(text.into());
         }
@@ -776,6 +783,8 @@ impl Ctx {
             }
             // D6: the playing tone's ⏸ / ▶ (set2-ringtone)
             "tone-add" => tone_import::add(app, &ui),
+            "wallpaper-pick" => wallpaper::pick(app, &ui),
+            "storage-drive" => storage_drive::open(self, &ui, value),
             "tone-delete" => tone_import::delete(app, &ui),
             "tone-rename" => tone_import::rename(app, &ui, value),
             "tone-pause" => profile_audio::toggle_pause(&self.sound, &ui),

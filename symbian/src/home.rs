@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! (D10) The shell side of Settings' Edit home (`ipc::ACTION_EDIT_HOME`) and (G3) Open apps' thumbnails: a child of
 //! `host` (it works on the apps there). The editor itself is the renderer's (neoui-render `home.rs`); the main loop
-//! hands it what is asked here.
+//! hands it what is asked here. (G2) It also keeps what Along slides in: the last app's frame and the thumbnails.
 
 use super::Host;
 use alloc::vec::Vec;
@@ -17,6 +17,11 @@ pub struct D10 {
     pub edit_home: bool,
     /// Thumbnails taken as apps went to the back: app key, width, height, XRGB8888 pixels.
     pub thumbs: Vec<(&'static str, usize, usize, Vec<u32>)>,
+    /// (G2) The thumbnails handed to Open apps, kept while their app runs: Along's neighbour without a full frame.
+    pub kept: Vec<(&'static str, usize, usize, Vec<u32>)>,
+    /// (G2) The last full frame of the app that last went to the back (app key, its first screen row, screen-wide
+    /// rows): the page Along slides in. One frame, its buffer reused; none when the memory isn't there.
+    pub frame: Option<(&'static str, usize, Vec<u32>)>,
 }
 
 /// A thumbnail is at most this many pixels wide (the top of the app, 3:2 tall): about 0.3 MB on the Pixel.
@@ -68,5 +73,33 @@ impl Host {
         let (tw, th, px) = neoui_render::layer::downsample(src, stride, w, rows.min(w * 3 / 2), k);
         self.d10.thumbs.retain(|t| t.0 != key);
         self.d10.thumbs.push((key, tw, th, px));
+        if w == stride {
+            let mut buf = self.d10.frame.take().map(|f| f.2).unwrap_or_default();
+            buf.clear();
+            if buf.try_reserve_exact(w * rows).is_ok() {
+                buf.extend_from_slice(&src[..w * rows]);
+                self.d10.frame = Some((key, area.y.max(0) as usize, buf));
+            }
+        }
+    }
+
+    /// (G3) Hand the new thumbnails to Open apps; (G2) keep them, and the full frame, only while their app runs.
+    pub fn show_thumbs(&mut self, ui: &mut neoui_render::Renderer) {
+        // every frame, not only with new thumbnails: a closed app's frame (9 MB on the Pixel) goes at once
+        let running = self.running();
+        self.d10.kept.retain(|t| running.contains(&t.0));
+        if self
+            .d10
+            .frame
+            .as_ref()
+            .is_some_and(|f| !running.contains(&f.0))
+        {
+            self.d10.frame = None;
+        }
+        for t in self.d10.thumbs.drain(..) {
+            ui.set_thumb(t.0, t.1, t.2, &t.3);
+            self.d10.kept.retain(|k| k.0 != t.0);
+            self.d10.kept.push(t);
+        }
     }
 }

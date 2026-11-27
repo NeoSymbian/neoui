@@ -29,6 +29,10 @@ pub enum ProviderId {
     NotifyApps,
     /// (TP4) every app's declared channels (INFO 7), with its effective importance
     Channels,
+    /// (D1) the networks Wi-Fi sees now, one per access point
+    WifiAps,
+    /// (D1) the networks WIFID remembers, one per SSID
+    SavedNets,
 }
 
 /// What search may match a row by. Credentials, PINs, clipboard contents, message bodies and draft text are never
@@ -225,6 +229,21 @@ pub const ROWS: &[Row] = &[
         Wifi,
         ProviderId::WifiFields,
         &["link", "network details"],
+    ),
+    // (D1) every network in range (set2-wifi's list) and every saved one (set2-wifi-saved): each its own row
+    family(
+        "wifi.ap",
+        Wifi,
+        Wifi,
+        ProviderId::WifiAps,
+        &["network", "ssid", "access point"],
+    ),
+    family(
+        "wifi.saved_net",
+        WifiSaved,
+        WifiSaved,
+        ProviderId::SavedNets,
+        &["saved network", "known network"],
     ),
     // D12: a hidden network needs a directed scan the driver doesn't do yet (set2-wifi-hidden)
     action(
@@ -484,6 +503,13 @@ pub const ROWS: &[Row] = &[
         &["cyrillic", "русский", "keyboard"],
     ),
     row(
+        "kb.3",
+        Keyboard,
+        Keyboard,
+        "Western Armenian",
+        &["arevmtahayeren", "արեւմտահայերէն", "keyboard"],
+    ),
+    row(
         "kb.current",
         Keyboard,
         Keyboard,
@@ -503,6 +529,13 @@ pub const ROWS: &[Row] = &[
         Keyboard,
         "Keypress vibration",
         &["haptic", "vibrate", "keyboard"],
+    ),
+    row(
+        "kb.suggest",
+        Keyboard,
+        Keyboard,
+        "Word suggestions",
+        &["predict", "autocomplete", "keyboard"],
     ),
     // Privacy
     action(
@@ -712,6 +745,21 @@ pub const ROWS: &[Row] = &[
         "Wallpaper",
         &["background", "home screen", "colour", "color"],
     ),
+    // (D7) a picture from Files (set2-wallpaper's Pictures): an action, it opens Files' picker only when tapped
+    action(
+        "display.wallpaper_files",
+        Wallpaper,
+        Wallpaper,
+        "From Files",
+        &["picture", "photo", "image", "wallpaper"],
+    ),
+    action(
+        "display.wallpaper_photos",
+        Wallpaper,
+        Wallpaper,
+        "From Photos",
+        &["picture", "gallery"],
+    ),
     row(
         "kb.display_language",
         Keyboard,
@@ -728,6 +776,21 @@ pub const ROWS: &[Row] = &[
         Panel,
         "Notifications",
         &["alerts", "do not disturb", "banners", "shade"],
+    ),
+    // TP7: the control centre's editor (the shell's), what the status bar's tap opens
+    action(
+        "panel.tiles",
+        Panel,
+        Panel,
+        "Tiles",
+        &["control centre", "quick settings", "edit tiles"],
+    ),
+    row(
+        "panel.tap",
+        Panel,
+        Panel,
+        "Tap on the status bar",
+        &["control centre", "status bar", "shade"],
     ),
     row(
         "panel.swipehome",
@@ -820,6 +883,14 @@ pub const ROWS: &[Row] = &[
         Privacy,
         "Show when an app reads it",
         &["clipboard", "paste", "toast"],
+    ),
+    // (SE4/D8) the capabilities view: each app's page
+    action(
+        "privacy.permissions",
+        Privacy,
+        Apps,
+        "App permissions",
+        &["capabilities", "permissions", "platsec"],
     ),
     action(
         "privacy.diagnostics",

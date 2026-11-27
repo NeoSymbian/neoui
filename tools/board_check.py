@@ -24,9 +24,33 @@ from PIL import Image, ImageDraw
 from playwright.sync_api import sync_playwright
 
 # boards whose snapshot has another name (the app's page replaced the board's example)
-SNAPSHOT_FOR = {"set2-app-browser": "set2-app-detail"}
+SNAPSHOT_FOR = {
+    "set2-app-browser": "set2-app-detail",
+    "sh-shade-quick": "tp-shade",
+    # (TP3) the shade with a media session: its snapshot has the player
+    "tp-shade": "tp-shade-media",
+    # (G2/G3) Open apps in Gestures: the switcher's own snapshot
+    "nav-openapps": "switcher-gestures-539x1079",
+    # home (D10, home.md Parts 3 and 4)
+    "Main": "home-pixel",
+    "sh-home-buttons": "home-buttons-539x1079",
+    "sh-home-clock-24h": "home-clock-widget-540x1080",
+    "sh-home-clock-12h": "home-clock-widget-12h-540x1080",
+    "nav-home-longpress": "home-longpress-pixel",
+    "sh-apps-menu": "sh-apps-menu-hold-pixel",
+    # the keyboard's snapshots (crates/neoui-render/tests/keyboard.rs, pads.rs) draw it over an empty body
+    "kb2-en": "keyboard-en-539x1079",
+    "kb2-hy": "keyboard-hy-539x1079",
+    "kb2-ru": "keyboard-ru-539x1079",
+    "kb2-number": "keyboard-number-539x1079",
+    "kb2-phone": "keyboard-phone-539x1079",
+    "kb2-term": "keyboard-term-539x1079",
+    "kb2-buttons": "keys-keyboard-539x1079",
+    "sh-form-keyboard": "keyboard-en-539x1079",
+    "nav-map-keyboard": "keyboard-en-539x1079",
+}
 # boards that are specs or maps, not screens
-NOT_SCREENS = ("-spec-", "-replacement-map")
+NOT_SCREENS = ("-spec-", "-replacement-map", "-prototype")
 STATUS_BAR = 25  # dp at the top of every 360x720 board
 GAP = 6
 
@@ -34,13 +58,19 @@ GAP = 6
 def pairs(boards: pathlib.Path, snaps: pathlib.Path, only: str):
     names = sorted(p.name[: -len(".dc.html")] for p in boards.glob(f"{only}*.dc.html"))
     names = [n for n in names if not any(x in n for x in NOT_SCREENS)]
-    shots = {p.stem for p in snaps.glob(f"{only}*.png")}
+    # an alias may point outside the prefix (nav-openapps -> switcher-...)
+    every = {p.stem for p in snaps.glob("*.png")}
+    shots = {s for s in every if s.startswith(only)}
     found, missing = [], []
     for n in names:
         s = SNAPSHOT_FOR.get(n, n)
-        (found if s in shots else missing).append((n, s))
+        (found if s in every else missing).append((n, s))
     used = {s for _, s in found}
-    return found, [n for n, _ in missing], sorted(shots - used)
+    return (
+        found,
+        [n for n, _ in missing],
+        sorted(s for s in shots - used if s.startswith(only)),
+    )
 
 
 def side_by_side(
@@ -62,7 +92,9 @@ def side_by_side(
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(description="Set each canvas board beside the app's snapshot.")
+    ap = argparse.ArgumentParser(
+        description="Set each canvas board beside the app's snapshot."
+    )
     ap.add_argument("boards", type=pathlib.Path)
     ap.add_argument(
         "--snapshots",

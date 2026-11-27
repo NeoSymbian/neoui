@@ -17,17 +17,24 @@ import { Theme } from "theme.slint";
 import { SystemSettings } from "system-settings.slint";
 export { SystemSettings } from "system-settings.slint";
 export { Now } from "now.slint";
+export { Media } from "media.slint";
 import { Now } from "now.slint";
 export { Scroll } from "components/scroll.slint";
+export { WallpaperPicture } from "components/wallpaper.slint";
 import { StatusBar, KeyRow, Band } from "components/frame.slint";
 import { QueryDialog, Button, TextField } from "components/controls.slint";
 import { Header } from "components/header.slint";
 import { Toast } from "components/feedback.slint";
 import { Shade, ShadeNote } from "components/shade.slint";
 import { NotificationBanner } from "components/notification-banner.slint";
+import { VolumeHud } from "components/media.slint";
+import { Media } from "media.slint";
 export { ShadeNote } from "components/shade.slint";
 export { Apps } from "screens/menu.slint";
 export { HomeModel } from "screens/home-edit.slint";
+export { TilesModel, TileCell, WifiRow } from "components/tiles.slint";
+import { TilesModel } from "components/tiles.slint";
+export { HomePin } from "screens/home-pin.slint";
 import { Keyboard } from "components/keyboard/keyboard.slint";
 import { Alphabets } from "components/keyboard/glyphs.slint";
 export { Layouts } from "components/keyboard/layouts.slint";
@@ -116,6 +123,12 @@ export component Shell inherits Window {
     out property <length> banner-y: banner-card.y;
     out property <length> banner-w: banner-card.width;
     out property <length> banner-h: banner-card.height;
+    // (TP3) the volume HUD where it is drawn: the UI server puts it back over the app's surface too
+    out property <bool> hud-on: hud.visible;
+    out property <length> hud-x: hud.x;
+    out property <length> hud-y: hud.y;
+    out property <length> hud-w: hud.width;
+    out property <length> hud-h: hud.height;
     // the home screen's pages, for the UI server's swipe (smooth-ui S2c): which one shows, and the band they fill
     in-out property <int> home-page <=> home.page;
     out property <length> home-strip-h: home.strip-h;
@@ -151,6 +164,7 @@ export component Shell inherits Window {
     // in: the foreground app's dialog (ipc 1.7 QUERY); answering closes it at once
     in-out property <bool> query-open;
     in property <string> query-text;
+    in property <string> query-title;
     in property <[string]> query-buttons;
     in property <bool> query-destructive;
     callback app-nav(string, int);
@@ -246,7 +260,10 @@ export component Shell inherits Window {
 
     public function back() {
         if (root.shade-open) {
-            root.shade-open = false;
+            // (TP7) the Wi-Fi sheet or the tile editor first
+            if !TilesModel.back() {
+                root.shade-open = false;
+            }
         } else if (root.screen == "home" && HomeModel.sheet != "") {
             HomeModel.sheet = "";
         } else if (root.screen == "home" && HomeModel.editing) {
@@ -438,9 +455,9 @@ export component Shell inherits Window {
         mode: keyboard-mode > 0 ? keyboard-mode : KeyboardFocus.mode;
         // an app asked for it, or one of the shell's own fields has the focus, and the user didn't put it away
         visible: keyboard-wanted && !KeyboardFocus.dismissed;
-        // shortcut: the edit bar is for an app's text fields only (the text keyboard: not the terminal, whose console
-        // would get Control as a raw key, nor the pads; the shell's own fields don't take the chords yet)
-        edit-bar: root.app-front && root.keyboard-mode == 1;
+        // the edit bar on the text keyboard: an app's field, or the shell's own (not the terminal, whose console would
+        // get Control as a raw key, nor the pads)
+        edit-bar: root.keyboard-mode > 0 ? root.app-front && root.keyboard-mode == 1 : KeyboardFocus.mode == 1;
         typed(t) => { root.typed(t); }
     }
 
@@ -468,10 +485,16 @@ export component Shell inherits Window {
         dnd: root.dnd;
         visible: !root.full;
         tapped => {
+            // (TP7) shell.tap: 0 the shade's first stop, 1 the control centre
+            TilesModel.stop = SystemSettings.shell-tap == 1 ? 2 : 1;
             root.shade-open = !root.shade-open;
         }
         pulled => {
             root.shade-open = true;
+        }
+        // (TP7) a pull past the tiles goes on to the control centre
+        pulled-far => {
+            TilesModel.stop = 2;
         }
     }
 
@@ -524,6 +547,14 @@ export component Shell inherits Window {
         closed => { root.banner-shown = false; }
     }
 
+    // (TP3) the volume HUD under the status bar for 2 s after a volume key (the UI server times it)
+    hud := VolumeHud {
+        visible: Media.hud && !root.power-open;
+        x: 8 * Theme.dp;
+        width: root.width - 16 * Theme.dp;
+        y: (root.full ? 0 : Theme.status-h) + 6 * Theme.dp;
+    }
+
     // the key row stays usable under a dialog: its ← answers the last button (rule 15)
     QueryDialog {
         x: 0;
@@ -532,6 +563,7 @@ export component Shell inherits Window {
         height: root.height - (root.buttons && !root.full ? Theme.key-row-h : 0);
         open: root.app-front && root.query-open;
         text: root.query-text;
+        title: root.query-title;
         buttons: root.query-buttons;
         destructive: root.query-destructive;
         answered(i) => { root.answer(i); }

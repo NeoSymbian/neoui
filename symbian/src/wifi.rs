@@ -65,7 +65,14 @@ pub struct Wifi {
     portal: Option<alloc::string::String>,
     internet: Failed,
     http_time: HttpTime,
+    /// (TP7) the Wi-Fi sheet: when it last asked for a scan (`None`: closed) and when it reads the list next
+    sheet_scan: Option<u64>,
+    sheet_read: u64,
 }
+
+/// The Wi-Fi sheet rescans this often while it is open (as Settings' Wi-Fi page does), and reads the list between.
+const SHEET_RESCAN_MS: u64 = 30_000;
+const SHEET_READ_MS: u64 = 2000;
 
 impl Wifi {
     pub fn new() -> Self {
@@ -88,6 +95,8 @@ impl Wifi {
             portal: None,
             internet: shared(),
             http_time: Mutex::new(None).ok().map(Arc::new),
+            sheet_scan: None,
+            sheet_read: 0,
         }
     }
 
@@ -264,6 +273,51 @@ impl Wifi {
         if let Some(scan) = self.scan(false) {
             self.last = Some(scan);
         }
+    }
+
+    /// (TP7) The Wi-Fi tile's sheet (tp-wifi) while it is open: a scan when it opens and every 30 s, the list read
+    /// every 2 s, with the networks WIFID remembers (NeoWifi 1.1 `SAVED`) marked Saved. Nothing while it is closed.
+    pub fn sheet(&mut self, ui: &mut Renderer, now: u64) {
+        if !ui.wifi_sheet_open() {
+            self.sheet_scan = None;
+            return;
+        }
+        let rescan = self
+            .sheet_scan
+            .is_none_or(|t| now.saturating_sub(t) >= SHEET_RESCAN_MS);
+        if !rescan && now < self.sheet_read {
+            return;
+        }
+        if rescan {
+            self.sheet_scan = Some(now);
+            e32::dprintln!("neoui: wifi sheet scans");
+        }
+        self.sheet_read = now.saturating_add(SHEET_READ_MS);
+        if let Some(scan) = self.scan(rescan) {
+            self.last = Some(scan);
+        }
+        let mut b = alloc::vec![0u8; wifi::ipc::SAVED_SIZE];
+        let mut des = TPtr8::new(&mut b);
+        let mut args = TIpcArgs::new();
+        args.des8(0, &mut des);
+        let saved = match self.call(op::SAVED, &args) {
+            Ok(_) => wifi::ipc::decode_names(&b[..des.len()]).unwrap_or_default(),
+            Err(_) => alloc::vec::Vec::new(),
+        };
+        let joined = (self.link.state == LinkState::Connected)
+            .then(|| self.joined())
+            .flatten();
+        let list = self.last.as_ref().map(Scan::list).unwrap_or_default();
+        let others: alloc::vec::Vec<(&neoui_proto::wifi::Network, bool)> = list
+            .iter()
+            .filter(|n| !n.ssid.is_empty() && joined.as_ref().is_none_or(|j| j.ssid != n.ssid))
+            .map(|n| (n, saved.iter().any(|s| s.as_slice() == n.ssid.as_bytes())))
+            .collect();
+        let scanning = self
+            .last
+            .as_ref()
+            .is_some_and(|s| s.state == neoui_proto::wifi::State::Scanning);
+        ui.set_wifi_networks(joined.as_ref(), &others, scanning);
     }
 
     /// The link's IP side, for the Settings app (`SETTINGS_INFO` `INFO_NET`).

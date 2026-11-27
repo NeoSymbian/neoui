@@ -8,8 +8,8 @@ use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 use neoui_proto::settings_app::row_model::{
-    AppFact, AppId, ChannelFact, Console, DriveFact, Epochs, Facts, Hit, KindsState, LinkFact,
-    NotifyFact, RowSnapshot, Sample, Scalar, WifiField, project_all, search,
+    ApFact, AppFact, AppId, ChannelFact, Console, DriveFact, Epochs, Facts, Hit, KindsState,
+    LinkFact, NotifyFact, RowSnapshot, Sample, SavedFact, Scalar, WifiField, project_all, search,
 };
 use neoui_proto::settings_app::storage::KINDS;
 use neoui_proto::sound_profile::Profile;
@@ -98,8 +98,10 @@ pub fn facts(s: &SetState<'_>, sample: Sample, epochs: Epochs) -> Facts {
         ("kb.0", kb(0)),
         ("kb.1", kb(1)),
         ("kb.2", kb(2)),
+        ("kb.3", kb(3)),
         ("kb.same_height", on(s.get_same_height())),
         ("kb.vibrate", on(s.get_key_vibrate())),
+        ("kb.suggest", on(s.get_suggest())),
         ("dev.usb", on(s.get_usb_debugging())),
         ("dev.touches", on(s.get_show_touches())),
         // D2: only what the kernel answered
@@ -147,6 +149,9 @@ pub fn facts(s: &SetState<'_>, sample: Sample, epochs: Epochs) -> Facts {
             (!s.get_notify_root().is_empty()).then(|| Scalar::Text(s.get_notify_root().into())),
         ),
         ("panel.swipehome", on(s.get_swipe_home())),
+        // TP7
+        ("panel.tiles", text(s.get_tiles_text())),
+        ("panel.tap", pick(s.get_tap_choices(), s.get_shell_tap())),
         // a shell before 1.21 has none of these (the rows say so)
         ("panel.dnd", notify(on(s.get_dnd()))),
         ("notify.dnd", notify(on(s.get_dnd()))),
@@ -279,6 +284,29 @@ pub fn facts(s: &SetState<'_>, sample: Sample, epochs: Epochs) -> Facts {
             })
             .collect(),
     });
+    // (D1) the networks in range (only while Wi-Fi is on) and the saved ones, each a row of its own
+    if s.get_wifi() {
+        f.aps = s
+            .get_wifi_networks()
+            .iter()
+            .map(|n| ApFact {
+                bssid: mac(n.bssid.as_str()),
+                name: String::from(n.name.as_str()),
+                detail: String::from(n.detail.as_str()),
+            })
+            .collect();
+    }
+    f.saved = s
+        .get_wifi_saved()
+        .iter()
+        .map(|n| SavedFact {
+            // shortcut: the shown name stands for the raw SSID (WIFID's names are its SSIDs as text); two saved
+            // networks of one name are one row until SetState carries the raw bytes
+            ssid: n.name.as_bytes().to_vec(),
+            name: String::from(n.name.as_str()),
+            detail: String::from(n.detail.as_str()),
+        })
+        .collect();
     // D2: only what the kernel answered, and nothing before it was asked
     f.console = match (s.get_console_read(), s.get_console_ok()) {
         (false, _) => Console::Unread,

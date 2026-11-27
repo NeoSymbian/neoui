@@ -877,6 +877,23 @@ impl App {
             .map(drop)
     }
 
+    /// [`Self::settings_action_with`] with an open file in slots 2/3 (`proto::ACTION_INSTALL_WALLPAPER`'s raster).
+    /// `file`'s session must be shared (`Fs::share_protected`); `file` stays open here.
+    pub fn settings_action_file(
+        &self,
+        kind: i32,
+        request: &[u8],
+        file: &File<'_>,
+    ) -> Result<(), i32> {
+        let des = TPtrC8::new(request);
+        let mut args = TIpcArgs::new();
+        args.int(0, kind).desc8(1, &des);
+        file.transfer_to_server(&mut args, 2, 3)?;
+        self.server
+            .send_receive(proto::SETTINGS_ACTION, &args)
+            .map(drop)
+    }
+
     /// (D6) A control accepted a touch (`proto::CONTROL_FEEDBACK`): the shell pulses as the profile says (`key`:
     /// 0). The kit's controls
     /// report through [`kit_feedback!`]; an app's own touch control can call this from its click.

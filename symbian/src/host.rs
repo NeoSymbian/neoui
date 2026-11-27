@@ -46,6 +46,18 @@ mod settings_info;
 // (D10) Settings' Edit home and Open apps' thumbnails
 #[path = "home.rs"]
 mod home;
+// (TP7) the control centre's slot table, app tiles and their taps
+#[path = "tiles.rs"]
+pub mod tiles;
+// (home.md Part 4) WIDGET: app widgets' content
+#[path = "widget.rs"]
+pub(crate) mod widget;
+// (D7) Settings' wallpaper pictures
+#[path = "wallpaper.rs"]
+pub mod wallpaper;
+// (TP3) the media session
+#[path = "media.rs"]
+pub mod media;
 
 /// Apps whose shell screen is a launcher grid until they request FRONT(1).
 // shortcut: a fixed table like APPS; apps declare launcher support when apps are installable.
@@ -68,6 +80,11 @@ pub const PAGES: &[(&str, &str, u16)] = &[
     ("settings", "wallpaper", 25),
     // TP4: the shade's Manage opens Panel & notifications
     ("settings", "panel", 27),
+    // TP7: a held tile opens its page
+    ("settings", "mobile", 2),
+    ("settings", "sounds", 7),
+    ("settings", "battery", 8),
+    ("settings", "notifications", 28),
 ];
 
 /// Apps started (hidden) at boot, in this order, and never closed for room: DTSRV (a service, 1.19) rings alarms
@@ -285,9 +302,9 @@ pub struct Host {
     pub notes_changed: bool,
     pub badges_changed: bool,
     /// The clipboard (`CLIP_SET`, `CLIP_GET`), shared by every app.
-    clipboard: String,
+    pub(crate) clipboard: String,
     /// What the clipboard holds (`proto::CLIP_TEXT`, `CLIP_PATHS_COPY`, `CLIP_PATHS_MOVE`; `CLIP_KIND`).
-    clip_kind: i32,
+    pub(crate) clip_kind: i32,
     /// 1.20: revisions, Settings' subscriptions, owner work and thumbnails ([`settings_info`]).
     shelf: settings_info::Shelf,
     /// (D8) The "Files read the clipboard" toasts (`privacy.clip_notice`): readers cooling down and waiting.
@@ -299,6 +316,12 @@ pub struct Host {
     pub policies: notifications::Policies,
     /// (D10) the home editor asked for, thumbnails taken ([`home`])
     pub d10: home::D10,
+    /// (TP7) the slot table, held tile taps, INFO 12 ([`tiles`])
+    pub tiles: tiles::Tiles,
+    /// (D7) the installed wallpaper picture on its way to home ([`wallpaper`])
+    pub wallpaper: wallpaper::Wallpaper,
+    /// (TP3) the media session ([`media`])
+    pub media: media::Media,
 }
 
 impl Host {
@@ -351,6 +374,9 @@ impl Host {
             clip_unseen: false,
             policies: notifications::Policies::boot(),
             d10: home::D10::default(),
+            tiles: tiles::Tiles::boot(),
+            wallpaper: wallpaper::Wallpaper::boot(),
+            media: media::Media::default(),
         }
     }
 
@@ -378,7 +404,12 @@ impl Host {
         };
         app.session = Some(id);
         app.minor = minor;
+        let key = app.key;
         self.unbound.remove(i);
+        self.tiles_bound(key, minor);
+        if let Ok(pid) = pid {
+            self.saw_caps(key, pid); // (D8) what it may do, for Settings → Apps
+        }
         true
     }
 
@@ -866,6 +897,8 @@ impl Host {
                 .is_some()
         });
         let limit = MAX_RUNNING.saturating_sub(starts);
+        // (TP3) a player in the background keeps playing
+        let playing = self.media.current.playing();
         let over: Vec<&'static str> = self
             .apps
             .over_limit(
@@ -874,6 +907,7 @@ impl Host {
                 |a| a.quit_at.is_some() || (RESIDENT.contains(&a.key) && !a.shown),
                 |a| {
                     a.key == key
+                        || playing == Some(a.key)
                         || apps::companions(key).contains(&a.key)
                         || RESIDENT.contains(&a.key)
                 },
@@ -1573,6 +1607,23 @@ impl Service for Host {
                 let r = self.channel(key, &m);
                 m.complete(r);
             }
+            // (TP7) an app's tile
+            proto::TILE => {
+                let key = app.key;
+                let r = self.tile_offer(key, &m);
+                m.complete(r);
+            }
+            proto::WIDGET => {
+                let key = app.key;
+                let r = self.widget(key, &m);
+                m.complete(r);
+            }
+            // (TP3) the media session
+            proto::MEDIA => {
+                let key = app.key;
+                let r = self.media_message(key, &m);
+                m.complete(r);
+            }
             // 1.22's contract: checked, not acted on yet (their producers and consumers land in W1–W3)
             // (the caller by a positive catalogue SID match first: the legacy bridge publishes none of these)
             op if contract::is_publisher_opcode(op) => {
@@ -1753,6 +1804,15 @@ impl Service for Host {
                     proto::ACTION_CLEAR => self.clear_action(&m),
                     proto::ACTION_MEASURE_APP => self.measure_action(&m),
                     proto::ACTION_RESET => self.reset_action(&m),
+                    // (TP7) the tile editor
+                    proto::ACTION_EDIT_TILES => {
+                        let key = app.key;
+                        self.edit_tiles_action(key, &m)
+                    }
+                    proto::ACTION_INSTALL_WALLPAPER => {
+                        let key = app.key;
+                        self.install_wallpaper(key, &m)
+                    }
                     // (D10) the home editor
                     proto::ACTION_EDIT_HOME => {
                         let key = app.key;

@@ -1,0 +1,26 @@
+// SPDX-License-Identifier: Apache-2.0
+// Western Armenian, phonetic: the Eastern phonetic keys (hy.slint) with the pairs Western Armenian pronounces the
+// other way round swapped, so the letters still sit on the keys that sound alike: պ b, բ p, կ g, գ k, տ d, դ t,
+// ծ dz, ձ ts, ճ j, ջ ch. The same letters and punctuation (Western Armenian keeps the classical spelling: ւ, իւ).
+// Plain data; hardware keys in neoui-proto `hwkeys` (code "hyw") swap the same pairs.
+import { Layout } from "../types.slint";
+
+export global Hyw {
+    out property <Layout> layout: {
+        code: "hyw",
+        name: "Western Armenian",
+        hint: "Phonetic (Western)",
+        font: "NeoSans",
+        cols: 12,
+        rows: [
+            ["է", "ծ", "ճ", "ռ", "չ", "ժ", "և", "՝", "՛", "՞"],
+            ["ք", "ո", "ե", "ր", "դ", "ը", "ւ", "ի", "օ", "բ", "խ", "ձ"],
+            ["ա", "ս", "տ", "ֆ", "կ", "հ", "յ", "գ", "լ", "թ", "փ"],
+            ["⇧", "զ", "ղ", "ց", "վ", "պ", "ն", "մ", "շ", "ջ", "⌫"],
+        ],
+        abc: "ԱԲԳ",
+        comma: ",",
+        stop: "։",
+        alts: ["եէև", "ոօ", "՝«»", "՞՜"],
+    };
+}

@@ -644,6 +644,7 @@ impl Features {
             ipc::INFO_CHANNELS,
             ipc::INFO_APP_DETAIL,
             ipc::INFO_BATTERY_CYCLE,
+            ipc::INFO_TILES,
             ipc::INFO_JOBS,
             ipc::INFO_FEATURES,
         ]),
@@ -656,8 +657,11 @@ impl Features {
             ipc::ACTION_CLEAR,
             ipc::ACTION_MEASURE_APP,
             ipc::ACTION_EDIT_HOME,
+            ipc::ACTION_EDIT_TILES,
+            ipc::ACTION_INSTALL_WALLPAPER, // D7
         ]),
-        // every built opcode: 1–10, 13–30, 32, 34, 40–45 (11/12 are retired, 31, 33 and 35–39 reserved)
+        // every built opcode: 1–10, 13–30, 32, 33 (TP3), 34, 37 (TP7), 40–46 (11/12 are retired, 31, 35, 36, 38, 39
+        // reserved)
         opcodes: (((1u64 << 31) - 1) & !1 & !(1 << 11) & !(1 << 12))
             | bits(&[
                 ipc::NOTIFY_CLEAR,
@@ -668,6 +672,9 @@ impl Features {
                 ipc::ENTRY_THUMB,
                 ipc::CONTROL_FEEDBACK,
                 ipc::REPAINT,
+                ipc::MEDIA,
+                ipc::TILE,
+                ipc::WIDGET,
             ]),
     };
 

@@ -9,6 +9,9 @@ import { Slider } from "controls.slint";
 import { ProgressBar } from "feedback.slint";
 import { SystemSettings } from "../system-settings.slint";
 import { Now } from "../now.slint";
+import { FirstStop, PullForAll, ControlCentre, TileEditor, WifiSheet, TilesModel, TileCell } from "tiles.slint";
+import { Media } from "../media.slint";
+import { MediaPlayer } from "media.slint";
 
 // An app's entry (ipc NOTIFY): its title and text, "Clock · Time's up" style (the app's name first).
 // Since 1.9: up to two actions ("Reply", "Call") under the text, an avatar (initials on a tint), a time, and two lines
@@ -57,40 +60,6 @@ component NoteAvatar inherits Rectangle {
         source: root.message ? @image-url("../icons/sys/message.svg") : @image-url("../icons/sys/bell.svg");
         size: 24 * Theme.dp;
         colorize: Theme.accent;
-    }
-}
-
-component Toggle inherits Rectangle {
-    in property <image> icon;
-    in property <string> label;
-    in-out property <bool> on;
-    height: 74 * Theme.dp;
-    border-radius: Theme.radius;
-    background: on ? Theme.accent : Theme.field;
-    animate background { duration: Theme.fast; }
-    VerticalLayout {
-        alignment: center;
-        spacing: 6 * Theme.dp;
-        HorizontalLayout {
-            alignment: center;
-            Glyph {
-                source: icon;
-                size: 24 * Theme.dp;
-            }
-        }
-
-        Text {
-            text: label;
-            color: Theme.text;
-            font-size: Theme.font-status * 0.92;
-            horizontal-alignment: center;
-        }
-    }
-
-    TouchArea {
-        clicked => {
-            root.on = !root.on;
-        }
     }
 }
 
@@ -338,6 +307,27 @@ export component Shade inherits Rectangle {
         if !self.open {
             self.all = false;
             list.content-y = 0;
+            TilesModel.closed();
+        }
+    }
+    // (TP7) a held tile: an app's goes to its app, the shell's own opens its Settings page; a tile's ›
+    function held(c: TileCell) {
+        if c.id >= 256 {
+            if c.available {
+                TilesModel.op("hold", c.id, 0);
+            }
+        } else {
+            root.open-view("settings", c.id == 1 ? "wifi" : c.id == 2 || c.id == 5 ? "mobile" : c.id == 3 ? "sounds"
+                : c.id == 4 ? "notifications" : c.id == 6 ? "battery" : "display");
+        }
+    }
+    function detail(c: TileCell) {
+        if c.id == 1 {
+            TilesModel.wifi-sheet = true;
+        } else if c.id == 2 {
+            root.open-view("settings", "mobile");
+        } else {
+            TilesModel.tap(c);
         }
     }
     visible: self.opacity > 0.01;
@@ -379,6 +369,7 @@ export component Shade inherits Rectangle {
                     font-weight: 300;
                     vertical-alignment: center;
                 }
+                // two lines when the header's buttons leave too little room (tp-control)
                 Text {
                     text: SystemSettings.shade-date ? Now.date-text : "";
                     color: Theme.text-secondary;
@@ -386,9 +377,15 @@ export component Shade inherits Rectangle {
                     vertical-alignment: center;
                     horizontal-stretch: 1;
                     min-width: 0px;
+                    wrap: word-wrap;
+                    max-height: 36 * Theme.dp;
                     overflow: elide;
                 }
-                // ⚙ Settings (Panel & notifications once TP4 adds it), ⏻ the Power menu; ✎ comes with TP7
+                // ✎ the tile editor (TP7), ⚙ Settings, ⏻ the Power menu
+                HeaderButton {
+                    icon: @image-url("../icons/sys/edit.svg");
+                    clicked => { TilesModel.op("edit", 0, 0); }
+                }
                 HeaderButton {
                     icon: @image-url("../icons/sys/gear.svg");
                     clicked => { root.open-app("settings"); }
@@ -399,34 +396,19 @@ export component Shade inherits Rectangle {
                 }
             }
 
-            if !root.all: HorizontalLayout {
-                spacing: 8 * Theme.dp;
-                Toggle {
-                    icon: @image-url("../icons/sys/wifi.svg");
-                    label: "Wi-Fi";
-                    on <=> SystemSettings.wifi;
-                }
-
-                Toggle {
-                    icon: @image-url("../icons/sys/bluetooth.svg");
-                    label: "Bluetooth";
-                    on <=> SystemSettings.bluetooth;
-                }
-
-                Toggle {
-                    icon: @image-url("../icons/sys/data.svg");
-                    label: "Mobile data";
-                    on <=> SystemSettings.mobile-data;
-                }
-
-                Toggle {
-                    icon: @image-url("../icons/sys/silent.svg");
-                    label: "Silent";
-                    on <=> SystemSettings.silent;
-                }
+            // (TP7) the first stop: the first four tiles; a pull on them (or on "Pull for all controls") goes on to
+            // the control centre, which has its own brightness and no cards
+            if !root.all && TilesModel.stop == 1: FirstStop {
+                hold(c) => { root.held(c); }
             }
 
-            if !root.all: HorizontalLayout {
+            if !root.all && TilesModel.stop == 2: ControlCentre {
+                hold(c) => { root.held(c); }
+                detail(c) => { root.detail(c); }
+                media-opened => { root.open-app(Media.app-key); }
+            }
+
+            if !root.all && TilesModel.stop == 1: HorizontalLayout {
                 spacing: 12 * Theme.dp;
                 padding-left: 4 * Theme.dp;
                 padding-right: 4 * Theme.dp;
@@ -444,8 +426,13 @@ export component Shade inherits Rectangle {
                 }
             }
 
+            // (TP3) the media session's player (shell.media), under brightness; the control centre has its own
+            if !root.all && TilesModel.stop == 1 && Media.in-shade: MediaPlayer {
+                opened => { root.open-app(Media.app-key); }
+            }
+
             // the first stop: its first 2 cards and See all; the list: every card in its section, then Clear all
-            if !root.all && root.notes.length > 0: HorizontalLayout {
+            if !root.all && TilesModel.stop == 1 && root.notes.length > 0: HorizontalLayout {
                 padding-left: 4 * Theme.dp;
                 padding-right: 4 * Theme.dp;
                 Text {
@@ -472,7 +459,8 @@ export component Shade inherits Rectangle {
 
             // scrolled by the cards themselves (Card.scrolled): a Flickable of its own would take their swipes
             list := Flickable {
-                height: min(cards.preferred-height, root.all ? root.height - 150 * Theme.dp : 100000px);
+                visible: TilesModel.stop == 1 || root.all;
+                height: TilesModel.stop == 2 && !root.all ? 0 : min(cards.preferred-height, root.all ? root.height - 150 * Theme.dp : 100000px);
                 content-height: cards.preferred-height;
                 interactive: false;
                 // under the cards: a drag in the gaps between them (or on a section label) scrolls too
@@ -562,7 +550,13 @@ export component Shade inherits Rectangle {
                 }
             }
 
-
+            if !root.all && TilesModel.stop == 1: PullForAll { }
         }
+    }
+
+    // (TP7) the editor and the Wi-Fi sheet, over the whole shade
+    if TilesModel.editing: TileEditor { }
+    if TilesModel.wifi-sheet: WifiSheet {
+        settings => { root.open-view("settings", "wifi"); }
     }
 }

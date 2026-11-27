@@ -1,8 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
-// The app menu: a scrolling grid, 3 columns in portrait and 4 in landscape (Belle's menu, 135 dp rows).
+// The app menu: a scrolling grid, 3 columns in portrait and 4 in landscape (Belle's menu, 135 dp rows). A long press
+// on an app opens the kit's Menu at the finger: Add to home, or Remove from home when it has an icon there (home.md
+// Part 3; saved at once, `HomePin`).
 import { Theme } from "../theme.slint";
 import { NeoList } from "../components/scroll.slint";
 import { Badge } from "../components/footer.slint";
+import { Menu } from "../components/menu.slint";
+import { Toast } from "../components/feedback.slint";
+import { HomePin } from "home-pin.slint";
 
 export struct App { name: string, key: string, icon: image }
 
@@ -37,6 +42,11 @@ export component MenuScreen inherits Rectangle {
     property <int> cols: self.width > self.height ? 4 : 3;
     property <length> cell-w: self.width / cols;
     property <int> rows: Math.ceil(Apps.all.length / cols);
+    // the long press: the app held and where (in this screen's coordinates)
+    property <string> held;
+    property <bool> held-pinned;
+    property <length> held-x;
+    property <length> held-y;
     NeoList {
         content-height: 12 * Theme.dp + rows * Theme.app-row-h;
         for app[i] in Apps.all: Rectangle {
@@ -81,11 +91,61 @@ export component MenuScreen inherits Rectangle {
             }
 
             touch := TouchArea {
+                // a long press is no tap: its release opens nothing
+                property <bool> fired;
+                changed pressed => {
+                    if self.pressed {
+                        self.fired = false;
+                    }
+                }
                 clicked => {
-                    root.selected = i;
-                    root.open-app(app.key);
+                    if !self.fired {
+                        root.selected = i;
+                        root.open-app(app.key);
+                    }
                 }
             }
+            Timer {
+                interval: 500ms;
+                running: touch.pressed && !touch.fired;
+                triggered => {
+                    touch.fired = true;
+                    root.held = app.key;
+                    root.held-pinned = HomePin.pinned(app.key);
+                    root.held-x = touch.absolute-position.x - root.absolute-position.x + touch.mouse-x;
+                    root.held-y = touch.absolute-position.y - root.absolute-position.y + touch.mouse-y;
+                    app-menu.show();
+                }
+            }
+        }
+    }
+
+    app-menu := Menu {
+        x: 0;
+        y: 0;
+        right-aligned: false;
+        bound: root.height;
+        at-x: max(8 * Theme.dp, min(root.width - Theme.menu-w - 8 * Theme.dp, root.held-x - Theme.menu-w / 2));
+        at-y: root.held-y;
+        // shortcut: no "Add to dock" (home.md lists it: first free slot or replace one); the editor's dock slots do it
+        items: [root.held-pinned ? "Remove from home" : "Add to home"];
+        picked(i) => {
+            HomePin.op(root.held-pinned ? "remove-home" : "add-home", root.held);
+        }
+    }
+
+    // what Add to home / Remove from home did, for two seconds
+    if HomePin.note != "": Toast {
+        x: 12 * Theme.dp;
+        width: root.width - 24 * Theme.dp;
+        y: root.height - self.height - 12 * Theme.dp;
+        text: HomePin.note;
+    }
+    Timer {
+        interval: 2s;
+        running: HomePin.note != "";
+        triggered => {
+            HomePin.note = "";
         }
     }
 }

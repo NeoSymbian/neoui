@@ -54,13 +54,14 @@ pub fn clear_scope(name: &str, scope: u32) -> String {
     )
 }
 
-/// Reset ([`ipc::RESET_NETWORK`] or [`ipc::RESET_SETTINGS`]).
+/// Reset ([`ipc::RESET_NETWORK`] or [`ipc::RESET_SETTINGS`]): set2-reset-query's question first ("Reset settings?"), then
+/// what goes and what stays.
 #[must_use]
 pub fn reset(what: u8) -> &'static str {
     if what == ipc::RESET_NETWORK {
-        "Forget every saved Wi-Fi network and its password? Contacts, messages, alarms and files stay. The phone restarts."
+        "Reset network settings? Every saved Wi-Fi network and its password are forgotten. Contacts, messages, alarms and files stay. The phone restarts."
     } else {
-        "Put the phone's settings back to their defaults? Sound profiles, networks, contacts, messages, alarms and files stay. The phone restarts."
+        "Reset settings? Display, sounds, navigation and the rest go back to defaults. Sound profiles, networks, contacts, messages and files stay. The phone restarts."
     }
 }
 
