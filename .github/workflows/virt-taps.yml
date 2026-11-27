@@ -535,7 +535,8 @@ jobs:
       # - Up from the bottom goes Home, and from home to the menu.
       # - Clock (449,603). Up and held still for Open apps.
       # - Clock again from the menu; along the band rightwards: the previous app.
-      # - Clock's ⋮ (497,73) -> Settings (400,157), the kit's menu.
+      # - Clock's ⋮ (497,73) -> Settings (400,229), the kit's menu: its second row (72 px each; datetime's Clock lists
+      #   Set time first, at 400,157).
       # - Protocol 1.12 (Files FA8): the UI kit (Apps row 4, 449,985) -> ⋮ (500,73) -> Files (menu row 9, 400,805) ->
       #   Save a file (270,244) opens Files' Save as on C:\ (no C:\Data there); its Save (470,998) answers the kit
       #   with the new file by handle, and the kit writes into it.
@@ -562,7 +563,7 @@ jobs:
           # (the previous app is Settings, now an app itself): home, then Clock from the menu again
           wait_s 1; swipe 270 1075 270 900; expect "neoui: screen home"
           wait_s 1; tap 485 973; tap 449 603; expect "clock: visible true"
-          wait_s 1; tap 497 73; wait_s 1; tap 400 157; expect "clock: view settings"
+          wait_s 1; tap 497 73; wait_s 1; tap 400 229; expect "clock: view settings"
           wait_s 1; swipe 270 1075 270 900; expect "neoui: screen home"
           wait_s 1; tap 485 973; tap 449 985; expect "neoui: app kit started"
           wait_s 1; tap 500 73; wait_s 1; tap 400 805; wait_s 1
