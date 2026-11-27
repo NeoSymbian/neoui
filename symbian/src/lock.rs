@@ -190,6 +190,10 @@ impl Host {
         l.lock.screen_off(lock_on, pin_set);
         l.pin.clear();
         l.message.clear();
+        // the PIN dialog never outlives the screen: it would show over the lock screen at wake
+        if l.dialog.take().is_some() {
+            dprintln!("neoui: lock PIN dialog closed by the screen going off");
+        }
         if l.lock.locked() {
             dprintln!("neoui: locked");
         }
