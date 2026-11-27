@@ -23,6 +23,7 @@ pub mod settings;
 pub mod settings_app;
 pub mod shade;
 pub mod sound_profile;
+pub mod tile_table;
 pub mod tiles;
 pub mod widget;
 pub mod wifi;

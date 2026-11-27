@@ -231,6 +231,9 @@ pub(crate) static BINDINGS: &[Binding] = &[
     ),
     bool_binding!(keys::NAV_SWIPE_CLOSE, get_swipe_close, set_swipe_close),
     int_binding!(keys::HOME_STYLE, get_home_style, set_home_style),
+    // TP7: the Do not disturb tile, the status bar's tap
+    bool_binding!(keys::NOTIFY_DND, get_dnd, set_dnd),
+    int_binding!(keys::SHELL_TAP, get_shell_tap, set_shell_tap),
 ];
 
 /// The binding for `key`, if the shell shows it.

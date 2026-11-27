@@ -729,6 +729,21 @@ pub const ROWS: &[Row] = &[
         "Notifications",
         &["alerts", "do not disturb", "banners", "shade"],
     ),
+    // TP7: the control centre's editor (the shell's), what the status bar's tap opens
+    action(
+        "panel.tiles",
+        Panel,
+        Panel,
+        "Tiles",
+        &["control centre", "quick settings", "edit tiles"],
+    ),
+    row(
+        "panel.tap",
+        Panel,
+        Panel,
+        "Tap on the status bar",
+        &["control centre", "status bar", "shade"],
+    ),
     row(
         "panel.swipehome",
         Panel,

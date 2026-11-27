@@ -1097,6 +1097,15 @@ fn every_page() {
     // (set2-notify-app, nt-settings) and a channel's importance sheet; their taps ask the app
     page(&sh, 27, "Panel & notifications");
     sh.shoot("tp-settings");
+    // TP7: Tiles opens the shell's editor; the status bar's tap is a choice
+    sh.take_acts();
+    sh.tap(100.0, 48.0 + 34.0 + 36.0);
+    assert_eq!(sh.take_acts(), acts(&[("notify-tiles", "")]));
+    sh.tap(100.0, 48.0 + 34.0 + 72.0 + 28.0);
+    assert_eq!(s.get_sheet(), "status-tap");
+    sh.shoot("tp-settings-tap");
+    sh.tap(100.0, 600.0);
+    s.set_sheet(SharedString::new());
     page(&sh, 28, "Notifications");
     sh.shoot("set2-notifications");
     sh.take_acts();

@@ -147,6 +147,9 @@ pub fn facts(s: &SetState<'_>, sample: Sample, epochs: Epochs) -> Facts {
             (!s.get_notify_root().is_empty()).then(|| Scalar::Text(s.get_notify_root().into())),
         ),
         ("panel.swipehome", on(s.get_swipe_home())),
+        // TP7
+        ("panel.tiles", text(s.get_tiles_text())),
+        ("panel.tap", pick(s.get_tap_choices(), s.get_shell_tap())),
         // a shell before 1.21 has none of these (the rows say so)
         ("panel.dnd", notify(on(s.get_dnd()))),
         ("notify.dnd", notify(on(s.get_dnd()))),

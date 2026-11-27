@@ -69,6 +69,10 @@ export global SystemSettings {
     in-out property <int> switcher-cols: 2;
     in-out property <bool> swipe-close: false;
     in-out property <int> home-style: 0;
+    // (TP7) the control centre's tiles: Do not disturb (notify.dnd), what a tap on the status bar opens (shell.tap:
+    // 0 the shade, 1 the control centre)
+    in-out property <bool> dnd: false;
+    in-out property <int> shell-tap: 0;
 
     // A setting changed in the UI (its registry key); the server reads the property and stores it.
     callback edited(string);
@@ -114,6 +118,8 @@ export global SystemSettings {
     changed switcher-cols => { edited("nav.switcher_cols"); }
     changed swipe-close => { edited("nav.swipe_close"); }
     changed home-style => { edited("home.style"); }
+    changed dnd => { edited("notify.dnd"); }
+    changed shell-tap => { edited("shell.tap"); }
     changed font-size => {
         Theme.font-size = font-size;
         edited("display.font_size");
