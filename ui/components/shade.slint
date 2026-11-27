@@ -12,6 +12,8 @@ import { Now } from "../now.slint";
 import { FirstStop, PullForAll, ControlCentre, TileEditor, WifiSheet, TilesModel, TileCell } from "tiles.slint";
 import { Media } from "../media.slint";
 import { MediaPlayer } from "media.slint";
+import { Island } from "../island.slint";
+import { LiveCard } from "island.slint";
 
 // An app's entry (ipc NOTIFY): its title and text, "Clock · Time's up" style (the app's name first).
 // Since 1.9: up to two actions ("Reply", "Call") under the text, an avatar (initials on a tint), a time, and two lines
@@ -40,6 +42,11 @@ export struct ShadeNote {
     open: bool,
     member: bool,
     ongoing: bool,
+    // (TP5) page::style (4 Call) and NOTIFY_STICKY: a ringing call gets the shell's round Reject and Answer (O1)
+    style: int,
+    sticky: bool,
+    // (TP4) its app reads REPLY_TEXT: Reply opens the inline field (in the banner) instead of the app
+    inline-reply: bool,
 }
 
 component NoteAvatar inherits Rectangle {
@@ -68,6 +75,8 @@ component NoteAvatar inherits Rectangle {
 export component Card inherits Rectangle {
     in property <ShadeNote> note;
     callback opened(int);
+    // (TP4) Reply on a card whose app reads REPLY_TEXT: the banner opens with the inline field
+    callback reply();
     callback dismissed();
     callback toggled();
     // a vertical drag on the card scrolls the list by this much (the list's Flickable would take sideways drags
@@ -202,6 +211,7 @@ export component Card inherits Rectangle {
             }
             VerticalLayout {
                 spacing: 2 * Theme.dp;
+                horizontal-stretch: 1;
                 // the title and text follow display.font_size (D7)
                 Text {
                     text: note.title;
@@ -221,6 +231,28 @@ export component Card inherits Rectangle {
                     color: Theme.text-secondary;
                     font-size: 13.5 * Theme.dp * Theme.font-scale;
                     overflow: elide;
+                }
+            }
+            // (TP5, O1) a ringing call: the shell's Reject and Answer (page::CALL_REJECT, CALL_ANSWER)
+            if note.style == 4 && note.sticky: HorizontalLayout {
+                spacing: 10 * Theme.dp;
+                alignment: center;
+                for k in [161, 160]: Rectangle {
+                    width: 40 * Theme.dp;
+                    height: self.width;
+                    border-radius: self.width / 2;
+                    background: k == 161 ? Theme.danger : Theme.ok;
+                    opacity: key-touch.pressed ? 0.7 : 1;
+                    accessible-role: button;
+                    accessible-label: k == 161 ? "Reject" : "Answer";
+                    Glyph {
+                        source: k == 161 ? @image-url("../icons/sys/end_call.svg") : @image-url("../icons/sys/call.svg");
+                        size: 20 * Theme.dp;
+                        colorize: #ffffff;
+                    }
+                    key-touch := TouchArea {
+                        clicked => { root.opened(k); }
+                    }
                 }
             }
         }
@@ -253,7 +285,11 @@ export component Card inherits Rectangle {
                     clicked => {
                         if abs(self.mouse-x - self.pressed-x) < 10 * Theme.dp
                             && abs(self.mouse-y - self.pressed-y) < 10 * Theme.dp {
-                            root.opened(j + 1);
+                            if j < note.kinds.length && note.kinds[j] == 1 && note.inline-reply {
+                                root.reply();
+                            } else {
+                                root.opened(j + 1);
+                            }
                         }
                     }
                 }
@@ -299,6 +335,10 @@ export component Shade inherits Rectangle {
     callback note-dismissed(int);
     callback notes-cleared();
     callback group-toggled(int);
+    // (TP4) Reply on card row i: the banner opens over the app with the inline field
+    callback reply-asked(int);
+    // (TP6) activities in the Live section (media is the player's)
+    property <int> live-count: Island.cards;
     // the list's scroll, from a card or a gap, kept inside the list
     function scroll-by(d: length) {
         list.content-y = max(min(0px, list.height - list.content-height), min(0px, list.content-y + d));
@@ -480,11 +520,28 @@ export component Shade inherits Rectangle {
                 }
                 // rows the first stop doesn't show take no room: each shown row carries its own gap
                 cards := VerticalLayout {
+                    // (TP6) the activities at the top of Live (the media session has the player above)
+                    if root.live-count > 0: Text {
+                        text: "LIVE";
+                        color: Theme.text-dim;
+                        font-size: Theme.font-status * 0.9;
+                        font-weight: 600;
+                        letter-spacing: 0.06 * Theme.font-status;
+                        x: 4 * Theme.dp;
+                    }
+                    for a[k] in Island.live: VerticalLayout {
+                        if a.kind != 4: VerticalLayout {
+                            padding-bottom: 8 * Theme.dp;
+                            LiveCard {
+                                index: k;
+                            }
+                        }
+                    }
                     for n[i] in root.notes: VerticalLayout {
                         if root.all || i < 2: VerticalLayout {
                             spacing: 6 * Theme.dp;
                             padding-bottom: 8 * Theme.dp;
-                            if root.all && n.section != "": Text {
+                            if root.all && n.section != "" && !(n.section == "LIVE" && root.live-count > 0): Text {
                                 text: n.section;
                                 color: Theme.text-dim;
                                 font-size: Theme.font-status * 0.9;
@@ -495,6 +552,7 @@ export component Shade inherits Rectangle {
                             Card {
                                 note: n;
                                 opened(a) => { root.note-opened(i, a); }
+                                reply => { root.reply-asked(i); }
                                 dismissed => { root.note-dismissed(i); }
                                 // the first stop shows 2 rows: an opened group shows in the list
                                 toggled => {

@@ -1,35 +1,434 @@
 // SPDX-License-Identifier: Apache-2.0
-// The heads-up banner (top-panel TP4, nt-headsup): an Urgent card slides down under the status bar over whatever is
-// in front, for notify.bannert seconds. It is the shade's card: a tap opens it, its actions act (Mark read in place),
-// a swipe sideways or up puts it away and the card stays in the shade. The UI server never shows it over a
+// The heads-up banner (top-panel TP4, nt-headsup, nt-headsup-buttons): an Urgent card slides down under the status bar
+// over whatever is in front, for notify.bannert seconds (the bar under it). A tap opens it, its actions act (Mark read
+// in place), a swipe sideways or up puts it away and the card stays in the shade. The UI server never shows it over a
 // full-screen call or while the keyboard's field has the input, nor under Do not disturb.
+// (TP5, nt-call-banner) A ringing call (Call style, STICKY): round Reject and Answer drawn by the shell (O1, reported
+// as 0xA0/0xA1), the card's own Silence · Reply with message under them; no timeout. A tap: the call screen.
+// (TP4, nt-reply) Reply on a card whose app reads REPLY_TEXT opens a field in the banner with the shell's keyboard,
+// the quick replies and the SMS counter; Send hands the text to the app, which stays in the background.
 import { Theme } from "../theme.slint";
-import { Card, ShadeNote } from "shade.slint";
+import { Glyph } from "frame.slint";
+import { ShadeNote } from "shade.slint";
+import { Reply } from "../island.slint";
+import { FieldInput } from "controls.slint";
+import { KeyboardFocus } from "keyboard/focus.slint";
+
+component AppGlyph inherits Glyph {
+    in property <string> key;
+    source: key == "messages" ? @image-url("../icons/sys/message.svg")
+        : key == "phone" ? @image-url("../icons/sys/call.svg")
+        : key == "files" ? @image-url("../icons/sys/folder.svg")
+        : key == "clock" || key == "dtsrv" ? @image-url("../icons/sys/alarm.svg")
+        : key == "browser" ? @image-url("../icons/sys/world.svg")
+        : @image-url("../icons/sys/bell.svg");
+    size: 14 * Theme.dp;
+}
+
+component Avatar inherits Rectangle {
+    in property <ShadeNote> note;
+    in property <length> size: 36 * Theme.dp;
+    width: size;
+    height: size;
+    border-radius: size / 2;
+    background: note.initials != "" ? note.tint : #ffffff14;
+    if note.initials != "": Text {
+        text: note.initials;
+        color: white;
+        font-size: root.size * 0.38;
+        font-weight: 600;
+    }
+    if note.initials == "": AppGlyph {
+        key: note.app-key;
+        size: root.size * 0.55;
+        colorize: Theme.accent;
+    }
+}
+
+// a pill under the card: the reply (the main one) blue, the rest grey
+component Pill inherits Rectangle {
+    in property <string> text;
+    in property <bool> main;
+    in property <bool> danger;
+    in property <length> h: 36 * Theme.dp;
+    callback clicked;
+    height: h;
+    // the pills share the row equally, whatever their labels
+    horizontal-stretch: 1;
+    min-width: 0px;
+    preferred-width: 0px;
+    border-radius: self.height / 2;
+    background: main ? (ta.pressed ? #2f6fd6 : Theme.accent) : (ta.pressed ? #3a3f47 : #2a2e35);
+    accessible-role: button;
+    accessible-label: text;
+    accessible-action-default => { root.clicked(); }
+    Text {
+        width: parent.width - 16 * Theme.dp;
+        text: root.text;
+        color: root.danger ? Theme.danger-text : Theme.text;
+        font-size: 14 * Theme.dp;
+        font-weight: 600;
+        horizontal-alignment: center;
+        wrap: word-wrap;
+        overflow: elide;
+    }
+    ta := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
+
+// a round key the shell draws on a ringing call (O1)
+component Round inherits Rectangle {
+    in property <image> icon;
+    in property <color> fill;
+    in property <string> label;
+    callback clicked;
+    width: 48 * Theme.dp;
+    height: self.width;
+    border-radius: self.width / 2;
+    background: ta.pressed ? fill.darker(0.2) : fill;
+    accessible-role: button;
+    accessible-label: label;
+    accessible-action-default => { root.clicked(); }
+    Glyph {
+        source: root.icon;
+        size: 22 * Theme.dp;
+        colorize: #ffffff;
+    }
+    ta := TouchArea {
+        clicked => { root.clicked(); }
+    }
+}
 
 export component NotificationBanner inherits Rectangle {
     in property <ShadeNote> note;
-    // (card, 0) for the card itself, (card, i + 1) for its action i
+    // notify.bannert: the bar under it runs out over these seconds (0: no bar, a sticky card)
+    in property <int> seconds: 5;
+    // (card, 0) for the card itself, (card, i + 1) for its action i, 0xA0/0xA1 a call's Answer/Reject
     callback opened(int);
     callback closed();
+    property <bool> call: note.style == 4 && note.sticky;
+    property <float> left: 1;
+    property <length> drag;
     height: card.height + 8 * Theme.dp;
+    changed note => { self.left = 1; }
+    // the reply opened: its field takes the focus (the shell's keyboard comes up)
+    property <bool> replying: Reply.open && root.visible;
+    changed replying => {
+        if self.replying {
+            field.focus();
+        }
+    }
+    changed visible => { self.left = 1; }
+    Timer {
+        interval: 250ms;
+        running: root.visible && root.seconds > 0 && !Reply.open;
+        triggered => { root.left = max(0, root.left - 0.25 / root.seconds); }
+    }
     // a soft edge under it over the app
     Rectangle {
         y: 6 * Theme.dp;
         height: card.height;
-        border-radius: 16 * Theme.dp;
+        border-radius: 18 * Theme.dp;
         background: #00000080;
     }
-    card := Card {
+    card := Rectangle {
         y: 0;
-        note: root.note;
-        opened(a) => { root.opened(a); }
-        dismissed => { root.closed(); }
-        toggled => { root.opened(0); }
-        // a swipe up hides it (the card stays in the shade); a swipe down does nothing
-        scrolled(d) => {
-            if d < -12 * Theme.dp {
-                root.closed();
+        x: root.drag;
+        height: Reply.open ? reply.preferred-height : body.preferred-height;
+        background: root.call ? #10241a : #1b1e23;
+        border-radius: 18 * Theme.dp;
+        border-width: 1px;
+        border-color: root.call ? #22b46a59 : #ffffff1f;
+        clip: true;
+        // a tap opens the card; a swipe sideways or up puts it away (the card stays in the shade)
+        TouchArea {
+            moved => {
+                let dx = self.mouse-x - self.pressed-x;
+                if abs(dx) > 8 * Theme.dp && !Reply.open {
+                    root.drag = dx;
+                }
             }
+            pointer-event(e) => {
+                if e.kind == PointerEventKind.up {
+                    if abs(root.drag) > root.width / 3 || self.mouse-y - self.pressed-y < -12 * Theme.dp {
+                        root.closed();
+                    }
+                    root.drag = 0;
+                }
+                if e.kind == PointerEventKind.cancel {
+                    root.drag = 0;
+                }
+            }
+            clicked => {
+                if abs(self.mouse-x - self.pressed-x) < 10 * Theme.dp && abs(self.mouse-y - self.pressed-y) < 10 * Theme.dp
+                    && !Reply.open {
+                    root.opened(0);
+                }
+            }
+        }
+        Rectangle {
+            visible: !Reply.open;
+        body := VerticalLayout {
+            padding-left: 14 * Theme.dp;
+            padding-right: 14 * Theme.dp;
+            padding-top: 12 * Theme.dp;
+            padding-bottom: root.seconds > 0 ? 6 * Theme.dp : 12 * Theme.dp;
+            spacing: 10 * Theme.dp;
+            HorizontalLayout {
+                spacing: 6 * Theme.dp;
+                AppGlyph {
+                    key: root.note.app-key;
+                    colorize: root.call ? Theme.ok : Theme.accent;
+                }
+                Text {
+                    text: root.note.app;
+                    color: Theme.text-secondary;
+                    font-size: 12.5 * Theme.dp;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                }
+                Text {
+                    text: "· " + (root.call ? (root.note.time != "" && root.note.time != "now" ? root.note.time : "incoming call") : root.note.time);
+                    color: Theme.text-dim;
+                    font-size: 12.5 * Theme.dp;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                    overflow: elide;
+                }
+                if !root.call: Glyph {
+                    source: @image-url("../icons/sys/chevron_down.svg");
+                    size: 16 * Theme.dp;
+                    colorize: Theme.text-dim;
+                }
+            }
+            HorizontalLayout {
+                spacing: 12 * Theme.dp;
+                VerticalLayout {
+                    alignment: center;
+                    Avatar {
+                        note: root.note;
+                        size: root.call ? 48 * Theme.dp : 36 * Theme.dp;
+                    }
+                }
+                VerticalLayout {
+                    alignment: center;
+                    horizontal-stretch: 1;
+                    spacing: 1 * Theme.dp;
+                    Text {
+                        text: root.note.title;
+                        color: Theme.text;
+                        font-size: (root.call ? 18 : 15.5) * Theme.dp * Theme.font-scale;
+                        font-weight: root.call ? 700 : 600;
+                        overflow: elide;
+                    }
+                    if root.note.text != "": Text {
+                        text: root.note.text;
+                        color: Theme.text-secondary;
+                        font-size: 14 * Theme.dp * Theme.font-scale;
+                        overflow: elide;
+                    }
+                }
+                if root.call: HorizontalLayout {
+                    spacing: 12 * Theme.dp;
+                    alignment: center;
+                    Round {
+                        icon: @image-url("../icons/sys/end_call.svg");
+                        fill: Theme.danger;
+                        label: "Reject";
+                        clicked => { root.opened(161); }
+                    }
+                    Round {
+                        icon: @image-url("../icons/sys/call.svg");
+                        fill: Theme.ok;
+                        label: "Answer";
+                        clicked => { root.opened(160); }
+                    }
+                }
+            }
+            if root.note.actions.length > 0: HorizontalLayout {
+                spacing: 8 * Theme.dp;
+                for a[j] in root.note.actions: Pill {
+                    text: a;
+                    h: root.call ? 40 * Theme.dp : 36 * Theme.dp;
+                    main: !root.call && j < root.note.kinds.length && root.note.kinds[j] == 1;
+                    danger: j < root.note.kinds.length && root.note.kinds[j] == 2;
+                    clicked => {
+                        // a Reply the app reads inline opens the field here; the rest act as the shade's
+                        if j < root.note.kinds.length && root.note.kinds[j] == 1 && root.note.inline-reply {
+                            Reply.text = "";
+                            Reply.edited("");
+                            Reply.open = true;
+                        } else {
+                            root.opened(j + 1);
+                        }
+                    }
+                }
+            }
+            // the time left
+            if root.seconds > 0: HorizontalLayout {
+                alignment: center;
+                Rectangle {
+                    width: 126 * Theme.dp;
+                    height: 4 * Theme.dp;
+                    border-radius: self.height / 2;
+                    background: #ffffff26;
+                    Rectangle {
+                        x: 0;
+                        width: parent.width * root.left;
+                        border-radius: parent.border-radius;
+                        background: #ffffffb3;
+                    }
+                }
+            }
+        }
+        }
+        Rectangle {
+            visible: Reply.open;
+        reply := VerticalLayout {
+            padding: 14 * Theme.dp;
+            spacing: 10 * Theme.dp;
+            HorizontalLayout {
+                spacing: 6 * Theme.dp;
+                AppGlyph {
+                    key: root.note.app-key;
+                    colorize: Theme.accent;
+                }
+                Text {
+                    text: root.note.app + " · " + root.note.time;
+                    color: Theme.text-secondary;
+                    font-size: 12.5 * Theme.dp;
+                    font-weight: 600;
+                    horizontal-stretch: 1;
+                    vertical-alignment: center;
+                }
+                Glyph {
+                    source: @image-url("../icons/sys/chevron_up.svg");
+                    size: 16 * Theme.dp;
+                    colorize: Theme.text-dim;
+                    TouchArea {
+                        clicked => {
+                            Reply.open = false;
+                            KeyboardFocus.close();
+                        }
+                    }
+                }
+            }
+            HorizontalLayout {
+                spacing: 10 * Theme.dp;
+                Avatar {
+                    note: root.note;
+                    size: 28 * Theme.dp;
+                }
+                Text {
+                    text: root.note.title;
+                    color: Theme.text;
+                    font-size: 15.5 * Theme.dp;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+            }
+            // the conversation's last lines, as the card has them
+            for line in [root.note.earlier, root.note.text]: HorizontalLayout {
+                alignment: start;
+                if line != "": Rectangle {
+                    background: Theme.bubble-in;
+                    border-radius: 16 * Theme.dp;
+                    width: min(bubble.preferred-width + 24 * Theme.dp, root.width * 0.75);
+                    height: bubble.preferred-height + 16 * Theme.dp;
+                    bubble := Text {
+                        x: 12 * Theme.dp;
+                        width: parent.width - 24 * Theme.dp;
+                        text: line;
+                        color: Theme.text;
+                        font-size: 14.5 * Theme.dp;
+                        wrap: word-wrap;
+                    }
+                }
+            }
+            HorizontalLayout {
+                spacing: 10 * Theme.dp;
+                Rectangle {
+                    height: 44 * Theme.dp;
+                    horizontal-stretch: 1;
+                    border-radius: self.height / 2;
+                    background: Theme.field;
+                    border-width: max(1px, Theme.dp);
+                    border-color: field.has-focus ? Theme.accent : Theme.text-dim;
+                    if Reply.text == "": Text {
+                        x: 16 * Theme.dp;
+                        text: "Reply to " + root.note.title;
+                        color: Theme.text-dim;
+                        font-size: 15 * Theme.dp;
+                        vertical-alignment: center;
+                        overflow: elide;
+                    }
+                    Rectangle {
+                        x: 16 * Theme.dp;
+                        width: parent.width - 32 * Theme.dp;
+                        clip: true;
+                        field := FieldInput {
+                            x: self.has-focus ? min(0px, parent.width - self.width) : 0px;
+                            width: max(parent.width, self.preferred-width + 2 * Theme.dp);
+                            height: parent.height;
+                            text <=> Reply.text;
+                            edited => { Reply.edited(self.text); }
+                            accepted => {
+                                if Reply.can-send {
+                                    Reply.send(Reply.text);
+                                }
+                            }
+                        }
+                    }
+                }
+                Rectangle {
+                    width: 44 * Theme.dp;
+                    height: self.width;
+                    border-radius: self.width / 2;
+                    background: Reply.can-send ? (send.pressed ? #2f6fd6 : Theme.accent) : #2a2e35;
+                    accessible-role: button;
+                    accessible-label: "Send";
+                    accessible-action-default => { Reply.send(Reply.text); }
+                    Glyph {
+                        source: @image-url("../icons/sys/send.svg");
+                        size: 20 * Theme.dp;
+                        colorize: Reply.can-send ? #ffffff : Theme.text-dim;
+                    }
+                    send := TouchArea {
+                        enabled: Reply.can-send;
+                        clicked => { Reply.send(Reply.text); }
+                    }
+                }
+            }
+            HorizontalLayout {
+                spacing: 8 * Theme.dp;
+                alignment: start;
+                for q in ["OK", "On my way", "Call you later"]: Rectangle {
+                    height: 32 * Theme.dp;
+                    width: qt.preferred-width + 24 * Theme.dp;
+                    border-radius: self.height / 2;
+                    background: qta.pressed ? #3a3f47 : #2a2e35;
+                    qt := Text {
+                        text: q;
+                        color: Theme.text;
+                        font-size: 13.5 * Theme.dp;
+                    }
+                    qta := TouchArea {
+                        clicked => {
+                            Reply.text = q;
+                            Reply.edited(q);
+                        }
+                    }
+                }
+            }
+            if Reply.counter != "": Text {
+                text: Reply.counter;
+                color: Theme.text-dim;
+                font-size: 11.5 * Theme.dp;
+                wrap: word-wrap;
+            }
+        }
         }
     }
 }

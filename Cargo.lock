@@ -2673,6 +2673,7 @@ dependencies = [
  "png",
  "slint",
  "slint-build",
+ "sms",
 ]
 
 [[package]]
@@ -4026,6 +4027,11 @@ dependencies = [
  "borsh",
  "serde_core",
 ]
+
+[[package]]
+name = "sms"
+version = "0.1.0"
+source = "git+https://github.com/NeoSymbian/neohw?rev=87627092aa42b79bc77cd5ee7fbc17a536b43226#87627092aa42b79bc77cd5ee7fbc17a536b43226"
 
 [[package]]
 name = "snafu"

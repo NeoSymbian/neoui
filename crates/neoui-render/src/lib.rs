@@ -7,10 +7,12 @@
 extern crate alloc;
 
 mod home;
+mod island;
 pub mod keyboard;
 pub mod layer;
 mod media;
 pub mod peek;
+mod reply;
 mod settings;
 mod suggest;
 mod tiles;
@@ -259,14 +261,19 @@ fn shade_note(key: &str, n: &Notification, clock: (u64, i32, bool)) -> ShadeNote
         ))),
         initials: n.initials.as_str().into(),
         tint: slint::Color::from_argb_encoded(0xff00_0000 | n.tint),
-        // an old record's own text; a 1.18 one's time as the shade writes it
+        // an old record's own text; a 1.18 one's time as the shade writes it; (TP6) a Chrono card's ticking time
         time: if n.when == 0 || !n.time.is_empty() {
             n.time.as_str().into()
+        } else if n.style == neoui_proto::page::style::CHRONO {
+            neoui_proto::shade::chrono_text(n.when, now).into()
         } else {
             neoui_proto::shade::when_text(n.when, now, offset, h24).into()
         },
         expanded: true,
         progress: n.progress.map_or(-1.0, |p| f32::from(p) / 100.0),
+        style: i32::from(n.style),
+        sticky: n.flags & neoui_proto::page::NOTIFY_STICKY != 0,
+        inline_reply: false,
         section: "".into(),
         count: 1,
         open: false,
@@ -368,6 +375,9 @@ pub struct Renderer {
     tiles: Rc<RefCell<tiles::State>>,
     /// (TP3) the media buttons' commands
     media: media::Commands,
+    /// (TP6) the island's rows and taps; (TP4) the inline reply's apps and sent replies
+    island: island::State,
+    reply: reply::State,
 }
 
 /// Slint's lines for a scrolled list's frame (smooth-ui S2d): the rows of `list` outside `draw` were moved into place
@@ -520,6 +530,8 @@ impl Renderer {
         let home = home::wire(&ui, edited.clone());
         let tiles = tiles::wire(&ui, edited.clone());
         let media = media::wire(&ui);
+        let island = island::wire(&ui);
+        let reply = reply::wire(&ui, banner.clone(), shade_rows.clone());
         Ok(Self {
             window,
             ui,
@@ -551,6 +563,8 @@ impl Renderer {
             thumbs: Vec::new(),
             tiles,
             media,
+            island,
+            reply,
         })
     }
 
@@ -902,6 +916,7 @@ impl Renderer {
                         .is_some_and(|(k, g)| k == key && *g == n.group)
                         && r.count > 1,
                     member: r.member,
+                    inline_reply: self.inline_reply(key),
                     ..shade_note(key, n, clock)
                 }
             })
@@ -909,10 +924,14 @@ impl Renderer {
         // the banner's card as it is now (gone from the shade: the banner goes too)
         let shown = self.banner.borrow().clone();
         match shown.and_then(|(k, id)| list.iter().find(|(lk, n)| *lk == k && n.id == id)) {
-            Some((k, n)) => self.ui.set_banner(shade_note(k, n, clock)),
+            Some((k, n)) => self.ui.set_banner(ShadeNote {
+                inline_reply: self.inline_reply(k),
+                ..shade_note(k, n, clock)
+            }),
             None => {
                 *self.banner.borrow_mut() = None;
                 self.ui.set_banner_shown(false);
+                self.close_reply();
             }
         }
         *self.shade_rows.borrow_mut() = rows
@@ -935,6 +954,7 @@ impl Renderer {
     pub fn set_banner(&mut self, card: Option<(&str, u32)>) {
         *self.banner.borrow_mut() = card.map(|(k, id)| (k.into(), id));
         self.ui.set_banner_shown(card.is_some());
+        self.close_reply();
         self.lay_out_notes();
     }
 
@@ -1106,7 +1126,10 @@ impl Renderer {
     /// Is the shade or a dialog open over the app area? The UI server neither composes the app's surface over it nor
     /// gives it the touches meanwhile.
     pub fn overlay_open(&self) -> bool {
-        self.ui.get_shade_open() || (self.ui.get_app_front() && self.ui.get_query_open())
+        // (TP4) the banner's reply field and its keyboard cover the app like the shade
+        self.ui.get_shade_open()
+            || (self.ui.get_app_front() && self.ui.get_query_open())
+            || self.replying()
     }
 
     /// Show or hide the Power menu (the UI server opens it when Power is held).

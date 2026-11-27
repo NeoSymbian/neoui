@@ -1,0 +1,63 @@
+// SPDX-License-Identifier: Apache-2.0
+// The live island and the inline reply (top-panel TP6, TP4; protocol 1.22 ACTIVITY and REPLY_TEXT). The UI server
+// fills them (neoui-render `island.rs`, `reply.rs`); a tap, a button or a sent reply comes back through the callbacks.
+
+// One activity as the island and the shade's Live section draw it.
+export struct IslandItem {
+    // activity::kind: 1 Call, 2 Recording, 3 Timer, 4 Media (the session's), 5 Progress, 6 Other
+    kind: int,
+    title: string,
+    text: string,
+    // the app's name and key (its glyph; a tap opens it)
+    app: string,
+    app-key: string,
+    // the trail as the shell ticks it ("04:12", "64%", "2 of 5"); a ring's fill 0..1 (-1: none)
+    trail: string,
+    ring: float,
+    tint: color,
+    initials: string,
+    // a call's state (activity::flag)
+    muted: bool,
+    speaker: bool,
+    // the app's buttons (none for a call: the shell's Mute · Keypad · Speaker · End)
+    buttons: [string],
+}
+
+export global Island {
+    // every activity in the island's order (the shade's Live section); the island draws `shown` (indexes into it)
+    in property <[IslandItem]> live;
+    in property <[int]> shown;
+    // how many of `live` are cards in the shade (all but the media session's: the player shows it)
+    in property <int> cards;
+    // island.on
+    in property <bool> on: true;
+    // a transient system alert for 2 s (1 ringer to silent, 2 to vibrate, 3 the charger in) and its text
+    in property <int> alert-kind;
+    in property <string> alert;
+    // the circle came forward (a sideways swipe), the activity held open (an index into `live`, -1 none)
+    in-out property <bool> swapped;
+    in-out property <int> expanded: -1;
+    // a tap on activity i (0), or one of its keys: 1–2 the app's buttons, 0x10–0x13 a call's Mute, Keypad, Speaker,
+    // End (`activity::key`)
+    callback act(int, int);
+
+    // the activity drawn as the pill, then the circle
+    public pure function pill() -> int {
+        return shown.length > 1 && swapped ? shown[1] : shown.length > 0 ? shown[0] : -1;
+    }
+    public pure function circle() -> int {
+        return shown.length < 2 ? -1 : swapped ? shown[0] : shown[1];
+    }
+}
+
+// TP4's inline reply: the banner's card opens a field with the shell's keyboard
+export global Reply {
+    // the banner's card is being answered
+    in-out property <bool> open;
+    in-out property <string> text;
+    // "Unicode · 145 left · 1 SMS — sent by Messages" (the UI server counts on each edit)
+    in property <string> counter;
+    in property <bool> can-send;
+    callback edited(string);
+    callback send(string);
+}

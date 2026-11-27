@@ -40,6 +40,8 @@ pub struct Pending {
     pub key: &'static str,
     pub id: u32,
     pub banner: bool,
+    /// (TP5) `NOTIFY_STICKY`: the banner stays until the card changes or goes (a ringing call)
+    pub sticky: bool,
     /// A tone id (`sound_profile` 0–3) to chime and whether to buzz; `None`: silent.
     pub chime: Option<u8>,
     pub buzz: bool,
@@ -242,9 +244,12 @@ impl Host {
         if !e.accepts() {
             return Err(kerr::PERMISSION_DENIED);
         }
+        // (TP5) a ringing call alerts again when a card that didn't ring starts to
+        let ring = neoui_proto::calls::rings(n);
         let post = Post {
-            new: old.is_none(),
+            new: old.is_none_or(|o| ring && !neoui_proto::calls::rings(o)),
             quiet: n.flags & (NOTIFY_ONGOING | NOTIFY_SILENT_UPDATE) != 0,
+            ring,
         };
         let dnd = self.dnd();
         let rate = &mut self.policies.rate;
@@ -265,6 +270,7 @@ impl Host {
             key,
             id: n.id,
             banner: a.banner,
+            sticky: n.flags & neoui_proto::page::NOTIFY_STICKY != 0,
             chime: (ours && !silent).then_some(tone),
             buzz: ours && vibrate,
         });

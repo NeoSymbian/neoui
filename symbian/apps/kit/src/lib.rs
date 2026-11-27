@@ -116,6 +116,87 @@ fn samples() -> alloc::vec::Vec<neoapp::Notification> {
         },
     ]
 }
+/// (TP5, TP6, TP4) The live demo's cards: a ringing call and a conversation to reply to inline.
+const RING_CARD: u32 = 20;
+const REPLY_CARD: u32 = 21;
+/// Its channels: an Urgent one, so both banner.
+const URGENT: u8 = 1;
+
+/// The Urgent channel the live demo's cards post on (the kit is a policy owner, `n.kit`).
+fn declare_urgent(app: &App) -> Result<(), i32> {
+    app.channel(&neoapp::notification_policy::Channel {
+        id: URGENT,
+        importance: neoapp::notification_policy::importance::URGENT,
+        name: "Live demo".into(),
+        description: "The UI kit's ringing call and reply cards".into(),
+    })
+}
+
+/// A ringing call as NEOPHONE posts it (TP5, O1): Urgent, Call style, sticky. With `SHELL_CALL_KEYS` the shell draws
+/// Answer and Reject; the card's own actions are Silence and Reply with message.
+fn ringing_card() -> neoapp::Notification {
+    use neoapp::card::{NOTIFY_ONGOING, NOTIFY_STICKY, action, style};
+    neoapp::Notification {
+        id: RING_CARD,
+        title: "Ava Lindqvist".into(),
+        text: "+1 555 0142 · Mobile".into(),
+        page: NOTIFY_PAGE as u16,
+        style: style::CALL,
+        flags: NOTIFY_STICKY | NOTIFY_ONGOING,
+        channel: URGENT,
+        initials: "AL".into(),
+        tint: 0x22_b46a,
+        actions: alloc::vec!["Silence".into(), "Reply with message".into()],
+        action_kinds: alloc::vec![action::IN_PLACE, action::REPLY],
+        ..neoapp::Notification::default()
+    }
+}
+
+/// A conversation whose Reply the shell opens inline (TP4); the text comes back with REPLY_TEXT.
+fn reply_card() -> neoapp::Notification {
+    use neoapp::card::{action, style};
+    neoapp::Notification {
+        id: REPLY_CARD,
+        title: "Ava Lindqvist".into(),
+        text: "Yes. 7 at the usual place?\nRunning late, see you at 7?".into(),
+        page: NOTIFY_PAGE as u16,
+        style: style::CONVERSATION,
+        channel: URGENT,
+        initials: "AL".into(),
+        tint: 0x22_b46a,
+        actions: alloc::vec!["Reply".into(), "Mark read".into(), "Call".into()],
+        action_kinds: alloc::vec![action::REPLY, action::IN_PLACE],
+        ..neoapp::Notification::default()
+    }
+}
+
+/// The live demo's activities (TP6): a timer (id 0) counting down 3 minutes, a call (id 1) counting up.
+fn activities() -> [neoapp::activity::Activity; 2] {
+    use neoapp::activity::{Activity, Trail, kind};
+    let now = unix_ms();
+    [
+        Activity {
+            id: 0,
+            kind: kind::TIMER,
+            page: NOTIFY_PAGE as u16,
+            title: "Pasta".into(),
+            text: "Timer".into(),
+            trail: Trail::Until(now + 180_000),
+            buttons: alloc::vec!["Pause".into(), "Cancel".into()],
+            ..Activity::default()
+        },
+        Activity {
+            id: 1,
+            kind: kind::CALL,
+            page: NOTIFY_PAGE as u16,
+            title: "Ava Lindqvist".into(),
+            text: "Mobile".into(),
+            trail: Trail::Since(now),
+            ..Activity::default()
+        },
+    ]
+}
+
 /// What the kit is waiting for from Files.
 #[derive(Clone, Copy, PartialEq)]
 enum Asked {
@@ -168,6 +249,35 @@ fn run() -> Result<(), i32> {
         });
         dprintln!("kit: home widget sent ({:?})", r);
     });
+    // (TP5, TP6, TP4) the live demo
+    let a = app.clone();
+    cards.on_ring(move || {
+        let keys = a
+            .shell_version()
+            .is_some_and(|v| v.has(neoapp::SHELL_CALL_KEYS));
+        let r = declare_urgent(&a).and_then(|()| a.notify(&ringing_card()));
+        dprintln!(
+            "kit: ringing card posted ({:?}), shell call keys {}",
+            r,
+            keys
+        );
+    });
+    let a = app.clone();
+    cards.on_live(move || {
+        let r = activities().iter().try_for_each(|x| a.activity(x));
+        dprintln!("kit: activities posted ({:?})", r);
+    });
+    let a = app.clone();
+    cards.on_reply(move || {
+        let r = declare_urgent(&a).and_then(|()| a.notify(&reply_card()));
+        dprintln!("kit: reply card posted ({:?})", r);
+    });
+    let a = app.clone();
+    cards.on_end_live(move || {
+        let r = (0..2).try_for_each(|id| a.end_activity(id));
+        let _ = a.clear_notify();
+        dprintln!("kit: live demo ended ({:?})", r);
+    });
     // TP3: the sample track as the kit last posted it, while its session lasts
     let track: Rc<RefCell<Option<neoapp::media::Session>>> = Rc::default();
     let media = ui.global::<MediaDemo>();
@@ -201,6 +311,36 @@ fn run() -> Result<(), i32> {
                 let status = format!("Card {id} opened (action {action}).");
                 ui.global::<NotifyDemo>().set_status(status.into());
             }
+            // (TP5) the banner's Answer: the ringing card goes, the call goes on in the island
+            AppEvent::Notified {
+                id: RING_CARD,
+                action,
+            } if action == neoapp::card::CALL_ANSWER || action == neoapp::card::CALL_REJECT => {
+                dprintln!("kit: card {} opened ({})", RING_CARD, action);
+                let _ = app.notify(&neoapp::Notification {
+                    id: RING_CARD,
+                    ..neoapp::Notification::default()
+                });
+                if action == neoapp::card::CALL_ANSWER {
+                    dprintln!("kit: call activity ({:?})", app.activity(&activities()[1]));
+                }
+            }
+            // (TP6) the island's taps and keys
+            AppEvent::ActivityTap { id, i } => {
+                dprintln!("kit: activity {} tap {}", id, i);
+                if i == neoapp::activity::key::END || i == 2 {
+                    let _ = app.end_activity(id);
+                }
+            }
+            // (TP4) an inline reply: its text (never logged, only its length)
+            AppEvent::NotifyReply { id } => match app.reply_text(id) {
+                Ok(t) => {
+                    dprintln!("kit: reply to card {}: {} bytes", id, t.len());
+                    let status = format!("Replied to card {id}.");
+                    ui.global::<NotifyDemo>().set_status(status.into());
+                }
+                Err(e) => dprintln!("kit: reply to card {} unreadable ({})", id, e),
+            },
             AppEvent::NotifyGone { id, why } => {
                 dprintln!("kit: card {} gone ({})", id, why);
                 let how = if why == neoapp::card::GONE_SWIPED {

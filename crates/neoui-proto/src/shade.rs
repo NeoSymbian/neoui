@@ -137,14 +137,20 @@ pub fn layout_with(
 }
 
 /// When a card happened, as its header shows it: "now" within a minute, "N min" within the hour, else the local
-/// clock time (`offset_s` east of UTC; 24-hour or not). Times ahead of `now_ms` read "now".
+/// clock time (`offset_s` east of UTC; 24-hour or not). A time ahead (a reminder) reads "in N min" within the hour,
+/// else its clock time; "now" within its last minute.
 #[must_use]
 pub fn when_text(when_ms: u64, now_ms: u64, offset_s: i32, h24: bool) -> String {
     let ago = now_ms.saturating_sub(when_ms) / 1000;
-    if ago < 60 {
+    let ahead = when_ms.saturating_sub(now_ms) / 1000;
+    if ago < 60 && ahead < 60 {
         return "now".into();
     }
-    if ago < 3600 {
+    if (60..3600).contains(&ahead) {
+        // counted up, so 14:01 ahead reads "in 15 min"
+        return format!("in {} min", ahead.div_ceil(60));
+    }
+    if (60..3600).contains(&ago) {
         return format!("{} min", ago / 60);
     }
     let local = (when_ms / 1000) as i64 + i64::from(offset_s);
@@ -155,6 +161,13 @@ pub fn when_text(when_ms: u64, now_ms: u64, offset_s: i32, h24: bool) -> String 
     } else {
         format!("{}:{m:02}", (h + 11) % 12 + 1)
     }
+}
+
+/// (TP6) A Chrono-style card's time (a timer, a stopwatch): the time left until a `when` ahead, else the time since
+/// it, ticked by the shell each second ("03:12", "1:04:12").
+#[must_use]
+pub fn chrono_text(when_ms: u64, now_ms: u64) -> String {
+    crate::island::span_text(when_ms.abs_diff(now_ms))
 }
 
 #[cfg(test)]
@@ -259,5 +272,19 @@ mod tests {
             when_text(now - 2 * 3_600_000, now, -6 * 3600, false),
             "3:13"
         );
+        // (TP6) ahead: a reminder in a quarter of an hour, a meeting this afternoon
+        assert_eq!(
+            when_text(now + 14 * 60_000 + 1000, now, 0, true),
+            "in 15 min"
+        );
+        assert_eq!(when_text(now + 3 * 3_600_000, now, 0, true), "14:13");
+    }
+
+    /// (TP6) DTSRV's timer card counts down; a stopwatch's counts up.
+    #[test]
+    fn a_chrono_card_ticks() {
+        let now = 1_795_691_635_000;
+        assert_eq!(chrono_text(now + 192_000, now), "03:12");
+        assert_eq!(chrono_text(now - 252_000, now), "04:12");
     }
 }
