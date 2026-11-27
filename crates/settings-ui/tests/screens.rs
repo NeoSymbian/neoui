@@ -661,6 +661,7 @@ fn every_page() {
         s.set_usage_on_battery(t.on_battery.as_str().into());
         s.set_usage_gaps(t.gaps.as_str().into());
         s.set_screen_on(t.screen.as_str().into());
+        s.set_usage_warning(t.warning.as_str().into());
     };
     let cycle = BatteryCycle {
         flags: bits::FULL_THEN_DISCHARGE | bits::SCREEN_VALID,
@@ -692,6 +693,15 @@ fn every_page() {
         true,
     ));
     sh.shoot("set2-battery-usage-partial");
+    // a checkpoint slot can't be read: the cycle runs but isn't saved
+    show(&text(
+        &BatteryCycle {
+            flags: cycle.flags | bits::CHECKPOINT_FAILED,
+            ..cycle
+        },
+        true,
+    ));
+    sh.shoot("set2-battery-usage-unsaved");
     show(&text(
         &from_usage(&neoui_proto::battery::Usage {
             since_full: true,

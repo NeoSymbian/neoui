@@ -10,7 +10,7 @@ use e32::{
     sys::err,
     time,
 };
-use neoui_proto::battery::cycle::{Checkpoint, Recorder, Sample, widen};
+use neoui_proto::battery::cycle::{Checkpoint, Keeper, Sample, SlotRead, widen};
 use neoui_proto::battery::{FILE_MAX, History};
 use neoui_proto::settings_app::wire::BatteryCycle;
 use neoui_render::Renderer;
@@ -58,8 +58,8 @@ pub struct Battery {
     storage_error: bool,
     previous: Option<(i64, u64)>,
     last_state: Option<(u32, u32, u32, u32)>,
-    // D5: the charge cycle, and whether its checkpoint can't be read or saved
-    cycle: Recorder,
+    // D5: the charge cycle with its checkpoint slots, and whether the last save failed
+    cycle: Keeper,
     cycle_error: bool,
 }
 impl Battery {
@@ -96,14 +96,14 @@ impl Battery {
             history.points().len(),
             storage_error
         );
-        let (saved, cycle_error) = read_cycle();
         let now = mono_ms();
-        let cycle = Recorder::new(saved, now, super::display_state());
+        let mut cycle = Keeper::new(now, super::display_state());
+        read_cycle(&mut cycle, now);
         dprintln!(
-            "battery: cycle restored gen={} window={} error={}",
-            cycle.generation,
-            cycle.cycle.window,
-            cycle_error
+            "battery: cycle restored gen={} window={} slots read={}",
+            cycle.rec.generation,
+            cycle.rec.cycle.window,
+            cycle.resolved()
         );
         Self {
             history,
@@ -113,7 +113,7 @@ impl Battery {
             previous: None,
             last_state: None,
             cycle,
-            cycle_error,
+            cycle_error: false,
         }
     }
     /// Every loop; a new observation (every 5 s) returns true.
@@ -160,6 +160,10 @@ impl Battery {
         }
         self.previous = Some(observed);
         self.history.observe(observed.0, sample);
+        // a slot that couldn't be read is read again at every sample, before anything is saved
+        if !self.cycle.resolved() {
+            read_cycle(&mut self.cycle, now);
+        }
         let moved = self.cycle.sample(Sample {
             mono_ms: now,
             utc: observed.0,
@@ -233,30 +237,23 @@ impl Battery {
         self.cycle.record(self.cycle_error)
     }
 
-    /// The next checkpoint into the other slot: written, flushed and closed before its generation counts.
+    /// The next checkpoint into the other slot: written, flushed and closed before its generation counts. Nothing is
+    /// written while a slot can't be read (it may hold the newest one).
     fn save_cycle(&mut self) {
-        let result = || -> Result<u64, i32> {
+        let Some((slot, cp)) = self.cycle.next_save(time::rtc_seconds()) else {
+            dprintln!("battery: cycle not saved (a checkpoint slot is unread)");
+            return;
+        };
+        let result = || -> Result<(), i32> {
             let fs = Fs::connect()?;
             private_dir(&fs)?;
-            let generation = self.cycle.generation.checked_add(1).ok_or(-22)?;
-            let bytes = Checkpoint {
-                generation,
-                cycle: self.cycle.cycle,
-                rtc: time::rtc_seconds(),
-            }
-            .encode();
-            let f = File::replace(
-                &fs,
-                CYCLE_PATHS[(generation & 1) as usize],
-                mode::SHARE_EXCLUSIVE,
-            )?;
-            f.write(&bytes)?;
-            f.flush()?;
-            Ok(generation)
+            let f = File::replace(&fs, CYCLE_PATHS[slot], mode::SHARE_EXCLUSIVE)?;
+            f.write(&cp.encode())?;
+            f.flush()
         }();
         match result {
-            Ok(generation) => {
-                self.cycle.generation = generation;
+            Ok(()) => {
+                self.cycle.saved(slot, cp);
                 self.cycle_error = false;
             }
             Err(e) => {
@@ -267,31 +264,30 @@ impl Battery {
     }
 }
 
-/// The newest valid checkpoint, and whether a slot couldn't be read (twice). A missing or damaged slot (a torn write)
-/// isn't an error: the other one is used.
-fn read_cycle() -> (Option<Checkpoint>, bool) {
-    let Ok(fs) = Fs::connect() else {
-        return (None, true);
-    };
-    let mut error = false;
-    let mut slot = |path: &str| {
+/// Read the slots the keeper still needs (each read tried twice). A missing or damaged slot (a torn write) is known
+/// empty; an error leaves it unread, for the next sample.
+fn read_cycle(k: &mut Keeper, now: u64) {
+    let fs = Fs::connect();
+    for (i, path) in CYCLE_PATHS.iter().enumerate() {
+        if !k.unread()[i] {
+            continue;
+        }
         let read = || -> Result<Vec<u8>, i32> {
-            let f = File::open(&fs, path, mode::READ | mode::SHARE_READERS_ONLY)?;
+            let fs = fs.as_ref().map_err(|e| *e)?;
+            let f = File::open(fs, path, mode::READ | mode::SHARE_READERS_ONLY)?;
             let mut b = vec![0; Checkpoint::LEN + 1];
             let n = f.read_at(0, &mut b)?;
             b.truncate(n);
             Ok(b)
         };
-        match read().or_else(|_| read()) {
-            Ok(b) => Checkpoint::decode(&b),
-            Err(err::KERR_NOT_FOUND | err::KERR_PATH_NOT_FOUND) => None,
+        let r = match read().or_else(|_| read()) {
+            Ok(b) => Checkpoint::decode(&b).map_or(SlotRead::Empty, SlotRead::Valid),
+            Err(err::KERR_NOT_FOUND | err::KERR_PATH_NOT_FOUND) => SlotRead::Empty,
             Err(e) => {
                 dprintln!("battery: {} unreadable ({})", path, e);
-                error = true;
-                None
+                SlotRead::Failed
             }
-        }
-    };
-    let (a, b) = (slot(CYCLE_PATHS[0]), slot(CYCLE_PATHS[1]));
-    (Checkpoint::newest(a, b), error)
+        };
+        k.read(i, r, now, super::display_state());
+    }
 }

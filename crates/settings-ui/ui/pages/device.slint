@@ -454,6 +454,12 @@ export component BatteryUsagePage inherits NeoList {
                         color: Theme.text-dim;
                         wrap: word-wrap;
                     }
+                    if SetState.usage-known && SetState.usage-warning != "": Text {
+                        text: SetState.usage-warning;
+                        font-size: Theme.font-status;
+                        color: Theme.warn;
+                        wrap: word-wrap;
+                    }
                     if !SetState.usage-known: Text {
                         text: "No data yet. The record starts with the first readings after the phone starts.";
                         font-size: Theme.font-status;

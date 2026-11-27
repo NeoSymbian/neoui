@@ -58,4 +58,5 @@ pub fn refresh(app: &App, ui: &SettingsApp) {
     s.set_usage_on_battery(t.on_battery.into());
     s.set_usage_gaps(t.gaps.into());
     s.set_screen_on(t.screen.into());
+    s.set_usage_warning(t.warning.into());
 }

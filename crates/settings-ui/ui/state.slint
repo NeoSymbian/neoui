@@ -188,6 +188,8 @@ export global SetState {
     in property <string> usage-to;
     in property <string> usage-span;
     in property <string> screen-on;
+    // the checkpoint can't be read or written ("" = it saves)
+    in property <string> usage-warning;
     // SE3b: Storage. The drives at once; the scan's parts (Apps, Files, Other, Free: sizes and their bar), the kinds,
     // its state ("Counting… 120 folders", "Last counted 06:50") and the folders it couldn't read
     in property <[DriveRow]> drives;

@@ -16,6 +16,7 @@
 
 use super::{Snapshot, checksum, duration};
 use crate::settings_app::wire::{BatteryCycle, cycle as bits};
+use alloc::collections::VecDeque;
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -346,6 +347,174 @@ impl Checkpoint {
     }
 }
 
+/// What reading one checkpoint slot gave.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SlotRead {
+    Valid(Checkpoint),
+    /// No file, or a damaged one (a torn write): nothing to keep in it.
+    Empty,
+    /// The file system couldn't say: it may hold the newest checkpoint.
+    Failed,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Slot {
+    /// Not read yet, or its reads failed this many times.
+    Unresolved(u32),
+    Known(Option<Checkpoint>),
+}
+
+/// An event that came while the checkpoint was being read.
+#[derive(Clone, Copy, Debug)]
+enum Event {
+    Display(u64, Option<bool>),
+    Sample(Sample),
+}
+
+/// Failed reads of a slot before the recorder runs without it (12 samples: a minute).
+pub const MAX_TRIES: u32 = 12;
+/// Events held while the slots are read; older ones are dropped (the recorder counts the hole as a gap).
+const MAX_HELD: usize = 1024;
+
+/// The [`Recorder`] with its two checkpoint slots: it starts only from what both slots really hold, and it never
+/// writes over a slot that may hold the newest checkpoint.
+///
+/// - Until both slots are read (or a slot fails [`MAX_TRIES`] reads), new samples and display transitions are held,
+///   then replayed into the recorder restored from the newest checkpoint.
+/// - A slot that still can't be read is read again at every sample; nothing is saved meanwhile (the last readable
+///   slot is never overwritten) and the record says its checkpoint failed. When it reads at last and holds a newer
+///   checkpoint, the recorder restarts from that one (the time since counts as a gap).
+#[derive(Clone, Debug)]
+pub struct Keeper {
+    pub rec: Recorder,
+    slots: [Slot; 2],
+    held: Option<VecDeque<Event>>,
+    /// When holding began, and the display then.
+    boot: (u64, Option<bool>),
+}
+
+impl Keeper {
+    #[must_use]
+    pub fn new(now_ms: u64, display: Option<bool>) -> Self {
+        Self {
+            rec: Recorder::default(),
+            slots: [Slot::Unresolved(0); 2],
+            held: Some(VecDeque::new()),
+            boot: (now_ms, display),
+        }
+    }
+
+    /// The slots to read now.
+    #[must_use]
+    pub fn unread(&self) -> [bool; 2] {
+        self.slots.map(|s| matches!(s, Slot::Unresolved(_)))
+    }
+
+    /// Both slots are known: the recorder runs on the newest checkpoint and saves may go ahead.
+    #[must_use]
+    pub fn resolved(&self) -> bool {
+        self.unread() == [false; 2]
+    }
+
+    fn newest(&self) -> Option<Checkpoint> {
+        let known = |s: Slot| match s {
+            Slot::Known(c) => c,
+            Slot::Unresolved(_) => None,
+        };
+        Checkpoint::newest(known(self.slots[0]), known(self.slots[1]))
+    }
+
+    /// Slot `i` was read (at `now_ms`, the display reading `display`).
+    pub fn read(&mut self, i: usize, r: SlotRead, now_ms: u64, display: Option<bool>) {
+        let Slot::Unresolved(tries) = self.slots[i] else {
+            return;
+        };
+        self.slots[i] = match r {
+            SlotRead::Valid(c) => Slot::Known(Some(c)),
+            SlotRead::Empty => Slot::Known(None),
+            SlotRead::Failed => Slot::Unresolved(tries.saturating_add(1)),
+        };
+        if let Some(held) = self.held.take() {
+            let gave_up = self
+                .slots
+                .iter()
+                .all(|s| !matches!(s, Slot::Unresolved(n) if *n < MAX_TRIES));
+            if !gave_up {
+                self.held = Some(held);
+                return;
+            }
+            self.rec = Recorder::new(self.newest(), self.boot.0, self.boot.1);
+            for e in held {
+                match e {
+                    Event::Display(at, d) => self.rec.display(at, d),
+                    Event::Sample(s) => {
+                        self.rec.sample(s);
+                    }
+                }
+            }
+        } else if let SlotRead::Valid(c) = r
+            && c.generation > self.rec.generation
+        {
+            // a slot that failed to read held a newer checkpoint: its history wins over this run's
+            self.rec = Recorder::new(Some(c), now_ms, display);
+        }
+    }
+
+    fn hold(&mut self, e: Event) -> bool {
+        let Some(held) = self.held.as_mut() else {
+            return false;
+        };
+        if held.len() == MAX_HELD {
+            held.pop_front();
+        }
+        held.push_back(e);
+        true
+    }
+
+    pub fn display(&mut self, now_ms: u64, state: Option<bool>) {
+        if !self.hold(Event::Display(now_ms, state)) {
+            self.rec.display(now_ms, state);
+        }
+    }
+
+    /// A battery observation. True when the cycle's anchor moved (save now).
+    pub fn sample(&mut self, s: Sample) -> bool {
+        !self.hold(Event::Sample(s)) && self.rec.sample(s)
+    }
+
+    /// The next checkpoint and the slot it goes to; `None` while a slot may still hold a newer one.
+    #[must_use]
+    pub fn next_save(&self, rtc: Option<u32>) -> Option<(usize, Checkpoint)> {
+        if !self.resolved() || self.held.is_some() {
+            return None;
+        }
+        let generation = self.rec.generation.checked_add(1)?;
+        Some((
+            (generation & 1) as usize,
+            Checkpoint {
+                generation,
+                cycle: self.rec.cycle,
+                rtc,
+            },
+        ))
+    }
+
+    /// `cp` was written to slot `i` (flushed and closed).
+    pub fn saved(&mut self, i: usize, cp: Checkpoint) {
+        self.rec.generation = cp.generation;
+        self.slots[i] = Slot::Known(Some(cp));
+    }
+
+    /// INFO 9's record; its checkpoint failed while a slot can't be read or the last save failed.
+    #[must_use]
+    pub fn record(&self, save_failed: bool) -> Option<BatteryCycle> {
+        if self.held.is_some() {
+            return None;
+        }
+        self.rec.record(save_failed || !self.resolved())
+    }
+}
+
 /// What Battery usage and search show of a cycle.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct CycleText {
@@ -362,6 +531,8 @@ pub struct CycleText {
     pub gaps: String,
     /// Screen-on time: "2 h 14 min since charged", "2 h 14 min in the last 9 h 40 min", "Not recorded yet".
     pub screen: String,
+    /// The checkpoint can't be read or written: what's shown may not survive a restart. Empty when it saves.
+    pub warning: String,
 }
 
 fn dur(s: u64) -> String {
@@ -415,6 +586,11 @@ pub fn text(c: &BatteryCycle, screen_recorded: bool) -> CycleText {
             String::new()
         },
         screen,
+        warning: if c.flags & bits::CHECKPOINT_FAILED != 0 {
+            "Not being saved: the record may start again after a restart".into()
+        } else {
+            String::new()
+        },
     }
 }
 
@@ -893,5 +1069,163 @@ mod tests {
         assert_eq!(t.to, "--%");
         assert_eq!(t.gaps, "Off or not recorded for 10 min (not counted)");
         assert_eq!(t.screen, "Not recorded on this version");
+    }
+
+    /// A keeper fed by a rig's clock: samples go through it, saves are written to `disk`.
+    fn keep(k: &mut Keeper, g: &mut Rig, n: u32, b: Snapshot, disk: &mut [Option<Checkpoint>; 2]) {
+        for _ in 0..n {
+            k.sample(g.at(b));
+            if let Some((i, cp)) = k.next_save(Some(g.rtc)) {
+                disk[i] = Some(cp);
+                k.saved(i, cp);
+            }
+            g.step(5_000);
+        }
+    }
+
+    /// A cycle saved twice: generations 1 and 2 in slots 1 and 0.
+    fn saved_twice() -> (Rig, [Option<Checkpoint>; 2]) {
+        let mut g = Rig::new();
+        let mut k = Keeper::new(0, Some(true));
+        k.read(0, SlotRead::Empty, 0, Some(true));
+        k.read(1, SlotRead::Empty, 0, Some(true));
+        let mut disk = [None, None];
+        keep(&mut k, &mut g, 2, snap(FULL, 100, true), &mut disk);
+        keep(&mut k, &mut g, 13, snap(DIS, 99, false), &mut disk);
+        (g, disk)
+    }
+
+    #[test]
+    fn samples_wait_for_both_slots_then_replay() {
+        let (mut g, disk) = saved_twice();
+        let newest = Checkpoint::newest(disk[0], disk[1]).unwrap();
+        g.step(60_000);
+        let mut k = Keeper::new(g.ms, Some(true));
+        k.read(0, SlotRead::Valid(disk[0].unwrap()), g.ms, Some(true));
+        // slot 1 isn't read yet: the samples are held, nothing is shown or saved
+        for _ in 0..3 {
+            assert!(!k.sample(g.at(snap(DIS, 98, false))));
+            assert_eq!(k.record(false), None);
+            assert_eq!(k.next_save(None), None);
+            g.step(5_000);
+        }
+        k.read(1, SlotRead::Valid(disk[1].unwrap()), g.ms, Some(true));
+        let c = k.record(false).unwrap();
+        // the newest checkpoint's counts, plus the replayed samples (two 5 s steps), the time between as a gap
+        assert_eq!(c.on_battery_s, newest.cycle.on_ms / 1000 + 10);
+        assert!(c.gap_s >= 60);
+        assert_eq!(c.flags & bits::CHECKPOINT_FAILED, 0);
+        let (slot, cp) = k.next_save(None).unwrap();
+        assert_eq!(cp.generation, newest.generation + 1);
+        assert_eq!(slot as u64, cp.generation & 1);
+    }
+
+    #[test]
+    fn an_unreadable_slot_is_never_saved_over_and_its_newer_history_wins() {
+        let (mut g, disk) = saved_twice();
+        let newest = Checkpoint::newest(disk[0], disk[1]).unwrap();
+        let older = if disk[0] == Some(newest) {
+            disk[1]
+        } else {
+            disk[0]
+        }
+        .unwrap();
+        let (new_slot, old_slot) = (
+            (newest.generation & 1) as usize,
+            (older.generation & 1) as usize,
+        );
+        let mut k = Keeper::new(g.ms, Some(true));
+        k.read(old_slot, SlotRead::Valid(older), g.ms, Some(true));
+        // the newer slot fails every read for a minute: the recorder runs from the older one, flagged
+        for _ in 0..MAX_TRIES {
+            assert_eq!(k.record(false), None);
+            k.read(new_slot, SlotRead::Failed, g.ms, Some(true));
+            k.sample(g.at(snap(DIS, 97, false)));
+            g.step(5_000);
+        }
+        let c = k.record(false).unwrap();
+        assert_ne!(c.flags & bits::CHECKPOINT_FAILED, 0);
+        assert_eq!(
+            text(&c, true).warning,
+            "Not being saved: the record may start again after a restart"
+        );
+        // however long it runs, nothing is written: not over the last readable slot, not over the unread one
+        for _ in 0..100 {
+            k.sample(g.at(snap(DIS, 96, false)));
+            assert_eq!(k.next_save(Some(g.rtc)), None);
+            k.read(new_slot, SlotRead::Failed, g.ms, Some(true));
+            g.step(5_000);
+        }
+        // it reads at last: its newer history replaces this run (the time since it counts as a gap)
+        k.read(new_slot, SlotRead::Valid(newest), g.ms, Some(true));
+        assert_eq!(k.rec.generation, newest.generation);
+        k.sample(g.at(snap(DIS, 95, false)));
+        let c = k.record(false).unwrap();
+        assert_eq!(c.flags & bits::CHECKPOINT_FAILED, 0);
+        assert_eq!(c.on_battery_s, newest.cycle.on_ms / 1000);
+        assert!(c.gap_s >= 500);
+        let (slot, cp) = k.next_save(None).unwrap();
+        assert_eq!((slot, cp.generation), (old_slot, newest.generation + 1));
+    }
+
+    #[test]
+    fn a_late_slot_with_older_history_keeps_this_run() {
+        let (mut g, disk) = saved_twice();
+        let newest = Checkpoint::newest(disk[0], disk[1]).unwrap();
+        let older = if disk[0] == Some(newest) {
+            disk[1]
+        } else {
+            disk[0]
+        }
+        .unwrap();
+        let (new_slot, old_slot) = (
+            (newest.generation & 1) as usize,
+            (older.generation & 1) as usize,
+        );
+        let mut k = Keeper::new(g.ms, Some(true));
+        k.read(new_slot, SlotRead::Valid(newest), g.ms, Some(true));
+        for _ in 0..MAX_TRIES {
+            k.read(old_slot, SlotRead::Failed, g.ms, Some(true));
+        }
+        keep(&mut k, &mut g, 3, snap(DIS, 97, false), &mut [None, None]);
+        let before = k.record(false).unwrap();
+        k.read(old_slot, SlotRead::Valid(older), g.ms, Some(true));
+        assert_eq!(k.record(false).unwrap().on_battery_s, before.on_battery_s);
+        assert!(k.next_save(None).is_some());
+    }
+
+    #[test]
+    fn both_slots_unreadable_runs_fresh_and_saves_nothing() {
+        let mut g = Rig::new();
+        let mut k = Keeper::new(0, Some(true));
+        for _ in 0..MAX_TRIES {
+            k.read(0, SlotRead::Failed, g.ms, Some(true));
+            k.read(1, SlotRead::Failed, g.ms, Some(true));
+        }
+        keep(&mut k, &mut g, 5, snap(DIS, 80, false), &mut [None, None]);
+        let c = k.record(false).unwrap();
+        assert_eq!(
+            (c.on_battery_s, c.flags & bits::CHECKPOINT_FAILED),
+            (20, bits::CHECKPOINT_FAILED)
+        );
+        assert_eq!(k.next_save(None), None);
+    }
+
+    #[test]
+    fn holding_is_bounded() {
+        let mut g = Rig::new();
+        let mut k = Keeper::new(0, Some(true));
+        k.read(0, SlotRead::Empty, 0, Some(true));
+        for _ in 0..MAX_HELD + 50 {
+            k.sample(g.at(snap(DIS, 80, false)));
+            g.step(5_000);
+        }
+        assert_eq!(k.held.as_ref().unwrap().len(), MAX_HELD);
+        k.read(1, SlotRead::Empty, g.ms, Some(true));
+        // the replayed samples are counted, the dropped ones aren't
+        assert_eq!(
+            k.record(false).unwrap().on_battery_s,
+            (MAX_HELD as u64 - 1) * 5
+        );
     }
 }
