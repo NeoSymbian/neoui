@@ -681,7 +681,7 @@ impl Ctx {
             }
             "pad-reset" => {
                 let q = Query {
-                    text: "Forget the pad each old app was last used with? Each one gets its first pad again."
+                    text: "Forget the pad each classic app was last used with? Each one gets its first pad again."
                         .into(),
                     buttons: alloc::vec![String::from("Reset"), String::from("Cancel")],
                     destructive: true,

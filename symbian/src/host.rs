@@ -25,7 +25,7 @@ use e32::server::{Message, Service};
 use e32::sys::{TVersion, err};
 use neoui_proto::Rect;
 // the screen keys that are separate processes, their EXEs and command lines: shared with Settings' Apps page
-use neoui_proto::apps::{self, APPS, LEGACY};
+use neoui_proto::apps::{self, APPS, CLASSIC, LEGACY};
 use neoui_proto::ipc::{self as proto, AppEvent};
 use neoui_proto::page::{NOTE_MAX, NOTIFICATION_MAX, PAGE_MAX, QUERY_MAX, action};
 use neoui_proto::recents::Recents;
@@ -253,7 +253,6 @@ pub struct Host {
     pub leave: bool,
     /// Kept by app key, not process: installed entries survive exit and restart.
     entries: Vec<(&'static str, Vec<LauncherEntry>)>,
-    pub entries_changed: bool,
     /// Entries refused for want of room (`ENTRIES_MAX`), by app key and id: Settings says "64 of N".
     refused: Vec<(&'static str, u32)>,
     next_session: u32,
@@ -329,7 +328,6 @@ impl Host {
             portal: None,
             leave: false,
             entries: Vec::new(),
-            entries_changed: false,
             refused: Vec::new(),
             next_session: 1,
             unbound: Vec::new(),
@@ -792,6 +790,12 @@ impl Host {
         self.screen = key;
         self.set_front(key.filter(|k| !LAUNCHERS.contains(k)));
         let Some(key) = key else { return };
+        if key == LEGACY {
+            // the bridge has no screen of its own (Open apps' card): Classic apps lists its apps, and a tap there on a
+            // running one brings it forward (FRONT 1)
+            self.requested_screen = Some(CLASSIC);
+            return;
+        }
         self.limit_running(key, now_ms);
         self.start(key);
     }
@@ -819,6 +823,15 @@ impl Host {
     }
 
     fn start(&mut self, key: &'static str) {
+        // Classic apps lists what the bridge registers (INFO_APPS): it runs, hidden, while Classic does
+        if key == CLASSIC
+            && self
+                .apps
+                .find(|a| a.key == LEGACY && a.quit_at.is_none())
+                .is_none()
+        {
+            self.launch(LEGACY);
+        }
         if self.apps.touch(|a| a.key == key && a.quit_at.is_none()) {
             dprintln!("neoui: app {} resumed", key);
         } else {
@@ -1663,9 +1676,13 @@ impl Service for Host {
                         let key = app.key;
                         self.profile_action(key, &m)
                     }
-                    // open an old app: Settings only (by its secure ID), an id the legacy bridge registered
+                    // open an old app: Settings or Classic apps only (by their secure IDs), an id the legacy bridge
+                    // registered
                     proto::ACTION_OPEN_ENTRY => {
-                        if access::caller(app.key, m.client_sid()) != Caller::Settings {
+                        let key = app.key;
+                        if access::caller(key, m.client_sid()) != Caller::Settings
+                            && !(key == CLASSIC && apps::sid_fits(CLASSIC, m.client_sid()))
+                        {
                             kerr::PERMISSION_DENIED
                         } else {
                             let mut b = [0u8; 4];
@@ -1675,7 +1692,7 @@ impl Service for Host {
                                     if !self.entries(LEGACY).iter().any(|e| e.id == id) {
                                         err::KERR_NOT_FOUND
                                     } else if self.open_entry(LEGACY, id, e32::time::millis()) {
-                                        dprintln!("neoui: settings opens old app {:08x}", id);
+                                        dprintln!("neoui: {} opens old app {:08x}", key, id);
                                         0
                                     } else {
                                         err::KERR_NOT_READY // the bridge didn't start
@@ -1714,11 +1731,8 @@ impl Service for Host {
             proto::ENTRY => {
                 let key = app.key;
                 let r = entry(&mut self.entries, &mut self.refused, key, &m);
-                if r.is_ok() {
-                    self.entries_changed = true;
-                    if key == LEGACY {
-                        self.legacy_entries_changed();
-                    }
+                if r.is_ok() && key == LEGACY {
+                    self.legacy_entries_changed();
                 }
                 m.complete(r.unwrap_or_else(|e| e));
             }
@@ -1754,7 +1768,8 @@ impl Service for Host {
                 }
                 self.limit_running(key, e32::time::millis());
                 self.start(key);
-                self.requested_screen = Some(key);
+                // the bridge's FRONT(0) (its old app ended or went back): Classic apps, the list it was opened from
+                self.requested_screen = Some(if !show && key == LEGACY { CLASSIC } else { key });
                 m.complete(0);
             }
             proto::OPEN | proto::OPEN_FILE => {

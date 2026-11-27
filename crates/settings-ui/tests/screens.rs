@@ -622,7 +622,7 @@ fn every_page() {
         (11, "Developer options", "set2-developer"),
         (12, "About phone", "set2-about"),
         (13, "Apps", "set2-apps"),
-        (14, "Old apps", "pad-settings"),
+        (14, "Classic apps", "pad-settings"),
         (15, "Privacy", "set2-privacy"),
         (16, "Licences", "set2-licences"),
         (17, "Saved networks", "set2-wifi-saved"),
@@ -1089,7 +1089,7 @@ fn every_page() {
     s.set_clip_notice(true);
 
     // the pad sheets (pad-settings: the B button the board leaves out, D5)
-    page(&sh, 14, "Old apps");
+    page(&sh, 14, "Classic apps");
     sheet(&sh, "pad-b");
     sh.shoot("pad-settings-b");
 

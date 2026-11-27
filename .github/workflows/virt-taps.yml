@@ -49,7 +49,7 @@ jobs:
           cargo clippy-arm --workspace -- -D warnings
           cargo arm --workspace
           mkdir -p ../../build/rust
-          cp target/armv8a-neosymbian-eabi/release/{libneoui_symbian,libneoterm,libneodevtools,libneokit,libneoset}.a exes.txt ../../build/rust/
+          cp target/armv8a-neosymbian-eabi/release/{libneoui_symbian,libneodevtools,libneokit,libneoset}.a exes.txt ../../build/rust/
 
       # NeoSymbian/phone: NEOPHONE.EXE (Phone), NEOCONT.EXE (Contacts), NEOMSG.EXE (Messages). Phone and Messages are
       # resident (host::RESIDENT); the three open each other (ipc OPEN, protocol 1.9).
@@ -89,6 +89,29 @@ jobs:
               grep -E "[[:space:]]lib$l\.a" exes.txt >> ../../build/rust/exes.txt
             fi
           done
+
+      # NeoSymbian/neoterm: NEOTERM.EXE (Terminal, moved out of neoui). The shell starts it by its key, `terminal`.
+      # NEOTERM_REF: a branch while a neoterm change and its taps here are reviewed together; main otherwise
+      - name: NeoSymbian/neoterm
+        env:
+          NEOTERM_REF: main
+        run: |
+          git clone -q --depth 1 --branch "$NEOTERM_REF" https://github.com/NeoSymbian/neoterm.git
+          cd neoterm/symbian && cargo arm --workspace
+          cp target/armv8a-neosymbian-eabi/release/libneoterm.a ../../build/rust/
+          grep -E '^NEOTERM\.EXE' exes.txt >> ../../build/rust/exes.txt
+
+      # NeoSymbian/legacy classic/: CLASSIC.EXE (Classic apps, the old apps' list that was the shell's Old apps grid).
+      # LEGACY.EXE itself comes from build's sources.lock pin.
+      # LEGACY_REF: a branch while a classic change and its taps here are reviewed together; main otherwise
+      - name: NeoSymbian/legacy classic
+        env:
+          LEGACY_REF: main
+        run: |
+          git clone -q --depth 1 --branch "$LEGACY_REF" https://github.com/NeoSymbian/legacy.git
+          cd legacy/classic && cargo arm
+          cp target/armv8a-neosymbian-eabi/release/libclassic.a ../../build/rust/
+          grep -E '^CLASSIC\.EXE' exes.txt >> ../../build/rust/exes.txt
 
       # NEOTEST.EXE (e32-rs's on-device tests), so ESHELL in the Terminal app has a 2010-style text program to run
       # NEOSRV.EXE too: neotest's fs_share starts it (a file handle passed between processes)
@@ -350,28 +373,29 @@ jobs:
           assert len(colours) > 8, f"screen looks blank: {len(colours)} colours"
           print(f"fb.png: 539x1079, {len(colours)} sampled colours")'
 
-      # P2 (legacy apps), in Gestures (the main step left it so): Apps in the dock (485,973) -> "Old apps" in the menu
-      # (270,1007) starts LEGACY.EXE (NeoSymbian/legacy host/). It runs the stock 2010 window server as a guest in a
-      # shared buffer (graphics fork: scnew.cpp, WSTOP.CPP, EVENT.CPP) and the AppArc apps in it. The first tile of its
-      # grid (90,202), under the shell's header, starts the first app (PerfMon in this ROM); a tap in its window reaches
-      # it as a raw pointer event (legacy: raw 10 x y). Old apps draw their own title bar, so Back is the left edge's
-      # swipe, which closes it (FRONT 0); two more go back to the menu and home.
+      # P2 (legacy apps), in Gestures (the main step left it so): Apps in the dock (485,973) -> "Classic apps" in the
+      # menu (270,1007) starts CLASSIC.EXE (NeoSymbian/legacy classic/), and the shell starts LEGACY.EXE (host/) hidden
+      # with it. LEGACY runs the stock 2010 window server as a guest in a shared buffer (graphics fork: scnew.cpp,
+      # WSTOP.CPP, EVENT.CPP) and the AppArc apps in it. The first tile of Classic's grid (90,202), under its header,
+      # opens the first app (PerfMon in this ROM) through the shell (ACTION_OPEN_ENTRY); a tap in its window reaches it
+      # as a raw pointer event (legacy: raw 10 x y). Old apps draw their own title bar, so Back is the left edge's
+      # swipe, which closes it (FRONT 0: back to Classic apps); two more go back to the menu and home.
       # Then the phone apps: Phone in the dock (54,973) brings the resident NEOPHONE to the front (its dial pad); two
       # left-edge swipes go home. Apps (485,973) -> Contacts in the menu (449,199) starts NEOCONT; two swipes go home again. Messages in
       # the dock (162,973) brings the resident NEOMSG; its footer's Contacts tab (270,1019: the middle third, 24 dp over
       # the band) opens Contacts from Messages (ipc OPEN).
-      - name: Boot again; Old apps (the AppArc grid, its first app); Phone, Contacts and Messages (three apps)
+      - name: Boot again; Classic apps (the AppArc apps, the first one); Phone, Contacts and Messages (three apps)
         working-directory: build
         run: |
           cp out/serial.log out/serial-main.log
           export SCREEN=539x1079 NAV=gestures
           . ../neoui/symbian/taps.sh
           tap 485 973
-          tap 270 1007; expect "legacy: app "
+          tap 270 1007; expect "classic: "; expect "legacy: app "
           wait_s 3; tap 90 202; expect "legacy: start app"
           wait_s 5; tap 200 300; expect "legacy: raw"
           swipe 5 540 200 540; expect "neoui: app legacy front false"   # Back (the left edge)
-          wait_s 2; swipe 5 540 200 540; wait_s 2; swipe 5 540 200 540; wait_s 3   # the grid, then the menu, then home
+          wait_s 2; swipe 5 540 200 540; wait_s 2; swipe 5 540 200 540; wait_s 3   # Classic apps, the menu, then home
           tap 54 973; expect "neoui: screen phone"
           # Phone opens on its dial pad (NEOPHONE v2): Back shows the call list, a second Back goes home
           wait_s 1; swipe 5 540 200 540; wait_s 1; swipe 5 540 200 540; expect "neoui: screen home"
@@ -381,12 +405,17 @@ jobs:
           wait_s 2; tap 270 1019; expect "neoui: messages opens contacts"
           ui_run 180
           s=out/serial.log
+          grep -a 'neoui: app classic started' $s
           grep -a 'neoui: app legacy started' $s
           grep -a '\[proc\] EWSRV.EXE\[' $s
           grep -aE 'legacy: guest wserv 360x640 up, surface 539x[0-9]+' $s
-          # protocol 1.6: the AppArc apps as Old apps tiles; the first one starts (FRONT 1), takes a touch, and Back closes
-          # it (FRONT 0); LEGACY stays resident behind the grid
+          # protocol 1.6: the AppArc apps as Classic apps tiles (INFO_APPS); the first one opens through the shell
+          # (ACTION_OPEN_ENTRY by Classic's SID), starts (FRONT 1), takes a touch, and Back closes it (FRONT 0);
+          # LEGACY stays running behind Classic apps
           grep -aE "legacy: app [0-9a-f]{8} '" $s
+          grep -aE 'classic: [1-9][0-9]* apps' $s
+          grep -aE 'neoui: classic opens old app [0-9a-f]{8}' $s
+          grep -aE 'classic: open [0-9a-f]{8} \(Ok' $s
           grep -aE 'legacy: start app [0-9a-f]{8}: 0' $s
           grep -aE 'legacy: raw 10 [0-9]+ [0-9]+' $s
           grep -a 'neoui: app legacy front true' $s

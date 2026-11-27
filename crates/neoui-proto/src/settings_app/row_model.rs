@@ -585,7 +585,7 @@ impl Provider for Builtin {
             },
             "root.datetime" => pick("Automatic", "Manual", f.on("time.auto")),
             "root.keyboard" => known(f.text("kb.current")),
-            "root.apps" => Reading::Value(String::from("Phone, old apps")),
+            "root.apps" => Reading::Value(String::from("Phone, classic apps")),
             "root.developer" => Reading::Value(String::from(if f.on("dev.usb") == Some(true) {
                 "USB debugging"
             } else if f.on("dev.touches") == Some(true) {

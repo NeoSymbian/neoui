@@ -522,8 +522,8 @@ pub const ROWS: &[Row] = &[
         "apps.oldapps",
         Apps,
         OldApps,
-        "Key pads for old apps",
-        &["s60", "old apps", "legacy"],
+        "Key pads for classic apps",
+        &["s60", "classic apps", "old apps", "legacy"],
     ),
     // Old apps' key pads
     row("pads.vibrate", OldApps, OldApps, "Key vibration", &[]),

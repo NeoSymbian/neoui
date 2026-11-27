@@ -34,6 +34,8 @@ const fn app(key: &'static str, exe: &'static str, name: &'static str) -> App {
 /// The Settings app's key (it doesn't list itself) and the old apps' bridge (listed as its old apps instead).
 pub const SETTINGS: &str = "settings";
 pub const LEGACY: &str = "legacy";
+/// Classic apps (CLASSIC.EXE, NeoSymbian/legacy classic/): the list of the bridge's old apps, in the Apps menu.
+pub const CLASSIC: &str = "classic";
 
 pub const APPS: &[App] = &[
     // the alarms, timers, events and to-dos, rung whether or not Clock or Calendar runs (NeoSymbian/datetime)
@@ -44,6 +46,7 @@ pub const APPS: &[App] = &[
     // Clock and Calendar (NeoSymbian/datetime)
     app("clock", "neoclock", "Clock"),
     app("calendar", "neocal", "Calendar"),
+    // the Terminal (NeoSymbian/neoterm)
     app("terminal", "neoterm", "Terminal"),
     app("files", "neofiles", "Files"),
     App {
@@ -52,8 +55,10 @@ pub const APPS: &[App] = &[
     },
     // the kit gallery and the template for new apps (symbian/apps/kit)
     app("kit", "neokit", "UI kit"),
-    // S60 apps through the guest window server (NeoSymbian/legacy host/legacy.cpp)
-    app(LEGACY, "legacy", "Old apps"),
+    // S60 apps through the guest window server (NeoSymbian/legacy host/legacy.cpp): not in the Apps menu, Classic
+    // apps lists them (NeoSymbian/legacy classic/)
+    app(LEGACY, "legacy", "Classic apps"),
+    app(CLASSIC, "classic", "Classic apps"),
     // Phone, Contacts and Messages (NeoSymbian/phone): three apps that open each other (ipc OPEN); Phone's page 3 is
     // the three apps' settings
     App {
@@ -124,6 +129,7 @@ pub fn sid(key: &str) -> Option<u32> {
         "terminal" => 0xE000_2003,
         "devtools" => 0xE000_2005,
         "kit" => 0xE000_2006,
+        CLASSIC => 0xE000_2008,
         SETTINGS => crate::settings::access::SETTINGS_SID,
         "phone" => 0xE000_5001,
         "contacts" => 0xE000_5002,
@@ -218,7 +224,7 @@ mod tests {
     }
 
     /// Every app the shell's Apps menu shows that is a process here has the same name there (ui/screens/menu.slint);
-    /// a service isn't in the menu.
+    /// a service isn't in the menu, nor the bridge (Classic apps opens its apps).
     #[test]
     fn the_apps_menu_names_match() {
         extern crate std;
@@ -235,13 +241,16 @@ mod tests {
             let name = line[n + 7..].split('"').next().unwrap();
             let key = line[k + 6..].split('"').next().unwrap();
             if let Some(a) = find(key) {
+                assert_ne!(key, LEGACY, "the bridge isn't in the Apps menu");
                 assert_eq!(a.name, name, "{key}");
                 seen += 1;
             }
         }
         assert_eq!(
             seen,
-            APPS.iter().filter(|a| !a.service).count(),
+            APPS.iter()
+                .filter(|a| !a.service && a.key != LEGACY)
+                .count(),
             "an app here is missing from the Apps menu"
         );
     }

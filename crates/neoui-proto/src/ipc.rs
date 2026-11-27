@@ -212,10 +212,10 @@ pub const CLIP_KIND: i32 = 30;
 pub const SETTINGS_INFO: i32 = 40;
 /// `[kind, Des8 request]` → 0: ask the shell to act. [`ACTION_SIGN_IN`]: open the browser on the current Wi-Fi
 /// network's sign-in page (`KErrNotReady` when there is no captive portal now). [`ACTION_OPEN_ENTRY`] (1.14,
-/// Settings only, else `KErrPermissionDenied`): request = an id (u32 LE, exactly 4 bytes) of [`INFO_APPS`]; the shell
-/// starts the legacy bridge if needed and passes it the choice, as a tap in its grid does (`KErrNotFound` for an id it
-/// hasn't registered, `KErrNotReady` if the bridge didn't start). The bridge decides what shows (an old app already
-/// running stays in front); Back leaves it as from the grid, not to Settings.
+/// Settings and Classic apps only, by their SIDs, else `KErrPermissionDenied`): request = an id (u32 LE, exactly 4
+/// bytes) of [`INFO_APPS`]; the shell starts the legacy bridge if needed and passes it the choice (`KErrNotFound` for
+/// an id it hasn't registered, `KErrNotReady` if the bridge didn't start). The bridge decides what shows (an old app
+/// already running stays in front); Back leaves it for Classic apps (CLASSIC.EXE), not Settings.
 pub const SETTINGS_ACTION: i32 = 41;
 /// [`SETTINGS_INFO`] kinds.
 pub const INFO_BATTERY: i32 = 1;

@@ -756,12 +756,6 @@ fn main() -> i32 {
                 screen = now;
             }
             host.keep_resident(ms);
-            for id in ui.take_entries() {
-                host.open_entry("legacy", id, ms);
-            }
-            if core::mem::take(&mut host.entries_changed) {
-                ui.set_old_apps(host.entries("legacy"));
-            }
             // an icon, notification or Settings row opening an app's page: the app is told, and the view is cleared
             // so the same page can be asked for again
             let view = ui.view();

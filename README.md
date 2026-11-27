@@ -26,7 +26,6 @@ Mac the buffer is just shown in a window.
 | `ui/components/keyboard/` | The system keyboard: English, Armenian and Russian layouts as data, a terminal mode, number and phone pads (`pads/`), managed in Settings → Language & keyboard ([neoui-shell.md](https://github.com/NeoSymbian/docs/blob/main/neoui-shell/README.md), "System keyboard"). A field asks for its keyboard with `keys` (1 text, 3 number, 4 phone), an app with the `KEYBOARD` mode. Adding a keyboard: a file in `pads/`, a line in `Pads` (`layouts.slint`), a mode number in neoui-proto's `ipc` (and its height in `keyboard_heights`). A tap outside a field closes the keyboard; the toolbar's keyboard button puts it away and brings it back |
 | `crates/neoui-host` | Mac/Linux desktop host: winit + softbuffer, mouse as touch |
 | `snapshots/` | PNGs written by the snapshot tests |
-| `crates/neoui-term` | `#![no_std]` text console model: the grid, cursor and control characters of a Symbian console window |
 | `crates/neoui-proto` `ipc` | The app ↔ UI server protocol: `GEOMETRY`, `SURFACE`, `DAMAGE`, `NEXT_EVENT`, `SETTING_GET`/`SET`/`WATCH`, 16-byte events |
 | `crates/neoui-proto` `settings` | The settings system (pure, host-tested): typed keys, the registry of system settings, the store, the versioned file format, access rules, the service with save delay and change subscriptions |
 | `crates/neoui-render` `settings` + `ui/system-settings.slint` | The shell's view of the settings: the `SystemSettings` global and the binding table between it and the store |
@@ -81,7 +80,7 @@ neo rom && DTB=… neo kernel bonito && neo flash   # RAM-boots the image on the
 
 **Apps are separate processes (R6).** The UI server is also the `NeoUi` IPC server (protocol in
 `neoui-proto::ipc`). When the shell navigates to an app that exists as an EXE (`neoui_proto::apps`: `terminal` →
-`NEOTERM.EXE` in `symbian/apps/term`, `clock` → `NEOCLOCK.EXE` in NeoSymbian/datetime), the server starts it
+`NEOTERM.EXE` in NeoSymbian/neoterm, `clock` → `NEOCLOCK.EXE` in NeoSymbian/datetime), the server starts it
 through the Symbian loader. The app connects, receives its drawing surface (a global chunk shared by handle, mapped
 at the same address in both processes), renders its own Slint UI into it and reports damage. The server shows
 the surface in the shell's body, between the live status bar and toolbar. Touches in the body go to the app; Back
@@ -98,9 +97,9 @@ messages (and the status bar's envelope) and "return to call",
 the screen during calls, the volume keys in a call, the radio and ring settings and the network time.
 
 **A Terminal app (R6b): ESHELL and the 2010 text programs inside the Rust UI.** `NEOTERM.EXE`
-(`symbian/apps/term`) is the Symbian text console server `!E32WindowServer`; the UI ROM ships the stock
+(NeoSymbian/neoterm since 2026-11-27) is the Symbian text console server `!E32WindowServer`; the UI ROM ships the stock
 `econs.dll` (a client of that server) as `ECONS.DLL`, so `Console::NewL` in ESHELL and in any text program lands in
-our terminal. The grid (`crates/neoui-term`, host-tested) follows the stock console's rules: newline mode, wrap,
+our terminal. The grid (neoterm's `crates/neoui-term`, host-tested) follows the stock console's rules: newline mode, wrap,
 destructive backspace, tabs, scrolling. Keys come from the system keyboard in its terminal mode (Esc, Tab and arrows
 on top) and from hardware keys. `dir` and
 `neotest` run in it. Apps share their plumbing (connect, surface, Slint platform) in `symbian/neoapp`.

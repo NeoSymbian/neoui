@@ -309,7 +309,6 @@ pub struct Renderer {
     /// types and wherever it goes: Keypress vibration, SE3a).
     presses: Rc<core::cell::Cell<u32>>,
     nav: Rc<RefCell<Vec<Nav>>>,
-    entries: Rc<RefCell<Vec<u32>>>,
     notes_opened: Rc<RefCell<Vec<(String, u32, u16)>>>,
     /// TP2a: the shade's rows → their cards (app key, id: a place in the shell's list can shift before the shell
     /// acts); the cards and the clock they were laid out with; the group shown open (app key, group); the cards
@@ -468,10 +467,6 @@ impl Renderer {
             };
             again.set(true);
         });
-        let entries: Rc<RefCell<Vec<u32>>> = Rc::default();
-        let sink = entries.clone();
-        // Slint uses signed ints; preserve all 32 UID bits on the round trip.
-        ui.on_open_entry(move |id| sink.borrow_mut().push(id as u32));
         let closed: Rc<RefCell<Vec<alloc::string::String>>> = Rc::default();
         let sink = closed.clone();
         ui.on_close_app(move |k| sink.borrow_mut().push(k.as_str().into()));
@@ -506,7 +501,6 @@ impl Renderer {
             typed,
             presses,
             nav,
-            entries,
             notes_opened,
             shade_rows,
             shade_cards: Vec::new(),
@@ -559,29 +553,6 @@ impl Renderer {
     /// The shell's Back past the app (ipc `DONE`: the app's task ended): to where it was opened from, or home.
     pub fn leave_app(&mut self) {
         self.ui.invoke_back();
-    }
-
-    /// Rebuilds the Old apps model after its launcher's entries change.
-    pub fn set_old_apps(&mut self, entries: &[LauncherEntry]) {
-        let rows: Vec<OldApp> = entries
-            .iter()
-            .map(|entry| {
-                let icon = entry_image(&entry.icon);
-                OldApp {
-                    id: entry.id as i32,
-                    name: entry.caption.as_str().into(),
-                    has_icon: icon.is_some(),
-                    icon: icon.unwrap_or_default(),
-                }
-            })
-            .collect();
-        self.ui
-            .set_old_apps(slint::ModelRc::new(slint::VecModel::from(rows)));
-    }
-
-    /// Launcher tile taps, queued until the server can start the app and deliver `AppEvent::Entry`.
-    pub fn take_entries(&mut self) -> Vec<u32> {
-        core::mem::take(&mut *self.entries.borrow_mut())
     }
 
     /// The current screen key: "home", "menu" or an app key such as "clock".
@@ -1424,39 +1395,9 @@ impl Renderer {
     }
 }
 
-/// Convert straight-alpha ARGB words (little endian BGRA bytes) to Slint's straight-alpha RGBA image.
-fn entry_image(bytes: &[u8]) -> Option<slint::Image> {
-    let (w, h, pixels) = neoui_proto::ipc::decode_entry_icon(bytes).ok()?;
-    if w == 0 || h == 0 {
-        return None;
-    }
-    let mut buffer = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::new(u32::from(w), u32::from(h));
-    for (dst, src) in buffer
-        .make_mut_bytes()
-        .as_chunks_mut::<4>()
-        .0
-        .iter_mut()
-        .zip(pixels.as_chunks::<4>().0.iter())
-    {
-        dst.copy_from_slice(&[src[2], src[1], src[0], src[3]]);
-    }
-    Some(slint::Image::from_rgba8(buffer))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn entry_icon_keeps_straight_alpha() {
-        let encoded = [2, 0, 1, 0, 0x20, 0x90, 0xf0, 0x80, 0x56, 0x34, 0x12, 0];
-        let pixels = entry_image(&encoded).unwrap().to_rgba8().unwrap();
-        assert_eq!(
-            pixels.as_bytes(),
-            &[0xf0, 0x90, 0x20, 0x80, 0x12, 0x34, 0x56, 0]
-        );
-        assert!(entry_image(&[]).is_none());
-    }
 
     #[test]
     fn pixel_blend() {
