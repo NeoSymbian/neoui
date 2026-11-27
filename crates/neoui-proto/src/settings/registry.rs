@@ -36,6 +36,11 @@ pub enum Limit {
     MaxLen(usize),
     /// (TP4) An `n.<app>` notification policy (`notification_policy::Policy`): one validator for SET, load and reset.
     Policy,
+    /// (TP7) A tile order (`tiles::decode_order`): at most 32 valid ids, none twice.
+    Tiles,
+    /// (TP6) A list of app keys (`activity::decode_deny`: `s16` entries, each 1–16 bytes of UTF-8), at most this many
+    /// bytes.
+    AppKeys(usize),
 }
 
 /// A default value, in a form that can be written in a `const` table.
@@ -115,6 +120,13 @@ impl Spec {
             {
                 Err(super::Error::OutOfRange)
             }
+            (Limit::Tiles, Value::Bytes(b)) if crate::tiles::decode_order(b).is_none() => {
+                Err(super::Error::OutOfRange)
+            }
+            (Limit::AppKeys(n), Value::Bytes(b)) if b.len() > n => Err(super::Error::TooLong),
+            (Limit::AppKeys(_), Value::Bytes(b)) if crate::activity::decode_deny(b).is_none() => {
+                Err(super::Error::OutOfRange)
+            }
             _ => Ok(()),
         }
     }
@@ -126,7 +138,9 @@ impl Spec {
 /// - the radio switches (airplane mode, Wi-Fi, Bluetooth, data), which aren't preferences;
 /// - the old apps' pad epoch, a counter;
 /// - the apps chosen to open each file type (`open.always`), which belong with the apps;
-/// - home's pages and dock (`home.layout`, D10), the user's own arrangement.
+/// - home's pages and dock (`home.layout`, D10) and the control centre's tiles (`shell.tiles`, TP7), the user's own
+///   arrangements;
+/// - whether a lock PIN is set (`lock.pin_set`, TP9): the PIN has its own flow, and its verifier stays.
 pub const RESET_KEEPS: &[&str] = &[
     "sound.profile",
     "sound.profiles",
@@ -148,6 +162,8 @@ pub const RESET_KEEPS: &[&str] = &[
     "legacy.pad.epoch",
     "open.always",
     "home.layout",
+    "shell.tiles",
+    "lock.pin_set",
 ];
 
 /// The keys Reset settings puts back to their defaults: every key no app owns, but [`RESET_KEEPS`]. Apps' keys
@@ -331,6 +347,31 @@ registry! {
     SHADE_DATE: bool = "shade.date", default DefaultValue::Bool(true), limit Limit::None, owner Owner::Shell;
     // a swipe down on home opens the shade (top-panel.md TP1; Settings → Panel & notifications, TP4)
     SHELL_SWIPEHOME: bool = "shell.swipehome", default DefaultValue::Bool(true), limit Limit::None, owner Owner::Shell;
+    /// (TP7) What a tap on the status bar opens: 0 the shade, 1 the control centre.
+    SHELL_TAP: i32 = "shell.tap", default DefaultValue::Int(0), limit Limit::Range { min: 0, max: 1 },
+        owner Owner::Shell;
+    /// (TP3) The media player in the shade.
+    SHELL_MEDIA: bool = "shell.media", default DefaultValue::Bool(true), limit Limit::None, owner Owner::Shell;
+    /// (TP7) The control centre's placed tiles in order (`tiles::encode_order`: LE u16 ids, high bit wide; empty = the
+    /// default order, so the editor keeps at least one tile). Only the shell's editor writes it (`access::SHELL_ONLY`; Settings opens it with
+    /// `ipc::ACTION_EDIT_TILES`).
+    SHELL_TILES: Bytes = "shell.tiles", default DefaultValue::Bytes(&[]), limit Limit::Tiles, owner Owner::Shell;
+    /// (TP6) Show live activities in the island.
+    ISLAND_ON: bool = "island.on", default DefaultValue::Bool(true), limit Limit::None, owner Owner::Shell;
+    /// (TP6) The apps turned off for the island (`activity::encode_deny`: `s16` app keys).
+    ISLAND_DENY: Bytes = "island.deny", default DefaultValue::Bytes(&[]), limit Limit::AppKeys(16 * 17),
+        owner Owner::Shell;
+    /// (TP8) Show the lock screen when the screen comes on.
+    LOCK_ON: bool = "lock.on", default DefaultValue::Bool(true), limit Limit::None, owner Owner::Shell;
+    /// (TP9) A lock PIN is set. Only SYSSTART writes it (`access::SHELL_ONLY`), after its own PIN dialog; the salted
+    /// verifier is in `C:\private\e0002001\`, never in the store.
+    LOCK_PIN_SET: bool = "lock.pin_set", default DefaultValue::Bool(false), limit Limit::None, owner Owner::Shell;
+    /// (SE5, O2) The display language: `en`, `hy` or `ru` (another value shows English), independent of the keyboard.
+    UI_LANGUAGE: alloc::string::String = "ui.language", default DefaultValue::Str("en"), limit Limit::MaxLen(8),
+        owner Owner::Shell;
+    /// (O5) The Power menu: 0 the full-screen sheet (v2), 1 the short list.
+    POWER_STYLE: i32 = "power.style", default DefaultValue::Int(0), limit Limit::Range { min: 0, max: 1 },
+        owner Owner::Shell;
     /// (TP4) Do not disturb: no banners, sounds or vibrations from the shell; cards still reach the shade. Calls and
     /// SMS tones are MODEMD's and still ring (NeoModem's alert policy is later).
     NOTIFY_DND: bool = "notify.dnd", default DefaultValue::Bool(false), limit Limit::None, owner Owner::Shell;
@@ -567,6 +608,39 @@ mod tests {
             assert_eq!(s.check(&s.default.to_value()), Ok(()), "{}", s.name);
             assert!(s.default.matches(&s.default.to_value()), "{}", s.name);
         }
+    }
+
+    #[test]
+    fn the_1_22_keys() {
+        for k in [
+            "shell.tap",
+            "shell.media",
+            "shell.tiles",
+            "island.on",
+            "island.deny",
+            "lock.on",
+            "lock.pin_set",
+            "ui.language",
+            "power.style",
+        ] {
+            assert_eq!(lookup(k).map(|s| s.owner), Some(Owner::Shell), "{k}");
+        }
+        let tiles = spec_of(keys::SHELL_TILES).unwrap();
+        assert_eq!(
+            tiles.check(&Value::Bytes(
+                crate::tiles::encode_order(&[(1, true), (3, false)]).unwrap()
+            )),
+            Ok(())
+        );
+        assert_eq!(
+            tiles.check(&Value::Bytes(alloc::vec![1, 0, 1, 0])),
+            Err(super::super::Error::OutOfRange)
+        );
+        assert_eq!(
+            spec_of(keys::SHELL_TAP).unwrap().check(&Value::Int(2)),
+            Err(super::super::Error::OutOfRange)
+        );
+        assert!(RESET_KEEPS.contains(&"lock.pin_set") && RESET_KEEPS.contains(&"shell.tiles"));
     }
 
     #[test]

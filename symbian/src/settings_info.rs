@@ -634,9 +634,9 @@ impl Host {
         Ok(0)
     }
 
-    /// `ENTRY_THUMB` from app `key`: Settings only.
+    /// `ENTRY_THUMB` from app `key`: Settings and Classic apps only (`apps::old_apps_client`).
     pub(super) fn entry_thumb(&mut self, key: &str, m: &Message) -> i32 {
-        if access::caller(key, m.client_sid()) != Caller::Settings {
+        if !neoui_proto::apps::old_apps_client(key, m.client_sid()) {
             return kerr::PERMISSION_DENIED;
         }
         let (id, expected) = (m.int(0) as u32, m.int(2) as u32);

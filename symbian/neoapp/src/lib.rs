@@ -45,12 +45,15 @@ pub use neoui_proto::page::{Note, Notification, Page, Query};
 pub mod card {
     pub use neoui_proto::ipc::{GONE_CLEARED, GONE_OFF, GONE_SWIPED};
     pub use neoui_proto::page::{
-        NOTIFY_ONGOING, NOTIFY_PRIVATE, NOTIFY_SILENT_UPDATE, action, style,
+        CALL_ANSWER, CALL_REJECT, NOTIFY_ONGOING, NOTIFY_PRIVATE, NOTIFY_SILENT_UPDATE,
+        NOTIFY_STICKY, REPLY_MAX, action, style,
     };
 }
 use neoui_proto::settings::value::ENCODED_MAX;
 use neoui_proto::settings::{Key as SettingKey, Setting, Value, kerr};
 use neoui_proto::{InputEvent, Rect, ScrollPlan, Scrolling, TouchPhase};
+/// Protocol 1.22's records: the media session, live activities, control-centre tiles and home widgets.
+pub use neoui_proto::{activity, media, tiles, widget};
 use slint::platform::software_renderer::{
     LineBufferProvider, MinimalSoftwareWindow, PremultipliedRgbaColor, RenderingRotation,
     RepaintBufferType, TargetPixel,
@@ -728,6 +731,86 @@ impl App {
         self.send_bytes(proto::CHANNEL, &c.encode())
     }
 
+    /// (1.22, TP3) Own the media session with what is playing (`proto::MEDIA`); commands come back as
+    /// `AppEvent::Media`. Send it again when the state, the track or the position jumps (the shell moves the bar
+    /// itself while Playing).
+    pub fn media(&self, s: &media::Session) -> Result<(), i32> {
+        self.send_bytes(proto::MEDIA, &s.encode())
+    }
+
+    /// (1.22) End this app's media session.
+    pub fn end_media(&self) -> Result<(), i32> {
+        self.send_bytes(proto::MEDIA, &[])
+    }
+
+    /// (1.22, TP6) Show or update live activity `a.id` (`proto::ACTIVITY`); taps come back as `AppEvent::ActivityTap`.
+    /// At most one update a second: the shell ticks Since and Until itself.
+    pub fn activity(&self, a: &activity::Activity) -> Result<(), i32> {
+        self.send_bytes(proto::ACTIVITY, &a.encode())
+    }
+
+    /// (1.22) End live activity `id`.
+    pub fn end_activity(&self, id: u8) -> Result<(), i32> {
+        self.activity(&activity::Activity::end(id))
+    }
+
+    /// (1.22, TP7) Offer (or withdraw, `tiles::Offer::withdraw`) one of this app's control-centre tiles
+    /// (`proto::TILE`); the user places it, and taps come back as `AppEvent::Tile`.
+    pub fn tile(&self, t: &tiles::Offer) -> Result<(), i32> {
+        self.send_bytes(proto::TILE, &t.encode())
+    }
+
+    /// (1.22, home Part 4) The content of one of this app's home widgets (`proto::WIDGET`); send it when the data
+    /// changes. `KErrNotFound` for a name not in `widget::CATALOGUE`.
+    pub fn widget(&self, c: &widget::Content) -> Result<(), i32> {
+        self.send_bytes(proto::WIDGET, &c.encode())
+    }
+
+    /// (1.22, TP4) The inline reply the user sent on card `id`, after `AppEvent::NotifyReply { id }`
+    /// (`proto::REPLY_TEXT`); reading takes it.
+    pub fn reply_text(&self, id: u32) -> Result<alloc::string::String, i32> {
+        let mut buf = alloc::vec![0u8; neoui_proto::page::REPLY_MAX];
+        let n = {
+            let mut des = TPtr8::new(&mut buf);
+            let mut args = TIpcArgs::new();
+            args.int(0, id as i32).des8(1, &mut des);
+            self.server.send_receive(proto::REPLY_TEXT, &args)?;
+            des.len()
+        };
+        buf.truncate(n);
+        neoui_proto::page::reply_text(&buf)
+            .map(alloc::string::String::from)
+            .ok_or(kerr::ARGUMENT)
+    }
+
+    /// (D7) Watch `display.font_size` and give its value now, 0–3 (1, Medium, when the shell has none): set it on the
+    /// kit's `Theme.font-size` with [`font_scale!`], at start and again on each `AppEvent::Settings`.
+    ///
+    /// # Errors
+    /// The watch's ([`App::watch_settings`]: `KErrOverflow` past the per-app limit); the size isn't read then.
+    pub fn watch_font_scale(&self) -> Result<i32, i32> {
+        self.watch_settings(neoui_proto::settings::keys::DISPLAY_FONT_SIZE.name())?;
+        Ok(self.font_scale())
+    }
+
+    /// (1.22) The shell's protocol version and features (`proto::SHELL_VERSION`); `None` from a shell before 1.22,
+    /// which doesn't read 1.22's records: send it no `card::NOTIFY_STICKY` (a 1.21 shell refuses the card). Put Answer
+    /// and Reject among a Call card's own actions unless `features` has `proto::SHELL_CALL_KEYS` (then the shell draws
+    /// them and reports `card::CALL_ANSWER`/`CALL_REJECT`).
+    pub fn shell_version(&self) -> Option<proto::ShellVersion> {
+        self.server
+            .send_receive(proto::SHELL_VERSION, &TIpcArgs::new())
+            .ok()
+            .and_then(proto::ShellVersion::decode)
+    }
+
+    /// (D7) The text size now, 0–3 (1 when the shell has none).
+    pub fn font_scale(&self) -> i32 {
+        self.setting(neoui_proto::settings::keys::DISPLAY_FONT_SIZE)
+            .unwrap_or(1)
+            .clamp(0, 3)
+    }
+
     /// The badge counter `id` on the app's launcher icon (`proto::BADGE`; the counters are summed); 0 removes it.
     pub fn badge(&self, id: u32, count: u32) -> Result<(), i32> {
         let mut args = TIpcArgs::new();
@@ -1016,6 +1099,16 @@ macro_rules! kit_feedback {
             kit.set_accepted_sent(kit.get_accepted());
             let _ = $app.control_feedback(0);
         }
+    }};
+}
+
+/// (D7) Set the kit's text size (`Theme.font-size`) from `display.font_size`, in the app's crate where its generated
+/// `Theme` global is: `neoapp::font_scale!(ui, app);` after [`App::watch_font_scale`] and on each `AppEvent::Settings`.
+#[macro_export]
+macro_rules! font_scale {
+    ($ui:expr, $app:expr) => {{
+        let ui = &$ui;
+        ui.global::<Theme>().set_font_size($app.font_scale());
     }};
 }
 

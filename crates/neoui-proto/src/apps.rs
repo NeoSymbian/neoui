@@ -34,6 +34,8 @@ const fn app(key: &'static str, exe: &'static str, name: &'static str) -> App {
 /// The Settings app's key (it doesn't list itself) and the old apps' bridge (listed as its old apps instead).
 pub const SETTINGS: &str = "settings";
 pub const LEGACY: &str = "legacy";
+/// Classic apps (CLASSIC.EXE, NeoSymbian/legacy classic/): the list of the bridge's old apps, in the Apps menu.
+pub const CLASSIC: &str = "classic";
 
 pub const APPS: &[App] = &[
     // the alarms, timers, events and to-dos, rung whether or not Clock or Calendar runs (NeoSymbian/datetime)
@@ -44,6 +46,7 @@ pub const APPS: &[App] = &[
     // Clock and Calendar (NeoSymbian/datetime)
     app("clock", "neoclock", "Clock"),
     app("calendar", "neocal", "Calendar"),
+    // the Terminal (NeoSymbian/neoterm)
     app("terminal", "neoterm", "Terminal"),
     app("files", "neofiles", "Files"),
     App {
@@ -52,8 +55,10 @@ pub const APPS: &[App] = &[
     },
     // the kit gallery and the template for new apps (symbian/apps/kit)
     app("kit", "neokit", "UI kit"),
-    // S60 apps through the guest window server (NeoSymbian/legacy host/legacy.cpp)
-    app(LEGACY, "legacy", "Old apps"),
+    // S60 apps through the guest window server (NeoSymbian/legacy host/legacy.cpp): not in the Apps menu, Classic
+    // apps lists them (NeoSymbian/legacy classic/)
+    app(LEGACY, "legacy", "Classic apps"),
+    app(CLASSIC, "classic", "Classic apps"),
     // Phone, Contacts and Messages (NeoSymbian/phone): three apps that open each other (ipc OPEN); Phone's page 3 is
     // the three apps' settings
     App {
@@ -124,6 +129,7 @@ pub fn sid(key: &str) -> Option<u32> {
         "terminal" => 0xE000_2003,
         "devtools" => 0xE000_2005,
         "kit" => 0xE000_2006,
+        CLASSIC => 0xE000_2008,
         SETTINGS => crate::settings::access::SETTINGS_SID,
         "phone" => 0xE000_5001,
         "contacts" => 0xE000_5002,
@@ -146,6 +152,51 @@ pub fn sid_fits(key: &str, sid: u32) -> bool {
         Some(s) => s == sid,
         None => key == LEGACY && sid == LEGACY_SID,
     }
+}
+
+/// The apps that start, hidden, with app `key`: Classic apps lists what the legacy bridge registers, so the bridge
+/// runs with it.
+#[must_use]
+pub fn companions(key: &str) -> &'static [&'static str] {
+    if key == CLASSIC { &[LEGACY] } else { &[] }
+}
+
+/// How many processes opening app `key` starts, given which apps run now (`running`): the shell makes room for all
+/// of them before starting any.
+#[must_use]
+pub fn starts(key: &str, running: impl Fn(&str) -> bool) -> usize {
+    core::iter::once(key)
+        .chain(companions(key).iter().copied())
+        .filter(|k| !running(k))
+        .count()
+}
+
+/// May the process with screen key `key` and secure ID `sid` open an old app (`ipc::ACTION_OPEN_ENTRY`) and read
+/// its icon (`ipc::ENTRY_THUMB`)? Settings and Classic apps, each by its own SID.
+#[must_use]
+pub fn old_apps_client(key: &str, sid: u32) -> bool {
+    use crate::settings::access::{Caller, caller};
+    caller(key, sid) == Caller::Settings || (key == CLASSIC && sid_fits(CLASSIC, sid))
+}
+
+/// What the legacy bridge's `FRONT(show)` does, `in_front` when it has the screen now: the screen the shell goes to
+/// (`None`: it stays where it is) and whether its Open apps card shows (a guest app is up). The bridge, not the
+/// user, decides when its guest shows, so a guest ending in the background must move nobody.
+#[must_use]
+pub fn bridge_front(show: bool, in_front: bool) -> (Option<&'static str>, bool) {
+    match (show, in_front) {
+        (true, _) => (Some(LEGACY), true),
+        // its guest ended or went back: the list it was opened from
+        (false, true) => (Some(CLASSIC), false),
+        (false, false) => (None, false),
+    }
+}
+
+/// Where the shell goes when app `key`'s process ends while its screen is shown: home, or Classic apps for the
+/// bridge (its guest's list).
+#[must_use]
+pub fn after_exit(key: &str) -> &'static str {
+    if key == LEGACY { CLASSIC } else { "home" }
 }
 
 /// The app with screen key `key`.
@@ -196,6 +247,52 @@ mod tests {
     }
 
     #[test]
+    fn a_cold_classic_start_makes_room_for_the_bridge_too() {
+        let none = |_: &str| false;
+        assert_eq!(starts(CLASSIC, none), 2, "Classic and the bridge");
+        assert_eq!(starts(CLASSIC, |k| k == LEGACY), 1);
+        assert_eq!(starts(CLASSIC, |k| k == CLASSIC || k == LEGACY), 0);
+        assert_eq!(starts("files", none), 1);
+        assert_eq!(starts("files", |k| k == "files"), 0);
+        assert_eq!(companions(CLASSIC), [LEGACY]);
+        assert!(companions("files").is_empty());
+    }
+
+    #[test]
+    fn only_settings_and_classic_open_old_apps() {
+        use crate::settings::access::SETTINGS_SID;
+        assert!(old_apps_client(SETTINGS, SETTINGS_SID));
+        assert!(old_apps_client(CLASSIC, 0xE000_2008));
+        assert!(
+            !old_apps_client(CLASSIC, SETTINGS_SID),
+            "Classic's key with another SID"
+        );
+        assert!(!old_apps_client("kit", LEGACY_SID));
+        assert!(
+            !old_apps_client(LEGACY, LEGACY_SID),
+            "the bridge opens its own apps itself"
+        );
+    }
+
+    /// The bridge's life in the shell: a tile opens a guest (FRONT 1: its screen, its Open apps card), Back closes it
+    /// (FRONT 0 while in front: Classic apps, no card); a guest that ends while the user is elsewhere moves nobody
+    /// and clears the card; the bridge dying on screen lands on Classic apps, any other app on home.
+    #[test]
+    fn the_bridge_lifecycle() {
+        // a tile in Classic apps: the guest comes to the front
+        assert_eq!(bridge_front(true, false), (Some(LEGACY), true));
+        // a second tile while it runs: the bridge shows it again
+        assert_eq!(bridge_front(true, true), (Some(LEGACY), true));
+        // Back in the guest: Classic apps again, the card goes
+        assert_eq!(bridge_front(false, true), (Some(CLASSIC), false));
+        // the user went to Files; the guest ends there: Files stays, the card goes
+        assert_eq!(bridge_front(false, false), (None, false));
+        // the bridge's process ends on screen
+        assert_eq!(after_exit(LEGACY), CLASSIC);
+        assert_eq!(after_exit("files"), "home");
+    }
+
+    #[test]
     fn services_are_not_listed() {
         assert!(is_service("dtsrv"));
         assert!(!is_service("clock") && !is_service("nope"));
@@ -218,7 +315,7 @@ mod tests {
     }
 
     /// Every app the shell's Apps menu shows that is a process here has the same name there (ui/screens/menu.slint);
-    /// a service isn't in the menu.
+    /// a service isn't in the menu, nor the bridge (Classic apps opens its apps; its name is for its Open apps card).
     #[test]
     fn the_apps_menu_names_match() {
         extern crate std;
@@ -236,12 +333,15 @@ mod tests {
             let key = line[k + 6..].split('"').next().unwrap();
             if let Some(a) = find(key) {
                 assert_eq!(a.name, name, "{key}");
-                seen += 1;
+                // the bridge's line is `Apps.bridge` (its Open apps card), not a menu tile
+                seen += usize::from(key != LEGACY);
             }
         }
         assert_eq!(
             seen,
-            APPS.iter().filter(|a| !a.service).count(),
+            APPS.iter()
+                .filter(|a| !a.service && a.key != LEGACY)
+                .count(),
             "an app here is missing from the Apps menu"
         );
     }

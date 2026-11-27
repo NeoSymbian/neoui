@@ -60,11 +60,16 @@ fn cells(l: &Layout) -> Vec<HomeCell> {
     let cell = |page: usize, index: usize, it: &home::Item, at: &home::Placed| HomeCell {
         page: page as i32,
         index: index as i32,
-        kind: i32::from(matches!(it, home::Item::Widget { .. })),
+        // 0 a shortcut, 1 a built-in widget, 2 an app's widget (v2; drawn with home.md Part 4)
+        kind: match it {
+            home::Item::Shortcut(_) => 0,
+            home::Item::Widget { .. } => 1,
+            home::Item::AppWidget { .. } => 2,
+        },
         key: it.app().into(),
         widget: match it {
             home::Item::Widget { widget, .. } => *widget as i32,
-            home::Item::Shortcut(_) => 0,
+            home::Item::Shortcut(_) | home::Item::AppWidget { .. } => 0,
         },
         col: i32::from(at.col),
         row: i32::from(at.row),
